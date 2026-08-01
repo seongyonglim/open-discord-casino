@@ -1,5 +1,5 @@
-import { layout, esc, pts } from './views';
-import { bombIcon, ladderIcon, chartIcon, cardsIcon } from './icons';
+import { layout, esc, pts, LOGO_SVG } from './views';
+import { bombIcon, ladderIcon, chartIcon, cardsIcon, discordIcon } from './icons';
 import type { LeaderboardRow, WebUser } from '../db/queries';
 
 const GAMES: { key: string; name: string; desc: string; icon: string; ready: boolean }[] = [
@@ -33,13 +33,19 @@ function gameCards(): string {
 }
 
 export function lobbyPage(user: WebUser | null): string {
+  // 로그인 전에는 보여줄 게 없으므로 화면 가운데에 로그인만 크게 놓는다
+  // (좁은 카드 안에 작은 버튼을 넣으면 빈 화면에 덩그러니 남아 허전해 보인다).
   if (!user) {
-    return layout('로비', 'lobby', `
-      <div class="card" style="text-align:center;padding:48px 20px">
-        <h2 style="margin-bottom:8px;font-size:18px;color:var(--txt)">디스코드로 로그인하고 시작하세요</h2>
-        <p style="color:var(--muted);margin:0 0 18px">매일 출석해서 모은 포인트로 카지노 게임을 즐길 수 있습니다.</p>
-        <a class="btn btn-gold" href="/auth/login">디스코드 로그인</a>
-      </div>`);
+    return layout('로그인', 'lobby', `
+      <div class="login-hero">
+        <div class="login-mark">${LOGO_SVG}</div>
+        <h1 class="login-title">OPEN <span>카지노</span></h1>
+        <p class="login-sub">매일 출석해서 모은 포인트로 즐기는 오픈디코 전용 카지노</p>
+        <a class="login-cta" href="/auth/login">${discordIcon(20)}디스코드로 로그인</a>
+        <p class="login-note">오픈디코 서버 멤버만 입장할 수 있습니다</p>
+        <div class="login-games">${GAMES.filter(g => g.ready).map(g =>
+          `<span class="login-game">${g.icon}${esc(g.name)}</span>`).join('')}</div>
+      </div>`, 'login-page');
   }
 
   const body = `
