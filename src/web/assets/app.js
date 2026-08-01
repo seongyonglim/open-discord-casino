@@ -257,13 +257,29 @@
     window.__casinoMarks.push(label + ' ' + ms + 'ms');
     console.log('[카지노] ' + label + ' — ' + ms + 'ms');
   };
-  // 메인 스레드가 오래 붙들리면 그것도 남긴다 (긴 작업 = 화면이 멈추는 원인)
+  // 메인 스레드가 오래 붙들리면 남긴다 (긴 작업 = 화면이 멈추는 원인).
+  // longtask는 "얼마나 막혔는지"만 알려주고 누가 막았는지는 알려주지 않는다.
+  // long-animation-frame은 그 프레임에서 실행된 스크립트의 URL·함수명까지 주므로,
+  // 멈춤의 원인이 우리 코드인지 브라우저 확장인지 구분할 수 있다.
+  try {
+    new PerformanceObserver(function(list){
+      list.getEntries().forEach(function(e){
+        if (e.duration < 120) return;
+        console.warn('[카지노] 메인 스레드 ' + Math.round(e.duration) + 'ms 붙듦 @ '
+          + Math.round(e.startTime) + 'ms — 이 구간에 화면이 멈춘다');
+        (e.scripts || []).forEach(function(s){
+          console.warn('         └ ' + Math.round(s.duration) + 'ms  ' + (s.invoker || s.invokerType || '?')
+            + '  ←  ' + (s.sourceURL || '(출처 불명 = 대개 브라우저 확장)')
+            + (s.sourceFunctionName ? '  ' + s.sourceFunctionName + '()' : ''));
+        });
+      });
+    }).observe({ type: 'long-animation-frame', buffered: true });
+  } catch (e) {}
   try {
     new PerformanceObserver(function(list){
       list.getEntries().forEach(function(e){
         if (e.duration >= 120) {
-          console.warn('[카지노] 메인 스레드 ' + Math.round(e.duration) + 'ms 붙듦 @ '
-            + Math.round(e.startTime) + 'ms — 이 구간에 화면이 멈춘다');
+          console.warn('[카지노] (longtask) ' + Math.round(e.duration) + 'ms @ ' + Math.round(e.startTime) + 'ms');
         }
       });
     }).observe({ entryTypes: ['longtask'] });
