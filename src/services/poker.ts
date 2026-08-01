@@ -165,6 +165,56 @@ export interface FlipProbabilities {
   totalBoards: number;
 }
 
+// 위 전수 계산은 한 번에 0.3초(운영 shared-cpu-1x에서는 0.85초) 동안 이벤트 루프를 붙든다.
+// 서버가 단일 스레드라 그 사이 들어온 모든 요청이 함께 멈춘다 — 실측으로 아무 일도 하지 않는
+// /health 응답이 39ms에서 854ms로 튀었고, 카드 SVG가 649ms씩 걸렸다.
+// 그래서 (a,b) 쌍 단위로 끊어가며 setImmediate로 양보하는 버전을 따로 둔다.
+// 총 소요 시간은 같지만 한 번에 붙드는 시간이 1ms 수준으로 줄어 다른 요청이 정상 처리된다.
+// 이 함수는 "다음 라운드를 미리 계산"하는 경로에서만 쓰고, 즉시 값이 필요한 경우에는 위 동기 버전을 쓴다.
+export async function computeFlipProbabilitiesYielding(
+  m0: number, m1: number, s0: number, s1: number
+): Promise<FlipProbabilities> {
+  const used = [m0, m1, s0, s1];
+  const rest: number[] = [];
+  for (let c = 0; c < 52; c++) if (!used.includes(c)) rest.push(c);
+
+  const n = rest.length;
+  let mWin = 0, sWin = 0, tie = 0, total = 0;
+  const bucketHit = [0, 0, 0, 0, 0];
+
+  for (let a = 0; a < n - 4; a++) {
+    const ca = rest[a];
+    for (let b = a + 1; b < n - 3; b++) {
+      const cb = rest[b];
+      for (let c = b + 1; c < n - 2; c++) {
+        const cc = rest[c];
+        for (let d = c + 1; d < n - 1; d++) {
+          const cd = rest[d];
+          for (let e = d + 1; e < n; e++) {
+            const ce = rest[e];
+            const ms = evaluate7(m0, m1, ca, cb, cc, cd, ce);
+            const ss = evaluate7(s0, s1, ca, cb, cc, cd, ce);
+            if (ms > ss) mWin++; else if (ss > ms) sWin++; else tie++;
+            bucketHit[CAT_TO_BUCKET[ms >>> 20] > CAT_TO_BUCKET[ss >>> 20]
+              ? CAT_TO_BUCKET[ms >>> 20] : CAT_TO_BUCKET[ss >>> 20]]++;
+            total++;
+          }
+        }
+      }
+      // (a,b) 쌍마다 양보 — 약 990번 나뉘므로 한 조각이 1ms 남짓이다
+      await new Promise<void>(r => setImmediate(r));
+    }
+  }
+
+  return {
+    masterWin: mWin / total,
+    sharkWin: sWin / total,
+    tie: tie / total,
+    buckets: bucketHit.map(h => h / total),
+    totalBoards: total,
+  };
+}
+
 export function computeFlipProbabilities(
   m0: number, m1: number, s0: number, s1: number
 ): FlipProbabilities {

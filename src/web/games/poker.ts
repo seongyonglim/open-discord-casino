@@ -16,7 +16,7 @@ import {
   type PokerRoundRow, type WebUser,
 } from '../../db/queries';
 import {
-  computeFlipProbabilities, oddsFromProbability, oddsForWinMarket, dealFlip,
+  computeFlipProbabilities, computeFlipProbabilitiesYielding, oddsFromProbability, oddsForWinMarket, dealFlip,
   evaluate7, scoreCategory, categoryBucket, cardToString, CAT_NAMES, BUCKET_NAMES,
 } from '../../services/poker';
 import { readJson, sendJson } from '../http';
@@ -37,18 +37,54 @@ interface MarketOdds {
   prob: { master: number; shark: number; tie: number; buckets: number[] };
 }
 
-// 새 라운드: 홀카드 4장 + 보드 5장을 미리 뽑고, 홀카드 기준으로 모든 시장 배당을 전수 계산한다
-function makeRound() {
-  const { master, shark, deck } = dealFlip(randomInt);
-  const board = deck.slice(4, 9);
-  const p = computeFlipProbabilities(master[0], master[1], shark[0], shark[1]);
-  const odds: MarketOdds = {
+interface PreparedRound { hole: number[]; board: number[]; odds: MarketOdds }
+
+function toOdds(p: { masterWin: number; sharkWin: number; tie: number; buckets: number[] }): MarketOdds {
+  return {
     master: oddsForWinMarket(p.masterWin, p.tie, HOUSE_EDGE),
     shark: oddsForWinMarket(p.sharkWin, p.tie, HOUSE_EDGE),
     buckets: p.buckets.map(b => oddsFromProbability(b, HOUSE_EDGE)),
     prob: { master: p.masterWin, shark: p.sharkWin, tie: p.tie, buckets: p.buckets },
   };
-  return { hole: [...master, ...shark], board, odds };
+}
+
+/* ── 다음 라운드 미리 계산 ────────────────────────────────────────────────
+   배당 전수 계산(보드 171만 가지 × 핸드 2개)은 운영 환경에서 0.85초가 걸리고,
+   서버가 단일 스레드라 그 사이 들어온 모든 요청이 함께 멈춘다.
+   실측: 아무 일도 하지 않는 /health 응답이 평상시 39ms에서 새 라운드가 생기는 순간 854ms로 튀었고,
+   같은 시점에 849바이트짜리 카드 SVG가 649ms씩 걸렸다.
+
+   그래서 라운드가 필요해진 다음에 계산하지 않고, 응답을 보낸 뒤 한가할 때
+   setImmediate로 끊어가며(한 조각 약 1ms) 다음 라운드를 미리 만들어 둔다.
+   라운드 생성 시점에는 만들어 둔 값을 그대로 꺼내 쓰므로 지연이 없다.                     */
+let readyRound: PreparedRound | null = null;
+let building = false;
+
+function dealAndBoard() {
+  const { master, shark, deck } = dealFlip(randomInt);
+  return { hole: [...master, ...shark], board: deck.slice(4, 9), master, shark };
+}
+
+// 논블로킹. 이미 준비돼 있거나 만드는 중이면 아무것도 하지 않는다.
+export function prepareNextRound(): void {
+  if (readyRound || building) return;
+  building = true;
+  const { hole, board, master, shark } = dealAndBoard();
+  computeFlipProbabilitiesYielding(master[0], master[1], shark[0], shark[1])
+    .then(p => { readyRound = { hole, board, odds: toOdds(p) }; })
+    .catch(e => console.error('다음 포커 라운드 준비 실패:', e))
+    .finally(() => { building = false; });
+}
+
+// 새 라운드 재료. 미리 만들어 둔 게 있으면 즉시 반환하고, 없으면 그 자리에서 계산한다(첫 라운드 등).
+function makeRound(): PreparedRound {
+  if (readyRound) {
+    const r = readyRound;
+    readyRound = null;
+    return r;
+  }
+  const { hole, board, master, shark } = dealAndBoard();
+  return { hole, board, odds: toOdds(computeFlipProbabilities(master[0], master[1], shark[0], shark[1])) };
 }
 
 // 라운드 정산: 양쪽 7장을 평가해 승자와 등급 묶음을 확정한다
@@ -134,7 +170,9 @@ function statePayload(round: PokerRoundRow, userId: string) {
 }
 
 export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  return sendJson(res, 200, statePayload(advance(), userId));
+  sendJson(res, 200, statePayload(advance(), userId));
+  // 응답을 보낸 뒤에 다음 라운드를 미리 만들어 둔다 (논블로킹 · 이미 준비됐으면 즉시 반환)
+  prepareNextRound();
 }
 
 const VALID_MARKETS = new Set(['master', 'shark', 'b0', 'b1', 'b2', 'b3', 'b4']);
