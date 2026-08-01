@@ -3,7 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
 import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
-import { checkIn } from '../services/economy';
+import { checkIn, rewardSummary } from '../services/economy';
 import { upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard } from '../db/queries';
 import { pts, signedPts, reasonLabel, esc } from '../web/views';
 import { env } from '../env';
@@ -54,7 +54,7 @@ async function postAttendanceBoard(channelId: string): Promise<void> {
     body: {
       content:
         '**오늘도 출석하고 포인트 받아가세요!**\n' +
-        '평일 100P · 주말 200P · 7일 연속 +500P · 30일 연속 +1,000P\n' +
+        rewardSummary() + '\n' +
         '(KST 자정에 초기화됩니다)',
       components: [{
         type: ComponentType.ActionRow,
@@ -89,8 +89,14 @@ async function handleCommand(interaction: any, res: ServerResponse): Promise<voi
     const u = getWebUser(caller.id);
     if (u?.role !== 'admin') return ephemeral(res, '관리자만 사용할 수 있는 명령어입니다.');
     if (!interaction.channel_id) return ephemeral(res, '채널 정보를 확인할 수 없습니다.');
-    await postAttendanceBoard(interaction.channel_id);
-    return ephemeral(res, '이 채널에 출석체크 메시지를 게시했습니다.');
+    // 디스코드 인터랙션은 3초 안에 응답해야 한다. 채널에 메시지를 올리는 REST 호출을
+    // 먼저 await하면 그 왕복(+절전에서 깨어난 직후라면 기동 시간)이 3초 예산을 잡아먹어
+    // 게시는 성공했는데도 "애플리케이션이 응답하지 않았어요"가 뜬다.
+    // 그래서 응답을 먼저 돌려주고 게시는 그 뒤에 이어서 한다.
+    ephemeral(res, '이 채널에 출석체크 메시지를 게시합니다.');
+    await postAttendanceBoard(interaction.channel_id)
+      .catch(e => console.error('출석판 게시 실패:', e));
+    return;
   }
 
   return ephemeral(res, '알 수 없는 명령어입니다.');
@@ -116,17 +122,21 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
     .map(g => `${reasonLabel(g.reason)} ${signedPts(g.delta)}`);
   const dailyGrant = result.breakdown.find(g => g.reason === 'attendance');
 
-  return ephemeral(
+  // 출석 성공은 채널에 공개로 남긴다 — 누가 며칠째 나오는지 서로 보이는 게
+  // 출석체크 채널의 존재 이유이고, 랭킹이 이미 공개라 잔액도 비밀이 아니다.
+  // (이미 출석한 경우는 위에서 ephemeral로 끝낸다 — 그건 채널에 남길 가치가 없다)
+  return publicReply(
     res,
     [
-      `출석 완료! ${dailyGrant ? signedPts(dailyGrant.delta) : ''}`,
+      `**${esc(caller.username)}**님 출석 완료 ${dailyGrant ? signedPts(dailyGrant.delta) : ''} · 연속 **${result.streak}일**`,
       ...bonusLines,
-      `연속 출석 **${result.streak}일** · 잔액 **${pts(result.balance)}**`,
+      `잔액 ${pts(result.balance)}`,
     ].join('\n')
   );
 }
 
 export async function handleInteractions(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const startedAt = Date.now();
   const signature = req.headers['x-signature-ed25519'];
   const timestamp = req.headers['x-signature-timestamp'];
   const raw = await readRawBody(req);
@@ -137,6 +147,18 @@ export async function handleInteractions(req: IncomingMessage, res: ServerRespon
 
   let interaction: any;
   try { interaction = JSON.parse(raw); } catch { res.writeHead(400); res.end(); return; }
+
+  // 3초 제한을 넘겼는지 나중에 확인할 수 있어야 한다. 응답을 실제로 내보낸 시점까지의
+  // 시간을 남긴다(res.end 이후의 후속 작업은 제한과 무관하므로 포함하지 않는다).
+  const label = interaction.type === InteractionType.APPLICATION_COMMAND
+    ? `/${interaction.data?.name}`
+    : interaction.type === InteractionType.MESSAGE_COMPONENT
+      ? `button:${interaction.data?.custom_id}`
+      : `type:${interaction.type}`;
+  res.on('finish', () => {
+    const ms = Date.now() - startedAt;
+    console.log(`인터랙션 ${label} 응답 ${ms}ms${ms > 2500 ? ' ← 3초 제한에 위험하게 근접' : ''}`);
+  });
 
   try {
     if (interaction.type === InteractionType.PING) {
