@@ -51,14 +51,14 @@ Bot 탭에서:
 
 ## 2. fly.io 앱과 볼륨 생성
 
-`fly.toml`은 이미 커밋돼 있다. 앱 이름은 `discord-casino-bot`, 리전은 `nrt`(도쿄)다.
+`fly.toml`은 이미 커밋돼 있다. 앱 이름은 `open-discord-casino`, 리전은 `nrt`(도쿄)다.
 
 ```bash
-flyctl apps create discord-casino-bot --org personal
+flyctl apps create open-discord-casino --org personal
 ```
 
 ```bash
-flyctl volumes create discord_casino_data --region nrt --size 1 -a discord-casino-bot
+flyctl volumes create discord_casino_data --region nrt --size 1 -a open-discord-casino
 ```
 
 볼륨은 SQLite 파일이 사는 곳이다. `fly.toml`이 이걸 `/data`에 마운트하고,
@@ -74,7 +74,7 @@ flyctl volumes create discord_casino_data --region nrt --size 1 -a discord-casin
 아래 `<...>` 부분을 1번에서 받아 적은 값으로 채운다.
 
 ```bash
-flyctl secrets set -a discord-casino-bot DISCORD_TOKEN='<Bot Token>' DISCORD_PUBLIC_KEY='<Public Key>' CLIENT_ID='<Application ID>' DISCORD_CLIENT_ID='<Application ID>' DISCORD_CLIENT_SECRET='<Client Secret>' GUILD_ID='<길드 ID>' DISCORD_GUILD_ID='<길드 ID>' SEED_ADMIN_DISCORD_ID='<본인 디스코드 ID>' DISCORD_OAUTH_REDIRECT_URI='https://discord-casino-bot.fly.dev/auth/callback'
+flyctl secrets set -a open-discord-casino DISCORD_TOKEN='<Bot Token>' DISCORD_PUBLIC_KEY='<Public Key>' CLIENT_ID='<Application ID>' DISCORD_CLIENT_ID='<Application ID>' DISCORD_CLIENT_SECRET='<Client Secret>' GUILD_ID='<길드 ID>' DISCORD_GUILD_ID='<길드 ID>' SEED_ADMIN_DISCORD_ID='<본인 디스코드 ID>' DISCORD_OAUTH_REDIRECT_URI='https://open-discord-casino.fly.dev/auth/callback'
 ```
 
 주의사항:
@@ -88,7 +88,7 @@ flyctl secrets set -a discord-casino-bot DISCORD_TOKEN='<Bot Token>' DISCORD_PUB
 확인:
 
 ```bash
-flyctl secrets list -a discord-casino-bot
+flyctl secrets list -a open-discord-casino
 ```
 
 ---
@@ -98,19 +98,19 @@ flyctl secrets list -a discord-casino-bot
 로컬 Docker 데몬이 꺼져 있어도 되도록 fly 빌더에서 빌드한다.
 
 ```bash
-flyctl deploy -a discord-casino-bot --remote-only
+flyctl deploy -a open-discord-casino --remote-only
 ```
 
 배포 후 응답 확인:
 
 ```bash
-curl -i https://discord-casino-bot.fly.dev/health
+curl -i https://open-discord-casino.fly.dev/health
 ```
 
 `200 ok`가 나와야 한다. 안 나오면 로그를 본다.
 
 ```bash
-flyctl logs -a discord-casino-bot
+flyctl logs -a open-discord-casino
 ```
 
 ---
@@ -120,7 +120,7 @@ flyctl logs -a discord-casino-bot
 **General Information → Interactions Endpoint URL**
 
 ```
-https://discord-casino-bot.fly.dev/discord/interactions
+https://open-discord-casino.fly.dev/discord/interactions
 ```
 
 저장하면 디스코드가 서명된 PING을 보내고, 서버가 PONG을 돌려줘야 저장이 완료된다.
@@ -129,7 +129,7 @@ https://discord-casino-bot.fly.dev/discord/interactions
 **OAuth2 → Redirects → Add Redirect**
 
 ```
-https://discord-casino-bot.fly.dev/auth/callback
+https://open-discord-casino.fly.dev/auth/callback
 ```
 
 3번에서 넣은 `DISCORD_OAUTH_REDIRECT_URI`와 **한 글자도 다르면 안 된다.**
@@ -164,7 +164,7 @@ OAuth2 → URL Generator에서:
 
 ### 8-1. 기본 동작
 
-1. `https://discord-casino-bot.fly.dev` 접속 → 디스코드 로그인 → 로비가 보이는지
+1. `https://open-discord-casino.fly.dev` 접속 → 디스코드 로그인 → 로비가 보이는지
 2. 길드 멤버가 아닌 계정으로 로그인 시 `?login=notmember`로 튕기는지
 3. 게임 4개(포커 플립 · 사다리 · 그래프 · 지뢰찾기) 진입 및 베팅
 4. 디스코드에서 `/내점수`, `/랭킹` 응답 확인
@@ -175,7 +175,7 @@ OAuth2 → URL Generator에서:
 아무도 접속하지 않은 상태로 10분 이상 둔 뒤:
 
 ```bash
-flyctl machine list -a discord-casino-bot
+flyctl machine list -a open-discord-casino
 ```
 
 `STATE`가 `stopped`여야 한다. `started`로 남아 있으면 요금이 상시 가동($2.02/월)으로 고정된다.
@@ -203,12 +203,12 @@ flyctl machine list -a discord-casino-bot
 
 | 목적 | 명령 |
 | --- | --- |
-| 로그 실시간 보기 | `flyctl logs -a discord-casino-bot` |
-| 머신 상태 | `flyctl machine list -a discord-casino-bot` |
-| 재시작 | `flyctl machine restart <머신ID> -a discord-casino-bot` |
+| 로그 실시간 보기 | `flyctl logs -a open-discord-casino` |
+| 머신 상태 | `flyctl machine list -a open-discord-casino` |
+| 재시작 | `flyctl machine restart <머신ID> -a open-discord-casino` |
 | 운영 DB 내려받아 열기 | `npm run db:admin` |
-| 시크릿 변경 | `flyctl secrets set -a discord-casino-bot KEY='값'` |
-| 배포 되돌리기 | `flyctl releases -a discord-casino-bot` 후 `flyctl deploy --image <이전 이미지>` |
+| 시크릿 변경 | `flyctl secrets set -a open-discord-casino KEY='값'` |
+| 배포 되돌리기 | `flyctl releases -a open-discord-casino` 후 `flyctl deploy --image <이전 이미지>` |
 
 ---
 

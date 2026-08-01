@@ -1,6 +1,6 @@
 # 운영비 산정
 
-작성 시점: 2026-08-01 · 대상: fly.io `discord-casino-bot` (리전 `nrt`, shared-cpu-1x 256MB, 볼륨 1GB)
+작성 시점: 2026-08-01 · 대상: fly.io `open-discord-casino` (리전 `nrt`, shared-cpu-1x 256MB, 볼륨 1GB)
 
 모든 숫자는 fly.io 공식 요금표 인용값과 로컬 실측값만 사용했다.
 근거가 없는 항목은 **확인 불가**로 표시했다.

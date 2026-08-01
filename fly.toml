@@ -1,6 +1,6 @@
 [build]
 
-app = "discord-casino-bot"
+app = "open-discord-casino"
 primary_region = "nrt"
 
 [env]
