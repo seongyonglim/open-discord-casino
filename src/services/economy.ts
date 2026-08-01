@@ -1,10 +1,18 @@
 // 출석/포인트 이코노미 — KST(서울) 기준 날짜로 하루 1회 출석, 주말 2배, 연속출석 보너스
 import { getWebUser, performCheckIn, upsertUser, type PointsGrant } from '../db/queries';
 
-const DAILY_WEEKDAY = 100;
-const DAILY_WEEKEND = 200;
-const WEEKLY_STREAK_BONUS = 500;
-const MONTHLY_STREAK_BONUS = 1000;
+export const DAILY_WEEKDAY = 1000;
+export const DAILY_WEEKEND = 2000;
+export const WEEKLY_STREAK_BONUS = 5000;
+export const MONTHLY_STREAK_BONUS = 10000;
+
+// 출석판·안내 문구는 반드시 이 함수로 만든다. 문자열에 숫자를 직접 적어두면
+// 보상을 조정할 때 한쪽만 고쳐서 실제 지급액과 안내가 어긋난다.
+export function rewardSummary(): string {
+  const p = (n: number) => n.toLocaleString('ko-KR');
+  return `평일 ${p(DAILY_WEEKDAY)}P · 주말 ${p(DAILY_WEEKEND)}P · `
+    + `7일 연속 +${p(WEEKLY_STREAK_BONUS)}P · 30일 연속 +${p(MONTHLY_STREAK_BONUS)}P`;
+}
 
 function kstDateStr(ms: number): string {
   return new Intl.DateTimeFormat('sv-SE', {
