@@ -26,4 +26,4 @@ preview-seed.ts
 scripts/
 
 *.log
-*.tmp.ts
+*.tmp.*
