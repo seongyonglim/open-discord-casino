@@ -1,0 +1,28 @@
+{
+  "name": "discord-casino",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node --experimental-sqlite --require tsx/cjs src/index.ts",
+    "build": "tsc",
+    "start": "node --experimental-sqlite dist/index.js",
+    "deploy": "node --experimental-sqlite --require tsx/cjs src/discord/deploy-commands.ts",
+    "db:pull": "rm -f ./data-snapshot.db && flyctl ssh sftp get /data/data.db ./data-snapshot.db -a discord-casino-bot",
+    "db:view": "node --experimental-sqlite --require tsx/cjs src/db-admin.ts",
+    "db:admin": "npm run db:pull && npm run db:view",
+    "cards": "node --experimental-sqlite --require tsx/cjs scripts/gen-cards.ts",
+    "cards:fetch": "node --experimental-sqlite --require tsx/cjs scripts/fetch-cards.ts",
+    "bots": "node --experimental-sqlite --require tsx/cjs preview-bots.ts",
+    "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "discord-interactions": "^4.1.0",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.3"
+  }
+}
