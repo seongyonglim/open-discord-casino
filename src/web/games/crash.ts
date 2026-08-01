@@ -541,10 +541,15 @@ export function crashPage(user: WebUser): string {
         return { ok: r.ok, d: d };
       }
 
+      // 통신 실패는 화면에 알리고 다음 주기에 다시 시도한다 (조용히 죽으면 반쪽 화면으로 굳는다)
+      var pollFails = 0;
       async function poll(){
-        var r = await fetch('/api/games/crash/state');
-        if (!r.ok) return;
-        var d = await r.json();
+        var d = await window.casinoPoll('/api/games/crash/state');
+        if (!d) {
+          if (++pollFails >= 2) statusEl.textContent = '서버에 연결하는 중…';
+          return;
+        }
+        pollFails = 0;
         clockOffset = d.round.serverNowMs - Date.now();
         st = d;
         render();

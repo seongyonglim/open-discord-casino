@@ -13,7 +13,8 @@
     "cards": "node --experimental-sqlite --require tsx/cjs scripts/gen-cards.ts",
     "cards:fetch": "node --experimental-sqlite --require tsx/cjs scripts/fetch-cards.ts",
     "bots": "node --experimental-sqlite --require tsx/cjs preview-bots.ts",
-    "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts"
+    "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts",
+    "sfx:mono": "node --experimental-sqlite --require tsx/cjs scripts/sfx-mono.ts"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
