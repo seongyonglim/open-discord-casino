@@ -327,7 +327,7 @@ export function ladderPage(user: WebUser): string {
         var startCol = round.startSide==='L' ? 0 : 1;
         var col = startCol;
         markNode(svg, 'start', round.startSide); // 출발 지점 먼저 강조
-        await wait(340);
+        await wait(240);
 
         var token = svgEl('circle', { cx:xs[startCol], cy:TOP_PAD, r:9, class:'ladder-token' });
         svg.appendChild(token);
@@ -335,7 +335,8 @@ export function ladderPage(user: WebUser): string {
           svg.insertBefore(svgEl('line', { x1:x1, y1:y1, x2:x2, y2:y2, class:'ladder-trail' }), token);
         }
 
-        var FALL = 140, GROW = 130, CROSS = 150;
+        // 하강 전체가 최대 3.04초에 끝나도록 잡았다 (LADDER_REVEAL_SEC 6초 중 3초는 결과 확인용)
+        var FALL = 90, GROW = 80, CROSS = 90;
         for (var i=0; i<round.rungs.length; i++){
           var rungY = TOP_PAD + ROW_H*i + ROW_H/2;
           var rowBotY = TOP_PAD + ROW_H*(i+1);
