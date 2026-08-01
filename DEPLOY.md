@@ -66,6 +66,29 @@ flyctl volumes create discord_casino_data --region nrt --size 1 -a open-discord-
 
 > `flyctl launch`는 쓰지 않는다. 기존 `fly.toml`을 덮어써서 scale-to-zero 설정을 잃을 수 있다.
 
+### 커스텀 도메인 (odcasino.kro.kr)
+
+```bash
+flyctl certs create odcasino.kro.kr -a open-discord-casino
+```
+
+그리고 도메인 DNS에 아래 두 레코드를 넣는다 (이름은 비워 루트에 붙인다).
+`flyctl ips list -a open-discord-casino` 로 값을 확인할 수 있다.
+
+| 종류 | 값 |
+| --- | --- |
+| A | `66.241.125.10` (공유 IPv4) |
+| AAAA | `2a09:8280:1::15c:28ba:0` (전용 IPv6) |
+
+웹포워딩(리다이렉트)은 켜지 말 것 — 리다이렉트가 요청을 가로채면 인증서 발급이 실패한다.
+발급 확인:
+
+```bash
+flyctl certs show odcasino.kro.kr -a open-discord-casino
+```
+
+`Status = Issued` 가 나오면 끝이다. `*.fly.dev` 주소도 계속 살아 있으므로 둘 다 접속된다.
+
 ---
 
 ## 3. 시크릿 설정
@@ -104,7 +127,7 @@ flyctl deploy -a open-discord-casino --remote-only
 배포 후 응답 확인:
 
 ```bash
-curl -i https://open-discord-casino.fly.dev/health
+curl -i https://odcasino.kro.kr/health
 ```
 
 `200 ok`가 나와야 한다. 안 나오면 로그를 본다.
@@ -120,7 +143,7 @@ flyctl logs -a open-discord-casino
 **General Information → Interactions Endpoint URL**
 
 ```
-https://open-discord-casino.fly.dev/discord/interactions
+https://odcasino.kro.kr/discord/interactions
 ```
 
 저장하면 디스코드가 서명된 PING을 보내고, 서버가 PONG을 돌려줘야 저장이 완료된다.
@@ -129,7 +152,7 @@ https://open-discord-casino.fly.dev/discord/interactions
 **OAuth2 → Redirects → Add Redirect**
 
 ```
-https://open-discord-casino.fly.dev/auth/callback
+https://odcasino.kro.kr/auth/callback
 ```
 
 3번에서 넣은 `DISCORD_OAUTH_REDIRECT_URI`와 **한 글자도 다르면 안 된다.**
@@ -164,7 +187,7 @@ OAuth2 → URL Generator에서:
 
 ### 8-1. 기본 동작
 
-1. `https://open-discord-casino.fly.dev` 접속 → 디스코드 로그인 → 로비가 보이는지
+1. `https://odcasino.kro.kr` 접속 → 디스코드 로그인 → 로비가 보이는지
 2. 길드 멤버가 아닌 계정으로 로그인 시 `?login=notmember`로 튕기는지
 3. 게임 4개(포커 플립 · 사다리 · 그래프 · 지뢰찾기) 진입 및 베팅
 4. 디스코드에서 `/내점수`, `/랭킹` 응답 확인
