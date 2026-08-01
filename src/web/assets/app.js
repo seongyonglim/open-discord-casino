@@ -251,8 +251,12 @@
    실제 사용 브라우저에서 어느 구간이 느린지 콘솔에 남긴다.
    navigationStart 기준 경과 시간이므로 페이지를 열자마자의 시간축과 일치한다. */
 (function(){
+  // 진단 로그는 URL에 ?perf=1 을 붙였을 때만 남긴다.
+  // (원인은 브라우저 확장으로 특정됐지만, 다시 볼 일이 있을 때 바로 켤 수 있게 남겨둔다)
+  var PERF = location.search.indexOf(perf=1) >= 0;
   window.__casinoMarks = [];
   window.casinoMark = function(label){
+    if (!PERF) return;
     var ms = Math.round(performance.now());
     window.__casinoMarks.push(label + ' ' + ms + 'ms');
     console.log('[카지노] ' + label + ' — ' + ms + 'ms');
@@ -264,7 +268,7 @@
   try {
     new PerformanceObserver(function(list){
       list.getEntries().forEach(function(e){
-        if (e.duration < 120) return;
+        if (!PERF || e.duration < 120) return;
         console.warn('[카지노] 메인 스레드 ' + Math.round(e.duration) + 'ms 붙듦 @ '
           + Math.round(e.startTime) + 'ms — 이 구간에 화면이 멈춘다');
         (e.scripts || []).forEach(function(s){
@@ -278,14 +282,12 @@
   try {
     new PerformanceObserver(function(list){
       list.getEntries().forEach(function(e){
-        if (e.duration >= 120) {
+        if (PERF && e.duration >= 120) {
           console.warn('[카지노] (longtask) ' + Math.round(e.duration) + 'ms @ ' + Math.round(e.startTime) + 'ms');
         }
       });
     }).observe({ entryTypes: ['longtask'] });
   } catch (e) {}
-  window.addEventListener('load', function(){
-    window.casinoMark('load 완료');
-  });
+  window.addEventListener('load', function(){ window.casinoMark('load 완료'); });
   window.casinoMark('app.js 실행 완료');
 })();
