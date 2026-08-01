@@ -205,14 +205,13 @@ export function pokerPage(user: WebUser): string {
           </div>
           <div id="pMarkets" class="market-grid"></div>
         </div>
-        <div class="card game-controls">
+        <!-- 칩과 Clear만 한 줄에 둔다.
+             올린 칩·참가자수·총액은 오른쪽 참가자 패널에 이미 다 나오고,
+             안내 문구는 나타났다 사라질 때마다 칩 위치를 밀어서 아예 넣지 않는다.
+             (승패·회수 결과는 사운드·잔액 애니메이션·참가자 패널 금액으로 전달된다) -->
+        <div class="card game-controls poker-controls">
           <div class="coin-row" id="pCoins"></div>
-          <div class="poker-actions">
-            <span id="pStaked" class="staked-total">올린 칩 0P</span>
-            <span id="pBetCount" class="joiners">참가자 0명</span>
-            <p id="pMsg" class="game-msg"></p>
-            <button id="pClear" class="btn" type="button">Clear Screen</button>
-          </div>
+          <button id="pClear" class="btn" type="button">Clear Screen</button>
         </div>
       </div>
       <div class="card game-side" id="pSide">
@@ -227,9 +226,8 @@ export function pokerPage(user: WebUser): string {
       var mCardsEl=document.getElementById('pMasterCards'), sCardsEl=document.getElementById('pSharkCards');
       var mCatEl=document.getElementById('pMasterCat'), sCatEl=document.getElementById('pSharkCat');
       var statusEl=document.getElementById('pStatus'), historyEl=document.getElementById('pHistory');
-      var coinsEl=document.getElementById('pCoins'), stakedEl=document.getElementById('pStaked');
-      var clearBtn=document.getElementById('pClear'), msg=document.getElementById('pMsg');
-      var betCountEl=document.getElementById('pBetCount');
+      var coinsEl=document.getElementById('pCoins');
+      var clearBtn=document.getElementById('pClear');
       var rosterEl=document.getElementById('pRoster'), potEl=document.getElementById('pPot');
       var pbal=document.querySelector('.prof .pbal');
       var card=document.querySelector('.card');
@@ -707,9 +705,8 @@ export function pokerPage(user: WebUser): string {
         });
 
         potEl.textContent = fmt(total);
-        betCountEl.textContent = '참가자 ' + (st.players||[]).length + '명 · 총 ' + fmt(total);
+        // 내가 올린 칩 총액은 Clear 버튼 활성 여부를 정하는 데만 쓴다(표시는 참가자 패널이 담당)
         var staked = (st.myBets||[]).reduce(function(a,b){return a+b.amount;},0);
-        stakedEl.textContent = '올린 칩 ' + fmt(staked);
         clearBtn.disabled = st.round.phase!=='betting' || staked<=0;
       }
 
@@ -727,7 +724,7 @@ export function pokerPage(user: WebUser): string {
         renderHistory();
 
         var newRound = r.id !== lastRoundId;
-        if (newRound) { lastRoundId=r.id; msg.innerHTML=''; clearDeal(); }
+        if (newRound) { lastRoundId=r.id; clearDeal(); }
 
         var opened = syncCards(mCardsEl, 'm', [r.hole[0], r.hole[1]])
           + syncCards(sCardsEl, 's', [r.hole[2], r.hole[3]])
@@ -768,11 +765,6 @@ export function pokerPage(user: WebUser): string {
             // 여러 곳에 걸어 전체로는 손해여도 맞은 상자가 있으면 그쪽 칩은 회수해 와야 한다.
             var gained = mine.reduce(function(a,b){ return a + (b.payout||0); }, 0);
 
-            msg.innerHTML = net > 0
-              ? '<span style="color:var(--win);font-weight:700">+'+fmt(net)+'</span> 획득!'
-              : net === 0 ? '본전입니다.'
-              : '<span style="color:var(--lose);font-weight:700">'+fmt(net)+'</span> 손실';
-
             if (gained > 0) {
               if (window.casinoSfx) window.casinoSfx.win();
               if (net > 0) {
@@ -796,7 +788,7 @@ export function pokerPage(user: WebUser): string {
       async function placeChip(market){
         var bet = coin;
         var res = await post('/api/games/poker/bet', { market:market, amount:bet });
-        if (!res.ok) { msg.textContent = res.d.error || '오류가 발생했습니다'; return; }
+        if (!res.ok) return;   // 실패하면 칩이 올라가지 않는 것으로 드러난다 (문구 미표시)
         setBalance(res.d.balance);
         dropMyChip(market, bet);
         if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
@@ -805,9 +797,8 @@ export function pokerPage(user: WebUser): string {
 
       async function clearAll(){
         var res = await post('/api/games/poker/clear');
-        if (!res.ok) { msg.textContent = res.d.error || '오류가 발생했습니다'; poll(); return; }
+        if (!res.ok) { poll(); return; }
         setBalance(res.d.balance);
-        msg.innerHTML = '올린 칩 ' + fmt(res.d.refunded) + '를 모두 회수했습니다.';
         poll();
       }
       clearBtn.addEventListener('click', clearAll);

@@ -598,10 +598,23 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   }
   .pchip.fly{animation:chipFly .66s cubic-bezier(.45,.02,.3,1) forwards}
 
+  /* 칩과 Clear Screen을 한 줄에 둔다 (.game-controls는 네 게임이 공유하는 세로 배치라
+     포커에서만 가로로 뒤집는다). 칩은 남는 폭에 고르게 퍼지고 오른쪽에 Clear 자리만 남긴다.
+     안내 문구는 넣지 않는다 — 떴다 사라질 때마다 칩 위치가 밀린다. */
+  .poker-controls{flex-direction:row;align-items:center;gap:14px;padding:12px 16px}
+  .poker-controls .coin-row{flex:1 1 auto}
+  .poker-controls .btn{flex:none}
+  /* 폭이 좁으면 칩 6개 + 버튼이 한 줄에 안 들어가므로 접히게 둔다 */
+  @media (max-width:720px){
+    .poker-controls{flex-wrap:wrap}
+    .poker-controls .game-msg{order:3;flex-basis:100%;text-align:left}
+  }
+
   /* 세로가 짧은 화면(720p 노트북 등)에서만 한 단계 축소 — 베팅 버튼이 접히지 않도록.
      넓은 화면에서는 위의 큰 사이즈를 그대로 쓴다 */
   @media (max-height:820px){
     .card{padding:11px}
+    .poker-controls{padding:9px 13px;gap:10px}
     .poker-table{padding:9px 14px}
     .pcard{width:42px;height:63px}
     .pcard .pr{font-size:17px}
@@ -638,12 +651,6 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
     background:linear-gradient(160deg,#fff0b8 0%,#f0cd66 38%,#c99b2c 70%,#8f6a18 100%);
     border:1.5px solid #ffe9a0;box-shadow:0 3px 6px rgba(0,0,0,.6),inset 0 1.5px 0 rgba(255,255,255,.5)}
   .coin.active .face{box-shadow:0 2px 6px rgba(0,0,0,.55),0 0 0 3px var(--gold),0 0 14px rgba(212,175,55,.55)}
-  .joiners{font-family:var(--mono);font-size:12.5px;color:var(--muted);flex:none}
-  /* 올린 칩 / 안내 메시지 / Clear Screen을 한 줄에 — 720p 화면에서도 버튼이 접히지 않게 */
-  .poker-actions{display:flex;align-items:center;gap:12px}
-  .staked-total{flex:none;font-family:var(--mono);font-size:13px;color:var(--gold)}
-  .poker-actions .game-msg{flex:1;min-width:0;text-align:right;min-height:0;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   .bump{animation:statBump .3s ease}
   .gold-flash{animation:goldFlash .6s ease-out}
