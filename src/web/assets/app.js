@@ -245,3 +245,31 @@
     else setTimeout(run, 1200);
   });
 })();
+
+/* ── 진입 구간 계측 ────────────────────────────────────────────────────
+   "화면이 3~5초 멈춘 뒤 내용이 뜬다"는 현상을 재현하지 못해(측정 환경에서는 160ms),
+   실제 사용 브라우저에서 어느 구간이 느린지 콘솔에 남긴다.
+   navigationStart 기준 경과 시간이므로 페이지를 열자마자의 시간축과 일치한다. */
+(function(){
+  window.__casinoMarks = [];
+  window.casinoMark = function(label){
+    var ms = Math.round(performance.now());
+    window.__casinoMarks.push(label + ' ' + ms + 'ms');
+    console.log('[카지노] ' + label + ' — ' + ms + 'ms');
+  };
+  // 메인 스레드가 오래 붙들리면 그것도 남긴다 (긴 작업 = 화면이 멈추는 원인)
+  try {
+    new PerformanceObserver(function(list){
+      list.getEntries().forEach(function(e){
+        if (e.duration >= 120) {
+          console.warn('[카지노] 메인 스레드 ' + Math.round(e.duration) + 'ms 붙듦 @ '
+            + Math.round(e.startTime) + 'ms — 이 구간에 화면이 멈춘다');
+        }
+      });
+    }).observe({ entryTypes: ['longtask'] });
+  } catch (e) {}
+  window.addEventListener('load', function(){
+    window.casinoMark('load 완료');
+  });
+  window.casinoMark('app.js 실행 완료');
+})();

@@ -270,6 +270,7 @@ export function pokerPage(user: WebUser): string {
       var pbal=document.querySelector('.prof .pbal');
       var card=document.querySelector('.card');
 
+      if (window.casinoMark) window.casinoMark('포커 스크립트 시작');
       var st=null, coin=null, lastRoundId=null, notedRoundId=null, revealedRoundId=null;
       // 첫 상태인지 여부 — 페이지 진입 직후에는 딜링 연출과 카드 공개음을 건너뛴다
       var firstState = true;
@@ -858,7 +859,10 @@ export function pokerPage(user: WebUser): string {
       // 통신 실패는 화면에 알리고 다음 주기에 다시 시도한다 (조용히 죽으면 반쪽 화면으로 굳는다)
       var pollFails = 0;
       async function poll(){
+        var __first = st === null;
+        if (__first && window.casinoMark) window.casinoMark('첫 상태 요청 보냄');
         var d = await window.casinoPoll('/api/games/poker/state');
+        if (__first && window.casinoMark) window.casinoMark('첫 상태 응답 받음');
         if (!d) {
           if (++pollFails >= 2) statusEl.textContent = '서버에 연결하는 중… 잠시만요';
           return;
@@ -871,6 +875,7 @@ export function pokerPage(user: WebUser): string {
         }
         if (!coinsEl.children.length) renderCoins();
         render();
+        if (__first && window.casinoMark) window.casinoMark('첫 렌더 완료 (카드·베팅판 표시)');
       }
 
       // 폴링 비용 관리 (다른 게임과 동일): 탭 숨김·장시간 무조작 시 중단
