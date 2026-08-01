@@ -107,7 +107,7 @@ export function startWebServer(): void {
       if (path === '/auth/logout') return handleLogout(req, res);
 
       // 페이지 렌더 직전 로그인 컨텍스트 설정 (SSR 동기 렌더라 안전)
-      const me = currentUser(req);
+      const me = currentUser(req, res);
       setRequestUser(me);
       if (me) touchActive(me.id, Date.now());
 

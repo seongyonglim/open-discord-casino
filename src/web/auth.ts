@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   upsertUser, ensureSeedAdmin, getWebUser, createSession, getSessionUserId, deleteSession, adjustBalance,
+  renewSession, getSessionExpiry,
   type WebUser,
 } from '../db/queries';
 import { env } from '../env';
@@ -12,7 +13,9 @@ const CLIENT_SECRET = env('DISCORD_CLIENT_SECRET');
 const REDIRECT_URI = env('DISCORD_OAUTH_REDIRECT_URI');
 const GUILD_ID = env('DISCORD_GUILD_ID');
 const SEED_ADMIN = env('SEED_ADMIN_DISCORD_ID');
-const SESSION_DAYS = 30;
+// 슬라이딩 갱신(currentUser)과 함께 동작한다 — 이 기간 안에 한 번이라도 접속하면 만료가 미뤄지므로,
+// 계속 쓰는 사람은 사실상 다시 로그인할 일이 없다. 완전히 방치된 세션만 이 기간 후 만료된다.
+const SESSION_DAYS = 60;
 
 export function authConfigured(): boolean {
   return !!(CLIENT_ID && CLIENT_SECRET && REDIRECT_URI && GUILD_ID);
@@ -43,12 +46,27 @@ function parseCookies(req: IncomingMessage): Record<string, string> {
   return out;
 }
 
-// 현재 요청의 로그인 유저 (없으면 null)
-export function currentUser(req: IncomingMessage): WebUser | null {
+// 현재 요청의 로그인 유저 (없으면 null).
+//
+// res를 함께 넘기면 세션 만료를 뒤로 미룬다(슬라이딩 만료). 이게 없으면 로그인 후
+// 정확히 SESSION_DAYS가 지나는 순간 매일 쓰던 사람도 다시 디스코드 인증을 거쳐야 한다.
+// 갱신은 하루에 한 번까지만 — 매 요청마다 UPDATE + Set-Cookie를 하면 폴링이 초당 도는
+// 게임 화면에서 쓸데없는 쓰기와 헤더가 계속 발생한다.
+export function currentUser(req: IncomingMessage, res?: ServerResponse): WebUser | null {
   const sid = parseCookies(req).sid;
   if (!sid) return null;
   const uid = getSessionUserId(sid);
   if (!uid) return null;
+
+  if (res) {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = getSessionExpiry(sid);
+    const full = SESSION_DAYS * 86400;
+    if (exp != null && exp - now < full - 86400) {
+      renewSession(sid, now + full);
+      res.setHeader('set-cookie', cookie('sid', sid, full, !!process.env.FLY_APP_NAME));
+    }
+  }
   return getWebUser(uid) ?? null;
 }
 
