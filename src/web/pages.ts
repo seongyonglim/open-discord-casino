@@ -21,14 +21,22 @@ export function gameSwitcher(currentKey: string): string {
   return `<div class="game-switch">${pills}</div>`;
 }
 
-// 게임 선택 카드 그리드 (로비에서 사용)
+// 게임 선택 카드 그리드 (로비에서 사용).
+// 출시된 게임은 카드 전체가 링크다 — 예전에는 안쪽 '플레이' 버튼만 눌려서, 카드에 마우스를 올리면
+// 살짝 떠오르는데도 정작 클릭이 안 돼 "반응이 없다"는 느낌을 줬다.
 function gameCards(): string {
-  return GAMES.map(g => `
+  return GAMES.map(g => g.ready ? `
+    <a class="game-card ready" href="/games/${g.key}">
+      <div class="icon">${g.icon}</div>
+      <h3>${esc(g.name)}</h3>
+      <p>${esc(g.desc)}</p>
+      <span class="btn btn-gold">플레이</span>
+    </a>` : `
     <div class="game-card">
       <div class="icon">${g.icon}</div>
       <h3>${esc(g.name)}</h3>
       <p>${esc(g.desc)}</p>
-      ${g.ready ? `<a class="btn btn-gold" href="/games/${g.key}">플레이</a>` : `<span class="soon">출시 예정</span>`}
+      <span class="soon">출시 예정</span>
     </div>`).join('');
 }
 
