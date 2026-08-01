@@ -1,6 +1,7 @@
 // SSR HTML 렌더링 (레이아웃 + 공통 헬퍼). 프레임워크 없이 템플릿 문자열만 사용.
 // 톤앤매너: 블랙 + 골드 베이스의 절제된 카지노 UI. 초록/빨강은 승패 등 기능적 신호에만 사용.
 import { ASSET_V } from './assets';
+import { discordIcon } from './icons';
 
 export const LOGO_SVG =
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">` +
@@ -135,7 +136,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </a>
       </div>`
-    : `<a class="loginbtn" href="/auth/login"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>디스코드 로그인</a>`;
+    : `<a class="loginbtn" href="/auth/login">${discordIcon(16)}디스코드 로그인</a>`;
 
   return `<!DOCTYPE html>
 <html lang="ko" class="${esc(bodyClass)}">
@@ -144,9 +145,13 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · OPEN 카지노</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap">
+<!-- 브랜드용 Black Han Sans 하나만 받고, 그마저도 렌더를 막지 않게 비동기로 로드한다.
+     (media="print"로 받아 두고 onload에서 all로 바꾸는 방식 — 첫 페인트가 폰트를 기다리지 않는다)
+     본문·숫자는 OS 글꼴을 쓰므로 이 요청이 늦거나 실패해도 화면은 정상이다.
+     예전에는 Noto Sans KR 3종까지 동기 로드해서 CSS 한 개가 340KB였고 그게 렌더를 막았다. -->
+<link rel="stylesheet" media="print" onload="this.media='all'"
+  href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
 <style>
   :root{
     --bg:#050506; --panel:#121214; --panel2:#19191c; --line:#2a2a2e;
@@ -154,8 +159,11 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
     --gold:#d4af37; --gold-hi:#f0d67a; --gold-dim:rgba(212,175,55,.35);
     --win:#2ecc71; --lose:#e5484d;
     --side-l:#4a90e2; --side-r:#e5484d;
-    --display:"Black Han Sans","Noto Sans KR",sans-serif;
-    --mono:"DM Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    /* 본문·숫자는 OS에 이미 있는 글꼴만 쓴다. 웹폰트로 Noto Sans KR(400/500/700)을 받던 때는
+       구글 폰트 CSS 하나가 340KB(서브셋 조각 216개, 합계 4MB)였고 그게 렌더를 막아
+       페이지 본문(gzip 15KB)보다 20배 무거웠다. 브랜드용 Black Han Sans만 비동기로 받는다. */
+    --display:"Black Han Sans","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"Cascadia Mono",Consolas,"Noto Sans Mono",monospace;
   }
   *{box-sizing:border-box}
   *{scrollbar-width:thin;scrollbar-color:#333338 transparent}
@@ -164,7 +172,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   *::-webkit-scrollbar-thumb{background:#2c2c31;border-radius:8px;border:2px solid transparent;background-clip:content-box}
   body{margin:0;background:var(--bg);color:var(--txt);
     background-image:radial-gradient(1000px 460px at 50% -60px, rgba(212,175,55,.10) 0%, rgba(212,175,55,0) 60%);
-    font-family:"Noto Sans KR","Apple SD Gothic Neo",-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-family:"Malgun Gothic","Apple SD Gothic Neo",-apple-system,"Segoe UI",Roboto,"Noto Sans CJK KR",sans-serif;
     font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
   .num,.mono{font-family:var(--mono);font-feature-settings:"tnum"}
   a{color:inherit;text-decoration:none}
@@ -651,6 +659,40 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
     background:linear-gradient(160deg,#fff0b8 0%,#f0cd66 38%,#c99b2c 70%,#8f6a18 100%);
     border:1.5px solid #ffe9a0;box-shadow:0 3px 6px rgba(0,0,0,.6),inset 0 1.5px 0 rgba(255,255,255,.5)}
   .coin.active .face{box-shadow:0 2px 6px rgba(0,0,0,.55),0 0 0 3px var(--gold),0 0 14px rgba(212,175,55,.55)}
+
+  /* ── 로그인 화면 ─────────────────────────────────────────────
+     로그인 전에는 보여줄 콘텐츠가 없어서, 카드 하나를 위에 붙여두면 아래가 텅 빈다.
+     화면 높이를 다 써서 가운데에 세로로 세운다. login-page 클래스가 붙은 페이지에서만 적용. */
+  .login-page main{display:flex;align-items:center;justify-content:center;
+    min-height:calc(100vh - 190px);padding-top:0}
+  .login-page .tabs{display:none}          /* 로그인 전에는 탭 이동이 의미가 없다 */
+  .login-page .loginbtn{display:none}      /* 화면 가운데 버튼과 중복이라 헤더 쪽은 감춘다 */
+  .login-hero{text-align:center;max-width:460px;width:100%}
+  .login-mark{width:64px;height:64px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    box-shadow:0 10px 30px rgba(0,0,0,.55)}
+  .login-mark svg{width:38px;height:38px}
+  .login-title{font-family:'Black Han Sans',sans-serif;font-weight:400;
+    font-size:40px;line-height:1.15;letter-spacing:.5px;margin:0 0 10px;color:var(--gold)}
+  .login-title span{color:var(--txt)}
+  .login-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}
+  /* 디스코드 브랜드 색(blurple) — 어느 서비스로 로그인하는지 한눈에 보이게 */
+  .login-cta{display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    width:100%;max-width:300px;padding:15px 22px;border-radius:12px;
+    background:#5865f2;color:#fff;font-weight:700;font-size:15.5px;text-decoration:none;
+    box-shadow:0 8px 22px rgba(88,101,242,.34);transition:transform .12s,background .12s,box-shadow .12s}
+  .login-cta:hover{background:#4752e0;transform:translateY(-2px);box-shadow:0 12px 28px rgba(88,101,242,.44)}
+  .login-cta:active{transform:translateY(0) scale(.99)}
+  .login-note{color:var(--muted);font-size:12.5px;margin:14px 0 0}
+  .login-games{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:30px}
+  .login-game{display:inline-flex;align-items:center;gap:6px;
+    padding:7px 12px;border:1px solid var(--line);border-radius:999px;
+    background:var(--panel);color:var(--muted);font-size:12.5px}
+  .login-game svg{width:14px;height:14px;color:var(--gold)}
+  @media (max-width:640px){
+    .login-title{font-size:32px}
+    .login-page main{min-height:calc(100vh - 160px)}
+  }
 
   .bump{animation:statBump .3s ease}
   .gold-flash{animation:goldFlash .6s ease-out}
