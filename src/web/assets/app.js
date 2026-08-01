@@ -3,13 +3,18 @@
    이후 타이머로 공개되는 결과(사다리 등)에서도 소리가 나도록 한다. 실패하면 조용히 무시. */
 (function(){
   var ctx = null;
+  // 브라우저는 사용자 조작 전에는 오디오 재생을 허용하지 않는다. 그 전에 resume()을 부르면
+  // 재생이 풀리지도 않으면서 "The AudioContext was not allowed to start" 경고만 콘솔에 쌓인다
+  // (효과음 5개를 미리 받는 과정에서 실제로 35개가 찍혔다).
+  // 디코딩은 suspended 상태에서도 되므로, resume은 첫 조작이 있었을 때만 시도한다.
+  var gestureSeen = false;
   function ac(){
     if (!ctx) {
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       try { ctx = new AC(); } catch(e) { return null; }
     }
-    if (ctx.state === 'suspended') { try { ctx.resume(); } catch(e){} }
+    if (gestureSeen && ctx.state === 'suspended') { try { ctx.resume(); } catch(e){} }
     return ctx;
   }
   function tone(c, freq, at, dur, peak, type){
@@ -236,7 +241,7 @@
   };
 
   // 오디오 컨텍스트는 사용자 조작이 있어야 재생이 풀리므로 첫 클릭에서 깨운다.
-  document.addEventListener('pointerdown', function(){ ac(); preloadSfx(); }, { once: true });
+  document.addEventListener('pointerdown', function(){ gestureSeen = true; ac(); preloadSfx(); }, { once: true });
   // 미리 받아두는 작업은 브라우저가 한가할 때로 미룬다 — 첫 화면이 그려지고 스크롤·hover가
   // 부드럽게 도는 게 효과음 준비보다 우선이다. requestIdleCallback이 없으면 타이머로 대체.
   window.addEventListener('load', function(){
