@@ -9,6 +9,7 @@ import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLo
 import { getLeaderboard, touchActive } from '../db/queries';
 import { handleInteractions } from '../discord/interactions';
 import { sendJson, sendBody, markEncoding, acceptsGzip } from './http';
+import { ASSET_V } from './assets';
 import { minesPage, handleStart as minesStart, handleReveal as minesReveal, handleCashout as minesCashout } from './games/mines';
 import { ladderPage, handleState as ladderState, handleBet as ladderBet, handleCancel as ladderCancel } from './games/ladder';
 import {
@@ -69,6 +70,31 @@ function serveAsset(dir: 'sfx' | 'cards', name: string, res: http.ServerResponse
     { 'cache-control': 'public, max-age=604800' }, useGz ? 'gzip' : 'identity');
 }
 
+// 전역 스타일시트와 공용 스크립트. 모든 페이지가 같은 내용을 쓰므로 인라인 대신 여기서 서빙해
+// 브라우저 캐시에 맡긴다(게임을 오갈 때마다 44KB를 다시 받고 파싱하던 비용이 사라진다).
+// 내용은 프로세스 수명 동안 바뀌지 않으니 gzip까지 한 번만 해두고 재사용한다.
+const APP_FILES: Record<string, { path: string; mime: string }> = {
+  '/app.css': { path: 'app.css', mime: 'text/css; charset=utf-8' },
+  '/app.js': { path: 'app.js', mime: 'text/javascript; charset=utf-8' },
+};
+const appCache = new Map<string, CachedAsset>();
+
+function serveAppFile(route: string, res: http.ServerResponse): void {
+  const meta = APP_FILES[route];
+  let hit = appCache.get(route);
+  if (!hit) {
+    // app.js 안의 효과음 URL이 자산 버전을 필요로 하므로 여기서 치환한다
+    const text = readFileSync(join(process.cwd(), 'src', 'web', 'assets', meta.path), 'utf8')
+      .split('__ASSET_V__').join(ASSET_V);
+    const raw = Buffer.from(text, 'utf8');
+    hit = { raw, gz: gzipSync(raw, { level: 9 }) };
+    appCache.set(route, hit);
+  }
+  const useGz = acceptsGzip(res);
+  sendBody(res, 200, meta.mime, useGz ? hit.gz! : hit.raw,
+    { 'cache-control': 'public, max-age=604800' }, useGz ? 'gzip' : 'identity');
+}
+
 function send(res: http.ServerResponse, status: number, html: string): void {
   sendBody(res, status, 'text/html; charset=utf-8', html);
 }
@@ -87,6 +113,7 @@ export function startWebServer(): void {
       markEncoding(req, res);
 
       if (path === '/health') { res.writeHead(200); res.end('ok'); return; }
+      if (APP_FILES[path]) return serveAppFile(path, res);
       if (path.startsWith('/sfx/')) return serveAsset('sfx', path.slice(5), res);
       if (path.startsWith('/cards/')) return serveAsset('cards', path.slice(7), res);
       if (path === '/favicon.svg') {

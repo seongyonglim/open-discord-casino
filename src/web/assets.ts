@@ -18,4 +18,10 @@ function newestMtime(dir: string): number {
   return newest;
 }
 
-export const ASSET_V = newestMtime(join(process.cwd(), 'public')).toString(36);
+// public/(카드·효과음)과 src/web/assets/(app.css·app.js) 중 가장 최근 수정 시각을 쓴다.
+// app.css/app.js도 1주일 캐시로 서빙하므로, 이 둘이 빠지면 스타일을 고쳐도 반영되지 않는다.
+// mtimeMs는 소수점이 있어 그대로 36진수로 바꾸면 "msanypvk.bhk"처럼 점이 섞인다 — 내림해서 정수로.
+export const ASSET_V = Math.floor(Math.max(
+  newestMtime(join(process.cwd(), 'public')),
+  newestMtime(join(process.cwd(), 'src', 'web', 'assets')),
+)).toString(36);
