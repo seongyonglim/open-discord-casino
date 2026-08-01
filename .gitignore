@@ -5,4 +5,4 @@ dist/
 data-snapshot.db
 .claude/
 *.log
-*.tmp.ts
+*.tmp.*
