@@ -1,0 +1,32 @@
+[build]
+
+app = "discord-casino-bot"
+primary_region = "nrt"
+
+[env]
+  DB_PATH = "/data"
+
+[[mounts]]
+  source = "discord_casino_data"
+  destination = "/data"
+
+# Gateway 상시 연결이 없는 순수 HTTP 서비스라 완전 scale-to-zero로 운영한다.
+# 디스코드 인터랙션도 /discord/interactions 웹훅으로 받으므로 유휴 시 머신을 재워도 괜찮다.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+# 헬스체크(http_service.checks)는 의도적으로 넣지 않았다.
+# fly 문서상 헬스체크는 사설망으로 돌고 autostop은 프록시 트래픽으로 판단한다고 각각 적혀 있으나,
+# "헬스체크가 머신을 깨워두는지"를 명시한 문장이 없다. 만약 깨워둔다면 scale-to-zero가 무력화돼
+# 요금이 상시 가동($2.02/월)으로 고정된다. 배포 후 아래로 직접 확인하고 넣을지 판단할 것:
+#   1) 접속 없이 10분 대기 → `flyctl machine list` 상태가 stopped 인지 확인
+#   2) stopped 가 확인되면 checks 를 넣고 다시 10분 대기 → 여전히 stopped 인지 재확인
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

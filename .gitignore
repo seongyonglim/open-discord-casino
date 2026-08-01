@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.db
+data-snapshot.db
+.claude/
+*.log
+*.tmp.ts
