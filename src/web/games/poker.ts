@@ -233,6 +233,8 @@ export function pokerPage(user: WebUser): string {
       var card=document.querySelector('.card');
 
       var st=null, coin=null, lastRoundId=null, notedRoundId=null, revealedRoundId=null;
+      // 첫 상태인지 여부 — 페이지 진입 직후에는 딜링 연출과 카드 공개음을 건너뛴다
+      var firstState = true;
       var DOTS = 9;                 // 등급별로 보여주는 최근 판 수
       var MAX_CHIPS = 21;           // 상자 하나에 그리는 칩 스프라이트 상한 (넘으면 오래된 것부터 제거)
       var ALL_KEYS = ['master','shark','b0','b1','b2','b3','b4'];
@@ -738,10 +740,14 @@ export function pokerPage(user: WebUser): string {
           + syncCards(sCardsEl, 's', [r.hole[2], r.hole[3]])
           + syncCards(boardEl, 'b', [r.board[0], r.board[1], r.board[2], r.board[3], r.board[4]]);
 
-        // 새 라운드의 베팅 구간에 들어섰을 때만 딜링 연출을 돌린다.
-        // (중간에 들어온 사람은 이미 진행 중이므로 연출 없이 현재 상태를 보여준다)
-        if (newRound && r.phase === 'betting') dealSequence(r.id);
-        else playReveal(opened);
+        // 딜링 연출은 "보고 있는 동안 새 라운드가 시작될 때"만 돌린다.
+        // 페이지에 처음 들어온 순간은 lastRoundId가 비어 있어 무조건 새 라운드로 판정되는데,
+        // 그때 연출을 돌리면 카드 9장을 전부 숨긴 뒤 2.24초에 걸쳐 채우므로
+        // 들어올 때마다 빈 보드를 2초 넘게 보게 된다(페이지가 안 뜬 것처럼 느껴진다).
+        // 처음 받은 상태는 연출 없이 즉시 그리고, 그 다음 라운드부터 연출한다.
+        if (newRound && r.phase === 'betting' && !firstState) dealSequence(r.id);
+        else playReveal(firstState ? 0 : opened);
+        firstState = false;
 
         var phaseLabel = r.phase==='betting' ? ('베팅 마감까지 '+r.secondsLeft+'초')
           : r.phase==='flop' ? '플롭'

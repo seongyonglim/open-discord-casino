@@ -178,6 +178,8 @@ export function ladderPage(user: WebUser): string {
       var SINGLE = ${LADDER_MULTIPLIER}, DOUBLE = ${LADDER_DOUBLE_MULTIPLIER};
       var startGuess=null, parityGuess=null, myBetThisRound=false, lastAnimatedRoundId=null, animating=false;
       var revealedRoundId=null, lastState=null; // 공이 도착해 결과를 공개해도 되는 라운드 id
+      // 첫 상태인지 여부 — 페이지 진입 직후에는 하강 연출을 건너뛰고 결과를 즉시 보여준다
+      var firstState = true;
 
       // 아직 공개 전이면 결과 컬럼을 "진행 중"으로 가려서 스포일러를 막는다
       // 공이 도착하기 전까지 승패만 가린다. 참가자 패널에 쓰는 정보(아이디·아바타·잔액)는 그대로 둔다.
@@ -494,10 +496,25 @@ export function ladderPage(user: WebUser): string {
           : ('다음 라운드까지 ' + round.secondsLeft + '초');
         updatePlayBtn(betting);
 
+        // 하강 연출은 "보고 있는 동안 결과가 나올 때"만 돌린다.
+        // 페이지에 처음 들어온 순간은 lastAnimatedRoundId가 비어 있어, 공개 구간에 들어오면
+        // 최대 3초짜리 하강을 처음부터 재생하며 그동안 결과를 가린다(페이지가 안 뜬 것처럼 느껨진다).
+        // 처음 받은 상태는 이미 끝난 라운드로 취급해 결과를 즉시 보여준다.
         if (round.phase === 'done' && round.id !== lastAnimatedRoundId) {
           lastAnimatedRoundId = round.id;
+          if (firstState) {
+            // 이미 끝난 라운드로 취급해 결과를 즉시 보여준다.
+            // (아래 applyState 재호출은 spoiler가 풀린 상태로 다시 그리기 위한 것이고,
+            //  이때는 round.id === lastAnimatedRoundId 이므로 이 분기에 다시 들어오지 않는다)
+            revealedRoundId = round.id;
+            firstState = false;
+            applyState(d);
+            showRoundResult(round, d.myBet);
+            return;
+          }
           animateResult(round, d.myBet);
         }
+        firstState = false;
       }
 
       playBtn.addEventListener('click', play);
