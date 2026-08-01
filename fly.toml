@@ -15,7 +15,10 @@ primary_region = "nrt"
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = true
+  # stop이 아니라 suspend를 쓴다. stop에서 깨우는 데 실측 9.05초가 걸려
+  # 디스코드 인터랙션 3초 제한을 넘겼다(출석체크 버튼이 실패한다).
+  # suspend는 램 스냅샷에서 재개하므로 훨씬 빠르고, 256MB는 suspend 자격 한도(2GiB) 안에 든다.
+  auto_stop_machines = "suspend"
   auto_start_machines = true
   min_machines_running = 0
 
