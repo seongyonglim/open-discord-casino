@@ -208,6 +208,9 @@ export function settleGameRound(id: number, userId: string, payout: number, mult
 // ----- 사다리게임: 실시간 공용 라운드 (여러 유저가 같은 라운드에 함께 베팅) -----
 
 export const LADDER_BETTING_SEC = 15;
+// 사다리는 공이 내려오는 연출이 끝나야 결과가 보인다. 다른 게임처럼 "결과 확인 3초"를 주려면
+// 이 값이 연출 길이(최대 3.04초)를 포함해야 하므로 6초를 유지한다 — 3초로 줄이면 하강 중에
+// 다음 라운드가 시작돼 결과를 볼 수 없다.
 export const LADDER_REVEAL_SEC = 6;
 export const LADDER_MULTIPLIER = 1.95; // 출발 또는 도착 중 하나만 맞히는 단일 예측
 export const LADDER_DOUBLE_MULTIPLIER = 3.95; // 출발+도착 둘 다 맞히는 더블 예측
@@ -410,7 +413,7 @@ export function getRecentLadderResults(limit = 20): LadderResult[] {
 // ----- 그래프게임(크래시): 실시간 공용 라운드 -----
 
 export const CRASH_BETTING_SEC = 10;
-export const CRASH_REVEAL_SEC = 5;
+export const CRASH_REVEAL_SEC = 3; // 버스트 표시 후 다음 라운드까지
 const CRASH_KEEP_ROUNDS = 30;
 
 export interface CrashRoundRow {
@@ -631,7 +634,7 @@ export const POKER_BETTING_SEC = 15;
 export const POKER_TURN_SEC = 2;   // 턴(4번째) — 플롭에서 2초 후
 export const POKER_RIVER_SEC = 4;  // 리버(5번째) — 턴에서 2초 후
 export const POKER_SETTLE_SEC = 7; // 정산 — 완성된 보드를 보는 시간 3초
-export const POKER_REVEAL_SEC = 7; // 정산 후 결과를 보여주는 시간
+export const POKER_REVEAL_SEC = 3; // 결과 확정 후 다음 라운드까지
 export const POKER_KEEP_ROUNDS = 30;
 
 export type PokerPhase = 'betting' | 'flop' | 'turn' | 'river' | 'done';
