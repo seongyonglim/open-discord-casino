@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'path';
+import { env } from '../env';
 
 let db: DatabaseSync;
 
@@ -8,7 +9,7 @@ export function getDb(): DatabaseSync {
   if (!db) {
     // DB_PATH는 파일이 아니라 디렉터리다. 없으면 sqlite가 "unable to open database file"로
     // 기동 즉시 죽어버리므로(원인이 드러나지 않는 에러다) 직접 만들어 준다.
-    const dbDir = process.env.DB_PATH ?? process.cwd();
+    const dbDir = env('DB_PATH') || process.cwd();
     mkdirSync(dbDir, { recursive: true });
     db = new DatabaseSync(path.join(dbDir, 'data.db'));
     initSchema();
