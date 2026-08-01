@@ -241,8 +241,15 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   .game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
   .game-card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:18px;
     display:flex;flex-direction:column;gap:6px;box-shadow:inset 0 1px 0 rgba(212,175,55,.1);
-    transition:border-color .15s,transform .15s}
-  .game-card:has(a):hover{border-color:var(--gold-dim);transform:translateY(-2px)}
+    transition:border-color .15s,transform .15s,background .15s,box-shadow .15s}
+  /* 출시된 게임은 카드 전체가 링크다. 반응을 확실히 보이게 테두리·배경·그림자를 함께 바꾼다 —
+     예전에는 2px 떠오르고 테두리만 옅게 밝아져서 마우스를 올려도 반응을 알아채기 어려웠다 */
+  .game-card.ready{cursor:pointer}
+  .game-card.ready:hover{border-color:var(--gold);background:#1f1f23;transform:translateY(-3px);
+    box-shadow:0 10px 26px rgba(0,0,0,.5),inset 0 1px 0 rgba(212,175,55,.22)}
+  .game-card.ready:active{transform:translateY(-1px)}
+  .game-card.ready:hover .btn{background:var(--gold-hi);border-color:var(--gold-hi)}
+  .game-card.ready:hover .icon{color:var(--gold-hi)}
   .game-card .icon{width:30px;height:30px;color:var(--gold)}
   .game-card .icon svg{width:100%;height:100%}
   .game-card h3{margin:2px 0 0;font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.3px}
@@ -448,9 +455,6 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   .side-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;
     border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
   .side-head .num{font-family:var(--mono);color:var(--gold)}
-    font-size:11.5px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line)}
-  /* 참가자 목록은 인원이 적어도 영역을 미리 차지하고, 많아지면 스크롤로 처리한다 (레이아웃이 들썩이지 않게) */
-    font-size:13px;border-bottom:1px solid var(--line);align-items:center}
   .cash-out{color:var(--win);font-weight:700}
   .cash-pending{color:var(--muted)}
   .cash-bust{color:var(--lose)}
