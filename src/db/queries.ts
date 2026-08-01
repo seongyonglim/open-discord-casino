@@ -80,6 +80,15 @@ export function getSessionUserId(token: string): string | undefined {
   return r.user_id;
 }
 
+// 세션 만료를 뒤로 미룬다 (슬라이딩 만료). 접속을 계속하는 동안은 다시 로그인하지 않게 하는 용도.
+export function renewSession(token: string, expiresAt: number): void {
+  run(`UPDATE web_sessions SET expires_at = ? WHERE token = ?`, expiresAt, token);
+}
+
+export function getSessionExpiry(token: string): number | undefined {
+  return one<{ expires_at: number }>(`SELECT expires_at FROM web_sessions WHERE token = ?`, token)?.expires_at;
+}
+
 export function deleteSession(token: string): void {
   run(`DELETE FROM web_sessions WHERE token = ?`, token);
 }
