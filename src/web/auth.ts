@@ -5,12 +5,13 @@ import {
   upsertUser, ensureSeedAdmin, getWebUser, createSession, getSessionUserId, deleteSession, adjustBalance,
   type WebUser,
 } from '../db/queries';
+import { env } from '../env';
 
-const CLIENT_ID = process.env.DISCORD_CLIENT_ID ?? '';
-const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET ?? '';
-const REDIRECT_URI = process.env.DISCORD_OAUTH_REDIRECT_URI ?? '';
-const GUILD_ID = process.env.DISCORD_GUILD_ID ?? '';
-const SEED_ADMIN = process.env.SEED_ADMIN_DISCORD_ID ?? '';
+const CLIENT_ID = env('DISCORD_CLIENT_ID');
+const CLIENT_SECRET = env('DISCORD_CLIENT_SECRET');
+const REDIRECT_URI = env('DISCORD_OAUTH_REDIRECT_URI');
+const GUILD_ID = env('DISCORD_GUILD_ID');
+const SEED_ADMIN = env('SEED_ADMIN_DISCORD_ID');
 const SESSION_DAYS = 30;
 
 export function authConfigured(): boolean {

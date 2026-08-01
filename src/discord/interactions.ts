@@ -6,9 +6,10 @@ import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
 import { checkIn } from '../services/economy';
 import { upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard } from '../db/queries';
 import { pts, signedPts, reasonLabel, esc } from '../web/views';
+import { env } from '../env';
 
-const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY ?? '';
-const SEED_ADMIN = process.env.SEED_ADMIN_DISCORD_ID ?? '';
+const PUBLIC_KEY = env('DISCORD_PUBLIC_KEY');
+const SEED_ADMIN = env('SEED_ADMIN_DISCORD_ID');
 
 function readRawBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -46,7 +47,7 @@ function registerUser(id: string, username: string, avatar: string | null): void
   if (SEED_ADMIN && id === SEED_ADMIN) ensureSeedAdmin(id);
 }
 
-const rest = new REST().setToken(process.env.DISCORD_TOKEN ?? '');
+const rest = new REST().setToken(env('DISCORD_TOKEN'));
 
 async function postAttendanceBoard(channelId: string): Promise<void> {
   await rest.post(Routes.channelMessages(channelId), {
