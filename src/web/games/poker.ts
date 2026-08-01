@@ -811,10 +811,16 @@ export function pokerPage(user: WebUser): string {
       }
       clearBtn.addEventListener('click', clearAll);
 
+      // 통신 실패는 화면에 알리고 다음 주기에 다시 시도한다 (조용히 죽으면 반쪽 화면으로 굳는다)
+      var pollFails = 0;
       async function poll(){
-        var r = await fetch('/api/games/poker/state');
-        if (!r.ok) return;
-        st = await r.json();
+        var d = await window.casinoPoll('/api/games/poker/state');
+        if (!d) {
+          if (++pollFails >= 2) statusEl.textContent = '서버에 연결하는 중… 잠시만요';
+          return;
+        }
+        pollFails = 0;
+        st = d;
         if (coin == null) {
           coin = st.coins[1] != null ? st.coins[1] : st.coins[0];
           try { var c=localStorage.getItem('poker_coin'); if (c && st.coins.indexOf(Number(c))>=0) coin=Number(c); } catch(e){}

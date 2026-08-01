@@ -825,11 +825,14 @@ ${body}
     card: ['card-flip'],        // 보드 카드 공개
   };
   // 페이지가 쓰지도 않는 음원까지 받으면 WAV가 커서 낭비가 크다.
-  // 각 게임 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다 (없으면 전부).
+  // 각 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다.
+  // 선언이 없으면 아무것도 받지 않는다 — 예전에는 없으면 "전부"였고, 그 탓에 소리를 쓰지 않는
+  // 로비·랭킹·로그인 화면에서도 효과음 8종(1.1MB, wav 3개 포함)을 내려받아 디코딩했다.
+  // 페이지 로드 400ms 뒤에 그게 시작돼 메인 스레드가 붙들리고 hover가 멈춘 채 렉이 걸렸다.
   function preloadSfx(){
     var need = window.__SFX_NEED__;
-    var keys = (need && need.length) ? need : Object.keys(SFX_SETS);
-    keys.forEach(function(k){ (SFX_SETS[k] || []).forEach(loadSfx); });
+    if (!need || !need.length) return;
+    need.forEach(function(k){ (SFX_SETS[k] || []).forEach(loadSfx); });
   }
   // 같은 소리만 반복되면 기계적으로 들려서 변형 중 하나를 무작위로 고른다.
   // 칩을 연타하면 1초 넘는 소리가 겹겹이 쌓여 지저분해지므로, 종류별로 동시에 울리는
@@ -933,8 +936,31 @@ ${body}
     // 카드를 한 장 나눠줄 때
     deal: function(){ playSample('deal', 0.55); }
   };
+  /* ── 상태 폴링 공용 헬퍼 ─────────────────────────────────────────────
+     세 게임의 poll()이 공유한다. 원래는 각 게임이 fetch를 그대로 await 했는데,
+     서버가 잠깐 끊기면(배포 중 머신 재시작 등) fetch가 거부되고 그 거부가 처리되지 않아
+     render()까지 도달하지 못했다. 그러면 SSR 골격만 남고 카드·베팅판·칩 버튼이 영구히
+     비어 있는 상태로 굳는다 — 화면은 죽었는데 아무 안내도 없다.
+     타임아웃도 없어서 응답 없는 요청이 1초마다 계속 쌓였다.
+     실패는 null로 돌려주고, 호출한 쪽이 안내를 띄우고 다음 주기에 다시 시도한다. */
+  window.casinoPoll = function(url, timeoutMs){
+    var ctl = window.AbortController ? new AbortController() : null;
+    var t = setTimeout(function(){ if (ctl) ctl.abort(); }, timeoutMs || 8000);
+    return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .catch(function(){ return null; })
+      .then(function(v){ clearTimeout(t); return v; });
+  };
+
+  // 오디오 컨텍스트는 사용자 조작이 있어야 재생이 풀리므로 첫 클릭에서 깨운다.
   document.addEventListener('pointerdown', function(){ ac(); preloadSfx(); }, { once: true });
-  window.addEventListener('load', function(){ setTimeout(preloadSfx, 400); });
+  // 미리 받아두는 작업은 브라우저가 한가할 때로 미룬다 — 첫 화면이 그려지고 스크롤·hover가
+  // 부드럽게 도는 게 효과음 준비보다 우선이다. requestIdleCallback이 없으면 타이머로 대체.
+  window.addEventListener('load', function(){
+    var run = function(){ preloadSfx(); };
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 3000 });
+    else setTimeout(run, 1200);
+  });
 })();
 </script>
 </body>

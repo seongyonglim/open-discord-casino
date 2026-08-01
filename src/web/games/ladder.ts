@@ -454,10 +454,15 @@ export function ladderPage(user: WebUser): string {
       }
 
       var lastRoundId = null;
+      // 통신 실패는 화면에 알리고 다음 주기에 다시 시도한다 (조용히 죽으면 반쪽 화면으로 굳는다)
+      var pollFails = 0;
       async function poll(){
-        var r = await fetch('/api/games/ladder/state');
-        if (!r.ok) return;
-        var d = await r.json();
+        var d = await window.casinoPoll('/api/games/ladder/state');
+        if (!d) {
+          if (++pollFails >= 2) countdownEl.textContent = '서버에 연결하는 중…';
+          return;
+        }
+        pollFails = 0;
         lastState = d;
         applyState(d);
       }
