@@ -126,7 +126,21 @@ async function main(): Promise<void> {
     check('압축 해제 결과가 무압축 응답과 동일', Buffer.compare(decoded(gzHome), rawHome.body) === 0);
     console.log(`        로비 ${rawHome.body.length}B → ${gzHome.body.length}B`);
 
-    console.log('\n[5] 정적 자산 (압축 경유 후 바이트 일치)');
+    console.log('\n[5] 전역 CSS·JS (캐시되는 외부 파일)');
+    for (const [route, mime] of [['/app.css', 'text/css'], ['/app.js', 'text/javascript']]) {
+      const r = await getGz(route);
+      check(`${route} → 200 (${r.body.length}B gzip)`, r.status === 200, `status=${r.status}`);
+      check(`${route} content-type ${mime}`, String(r.headers['content-type'] ?? '').includes(mime));
+      check(`${route} 장기 캐시 헤더`, String(r.headers['cache-control'] ?? '').includes('max-age=604800'));
+    }
+    const appJs = decoded(await getGz('/app.js')).toString('utf8');
+    check('app.js에 폴링 헬퍼 포함', appJs.includes('casinoPoll'));
+    check('app.js의 자산 버전 자리표시자가 치환됨', !appJs.includes('__ASSET_V__'));
+    // 게임 스크립트가 실행 시점에 casinoPoll을 쓰므로 app.js가 <head>에서 먼저 와야 한다
+    const pokerHtml = decoded(await getGz('/games/poker')).toString('utf8');
+    check('게임 페이지가 로그인 없으면 리다이렉트(본문 없음)', pokerHtml.length === 0 || !pokerHtml.includes('casinoPoll('));
+
+    console.log('\n[6] 정적 자산 (압축 경유 후 바이트 일치)');
     for (const f of readdirSync(join(ROOT, 'public', 'sfx'))) {
       const r = await getGz(`/sfx/${f}`);
       const orig = readFileSync(join(ROOT, 'public', 'sfx', f));
@@ -143,13 +157,13 @@ async function main(): Promise<void> {
     }
     check(`카드 SVG 전량 무결 (${cardOk}/${cardFiles.length})`, cardOk === cardFiles.length);
 
-    console.log('\n[6] 경로 조작 차단');
+    console.log('\n[7] 경로 조작 차단');
     for (const p of ['/sfx/../../.env', '/cards/../../package.json', '/sfx/%2e%2e%2f.env', '/cards/..%2f..%2fpackage.json']) {
       const r = await get(p);
       check(`${p} → 200 아님`, r.status !== 200, `status=${r.status}`);
     }
 
-    console.log('\n[7] DB 자동 생성');
+    console.log('\n[8] DB 자동 생성');
     check('빈 볼륨에 data.db 생성', readdirSync(dataDir).includes('data.db'),
       readdirSync(dataDir).join(','));
   } finally {
