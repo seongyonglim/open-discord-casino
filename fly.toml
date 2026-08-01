@@ -5,6 +5,9 @@ primary_region = "nrt"
 
 [env]
   DB_PATH = "/data"
+  # 비밀값이 아니라 앱 도메인에서 나오는 고정 URL이라 시크릿이 아니라 여기에 둔다.
+  # 디스코드 포털의 OAuth2 리다이렉트 등록값과 한 글자도 달라선 안 된다.
+  DISCORD_OAUTH_REDIRECT_URI = "https://open-discord-casino.fly.dev/auth/callback"
 
 [[mounts]]
   source = "discord_casino_data"
@@ -24,10 +27,10 @@ primary_region = "nrt"
 
 # 헬스체크(http_service.checks)는 의도적으로 넣지 않았다.
 # fly 문서상 헬스체크는 사설망으로 돌고 autostop은 프록시 트래픽으로 판단한다고 각각 적혀 있으나,
-# "헬스체크가 머신을 깨워두는지"를 명시한 문장이 없다. 만약 깨워둔다면 scale-to-zero가 무력화돼
-# 요금이 상시 가동($2.02/월)으로 고정된다. 배포 후 아래로 직접 확인하고 넣을지 판단할 것:
-#   1) 접속 없이 10분 대기 → `flyctl machine list` 상태가 stopped 인지 확인
-#   2) stopped 가 확인되면 checks 를 넣고 다시 10분 대기 → 여전히 stopped 인지 재확인
+# "헬스체크가 머신을 깨워두는지"를 명시한 문장이 없다. 만약 깨워둔다면 절전이 무력화돼
+# 요금이 상시 가동($2.02/월)으로 고정된다. 넣고 싶으면 아래로 직접 확인할 것:
+#   1) 접속 없이 10분 대기 → `flyctl machine list` 상태가 suspended 인지 확인 (실측 약 7분에 전환)
+#   2) checks 를 넣고 다시 10분 대기 → 여전히 suspended 인지 재확인
 
 [[vm]]
   memory = "256mb"

@@ -74,7 +74,7 @@ flyctl volumes create discord_casino_data --region nrt --size 1 -a open-discord-
 아래 `<...>` 부분을 1번에서 받아 적은 값으로 채운다.
 
 ```bash
-flyctl secrets set -a open-discord-casino DISCORD_TOKEN='<Bot Token>' DISCORD_PUBLIC_KEY='<Public Key>' CLIENT_ID='<Application ID>' DISCORD_CLIENT_ID='<Application ID>' DISCORD_CLIENT_SECRET='<Client Secret>' GUILD_ID='<길드 ID>' DISCORD_GUILD_ID='<길드 ID>' SEED_ADMIN_DISCORD_ID='<본인 디스코드 ID>' DISCORD_OAUTH_REDIRECT_URI='https://open-discord-casino.fly.dev/auth/callback'
+flyctl secrets set -a open-discord-casino DISCORD_TOKEN='<Bot Token>' DISCORD_PUBLIC_KEY='<Public Key>' CLIENT_ID='<Application ID>' DISCORD_CLIENT_ID='<Application ID>' DISCORD_CLIENT_SECRET='<Client Secret>' GUILD_ID='<길드 ID>' DISCORD_GUILD_ID='<길드 ID>' SEED_ADMIN_DISCORD_ID='<본인 디스코드 ID>'
 ```
 
 주의사항:
@@ -83,7 +83,7 @@ flyctl secrets set -a open-discord-casino DISCORD_TOKEN='<Bot Token>' DISCORD_PU
   `GUILD_ID`와 `DISCORD_GUILD_ID`도 마찬가지다.
 - `PREVIEW_LOGIN`은 **절대 넣지 않는다.** 로그인 우회용이다.
   (넣어도 fly에서는 `FLY_APP_NAME` 감지로 닫히지만, 애초에 넣을 이유가 없다.)
-- `PORT`와 `DB_PATH`는 `fly.toml`에 있으므로 시크릿으로 넣지 않는다.
+- `PORT`·`DB_PATH`·`DISCORD_OAUTH_REDIRECT_URI`는 비밀값이 아니라 `fly.toml`에 있으므로 넣지 않는다.
 
 확인:
 
