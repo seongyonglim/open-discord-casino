@@ -526,7 +526,10 @@ export function pokerPage(user: WebUser): string {
       // 돈이 나온 상자의 칩을 각자 주인 아이콘으로 돌려보낸다.
       // 주인을 못 찾으면(패널에 없는 경우) 코인 버튼 줄로 보낸다.
       function flyChipsToPot(markets){
-        var fallback = coinsEl.getBoundingClientRect();
+        // 내 당첨금은 화면 중앙 하단(칩 바)으로 빨려들어오고,
+        // 다른 사람 것은 각자 오른쪽 참가자 목록의 아이콘으로 돌아간다.
+        var controls = document.querySelector('.poker-controls');
+        var myTarget = (controls || coinsEl).getBoundingClientRect();
         var sent = [], n = 0;
 
         markets.forEach(function(m){
@@ -535,8 +538,13 @@ export function pokerPage(user: WebUser): string {
           Array.prototype.forEach.call(pile.querySelectorAll('.pchip'), function(ch){
             var r = ch.getBoundingClientRect();
             if (!r.width) return;
-            var av = rosterAvatar(ch.getAttribute('data-owner') || '');
-            var t = (av && av.getBoundingClientRect().width) ? av.getBoundingClientRect() : fallback;
+            var t;
+            if (ch.classList.contains('mine')) {
+              t = myTarget;
+            } else {
+              var av = rosterAvatar(ch.getAttribute('data-owner') || '');
+              t = (av && av.getBoundingClientRect().width) ? av.getBoundingClientRect() : myTarget;
+            }
             var c = cloneAt(ch, r, 'fly');
             c.style.setProperty('--tx', Math.round((t.left + t.width/2) - (r.left + r.width/2)) + 'px');
             c.style.setProperty('--ty', Math.round((t.top + t.height/2) - (r.top + r.height/2)) + 'px');
