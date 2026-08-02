@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import {
   advanceLadderRound, placeLadderBet, cancelLadderBet, getLadderBets, getMyLadderBet, getWebUser, getRecentLadderResults,
-  LADDER_BETTING_SEC, LADDER_REVEAL_SEC, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
+  LADDER_REVEAL_SEC, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
   type LadderRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
