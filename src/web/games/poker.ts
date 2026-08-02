@@ -25,8 +25,8 @@ import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 
 const HOUSE_EDGE = 0.01;
-// 앞의 4단은 동전, 뒤의 2단(5000·1만)은 골드바로 그린다
-export const COIN_SIZES = [1, 10, 100, 1000, 5000, 10000];
+// 앞의 3단(10·100·500)은 동전, 뒤의 3단(1000·5000·1만)은 골드바로 그린다
+export const COIN_SIZES = [10, 100, 500, 1000, 5000, 10000];
 
 // 무승부 시장은 두지 않는다. 무승부가 나면 master/shark 베팅은 원금을 그대로 돌려준다
 // (배당 계산에서 무승부 확률을 빼는 oddsForWinMarket이 그 환불분을 이미 반영한다).
@@ -291,9 +291,12 @@ export function pokerPage(user: WebUser): string {
       // 코인 단위 배열에서 위쪽 2단은 골드바, 나머지는 동전.
       // 칩 스프라이트는 c-coin/c-bar, 버튼은 kind-coin/kind-bar로 클래스를 분리한다
       // (버튼 쪽 .coin 규칙이 칩에 섞이면 min-width 때문에 칩이 늘어난다)
+      // 뒤에서 세 단위(1000·5000·1만)는 골드바, 나머지는 동전.
+      // 개수로 세는 이유는 COIN_SIZES를 바꿔도 여기를 따로 고치지 않기 위해서다.
+      var BAR_COUNT = 3;
       function chipKind(v){
         var c = st.coins||[], i = c.indexOf(v);
-        return (i >= 0 && i < c.length - 2) ? 'c-coin' : 'c-bar';
+        return (i >= 0 && i < c.length - BAR_COUNT) ? 'c-coin' : 'c-bar';
       }
       function buttonKind(v){ return chipKind(v) === 'c-coin' ? 'kind-coin' : 'kind-bar'; }
 
@@ -762,7 +765,7 @@ export function pokerPage(user: WebUser): string {
       function renderHistory(){
         historyEl.innerHTML = (st.history||[]).slice(0,12).map(function(h){
           var t = h.winner==='master'?'M':h.winner==='shark'?'S':'무';
-          var cls = h.winner==='master'?'low':h.winner==='shark'?'bust':'mid';
+          var cls = h.winner==='master'?'w-master':h.winner==='shark'?'w-shark':'w-tie';
           return '<span class="ch-chip '+cls+'">'+t+'</span>';
         }).join('');
       }

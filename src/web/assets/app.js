@@ -52,6 +52,15 @@
                   'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
+  // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
+  // 폭발음이 지뢰 금화음보다 8배 가까이 크게 들렸다(6dB = 체감 2배).
+  // 아래는 각 파일을 같은 체감 음량(RMS -32dB)에 맞추되 피크가 -3dB를 넘지 않도록 제한해 구한 보정값이다.
+  // 적용 후 편차 6.5dB. 재생 시 넘기는 gain은 "상대적 강조"만 담당한다(기본 1).
+  // 효과음 파일을 교체하면 이 표도 다시 재야 한다.
+  var SFX_NORM = {
+    'coin-insert': 0.78, 'coin-gain': 0.71, 'card-flip': 0.71, 'card-shuffle': 0.94,
+    'card-deal': 1.04, 'win-fanfare': 0.28, 'mine-coin': 2.6, 'explode': 0.16,
+  };
 
   // 음원 앞뒤의 무음을 잘라낸다.
   // 앞 무음이 남아 있으면 눌러도 소리가 그만큼 늦게 나서 반응이 굼떠 보이고,
@@ -142,9 +151,9 @@
       try { old.stop(); } catch(e){}
     }
 
-    var buf = sfxBuf[ready[Math.floor(Math.random() * ready.length)]];
-    var src = c.createBufferSource(); src.buffer = buf;
-    var g = c.createGain(); g.gain.value = gain;
+    var pick = ready[Math.floor(Math.random() * ready.length)];
+    var src = c.createBufferSource(); src.buffer = sfxBuf[pick];
+    var g = c.createGain(); g.gain.value = gain * (SFX_NORM[pick] || 1);
     src.connect(g); g.connect(c.destination);
     src.onended = function(){ src.__done = true; };
     src.start();
@@ -172,7 +181,7 @@
     // 적중/캐시아웃 — 게임마다 승리음이 다르다.
     // kind: 'fanfare'(그래프·사다리) | 그 외(포커·지뢰찾기의 코인 회수음)
     win: function(kind){
-      if (playSample(kind === 'fanfare' ? 'fanfare' : 'gain', 0.6)) return;
+      if (playSample(kind === 'fanfare' ? 'fanfare' : 'gain', 1)) return;
       var c = ac(); if (!c) return;
       var t = c.currentTime;
       var notes = [1046.5, 1318.5, 1568.0, 2093.0]; // C6 E6 G6 C7
@@ -184,7 +193,7 @@
     // 안전 칸 오픈 — 아주 짧고 가벼운 "톡"
     // 안전 칸 오픈 — 금화 획득 소리. 없으면 짧고 가벼운 "톡"
     safe: function(){
-      if (playSample('minecoin', 0.55)) return;
+      if (playSample('minecoin', 1)) return;
       var c = ac(); if (!c) return;
       tone(c, 1046.5, c.currentTime, 0.075, 0.05, 'triangle'); // C6
     },
@@ -195,17 +204,18 @@
       tone(c, 392.0, t, 0.14, 0.055, 'triangle');        // G4
       tone(c, 293.7, t + 0.09, 0.24, 0.045, 'triangle'); // D4
     },
-    // 지뢰 — 가벼운 폭발음 (level/pitch로 연쇄 폭발의 잔향 표현)
-    // 지뢰 — 실제 폭발음(앞 0.55초만 잘라 씀). 연쇄 폭발은 level로 점점 작게 울린다.
+    // 지뢰 — 실제 폭발음(앞부분만 잘라 씀). 연쇄 폭발은 level로 점점 작게 울린다.
+    // 호출부는 내가 밟은 지뢰 0.16, 연쇄는 그보다 작은 값을 넘긴다 → 0.16을 기준(1배)으로 환산한다.
+    // 절대 음량은 SFX_NORM이 잡으므로 여기서는 상대 크기만 정한다.
     boom: function(level, pitch){
       var g = level == null ? 0.16 : level;
-      if (playSample('explode', Math.min(1, g * 3.2))) return;
+      if (playSample('explode', Math.min(1, g / 0.16))) return;
       var c = ac(); if (!c) return;
       boomAt(c, c.currentTime, g, pitch);
     },
     // 칩 올리기 — 동전 넣는 소리 (동전·골드바 공통)
     chip: function(){
-      if (playSample('coin', 0.6)) return;
+      if (playSample('coin', 1)) return;
       var c = ac(); if (!c) return;   // 샘플이 아직 안 받아졌을 때만 쓰는 대체음
       var t = c.currentTime;
       clinkAt(c, t, 0.05);
@@ -215,14 +225,14 @@
     },
     // 카드 공개 — 뒤집는 소리
     card: function(){
-      if (playSample('card', 0.5)) return;
+      if (playSample('card', 1)) return;
       var c = ac(); if (!c) return;
       clinkAt(c, c.currentTime, 0.028);
     },
     // 새 라운드 시작 — 카드 섞는 소리
-    shuffle: function(){ playSample('shuffle', 0.5); },
+    shuffle: function(){ playSample('shuffle', 1); },
     // 카드를 한 장 나눠줄 때
-    deal: function(){ playSample('deal', 0.55); }
+    deal: function(){ playSample('deal', 1); }
   };
   /* ── 상태 폴링 공용 헬퍼 ─────────────────────────────────────────────
      세 게임의 poll()이 공유한다. 원래는 각 게임이 fetch를 그대로 await 했는데,

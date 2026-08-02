@@ -216,11 +216,11 @@ export function settleGameRound(id: number, userId: string, payout: number, mult
 
 // ----- 사다리게임: 실시간 공용 라운드 (여러 유저가 같은 라운드에 함께 베팅) -----
 
-export const LADDER_BETTING_SEC = 15;
-// 사다리는 공이 내려오는 연출이 끝나야 결과가 보인다. 다른 게임처럼 "결과 확인 3초"를 주려면
-// 이 값이 연출 길이(최대 3.04초)를 포함해야 하므로 6초를 유지한다 — 3초로 줄이면 하강 중에
-// 다음 라운드가 시작돼 결과를 볼 수 없다.
-export const LADDER_REVEAL_SEC = 6;
+export const LADDER_BETTING_SEC = 10;
+// 다른 게임과 맞춰 3초. 이 값은 "공 하강 연출 + 결과 감상"을 함께 덮으므로,
+// 하강이 이 안에 끝나야 한다 — 그래서 연출 속도를 최대 1.54초로 잡아두었다(ladder.ts FALL/GROW/CROSS).
+// 연출을 늦추려면 이 값도 함께 올려야 한다. 안 그러면 하강 중에 다음 라운드가 시작된다.
+export const LADDER_REVEAL_SEC = 3;
 export const LADDER_MULTIPLIER = 1.95; // 출발 또는 도착 중 하나만 맞히는 단일 예측
 export const LADDER_DOUBLE_MULTIPLIER = 3.95; // 출발+도착 둘 다 맞히는 더블 예측
 
