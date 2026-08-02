@@ -903,5 +903,5 @@ export function pokerPage(user: WebUser): string {
       startPolling();
     })();
     </script>`;
-  return layout('포커 플립', 'lobby', body, 'poker-wide');
+  return layout('포커 플립', 'lobby', body);
 }

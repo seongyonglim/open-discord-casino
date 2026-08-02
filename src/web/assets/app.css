@@ -24,7 +24,10 @@
   header{position:sticky;top:0;z-index:300;background:rgba(5,5,6,.92);
     backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
     box-shadow:0 1px 0 var(--gold-dim), 0 8px 24px rgba(0,0,0,.4)}
-  .wrap{max-width:1000px;margin:0 auto;padding:0 16px}
+  /* 헤더와 본문은 반드시 같은 폭이어야 한다 — 다르면 페이지를 옮길 때마다 로고와 메뉴가
+     좌우로 튄다. 카드가 가로로 아홉 장 들어가야 하는 포커 플립이 가장 넓은 폭을 요구하므로
+     모든 화면을 그 폭에 맞춘다. */
+  .wrap{max-width:1320px;margin:0 auto;padding:0 16px}
   .brand{display:flex;align-items:center;gap:10px;padding:16px 0 10px}
   .brand .logo{border-radius:8px;display:block;box-shadow:0 2px 8px rgba(0,0,0,.5)}
   .brand b{font-family:var(--display);font-weight:400;font-size:21px;color:var(--gold);letter-spacing:1px}
@@ -100,7 +103,7 @@
   }
   @keyframes mainIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-  main{max-width:1000px;margin:0 auto;padding:16px 16px 40px}
+  main{max-width:1320px;margin:0 auto;padding:16px 16px 40px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;
     box-shadow:inset 0 1px 0 rgba(212,175,55,.14)}
   .card + .card{margin-top:16px}
@@ -497,9 +500,6 @@
   /* 적중 시 — 이긴 상자의 칩들이 화면 아래 중앙으로 빨려 들어간다.
      상자에 overflow:hidden이 걸려 있어 원본은 밖으로 못 나가므로,
      화면 전체를 덮는 레이어에 복제본을 띄워 날린다 */
-  /* 포커 플립만 참가자 패널이 붙어서 폭이 더 필요하다 — 보드 폭을 지키기 위해 이 화면만 넓게 쓴다 */
-  .poker-wide main{max-width:1320px}
-  .poker-wide header .wrap{max-width:1320px}
 
   /* 참가자 패널 — 디스코드 아바타 · 닉네임 · 보유 포인트. 칩이 여기서 출발하고 여기로 돌아온다 */
   .roster{display:flex;flex-direction:column;gap:6px;max-height:520px;overflow-y:auto}
@@ -753,3 +753,136 @@
   @media (max-width:820px){
     .field-grid{grid-template-columns:1fr;gap:11px}
   }
+
+  /* ── 블랙잭 ──────────────────────────────────────────────────
+     실제 블랙잭 테이블 배치를 그대로 옮긴다: 딜러가 평평한 위쪽에 서고,
+     플레이어는 반원을 그리며 아래를 두른다. 가운데 자리가 딜러 정면이라 가장 아래로 내려가고
+     양끝으로 갈수록 딜러 쪽으로 올라온다 — 그 높이 차가 "테이블을 둘러앉은" 느낌을 만든다. */
+  .bj-table{position:relative;
+    background:
+      radial-gradient(120% 90% at 50% 8%, rgba(255,255,255,.05) 0%, rgba(255,255,255,0) 55%),
+      radial-gradient(130% 110% at 50% 0%, #17402c 0%, #0e2a1d 55%, #0a1c14 100%);
+    border:1px solid #21432f;border-radius:14px 14px 130px 130px/14px 14px 68px 68px;
+    padding:16px 14px 22px;margin-bottom:12px;overflow:hidden}
+  /* 딜러 앞 반원 라인 — 실제 테이블의 인쇄선. 자리 배치의 기준선이 되어 준다 */
+  .bj-arc{position:absolute;left:50%;top:96px;width:132%;aspect-ratio:2/1;transform:translateX(-50%);
+    border:1px solid rgba(255,255,255,.07);border-radius:50%;pointer-events:none}
+  .bj-dealer{position:relative;text-align:center;padding-bottom:10px}
+  .bj-dealer-head{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px}
+  .bj-label{font-size:11px;font-weight:800;letter-spacing:1.6px;color:#9fc0ad}
+  .bj-total{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--gold);min-width:34px}
+  .bj-hand{display:flex;gap:6px;justify-content:center;min-height:72px}
+  .bj-rule{font-size:10px;letter-spacing:1px;color:rgba(255,255,255,.22);text-align:center;
+    margin:2px 0 0;text-transform:uppercase}
+  .bj-status{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--muted);
+    text-align:center;padding:9px 0 12px}
+  .bj-status.live{color:var(--gold)}
+
+  /* 다섯 자리를 한 줄에 두고 아래로 곡선을 준다 (가운데가 가장 깊다) */
+  .bj-seats{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:6px}
+  .bj-seat{flex:1 1 0;min-width:0;max-width:132px;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.09);border-radius:12px;
+    padding:7px 5px 6px;display:flex;flex-direction:column;gap:4px;min-height:118px;
+    transition:border-color .12s,opacity .18s,background .18s}
+  .bj-seat[data-seat="0"],.bj-seat[data-seat="4"]{transform:translateY(0)}
+  .bj-seat[data-seat="1"],.bj-seat[data-seat="3"]{transform:translateY(14px)}
+  .bj-seat[data-seat="2"]{transform:translateY(22px)}
+  /* 곡선 때문에 아래로 내려간 만큼 테이블 바닥에 여유를 준다 */
+  .bj-seats{margin-bottom:24px}
+
+  .bj-seat.empty{align-items:center;justify-content:center;color:#4f6d5c;gap:2px;
+    background:rgba(0,0,0,.16);border-style:dashed}
+  .bj-seat.empty.open{cursor:pointer}
+  .bj-seat.empty.open:hover{border-color:var(--gold);color:var(--gold);background:rgba(212,175,55,.06)}
+  .bj-seat-num{font-family:var(--mono);font-size:15px;font-weight:700}
+  .bj-seat-hint{font-size:10px}
+  .bj-seat.mine{border-color:var(--gold);background:rgba(212,175,55,.08)}
+  .bj-seat.bust{opacity:.5}
+  .bj-seat.won{border-color:var(--win);box-shadow:0 0 0 1px var(--win) inset}
+  .bj-seat.lost{opacity:.45}
+  .bj-seat-top{display:flex;align-items:center;justify-content:space-between;gap:3px}
+  .bj-seat-name{font-size:10px;font-weight:700;color:#cfe3d6;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .bj-seat-total{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--gold);flex:none}
+  /* 좁은 자리에 여러 장이 들어가야 해서 카드를 겹쳐 편다 (실제 테이블에서도 그렇게 놓는다).
+     장수가 늘수록 더 깊게 겹친다 — 겹침을 고정하면 네 장부터 자리를 넘어 옆자리를 침범한다
+     (실측 77px vs 자리 안쪽 72px). 네 장은 여섯 판에 한 번꼴이라 흔하다.
+     왼쪽 padding은 첫 카드의 음수 margin을 상쇄해 손패가 가운데 오게 하는 용도라 같은 값을 쓴다. */
+  .bj-hand.small{display:flex;justify-content:center;gap:0;min-height:44px;padding-left:13px}
+  .bj-hand.small .pcard{width:29px;height:43px;border-radius:4px;margin-left:-13px;
+    box-shadow:0 2px 5px rgba(0,0,0,.55)}
+  .bj-hand.small:has(.pcard:nth-child(4)){padding-left:18px}
+  .bj-hand.small:has(.pcard:nth-child(4)) .pcard{margin-left:-18px}
+  .bj-hand.small:has(.pcard:nth-child(5)){padding-left:21px}
+  .bj-hand.small:has(.pcard:nth-child(5)) .pcard{margin-left:-21px}
+  .bj-hand.small:has(.pcard:nth-child(6)){padding-left:23px}
+  .bj-hand.small:has(.pcard:nth-child(6)) .pcard{margin-left:-23px}
+  .bj-seat-foot{display:flex;align-items:center;justify-content:space-between;gap:3px;margin-top:auto}
+  .bj-seat-bet{font-family:var(--mono);font-size:10px;color:#9fb8aa}
+  .bj-seat-tag{font-size:9.5px;font-weight:700;color:var(--gold)}
+  .bj-seat.bust .bj-seat-tag{color:var(--lose)}
+  .bj-seat.won .bj-seat-tag{color:var(--win)}
+
+  /* 자리 클릭이 거절됐을 때 (이미 남이 앉았거나 마감됨) — 문구 대신 짧게 튕긴다.
+     문구를 띄우면 아래 내용이 밀려서 다음 클릭이 엉뚱한 데로 간다. */
+  @keyframes bjDeny{0%,100%{transform:translateY(var(--dy,0)) translateX(0)}
+    25%{transform:translateY(var(--dy,0)) translateX(-4px)}
+    75%{transform:translateY(var(--dy,0)) translateX(4px)}}
+  .bj-seat.deny{animation:bjDeny .22s;border-color:var(--lose)}
+  .bj-seat[data-seat="1"].deny,.bj-seat[data-seat="3"].deny{--dy:14px}
+  .bj-seat[data-seat="2"].deny{--dy:22px}
+
+  .bj-actions{display:flex;gap:10px;justify-content:center}
+  /* display를 명시하면 hidden 속성이 먹지 않는다(기본 display:none을 덮어쓴다).
+     결정 창이 아닐 때도 버튼이 보여서 누를 수 있는 것처럼 착각하게 된다. */
+  .bj-actions[hidden]{display:none}
+  .bj-actions .btn{min-width:112px;justify-content:center}
+  /* 개별 버튼도 hidden으로 감춘다 — .btn이 display:inline-flex라 그냥 두면 hidden이 안 먹는다 */
+  .bj-actions .btn[hidden]{display:none}
+
+  @media (max-width:560px){
+    .bj-seat{min-height:104px;padding:6px 3px}
+    .bj-seat-name{font-size:9px}
+    .bj-hand.small .pcard{width:25px;height:37px;margin-left:-11px}
+    .bj-hand.small{padding-left:11px}
+    .bj-table{border-radius:14px 14px 80px 80px/14px 14px 44px 44px}
+  }
+
+  /* ── 규칙 도움말 ─────────────────────────────────────────────
+     게임 어디에나 붙일 수 있는 공용 물음표 + 규칙 창. */
+  .helpbtn{width:20px;height:20px;flex:none;padding:0;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:50%;
+    font-family:var(--mono);font-size:12px;font-weight:700;line-height:1;color:#9fc0ad;
+    transition:border-color .12s,color .12s}
+  .helpbtn:hover{border-color:var(--gold);color:var(--gold)}
+  .helpdlg{max-width:440px;width:calc(100% - 32px);padding:0;color:var(--txt);
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 24px 60px rgba(0,0,0,.7)}
+  .helpdlg::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
+  .help-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:14px 16px;border-bottom:1px solid var(--line)}
+  .help-head b{font-family:var(--display);font-weight:400;font-size:16px;color:var(--gold);letter-spacing:.3px}
+  .help-x{width:28px;height:28px;flex:none;padding:0;cursor:pointer;color:var(--muted);
+    display:inline-flex;align-items:center;justify-content:center;
+    background:none;border:1px solid transparent;border-radius:8px;transition:color .12s,border-color .12s}
+  .help-x:hover{color:var(--txt);border-color:var(--line)}
+  .help-body{padding:14px 16px 18px;font-size:13.5px;line-height:1.65;max-height:70vh;overflow-y:auto}
+  .help-body h4{margin:14px 0 6px;font-size:12.5px;color:var(--gold);letter-spacing:.3px}
+  .help-body h4:first-child{margin-top:0}
+  .help-body p{margin:0 0 8px;color:#c9c9cf}
+  .help-body ul{margin:0 0 8px;padding-left:18px;color:#c9c9cf}
+  .help-body li{margin-bottom:4px}
+  .help-body b{color:var(--txt)}
+  .help-body .warn{background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.32);
+    border-radius:9px;padding:9px 11px;margin:10px 0 0;color:#f0b7b9;font-size:12.5px}
+  .help-body table{margin:4px 0 0;font-size:12.5px}
+  .help-body td{padding:5px 8px;border-bottom:1px solid var(--line)}
+  .help-body td:last-child{text-align:right;font-family:var(--mono);color:var(--gold)}
+  /* 베팅 서클 — 실제 테이블의 칩 놓는 자리. 칩 하나만 얹는다(더미는 자리 폭상 불가) */
+  .bj-spot{position:relative;height:24px;display:flex;align-items:center;justify-content:center}
+  .bj-spot::before{content:'';position:absolute;width:26px;height:26px;border-radius:50%;
+    border:1px dashed rgba(255,255,255,.14)}
+  .bj-spot .pchip{position:static;margin:0}
+  /* 규칙 물음표는 테이블 오른쪽 위 구석에 (딜러 영역과 겹치지 않게) */
+  .bj-table > .helpbtn{position:absolute;top:12px;right:12px;z-index:2}
