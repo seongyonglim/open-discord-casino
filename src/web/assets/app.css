@@ -589,3 +589,21 @@
 
   .bump{animation:statBump .3s ease}
   .gold-flash{animation:goldFlash .6s ease-out}
+
+  /* ── 재난 지원금 ──────────────────────────────────────────────────── */
+  .relief-card{max-width:520px;margin:0 auto;text-align:center}
+  .relief-lead{color:var(--muted);font-size:13.5px;margin:0 0 22px;line-height:1.6}
+  .relief-amount{font-family:var(--mono);font-size:40px;font-weight:600;color:var(--gold);
+    letter-spacing:-1px;line-height:1.1}
+  .relief-state{margin:12px 0 20px;font-size:13.5px;color:var(--muted);line-height:1.6}
+  .relief-state b{color:var(--txt)}
+  .relief-state.ok{color:var(--win)}
+  .relief-btn{width:100%;max-width:260px;justify-content:center;padding:13px 22px;font-size:15px}
+  .relief-msg{min-height:20px;margin:12px 0 0}
+  /* 조건을 항목으로 나눠 왜 못 받는지 바로 대조할 수 있게 한다 */
+  .relief-rules{list-style:none;margin:24px 0 0;padding:16px 18px;text-align:left;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+    color:var(--muted);font-size:12.5px;line-height:1.9}
+  .relief-rules li{position:relative;padding-left:14px}
+  .relief-rules li::before{content:"·";position:absolute;left:2px;color:var(--gold)}
+  .relief-rules b{color:var(--txt)}
