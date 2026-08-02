@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { lobbyPage, leaderboardPage } from './pages';
+import { reliefPage, handleClaim as reliefClaim } from './relief';
 import { setRequestUser, LOGO_SVG } from './views';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -141,6 +142,15 @@ export function startWebServer(): void {
 
       if (path === '/' || path === '/lobby') return send(res, 200, lobbyPage(me));
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
+
+      if (path === '/relief') {
+        if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
+        return send(res, 200, reliefPage(me));
+      }
+      if (path === '/api/relief/claim' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await reliefClaim(req, res, me.id);
+      }
 
       if (path === '/games/mines') {
         if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
