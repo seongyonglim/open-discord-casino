@@ -153,6 +153,33 @@ function initSchema(): void {
     -- 칩을 쌓는 방식이라 같은 시장에 여러 번 베팅하면 한 행의 amount가 누적된다
     CREATE UNIQUE INDEX IF NOT EXISTS idx_poker_bets_unique ON poker_bets(round_id, user_id, market);
     CREATE INDEX IF NOT EXISTS idx_poker_bets_round ON poker_bets(round_id);
+
+    -- 바카라: 포커 플립과 같은 "다 같이 한 라운드" 구조지만 배당은 매 라운드 같다.
+    -- 바카라에는 플레이어가 내리는 선택이 없어(드로우가 규칙 표로 고정) 확률이 항상 동일하기 때문이다.
+    -- 카드는 라운드 생성 시 6장(최대치)을 미리 뽑아두고 시간에 따라 공개 범위만 넓힌다.
+    CREATE TABLE IF NOT EXISTS baccarat_rounds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phase TEXT NOT NULL DEFAULT 'betting', -- 'betting' | 'deal' | 'third' | 'reveal' | 'done'
+      betting_ends_at INTEGER NOT NULL,      -- 초
+      cards_json TEXT NOT NULL,              -- 뽑아둔 6장 (P1,B1,P2,B2,P3,B3 순서로 소비)
+      result_json TEXT,                      -- 정산 결과 (승자·양쪽 끗수·페어 등)
+      resolved_at INTEGER,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE TABLE IF NOT EXISTS baccarat_bets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      market TEXT NOT NULL,                  -- 'player'|'banker'|'tie'|'ppair'|'bpair'
+      amount INTEGER NOT NULL,
+      odds REAL NOT NULL,                    -- 베팅 시점 배당 고정
+      won INTEGER,
+      payout INTEGER,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_baccarat_bets_unique ON baccarat_bets(round_id, user_id, market);
+    CREATE INDEX IF NOT EXISTS idx_baccarat_bets_round ON baccarat_bets(round_id);
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)
