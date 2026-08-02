@@ -65,10 +65,10 @@ interface BoardSpec { content: string; label: string; customId: string; style: n
 // (존재하지 않는 URL을 넣으면 임베드가 깨진 채로 보인다).
 function reliefImageUrl(): string | null {
   try {
-    if (!existsSync(join(process.cwd(), 'public', 'img', 'broke.png'))) return null;
+    if (!existsSync(join(process.cwd(), 'public', 'img', 'broke.jpg'))) return null;
   } catch { return null; }
   const base = (env('CASINO_URL') || 'https://odcasino.kro.kr').replace(/\/+$/, '');
-  return `${base}/img/broke.png`;
+  return `${base}/img/broke.jpg`;
 }
 
 function boardSpec(kind: BoardKind): BoardSpec {

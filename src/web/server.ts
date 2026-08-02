@@ -32,12 +32,12 @@ const SFX_FILES = new Set([
   'mine-coin.mp3', 'explode.mp3', // 지뢰찾기 — 안전 칸 금화 / 폭발
 ]);
 const MIME: Record<string, string> = {
-  ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', png: 'image/png',
+  ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',
   svg: 'image/svg+xml; charset=utf-8',
 };
 // 디스코드 임베드에서 불러가는 이미지. 디스코드 CDN에 올리는 대신 여기서 서빙한다
 // (봇이 파일을 첨부하면 메시지를 지우고 다시 올릴 때마다 업로드가 반복된다).
-const IMG_FILES = new Set(['broke.png']);
+const IMG_FILES = new Set(['broke.jpg']);
 const CARD_FILES = new Set<string>(['back.svg']);
 for (const s of ['s', 'h', 'd', 'c']) {
   for (const r of ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']) {
