@@ -782,7 +782,7 @@
   .bj-seats{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:6px}
   .bj-seat{flex:1 1 0;min-width:0;max-width:132px;
     background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.09);border-radius:12px;
-    padding:7px 5px 6px;display:flex;flex-direction:column;gap:4px;min-height:118px;
+    padding:7px 5px 6px;display:flex;flex-direction:column;gap:4px;min-height:150px;
     transition:border-color .12s,opacity .18s,background .18s}
   .bj-seat[data-seat="0"],.bj-seat[data-seat="4"]{transform:translateY(0)}
   .bj-seat[data-seat="1"],.bj-seat[data-seat="3"]{transform:translateY(14px)}
@@ -832,13 +832,6 @@
   .bj-seat[data-seat="1"].deny,.bj-seat[data-seat="3"].deny{--dy:14px}
   .bj-seat[data-seat="2"].deny{--dy:22px}
 
-  .bj-actions{display:flex;gap:10px;justify-content:center}
-  /* display를 명시하면 hidden 속성이 먹지 않는다(기본 display:none을 덮어쓴다).
-     결정 창이 아닐 때도 버튼이 보여서 누를 수 있는 것처럼 착각하게 된다. */
-  .bj-actions[hidden]{display:none}
-  .bj-actions .btn{min-width:112px;justify-content:center}
-  /* 개별 버튼도 hidden으로 감춘다 — .btn이 display:inline-flex라 그냥 두면 hidden이 안 먹는다 */
-  .bj-actions .btn[hidden]{display:none}
 
   @media (max-width:560px){
     .bj-seat{min-height:104px;padding:6px 3px}
@@ -879,10 +872,46 @@
   .help-body table{margin:4px 0 0;font-size:12.5px}
   .help-body td{padding:5px 8px;border-bottom:1px solid var(--line)}
   .help-body td:last-child{text-align:right;font-family:var(--mono);color:var(--gold)}
-  /* 베팅 서클 — 실제 테이블의 칩 놓는 자리. 칩 하나만 얹는다(더미는 자리 폭상 불가) */
-  .bj-spot{position:relative;height:24px;display:flex;align-items:center;justify-content:center}
-  .bj-spot::before{content:'';position:absolute;width:26px;height:26px;border-radius:50%;
-    border:1px dashed rgba(255,255,255,.14)}
-  .bj-spot .pchip{position:static;margin:0}
+  /* 베팅 자리 — 포커 플립·바카라와 같은 칩 더미.
+     한때 "자리가 좁아 더미가 안 들어간다"고 판단했는데, 그건 좁은 창(자리 72px)에서 잰 값이었다.
+     폭을 통일한 뒤로는 자리가 132px이라 5열 더미가 넉넉히 들어간다. */
+  .bj-pile{position:relative;height:48px;flex:none}
   /* 규칙 물음표는 테이블 오른쪽 위 구석에 (딜러 영역과 겹치지 않게) */
   .bj-table > .helpbtn{position:absolute;top:12px;right:12px;z-index:2}
+  /* 힛 / 스탠드 / 더블다운.
+     .btn 세 개를 서로 다른 색으로 늘어놓으니 잡화점 진열대처럼 보였다.
+     같은 틀에 아이콘 + 이름 + 한 줄 설명을 넣고, 색은 성격 차이에만 쓴다:
+       힛 = 앞으로 나아가는 수(초록) · 스탠드 = 멈추는 수(무채색) · 더블 = 승부수(금색). */
+  .bj-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;max-width:520px;margin:0 auto}
+  /* display를 명시하면 hidden 속성이 먹지 않는다(기본 display:none을 덮어쓴다).
+     결정 창이 아닐 때도 버튼이 보여서 누를 수 있는 것처럼 착각하게 된다. */
+  .bj-actions[hidden]{display:none}
+  .bja{display:flex;align-items:center;justify-content:center;gap:9px;
+    padding:11px 12px;cursor:pointer;font-family:inherit;text-align:left;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--txt);
+    transition:transform .08s,border-color .12s,background .12s}
+  .bja[hidden]{display:none}
+  .bja svg{width:19px;height:19px;flex:none;opacity:.85}
+  .bja-t{display:flex;flex-direction:column;line-height:1.2;min-width:0}
+  .bja-t b{font-size:14px;font-weight:700;white-space:nowrap}
+  .bja-t i{font-style:normal;font-size:10.5px;color:var(--muted);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .bja:hover{transform:translateY(-1px)}
+  .bja:active{transform:scale(.97)}
+  .bja:disabled{opacity:.4;cursor:default;transform:none}
+
+  .bja.hit{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.42);color:#8fe7b6}
+  .bja.hit:hover{background:rgba(46,204,113,.2);border-color:var(--win)}
+  .bja.hit .bja-t i{color:rgba(143,231,182,.65)}
+  .bja.stand:hover{border-color:#6b6b74}
+  .bja.dbl{background:rgba(212,175,55,.12);border-color:var(--gold-dim);color:var(--gold-hi)}
+  .bja.dbl:hover{background:rgba(212,175,55,.2);border-color:var(--gold)}
+  .bja.dbl .bja-t i{color:rgba(240,214,122,.7)}
+  /* 더블이 숨으면 두 칸만 남으니 가운데로 모은다 */
+  .bj-actions:has(.dbl[hidden]){grid-template-columns:repeat(2,minmax(0,1fr));max-width:360px}
+  @media (max-width:560px){
+    .bja{flex-direction:column;gap:4px;text-align:center;padding:9px 6px}
+    .bja-t{align-items:center}
+    .bja-t b{font-size:12.5px}
+    .bja-t i{font-size:9.5px}
+  }

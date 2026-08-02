@@ -273,7 +273,7 @@ export function baccaratPage(user: WebUser): string {
       function replay(el, cls){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
       function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
       function cssEsc(s){ return String(s).replace(/["\\\\]/g, '\\\\$&'); }
-      function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : (v>=1000 ? (v/1000)+'K' : String(v)); }
+      function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
       function coinLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }
 
       // 뒤 세 단위(1000·5000·1만)는 골드바, 앞은 동전 — 포커 플립과 같은 규칙
@@ -371,11 +371,11 @@ export function baccaratPage(user: WebUser): string {
           var c = s.el.children[s.i];
           if (c) c.style.visibility = 'hidden';
         });
-        // 뒷면을 놓는 구간은 셔플 소리 하나로 덮는다.
-        // 카드마다 "나눠주는" 소리를 넣었더니 한 라운드에 그 소리만 여덟 번 났다 —
-        // 뒷면 놓을 때 네 번, 뒤집을 때 네 번(실측). 게다가 앞쪽 네 번은 베팅 화면이라
-        // 아무 정보도 나오지 않는데 소리만 울려서 "카드도 안 도는데 왜 소리가 나지" 싶어진다.
-        // 소리는 새로 보이는 게 있을 때만 낸다.
+        /* 소리는 두 종류를 역할대로 갈라 쓴다:
+             나눠주기(card-deal) — 카드가 새로 날아와 놓이는 순간. 여기, 그리고 세 번째 카드.
+             넘기기(card-flip)   — 이미 놓인 뒷면을 뒤집는 순간.
+           한때 뒤집기에도 "나눠주는" 소리를 썼는데, 카드가 새로 오는 것도 아닌데 딜링 소리가 나서
+           방금 나눠준 걸 또 나눠주는 것처럼 들렸다. 같은 카드 네 장에 딜링 소리가 여덟 번 난 셈이다. */
         if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle();
 
         // 셔플 소리가 잦아든 뒤부터 한 장씩. 네 장에 1.2초 남짓이라 10초 베팅 창에 넉넉히 들어간다.
@@ -386,6 +386,7 @@ export function baccaratPage(user: WebUser): string {
             if (!card) return;
             card.style.visibility = '';
             flyCardIn(card);
+            if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
             if (n === slots.length - 1) { dealing = false; showAllCards(); }
           }, SHUFFLE_MS + n * STEP));
         });
@@ -444,10 +445,11 @@ export function baccaratPage(user: WebUser): string {
           revealTimers.push(setTimeout(function(){
             shown[side]++;
             paintHands(st && st.round);
+            // 공개는 전부 "넘기는" 소리다 — 뒤집는 것뿐이라 카드가 새로 오지 않는다.
+            // 예외로 세 번째 카드는 진짜 새로 오는 카드라 "나눠주는" 소리를 쓴다.
             if (window.casinoSfx) {
-              // 처음 두 장씩은 "나눠주는" 소리, 세 번째 카드는 "넘기는" 소리
-              if (shown[side] > 2) window.casinoSfx.card();
-              else window.casinoSfx.deal();
+              if (shown[side] > 2) window.casinoSfx.deal();
+              else window.casinoSfx.card();
             }
           }, t));
         });

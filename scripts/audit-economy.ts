@@ -502,14 +502,23 @@ section('[8] 블랙잭');
   {
     const before: Record<string, number> = { j1: bal('j1'), j3: bal('j3') };
     expire('blackjack_rounds', round.id, 25);
+    // 딜러 차례는 받은 카드 수만큼 길어진다(bjSchedule). 먼저 한 번 진행시켜 딜러가 카드를
+    // 뽑게 한 뒤, 그 늘어난 구간까지 지나가도록 시각을 다시 당긴다.
+    round = advanceBlackjackRound(H);
+    ck('딜러 차례에 카드를 미리 뽑아둔다 (정산 때가 아니라)',
+      round.phase !== 'done' ? (JSON.parse(round.dealer_json) as number[]).length >= 2 : true, round.phase);
+    db.prepare(`UPDATE blackjack_rounds SET action_ended_at = ? WHERE id = ?`).run(nowSec() - 60, round.id);
     round = advanceBlackjackRound(H);
     ck('정산 단계 도달', round.phase === 'done', round.phase);
     const hands = getBlackjackHands(round.id);
     ck('진행 중이던 손패가 남지 않음 (시간 초과 = 강제 스탠드)',
       hands.every(h => h.status !== 'playing'), JSON.stringify(hands.map(h => h.status)));
     const dealer = JSON.parse(round.dealer_json) as number[];
-    ck('딜러가 17 이상이거나 버스트',
-      BJ.handTotal(dealer).total >= 17 || BJ.handTotal(dealer).bust, String(BJ.handTotal(dealer).total));
+    // 살아남은 손패가 하나도 없으면 딜러는 카드를 받지 않는다(실제 규칙) — 그때는 17 미만이어도 정상
+    const alive = hands.some(x => x.status === 'stand' || x.status === 'blackjack');
+    ck(alive ? '살아남은 손패가 있으면 딜러는 17까지 받는다' : '전원 버스트면 딜러는 받지 않는다',
+      alive ? (BJ.handTotal(dealer).total >= 17 || BJ.handTotal(dealer).bust) : dealer.length === 2,
+      `${BJ.handTotal(dealer).total} / ${dealer.length}장 / alive=${alive}`);
     for (const h of hands) {
       const cards = JSON.parse(h.cards_json) as number[];
       const want = Math.floor(h.bet * BJ.settleHand(cards, dealer).multiplier);

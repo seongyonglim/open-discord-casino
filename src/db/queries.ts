@@ -1229,7 +1229,11 @@ export function bjSchedule(r: BjRoundRow): { deal: number; action: number; deale
   if (r.betting_ends_at == null) return null;
   const deal = r.betting_ends_at + BJ_DEAL_SEC;
   const action = r.action_ended_at ?? (deal + BJ_ACTION_SEC);
-  return { deal, action, dealer: action + BJ_DEALER_SEC };
+  // 딜러가 더 받은 장수만큼 차례를 늘린다. 고정 길이로 두면 카드를 여러 장 받는 판에서
+  // 뒷장들이 한꺼번에 튀어나오고 결과까지 겹쳐서 김이 샌다.
+  let extra = 0;
+  try { extra = Math.max(0, (JSON.parse(r.dealer_json) as number[]).length - 2); } catch { /* 아직 안 뽑음 */ }
+  return { deal, action, dealer: action + BJ_DEALER_SEC + extra * 2 };
 }
 
 function bjHands(roundId: number): BjHandRow[] {
@@ -1328,7 +1332,11 @@ export function advanceBlackjackRound(h: BjHelpers): BjRoundRow {
           run(`UPDATE blackjack_hands SET status = 'stand' WHERE round_id = ? AND status = 'playing'`, round.id);
         }
 
-        if (phase === 'done' && round.phase !== 'done') {
+        /* 딜러가 받을 카드는 '딜러 차례'에 들어가는 순간 전부 뽑아 저장한다.
+           정산할 때 뽑으면 세 번째·네 번째 장이 결과와 함께 한꺼번에 나타나서,
+           딜러가 카드를 받아가는 이 게임의 하이라이트가 통째로 사라진다.
+           공개는 클라이언트가 한 장씩 하고, 차례 길이도 뽑은 장수만큼 늘어난다(bjSchedule). */
+        if ((phase === 'dealer' || phase === 'done') && round.phase !== 'dealer' && round.phase !== 'done') {
           const fresh = one<BjRoundRow>(`SELECT * FROM blackjack_rounds WHERE id = ?`, round.id)!;
           const dealer = JSON.parse(fresh.dealer_json) as number[];
           // 살아남은 손패가 하나도 없으면 딜러는 카드를 더 받지 않는다(실제 규칙 그대로)
@@ -1336,11 +1344,18 @@ export function advanceBlackjackRound(h: BjHelpers): BjRoundRow {
             `SELECT COUNT(*) AS n FROM blackjack_hands WHERE round_id = ? AND status IN ('stand','blackjack')`,
             round.id
           )!.n;
-          if (alive > 0) {
+          if (alive > 0 && h.dealerShouldHit(dealer)) {
             while (h.dealerShouldHit(dealer)) dealer.push(drawCard(fresh));
+            run(`UPDATE blackjack_rounds SET dealer_json = ? WHERE id = ?`, JSON.stringify(dealer), round.id);
+            round = one<BjRoundRow>(`SELECT * FROM blackjack_rounds WHERE id = ?`, round.id)!;
+            // 차례가 길어졌으니 지금이 아직 그 안이면 정산을 미룬다
+            if (now < bjSchedule(round)!.dealer) phase = 'dealer';
           }
-          run(`UPDATE blackjack_rounds SET dealer_json = ? WHERE id = ?`, JSON.stringify(dealer), round.id);
+        }
+
+        if (phase === 'done' && round.phase !== 'done') {
           const done = one<BjRoundRow>(`SELECT * FROM blackjack_rounds WHERE id = ?`, round.id)!;
+          const dealer = JSON.parse(done.dealer_json) as number[];
           settleBlackjack(done, h);
           run(`UPDATE blackjack_rounds SET phase = 'done', result_json = ?, resolved_at = ? WHERE id = ? AND phase != 'done'`,
             JSON.stringify({ dealerTotal: h.handTotal(dealer).total, dealerBust: h.handTotal(dealer).bust }),
