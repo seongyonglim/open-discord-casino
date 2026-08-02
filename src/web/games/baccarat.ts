@@ -390,6 +390,81 @@ export function baccaratPage(user: WebUser): string {
           SHUFFLE_MS + slots.length * STEP + 800));
       }
 
+      /* ── 한 장씩 공개 ────────────────────────────────────────────────
+         실제 푼토 방코의 공개 순서를 그대로 따른다:
+           플레이어 두 장 → (끗수 확인) → 뱅커 두 장 → (끗수 확인)
+           → 플레이어 서드 → 뱅커 서드
+         네 장을 한꺼번에 뒤집으면 이미 끝난 결과를 통보받는 느낌이라 볼 맛이 없다.
+         서버는 단계별로 카드를 다 내려주고, 그중 "지금까지 깐 만큼"만 화면에 그린다.
+         (서버 시간 해상도는 1초라 이 정도 간격은 클라이언트에서 재는 게 맞다)                */
+      // shown = 지금 화면에 깐 장수, scheduled = 예약까지 끝난 장수.
+      // 둘을 나눠 두는 이유: 1초 폴링이 공개 도중에 들어올 때 shown만 보고 다시 예약하면
+      // 아직 안 터진 타이머를 취소하고 지연 0으로 새로 잡아, 마지막 장이 일찍 튀어나온다
+      // (실측으로 320ms 간격이 186ms로 무너졌다). 예약된 몫은 건드리지 않는다.
+      var shown = { p: 0, b: 0 }, scheduled = { p: 0, b: 0 };
+      var revealTimers = [];
+      var FLIP_MS = 320;      // 같은 손 안에서 카드 한 장 간격
+      // 플레이어 끗수가 뜬 뒤 뱅커로 넘어가기 전 한 박자.
+      // 카드 간격과 비슷하게 잡았더니(260ms) 그냥 네 장이 죽 넘어가는 걸로만 보였다 —
+      // "플레이어 얼마 나왔네" 하고 뱅커를 기다리는 구간이 생기려면 확실히 더 벌려야 한다.
+      var HAND_GAP_MS = 520;
+
+      function clearReveal(){ revealTimers.forEach(clearTimeout); revealTimers = []; }
+
+      // 끗수는 화면에 깐 카드만으로 계산한다 — 아직 안 깐 카드가 합계에 미리 반영되면
+      // 뒤집기 전에 결과가 새어 나간다
+      function cardVal(c){
+        var r = c[0];
+        if (r === 'A') return 1;
+        if (r === 'T' || r === 'J' || r === 'Q' || r === 'K') return 0;
+        return Number(r);
+      }
+      function totalOf(cards){
+        return cards.reduce(function(s, c){ return s + cardVal(c); }, 0) % 10;
+      }
+
+      function scheduleReveal(r){
+        var wantP = r.player.length, wantB = r.banker.length;
+        if (wantP <= scheduled.p && wantB <= scheduled.b) return;
+        // 아직 예약 안 된 카드만 카지노 순서대로 줄 세운다 — 플레이어가 먼저, 그다음 뱅커
+        var steps = [];
+        for (var i = scheduled.p; i < wantP; i++) steps.push('p');
+        var handBreak = steps.length;           // 여기서 손이 바뀐다
+        for (var j = scheduled.b; j < wantB; j++) steps.push('b');
+        scheduled.p = wantP; scheduled.b = wantB;
+
+        var t = 0;
+        steps.forEach(function(side, n){
+          if (n === handBreak && n > 0) t += HAND_GAP_MS;   // 플레이어 끗수를 볼 틈
+          else if (n > 0) t += FLIP_MS;
+          revealTimers.push(setTimeout(function(){
+            shown[side]++;
+            paintHands(st && st.round);
+            if (window.casinoSfx) {
+              // 처음 두 장씩은 "나눠주는" 소리, 세 번째 카드는 "넘기는" 소리
+              if (shown[side] > 2) window.casinoSfx.card();
+              else window.casinoSfx.deal();
+            }
+          }, t));
+        });
+      }
+
+      // 깐 만큼만 그린다. 아직 안 깐 자리는 뒷면으로 남겨 둔다(베팅 중 네 장도 이 경로다).
+      function paintHands(r){
+        if (!r) return;
+        function slots(cards, n){
+          var len = Math.max(n, 2);
+          var out = [];
+          for (var i = 0; i < len; i++) out.push(i < n ? cards[i] : null);
+          return out;
+        }
+        syncCards(pCardsEl, 'p', slots(r.player, shown.p));
+        syncCards(bCardsEl, 'b', slots(r.banker, shown.b));
+        // 한 장만 깐 상태의 끗수는 의미가 없으므로 두 장부터 보여준다
+        pTotalEl.textContent = shown.p >= 2 ? totalOf(r.player.slice(0, shown.p)) : '–';
+        bTotalEl.textContent = shown.b >= 2 ? totalOf(r.banker.slice(0, shown.b)) : '–';
+      }
+
       /* ── 최근 결과 (구슬판) ─────────────────────────────────────────
          바카라 테이블에 항상 붙어 있는 그 판이다. 최신이 왼쪽. */
       function renderHistory(rows){
@@ -719,32 +794,29 @@ export function baccaratPage(user: WebUser): string {
         if (r.id !== lastRoundId) {
           lastRoundId = r.id;
           clearDeal();                 // 지난 라운드의 딜링 타이머를 정리한다
+          clearReveal();
+          shown = { p: 0, b: 0 }; scheduled = { p: 0, b: 0 };
           slotCache = {};
           pCardsEl.innerHTML = ''; bCardsEl.innerHTML = '';
-          pTotalEl.textContent = '–'; bTotalEl.textContent = '–';
           pSeatEl.classList.remove('win','lose'); bSeatEl.classList.remove('win','lose');
         }
 
-        // 베팅 중에는 뒷면 두 장씩 깔아 둔다. 마감되면 같은 자리에서 앞면으로 뒤집힌다.
         var betting = r.phase === 'betting';
-        var dealt = syncCards(pCardsEl, 'p', betting ? [null, null] : r.player)
-                  + syncCards(bCardsEl, 'b', betting ? [null, null] : r.banker);
-
-        if (betting) {
-          // 페이지에 막 들어온 순간에는 연출을 돌리지 않는다 —
-          // 이미 진행 중인 베팅 창 한가운데일 수 있어, 그때 딜링을 시작하면 앞뒤가 안 맞는다.
-          if (!firstState) dealSequence(r.id);
-        } else if (dealt && !firstState && window.casinoSfx) {
-          // 처음 네 장은 "나눠주는" 소리, 세 번째 카드는 "넘기는" 소리로 갈라 쓴다.
-          // 세 번째 카드는 이 게임에서 판을 뒤집는 유일한 순간인데(절반쯤은 아예 오지도 않는다)
-          // 같은 소리로 울리면 그냥 카드가 한 장 더 나온 걸로만 들린다.
-          // 두 음원 다 이미 받아둔 것이라 추가 용량은 없다.
-          if (r.phase === 'third') window.casinoSfx.card();
-          else window.casinoSfx.deal();
+        if (firstState || r.phase === 'done') {
+          // 페이지에 막 들어왔거나 이미 끝난 판이면 한 장씩 까는 게 의미가 없다.
+          // (이미 정해진 결과를 뒤늦게 연출하면 앞뒤가 안 맞는다)
+          clearReveal();
+          shown = { p: r.player.length, b: r.banker.length };
+          scheduled = { p: shown.p, b: shown.b };
+        } else if (!betting) {
+          scheduleReveal(r);
         }
+        paintHands(r);
 
-        pTotalEl.textContent = r.playerTotal != null ? r.playerTotal : '–';
-        bTotalEl.textContent = r.bankerTotal != null ? r.bankerTotal : '–';
+        // 베팅 중에는 뒷면 네 장을 딜러 자리에서 한 장씩 내려놓는다.
+        // 페이지에 막 들어온 순간에는 돌리지 않는다 — 이미 진행 중인 베팅 창
+        // 한가운데일 수 있어, 그때 딜링을 시작하면 앞뒤가 안 맞는다.
+        if (betting && !firstState) dealSequence(r.id);
 
         var res = r.result;
         pSeatEl.classList.toggle('win', !!res && res.winner === 'player');
