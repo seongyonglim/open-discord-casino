@@ -387,5 +387,141 @@ section('[7] 바카라');
 }
 auditLedger('바카라 후');
 
+
+/* ── 8. 블랙잭 ───────────────────────────────────────────────── */
+section('[8] 블랙잭');
+{
+  const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
+  const {
+    advanceBlackjackRound, seatBlackjackBet, clearBlackjackBet, blackjackAction,
+    getBlackjackHands, BJ_SEATS,
+  } = require('../src/db/queries') as typeof import('../src/db/queries');
+
+  const H = {
+    shuffle: () => BJ.shuffleShoe(rnd),
+    isBlackjack: BJ.isBlackjack,
+    dealerShouldHit: BJ.dealerShouldHit,
+    handTotal: (c: number[]) => { const t = BJ.handTotal(c); return { total: t.total, bust: t.bust }; },
+    settle: BJ.settleHand,
+  };
+  // 카드 인덱스: rank*4+suit (rank 0='2' … 8='T' 9='J' 10='Q' 11='K' 12='A')
+  const C = (r: number, s = 0) => r * 4 + s;
+  const A = (s = 0) => C(12, s), K = (s = 0) => C(11, s), T = (s = 0) => C(8, s);
+  const N = (n: number, s = 0) => C(n - 2, s);
+
+  // 규칙 — 손패 계산
+  ck('A+K = 소프트 21', BJ.handTotal([A(), K()]).total === 21 && BJ.handTotal([A(), K()]).soft);
+  ck('A+A = 12 (A 하나만 11)', BJ.handTotal([A(0), A(1)]).total === 12);
+  ck('A+6+10 = 하드 17', BJ.handTotal([A(), N(6), T()]).total === 17 && !BJ.handTotal([A(), N(6), T()]).soft);
+  ck('K+Q+J = 버스트', BJ.handTotal([K(), C(10), C(9)]).bust);
+  ck('두 장 21만 블랙잭', BJ.isBlackjack([A(), T()]) && !BJ.isBlackjack([N(7), N(7), N(7)]));
+
+  // 딜러 규칙 (S17)
+  ck('딜러 16 드로우 · 하드 17 스탠드', BJ.dealerShouldHit([T(), N(6)]) && !BJ.dealerShouldHit([T(), N(7)]));
+  ck('딜러 소프트 17에서도 스탠드 (S17)', !BJ.dealerShouldHit([A(), N(6)]));
+
+  // 정산 — 배당은 실제 카지노 값 그대로여야 한다
+  ck('블랙잭 3:2 → 2.5배', BJ.settleHand([A(), K()], [T(), N(9)]).multiplier === 2.5);
+  ck('일반 승 1:1 → 2배', BJ.settleHand([T(), N(9)], [T(), N(8)]).multiplier === 2);
+  ck('무승부 → 원금 환불', BJ.settleHand([T(), N(9)], [K(), N(9)]).multiplier === 1);
+  ck('양쪽 블랙잭 → 무승부', BJ.settleHand([A(), K()], [A(1), C(10)]).multiplier === 1);
+  ck('내가 먼저 버스트하면 딜러가 버스트해도 패 (하우스 엣지의 원천)',
+    BJ.settleHand([T(), K(), N(5)], [T(), K(), N(5)]).multiplier === 0);
+
+  // 슈
+  {
+    const shoe = BJ.shuffleShoe(rnd);
+    const cnt = new Map<number, number>();
+    shoe.forEach(c => cnt.set(c, (cnt.get(c) ?? 0) + 1));
+    ck('슈 416장 · 52종 각 8장', shoe.length === 416 && cnt.size === 52 && [...cnt.values()].every(v => v === 8));
+  }
+
+  // 실제 라운드 — 착석·중복·환불
+  let round = advanceBlackjackRound(H);
+  mkUser('j1', 20000); mkUser('j2', 20000); mkUser('j3', 20000);
+  ck('0번 착석 + 즉시 차감', seatBlackjackBet('j1', 'j1', round.id, 0, 1000).ok && bal('j1') === 19000, String(bal('j1')));
+  ck('같은 자리 다른 사람 거절', !seatBlackjackBet('j2', 'j2', round.id, 0, 1000).ok);
+  ck('거절 시 차감 없음', bal('j2') === 20000, String(bal('j2')));
+  ck('이미 앉은 사람이 다른 자리 → 거절', !seatBlackjackBet('j1', 'j1', round.id, 2, 100).ok);
+  ck('같은 자리 칩 추가는 누적', seatBlackjackBet('j1', 'j1', round.id, 0, 500).ok && bal('j1') === 18500, String(bal('j1')));
+  ck(`자리 범위 밖 거절 (0~${BJ_SEATS - 1})`,
+    !seatBlackjackBet('j3', 'j3', round.id, BJ_SEATS, 100).ok && !seatBlackjackBet('j3', 'j3', round.id, -1, 100).ok);
+  ck('잔액 초과 거절', !seatBlackjackBet('j3', 'j3', round.id, 3, 999999).ok);
+  seatBlackjackBet('j2', 'j2', round.id, 1, 1000);
+  ck('회수하면 전액 환불', clearBlackjackBet('j2', round.id).ok && bal('j2') === 20000, String(bal('j2')));
+  ck('회수 후 그 자리 재착석 가능', seatBlackjackBet('j3', 'j3', round.id, 1, 800).ok);
+
+  // 배분 — 카드와 슈 소비
+  expire('blackjack_rounds', round.id, 1);
+  round = advanceBlackjackRound(H);
+  ck('배분 단계 진입', round.phase === 'deal', round.phase);
+  {
+    const hands = getBlackjackHands(round.id);
+    ck('앉은 사람 두 장씩', hands.length === 2 && hands.every(h => (JSON.parse(h.cards_json) as number[]).length === 2));
+    ck('딜러 두 장', (JSON.parse(round.dealer_json) as number[]).length === 2);
+    ck('슈 소비 = 인원×2 + 2', round.shoe_pos === 2 * 2 + 2, String(round.shoe_pos));
+    ck('블랙잭이면 바로 확정', hands.every(h => {
+      const c = JSON.parse(h.cards_json) as number[];
+      return BJ.isBlackjack(c) ? h.status === 'blackjack' : h.status === 'playing';
+    }));
+  }
+
+  // 힛 / 스탠드 / 더블다운
+  expire('blackjack_rounds', round.id, 5);
+  round = advanceBlackjackRound(H);
+  ck('결정 단계 진입', round.phase === 'action', round.phase);
+  {
+    const before = bal('j1');
+    const betBefore = getBlackjackHands(round.id).find(h => h.user_id === 'j1')!.bet;
+    const dd = blackjackAction('j1', round.id, 'double', H);
+    ck('더블다운 성공', dd.ok, JSON.stringify(dd));
+    if (dd.ok) {
+      ck('더블 시 베팅 두 배', dd.bet === betBefore * 2, `${dd.bet} vs ${betBefore * 2}`);
+      ck('더블 시 원래 베팅액만큼 추가 차감', bal('j1') === before - betBefore, String(bal('j1')));
+      ck('더블은 한 장만 받고 선다', dd.cards.length === 3 && (dd.status === 'stand' || dd.status === 'bust'), JSON.stringify(dd));
+      ck('더블 후에는 더 못 움직임', !blackjackAction('j1', round.id, 'hit', H).ok);
+    }
+    const h3 = getBlackjackHands(round.id).find(h => h.user_id === 'j3')!;
+    if (h3.status === 'playing') {
+      const hit = blackjackAction('j3', round.id, 'hit', H);
+      ck('힛하면 카드 한 장 늘고 상태가 규칙과 일치', hit.ok && (() => {
+        const t = BJ.handTotal(hit.cards);
+        return hit.cards.length === 3 && hit.status === (t.bust ? 'bust' : t.total === 21 ? 'stand' : 'playing');
+      })(), JSON.stringify(hit));
+    }
+    ck('참여 안 한 사람은 액션 불가', !blackjackAction('j2', round.id, 'hit', H).ok);
+    // 세 장을 들고 있으면 더블 불가
+    const h3b = getBlackjackHands(round.id).find(h => h.user_id === 'j3')!;
+    if ((JSON.parse(h3b.cards_json) as number[]).length > 2 && h3b.status === 'playing') {
+      const bad = blackjackAction('j3', round.id, 'double', H);
+      ck('세 장부터는 더블 불가', !bad.ok && bad.error === 'cannot_double', JSON.stringify(bad));
+    }
+  }
+
+  // 시간 초과 = 강제 스탠드 · 딜러 · 정산
+  {
+    const before: Record<string, number> = { j1: bal('j1'), j3: bal('j3') };
+    expire('blackjack_rounds', round.id, 25);
+    round = advanceBlackjackRound(H);
+    ck('정산 단계 도달', round.phase === 'done', round.phase);
+    const hands = getBlackjackHands(round.id);
+    ck('진행 중이던 손패가 남지 않음 (시간 초과 = 강제 스탠드)',
+      hands.every(h => h.status !== 'playing'), JSON.stringify(hands.map(h => h.status)));
+    const dealer = JSON.parse(round.dealer_json) as number[];
+    ck('딜러가 17 이상이거나 버스트',
+      BJ.handTotal(dealer).total >= 17 || BJ.handTotal(dealer).bust, String(BJ.handTotal(dealer).total));
+    for (const h of hands) {
+      const cards = JSON.parse(h.cards_json) as number[];
+      const want = Math.floor(h.bet * BJ.settleHand(cards, dealer).multiplier);
+      ck(`${h.user_id} 지급 규칙 일치 (${h.outcome} → ${want})`, h.payout === want, String(h.payout));
+      ck(`${h.user_id} 잔액 반영`, bal(h.user_id) === before[h.user_id] + (h.payout ?? 0), String(bal(h.user_id)));
+    }
+    mkUser('j_late', 5000);
+    ck('마감된 라운드 착석 거절', !seatBlackjackBet('j_late', 'l', round.id, 4, 100).ok);
+    ck('마감 거절 후 차감 없음', bal('j_late') === 5000, String(bal('j_late')));
+  }
+}
+auditLedger('블랙잭 후');
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);
