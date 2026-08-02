@@ -289,7 +289,14 @@
      좁은 창(에디터에 붙은 미리보기 창 등)에서는 패널만 줄이고 배치는 유지하다가,
      정말 좁아지는 700px 아래에서만 세로로 쌓는다. */
   @media (max-width:1000px){.game-side{width:240px}}
-  @media (max-width:700px){.game-shell{flex-direction:column}.game-side{width:100%}}
+  /* 세로로 쌓을 때는 align-items를 stretch로 되돌려야 한다.
+     .game-shell은 가로 배치 기준으로 flex-start를 쓰는데, 방향이 column이 되면 교차축이 가로로
+     바뀌어 그 값이 "가로로 늘리지 말라"는 뜻이 된다. 그러면 본문이 내용 최대폭까지 커져서
+     700px 창에서 864px이 되고 화면 밖으로 174px 밀려 나갔다(실측). */
+  @media (max-width:700px){
+    .game-shell{flex-direction:column;align-items:stretch}
+    .game-side{width:100%}
+  }
   /* 포커도 다른 게임과 같은 기준(700px)으로 쌓는다.
      다만 카드가 가로로 9장 들어가야 해서 좁은 구간에서는 카드를 줄여야 하는데,
      그 규칙은 아래 .poker-table 기본값보다 뒤에 있어야 덮이지 않는다 —
@@ -346,6 +353,9 @@
   .mode-tab.active{background:#0d0d0f;border-color:var(--gold);color:var(--gold)}
   .mode-tab:disabled{opacity:.5;cursor:default}
   .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  /* 그리드 항목은 기본값이 min-width:auto라 내용보다 작아지지 못한다.
+     0으로 풀어두지 않으면 좁은 폭에서 칸이 상자 밖으로 밀려 나간다. */
+  .field-grid .field{min-width:0}
   @media (max-width:640px){.field-grid{grid-template-columns:1fr}}
   .field-grid .field label{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px}
   .field-grid .bet-row{display:flex;gap:6px}
@@ -733,4 +743,13 @@
     .seat-cat{font-size:10.5px}
     .hand,.board{gap:4px}
     .pcard{width:32px;height:48px;border-radius:5px}
+  }
+
+  /* ── 좁은 창의 그래프게임 컨트롤 ──────────────────────────────
+     베팅 수량과 자동 캐시아웃을 두 열로 두면, 참가자 패널이 옆에 남는 폭(본문 450px 안팎)에서
+     한 열이 197px까지 좁아진다. 자동 캐시아웃 칩은 "10.00x"까지 들어가야 해서 4개가 200px을
+     넘고, 그만큼 상자 밖으로 밀려 나간다(실측 13px).
+     칸을 억지로 줄이면 숫자가 잘리므로 이 구간에서는 위아래로 쌓아 각 칸에 폭을 다 준다. */
+  @media (max-width:820px){
+    .field-grid{grid-template-columns:1fr;gap:11px}
   }
