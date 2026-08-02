@@ -209,8 +209,12 @@ async function main(): Promise<void> {
       const out = await req('POST', '/api/games/mines/cashout', c, {});
       ck('캐시아웃 성공', out.body?.ok === true, JSON.stringify(out.body));
       if (out.body?.ok) {
-        ck('지급 후 잔액 = 시작잔액 - 500 + 지급', bal('e_mines') === before - 500 + (out.body.payout ?? 0),
-          String(bal('e_mines')));
+        // 지뢰찾기는 지급액을 round 안에 담아 보낸다 (다른 게임처럼 최상위가 아니다)
+        const payout = out.body.round?.payout;
+        ck('응답에 지급액이 들어 있음', typeof payout === 'number', JSON.stringify(out.body.round));
+        ck('지급 후 잔액 = 시작잔액 - 500 + 지급',
+          bal('e_mines') === before - 500 + (payout ?? -1), `${bal('e_mines')} vs ${before - 500 + (payout ?? -1)}`);
+        ck('응답 잔액 = DB 잔액', out.body.balance === bal('e_mines'), `${out.body.balance} vs ${bal('e_mines')}`);
       }
     } else {
       ck('폭발 시 잔액은 베팅 차감분만 (추가 손실 없음)', bal('e_mines') === before - 500, String(bal('e_mines')));
@@ -221,7 +225,65 @@ async function main(): Promise<void> {
   }
 
   /* ── 원장 최종 확인 ────────────────────────────────────────── */
-  section('[5] 최종 원장 정합성');
+
+  /* ── 바카라: 카드 은닉과 정산 ──────────────────────────────── */
+  section('[5] 바카라 — 카드가 공개 전에 새지 않는가');
+  {
+    const c = mkSession('e_bacc', 20000);
+    const st = await waitPhase('/api/games/baccarat/state', c, 'betting');
+    ck('베팅 단계 진입', st?.round?.phase === 'betting', String(st?.round?.phase));
+    ck('베팅 중 양쪽 카드 0장',
+      st.round.player.length === 0 && st.round.banker.length === 0,
+      JSON.stringify([st.round.player, st.round.banker]));
+    ck('베팅 중 끗수 비공개', st.round.playerTotal == null && st.round.bankerTotal == null,
+      JSON.stringify([st.round.playerTotal, st.round.bankerTotal]));
+    ck('응답에 원본 카드 배열이 없음',
+      !JSON.stringify(st).includes('cards_json') && !JSON.stringify(st).includes('result_json'));
+
+    const before = bal('e_bacc');
+    const b1 = await req('POST', '/api/games/baccarat/bet', c, { market: 'banker', amount: 1000 });
+    ck('칩 베팅 수락 + 차감', b1.body?.ok === true && before - bal('e_bacc') === 1000, JSON.stringify(b1.body));
+    ck('응답 잔액 = DB 잔액', b1.body?.balance === bal('e_bacc'), `${b1.body?.balance} vs ${bal('e_bacc')}`);
+
+    const deal = await waitPhase('/api/games/baccarat/state', c, p => p !== 'betting');
+    if (deal?.round?.phase === 'deal') {
+      ck('첫 공개는 양쪽 두 장씩', deal.round.player.length === 2 && deal.round.banker.length === 2,
+        JSON.stringify([deal.round.player.length, deal.round.banker.length]));
+      ck('첫 두 장 끗수는 바로 공개', deal.round.playerTotal != null && deal.round.bankerTotal != null);
+      ck('첫 두 장 끗수는 0~9', deal.round.playerTotal >= 0 && deal.round.playerTotal <= 9);
+    } else {
+      ck('공개 단계 진입 (deal을 지나침)', ['third', 'done'].includes(deal.round.phase), String(deal.round.phase));
+    }
+
+    const done = await waitPhase('/api/games/baccarat/state', c, 'done');
+    ck('정산 단계 도달', done?.round?.phase === 'done', String(done?.round?.phase));
+    const r = done.round.result;
+    ck('결과에 승자가 있음', ['player', 'banker', 'tie'].includes(r?.winner), JSON.stringify(r));
+    ck('양쪽 카드는 2장 또는 3장',
+      [2, 3].includes(done.round.player.length) && [2, 3].includes(done.round.banker.length),
+      JSON.stringify([done.round.player.length, done.round.banker.length]));
+    ck('내추럴이면 세 장이 될 수 없다',
+      !r.natural || (done.round.player.length === 2 && done.round.banker.length === 2),
+      `natural=${r.natural} ${done.round.player.length}/${done.round.banker.length}`);
+    ck('승자와 끗수가 일치',
+      (r.playerTotal > r.bankerTotal && r.winner === 'player') ||
+      (r.bankerTotal > r.playerTotal && r.winner === 'banker') ||
+      (r.playerTotal === r.bankerTotal && r.winner === 'tie'),
+      `${r.playerTotal}:${r.bankerTotal} → ${r.winner}`);
+
+    const myBets = db.prepare(`SELECT market, amount, odds, won, payout FROM baccarat_bets
+      WHERE round_id = ? AND user_id = 'e_bacc'`).all(done.round.id) as any[];
+    ck('내 베팅이 라운드에 남아 있음', myBets.length === 1, JSON.stringify(myBets));
+    if (myBets.length) {
+      const m = myBets[0];
+      const want = r.winner === 'tie' ? m.amount
+        : r.winner === 'banker' ? Math.floor(m.amount * m.odds) : 0;
+      ck(`정산 지급 규칙 일치 (승자 ${r.winner} → ${want})`, m.payout === want, `${m.payout} vs ${want}`);
+      ck('잔액 반영 정확', bal('e_bacc') === before - 1000 + m.payout, String(bal('e_bacc')));
+    }
+  }
+
+  section('[6] 최종 원장 정합성');
   {
     const users = db.prepare(`SELECT id, balance FROM users`).all() as any[];
     let bad = '';

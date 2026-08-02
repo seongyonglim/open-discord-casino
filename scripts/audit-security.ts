@@ -74,6 +74,8 @@ async function main(): Promise<void> {
       ['GET', '/api/games/crash/state'], ['POST', '/api/games/crash/bet'],
       ['POST', '/api/games/crash/cashout'],
       ['GET', '/api/games/poker/state'], ['POST', '/api/games/poker/bet'],
+      ['GET', '/api/games/baccarat/state'], ['POST', '/api/games/baccarat/bet'],
+      ['POST', '/api/games/baccarat/clear'],
       ['POST', '/api/games/mines/start'], ['POST', '/api/games/mines/reveal'],
       ['POST', '/api/games/mines/cashout'],
     ] as const;
@@ -84,7 +86,7 @@ async function main(): Promise<void> {
     }
     ck(`게임 API 전부 401 (${apis.length}개)`, bad === '', bad);
 
-    for (const p of ['/games/ladder', '/games/graph', '/games/poker', '/games/mines']) {
+    for (const p of ['/games/ladder', '/games/graph', '/games/poker', '/games/mines', '/games/baccarat']) {
       const r = await req('GET', p);
       ck(`${p} 비로그인 → 로그인으로 리다이렉트`, r.status === 302, String(r.status));
     }

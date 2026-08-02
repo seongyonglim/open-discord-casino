@@ -8,6 +8,7 @@ if (!process.env.DB_PATH) {
   process.env.DB_PATH = dir;
 }
 
+import { randomInt as rnd } from 'node:crypto';
 import { getDb } from '../src/db/schema';
 import {
   upsertUser, adjustBalance, getWebUser,
@@ -280,6 +281,111 @@ section('[6] 배당률 — 확률 합과 하우스 엣지');
   ck('사다리 단일 기대값 0.975', Math.abs(0.5 * LADDER_MULTIPLIER - 0.975) < 1e-9);
   ck('사다리 더블 기대값 0.9875', Math.abs(0.25 * LADDER_DOUBLE_MULTIPLIER - 0.9875) < 1e-9);
 }
+
+
+/* ── 7. 바카라 ───────────────────────────────────────────────── */
+section('[7] 바카라');
+{
+  const { baccaratProbabilities, playRound, drawRound, handTotal, cardValue, bankerDraws, playerDraws } =
+    require('../src/services/baccarat') as typeof import('../src/services/baccarat');
+  const { baccaratOdds } = require('../src/web/games/baccarat') as typeof import('../src/web/games/baccarat');
+  const {
+    advanceBaccaratRound, stackBaccaratBet, clearBaccaratBets, getMyBaccaratBets,
+  } = require('../src/db/queries') as typeof import('../src/db/queries');
+
+  // 규칙 — 공표된 8덱 표준 확률과 맞는지 (드로우 표를 잘못 옮기면 여기서 어긋난다)
+  const pr = baccaratProbabilities();
+  const REF = { banker: 0.458597, player: 0.446247, tie: 0.095156 };
+  ck('뱅커 승률 = 공표값', Math.abs(pr.banker - REF.banker) < 5e-6, pr.banker.toFixed(6));
+  ck('플레이어 승률 = 공표값', Math.abs(pr.player - REF.player) < 5e-6, pr.player.toFixed(6));
+  ck('타이 확률 = 공표값', Math.abs(pr.tie - REF.tie) < 5e-6, pr.tie.toFixed(6));
+  ck('확률 합 = 1', Math.abs(pr.banker + pr.player + pr.tie - 1) < 1e-12);
+  ck('페어 확률 = 31/415', Math.abs(pr.pair - 31 / 415) < 1e-12, String(pr.pair));
+
+  // 배당 — 모든 시장의 RTP가 하우스 엣지 1%에 맞는지
+  const od = baccaratOdds();
+  const rtp = {
+    player: pr.player * od.player + pr.tie,   // 무승부는 원금 환불
+    banker: pr.banker * od.banker + pr.tie,
+    tie: pr.tie * od.tie,
+    pair: pr.pair * od.ppair,
+  };
+  for (const k of ['player', 'banker', 'tie', 'pair'] as const) {
+    ck(`${k} RTP가 98~99% 구간`, rtp[k] > 0.98 && rtp[k] < 0.995, (rtp[k] * 100).toFixed(2) + '%');
+  }
+  ck('모든 시장 RTP < 1 (하우스가 손해 보는 시장 없음)',
+    Object.values(rtp).every(v => v < 1), JSON.stringify(rtp));
+
+  // 드로우 규칙 표 — 대표적인 갈림길 몇 개를 직접 확인
+  ck('플레이어 5는 드로우, 6은 스탠드', playerDraws(5) && !playerDraws(6));
+  ck('뱅커 3 vs 플레이어 서드 8 → 스탠드', !bankerDraws(3, 8));
+  ck('뱅커 3 vs 플레이어 서드 7 → 드로우', bankerDraws(3, 7));
+  ck('뱅커 6 vs 플레이어 서드 5 → 스탠드', !bankerDraws(6, 5));
+  ck('뱅커 6 vs 플레이어 서드 6 → 드로우', bankerDraws(6, 6));
+  ck('플레이어 스탠드 시 뱅커는 0~5만 드로우', bankerDraws(5, null) && !bankerDraws(6, null));
+  ck('K·Q·J·10은 0끗', [8, 9, 10, 11].every(r => cardValue(r * 4) === 0));
+  ck('A는 1끗', cardValue(12 * 4) === 1);
+  // 랭크 7='9'(9끗), 랭크 6='8'(8끗) → 17 → 7끗
+  ck('끗수는 10으로 나눈 나머지', handTotal([7 * 4, 6 * 4]) === 7, String(handTotal([7 * 4, 6 * 4])));
+
+  // 내추럴이면 절대 세 번째 카드가 나오지 않는다
+  let naturalWithThird = 0, dealt = 0;
+  for (let i = 0; i < 3000; i++) {
+    const o = playRound(drawRound(rnd));
+    dealt++;
+    if (o.natural && (o.playerCards.length > 2 || o.bankerCards.length > 2)) naturalWithThird++;
+  }
+  ck(`내추럴 판에는 세 번째 카드 없음 (${dealt}판 확인)`, naturalWithThird === 0, `${naturalWithThird}건`);
+
+  // 실제 지급 — 승/패/무/페어 네 갈래를 라운드로 돌려 본다
+  mkUser('b_p', 10000); mkUser('b_b', 10000); mkUser('b_t', 10000); mkUser('b_pp', 10000);
+  const draw = () => drawRound(rnd);
+  const resolve = (cards: number[]) => {
+    const o = playRound(cards);
+    return {
+      winner: o.winner, playerTotal: o.playerTotal, bankerTotal: o.bankerTotal,
+      playerPair: o.playerPair, bankerPair: o.bankerPair, natural: o.natural,
+      playerCards: o.playerCards, bankerCards: o.bankerCards,
+    };
+  };
+  const round = advanceBaccaratRound(draw, resolve);
+
+  ck('칩 쌓기 성공 + 즉시 차감',
+    stackBaccaratBet('b_p', 'p', round.id, 'player', 1000, od.player).ok && bal('b_p') === 9000, String(bal('b_p')));
+  ck('같은 시장 누적', stackBaccaratBet('b_p', 'p', round.id, 'player', 500, od.player).ok && bal('b_p') === 8500, String(bal('b_p')));
+  ck('한 행으로 합쳐짐 (1500)', getMyBaccaratBets(round.id, 'b_p')[0].amount === 1500);
+  ck('잔액 초과 거절', !stackBaccaratBet('b_b', 'b', round.id, 'banker', 99999, od.banker).ok);
+  ck('초과 거절 후 차감 없음', bal('b_b') === 10000, String(bal('b_b')));
+  stackBaccaratBet('b_b', 'b', round.id, 'banker', 1000, od.banker);
+  stackBaccaratBet('b_t', 't', round.id, 'tie', 1000, od.tie);
+  stackBaccaratBet('b_pp', 'pp', round.id, 'ppair', 1000, od.ppair);
+  ck('전부 회수하면 전액 환불',
+    clearBaccaratBets('b_pp', round.id).ok && bal('b_pp') === 10000, String(bal('b_pp')));
+  ck('회수할 게 없으면 거절', !clearBaccaratBets('b_pp', round.id).ok);
+  stackBaccaratBet('b_pp', 'pp', round.id, 'ppair', 1000, od.ppair);
+
+  const before = { p: bal('b_p'), b: bal('b_b'), t: bal('b_t'), pp: bal('b_pp') };
+  expire('baccarat_rounds', round.id, 60);
+  advanceBaccaratRound(draw, resolve);
+  const o = resolve(JSON.parse(
+    (db.prepare(`SELECT cards_json FROM baccarat_rounds WHERE id = ?`).get(round.id) as any).cards_json));
+
+  const wantP = o.winner === 'tie' ? 1500 : o.winner === 'player' ? Math.floor(1500 * od.player) : 0;
+  const wantB = o.winner === 'tie' ? 1000 : o.winner === 'banker' ? Math.floor(1000 * od.banker) : 0;
+  const wantT = o.winner === 'tie' ? Math.floor(1000 * od.tie) : 0;
+  const wantPP = o.playerPair ? Math.floor(1000 * od.ppair) : 0;
+  ck(`플레이어 베팅 정산 (승자 ${o.winner} → +${wantP})`, bal('b_p') === before.p + wantP, `${bal('b_p')} vs ${before.p + wantP}`);
+  ck(`뱅커 베팅 정산 (+${wantB})`, bal('b_b') === before.b + wantB, `${bal('b_b')} vs ${before.b + wantB}`);
+  ck(`타이 베팅 정산 (+${wantT})`, bal('b_t') === before.t + wantT, `${bal('b_t')} vs ${before.t + wantT}`);
+  ck(`P페어 베팅 정산 (페어=${o.playerPair} → +${wantPP})`, bal('b_pp') === before.pp + wantPP, `${bal('b_pp')} vs ${before.pp + wantPP}`);
+  ck('무승부면 승패 베팅은 원금 그대로 (손실 없음)',
+    o.winner !== 'tie' || (bal('b_p') === before.p + 1500 && bal('b_b') === before.b + 1000));
+
+  mkUser('b_late', 5000);
+  ck('마감된 라운드 베팅 거절', !stackBaccaratBet('b_late', 'l', round.id, 'player', 100, od.player).ok);
+  ck('마감 거절 후 차감 없음', bal('b_late') === 5000, String(bal('b_late')));
+}
+auditLedger('바카라 후');
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);
