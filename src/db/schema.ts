@@ -159,6 +159,6 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE crash_bets ADD COLUMN auto_cashout REAL`); } catch {}
   // 사다리: 두 번째 예측을 도착 좌/우 → 줄수 홀/짝('ODD'|'EVEN')으로 변경. 의미가 다르므로 새 컬럼을 쓴다.
   try { d.exec(`ALTER TABLE ladder_bets ADD COLUMN parity_guess TEXT`); } catch {}
-  // 개인회생 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 4시간 쿨다운 판정에 쓴다.
+  // 개인회생 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 쿨다운 판정에 쓴다.
   try { d.exec(`ALTER TABLE users ADD COLUMN last_relief_at INTEGER`); } catch {}
 }
