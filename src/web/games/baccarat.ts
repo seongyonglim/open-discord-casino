@@ -371,6 +371,11 @@ export function baccaratPage(user: WebUser): string {
           var c = s.el.children[s.i];
           if (c) c.style.visibility = 'hidden';
         });
+        // 뒷면을 놓는 구간은 셔플 소리 하나로 덮는다.
+        // 카드마다 "나눠주는" 소리를 넣었더니 한 라운드에 그 소리만 여덟 번 났다 —
+        // 뒷면 놓을 때 네 번, 뒤집을 때 네 번(실측). 게다가 앞쪽 네 번은 베팅 화면이라
+        // 아무 정보도 나오지 않는데 소리만 울려서 "카드도 안 도는데 왜 소리가 나지" 싶어진다.
+        // 소리는 새로 보이는 게 있을 때만 낸다.
         if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle();
 
         // 셔플 소리가 잦아든 뒤부터 한 장씩. 네 장에 1.2초 남짓이라 10초 베팅 창에 넉넉히 들어간다.
@@ -381,7 +386,6 @@ export function baccaratPage(user: WebUser): string {
             if (!card) return;
             card.style.visibility = '';
             flyCardIn(card);
-            if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
             if (n === slots.length - 1) { dealing = false; showAllCards(); }
           }, SHUFFLE_MS + n * STEP));
         });
@@ -886,5 +890,5 @@ export function baccaratPage(user: WebUser): string {
     })();
     </script>`;
 
-  return layout('바카라', 'lobby', body, 'poker-wide');
+  return layout('바카라', 'lobby', body);
 }
