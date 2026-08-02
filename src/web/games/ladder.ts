@@ -313,7 +313,13 @@ export function ladderPage(user: WebUser): string {
       // 가로줄은 미리 그리지 않는다(결과를 미리 알 수 없게) — 공이 내려가면서 그때그때 생긴다.
       function buildBoard(){
         board.innerHTML='';
-        var svg = svgEl('svg', { viewBox:'0 0 '+W+' '+height, width:'100%', height:height, class:'ladder-svg' });
+        // '출발' 글자의 baseline이 y=8(TOP_PAD-26)이라 글자 윗부분이 viewBox 위로 잘렸다.
+        // 노드·애니메이션 좌표를 건드리지 않고 보이는 영역만 위아래로 넓힌다(min-y를 음수로).
+        var CAP_PAD = 14;
+        var svg = svgEl('svg', {
+          viewBox: '0 ' + (-CAP_PAD) + ' ' + W + ' ' + (height + CAP_PAD + 6),
+          width:'100%', height: height + CAP_PAD + 6, class:'ladder-svg',
+        });
         xs.forEach(function(x){ svg.appendChild(svgEl('line', { x1:x, y1:TOP_PAD, x2:x, y2:height-BOTTOM_PAD, class:'ladder-line' })); });
 
         var cap1 = svgEl('text', { x:W/2, y:TOP_PAD-26, class:'ladder-cap', 'text-anchor':'middle' });
