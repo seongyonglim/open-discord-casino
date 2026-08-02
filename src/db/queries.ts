@@ -124,33 +124,40 @@ export function performCheckIn(userId: string, newStreak: number, dateStr: strin
   });
 }
 
-/* ── 재난 지원금 (파산 구제) ──────────────────────────────────────────────
+/* ── 디스코드 고정 버튼 메시지 위치 ─────────────────────────────────────
+   신청 로그가 쌓이면 버튼이 위로 밀리므로, 로그를 남길 때마다 이전 버튼 메시지를 지우고
+   맨 아래에 다시 올린다. 어떤 메시지를 지울지 알아야 하므로 위치를 기억해 둔다. */
+export type BoardKind = 'attendance' | 'relief';
+export interface BoardRef { channel_id: string; message_id: string }
+
+export function getBoard(kind: BoardKind): BoardRef | undefined {
+  return one<BoardRef>(`SELECT channel_id, message_id FROM discord_boards WHERE kind = ?`, kind);
+}
+
+export function setBoard(kind: BoardKind, channelId: string, messageId: string): void {
+  run(
+    `INSERT INTO discord_boards (kind, channel_id, message_id, updated_at)
+     VALUES (?, ?, ?, unixepoch())
+     ON CONFLICT(kind) DO UPDATE SET channel_id = excluded.channel_id,
+       message_id = excluded.message_id, updated_at = excluded.updated_at`,
+    kind, channelId, messageId
+  );
+}
+
+export function clearBoard(kind: BoardKind): void {
+  run(`DELETE FROM discord_boards WHERE kind = ?`, kind);
+}
+
+/* ── 개인회생 지원금 (파산 구제) ──────────────────────────────────────────────
    잔액이 정확히 0인 사람만, 4시간에 한 번 받을 수 있다.
    조건 검사와 지급을 한 트랜잭션 안의 조건부 UPDATE로 묶어야 한다 — 버튼을 연타하거나
    탭을 여러 개 열어두면 같은 조건을 통과한 요청이 동시에 들어와 두 번 지급될 수 있다.
    (베팅 차감에서 쓴 것과 같은 방식: WHERE로 조건을 걸고 changes()로 실제 반영 여부를 본다) */
-export interface ReliefStatus {
-  balance: number;
-  lastReliefAt: number | null;
-  nextAvailableAt: number | null;  // 쿨다운이 끝나는 시각(unix초). 받은 적 없으면 null
-}
-
-export function getReliefStatus(userId: string, cooldownSec: number): ReliefStatus | undefined {
-  const r = one<{ balance: number; last_relief_at: number | null }>(
-    `SELECT balance, last_relief_at FROM users WHERE id = ?`, userId
-  );
-  if (!r) return undefined;
-  return {
-    balance: r.balance,
-    lastReliefAt: r.last_relief_at,
-    nextAvailableAt: r.last_relief_at == null ? null : r.last_relief_at + cooldownSec,
-  };
-}
-
 export function claimRelief(
   userId: string, amount: number, cooldownSec: number
 ): { ok: true; balance: number; nextAvailableAt: number }
-  | { ok: false; error: 'not_broke' | 'cooldown' | 'no_user' } {
+  | { ok: false; error: 'cooldown'; nextAvailableAt: number }
+  | { ok: false; error: 'not_broke' | 'no_user' } {
   return tx(() => {
     const before = one<{ balance: number; last_relief_at: number | null }>(
       `SELECT balance, last_relief_at FROM users WHERE id = ?`, userId
@@ -167,7 +174,11 @@ export function claimRelief(
     if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 0) {
       // 어떤 조건에서 막혔는지 구분해 안내 문구를 정확히 낸다
       if (before.balance !== 0) return { ok: false, error: 'not_broke' } as const;
-      return { ok: false, error: 'cooldown' } as const;
+      // 쿨다운이면 언제 다시 받을 수 있는지까지 알려 준다 (안내 문구에 그대로 쓴다)
+      return {
+        ok: false, error: 'cooldown',
+        nextAvailableAt: (before.last_relief_at ?? now) + cooldownSec,
+      } as const;
     }
 
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId)!;

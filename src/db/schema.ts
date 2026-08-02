@@ -32,6 +32,16 @@ function initSchema(): void {
       last_active INTEGER DEFAULT 0
     );
 
+    -- 디스코드 채널에 고정해 두는 버튼 메시지(출석판·지원금판)의 위치.
+    -- 신청 로그가 쌓이면 버튼이 위로 밀려 올라가므로, 로그를 남길 때마다 이전 메시지를 지우고
+    -- 맨 아래에 다시 올린다. 그러려면 어떤 메시지를 지워야 하는지 기억해야 한다.
+    CREATE TABLE IF NOT EXISTS discord_boards (
+      kind TEXT PRIMARY KEY,        -- 'attendance' | 'relief'
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+
     -- 웹 세션 (재시작에도 유지)
     CREATE TABLE IF NOT EXISTS web_sessions (
       token TEXT PRIMARY KEY,
@@ -149,6 +159,6 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE crash_bets ADD COLUMN auto_cashout REAL`); } catch {}
   // 사다리: 두 번째 예측을 도착 좌/우 → 줄수 홀/짝('ODD'|'EVEN')으로 변경. 의미가 다르므로 새 컬럼을 쓴다.
   try { d.exec(`ALTER TABLE ladder_bets ADD COLUMN parity_guess TEXT`); } catch {}
-  // 재난 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 4시간 쿨다운 판정에 쓴다.
+  // 개인회생 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 4시간 쿨다운 판정에 쓴다.
   try { d.exec(`ALTER TABLE users ADD COLUMN last_relief_at INTEGER`); } catch {}
 }
