@@ -222,7 +222,6 @@ export function pokerPage(user: WebUser): string {
     <div class="game-shell poker-shell">
       <div class="game-main">
         <div class="card">
-          <div id="pHistory" class="hist-row"></div>
           <div class="poker-table">
             <div class="poker-seats">
               <div class="seat">
@@ -263,7 +262,7 @@ export function pokerPage(user: WebUser): string {
       var boardEl=document.getElementById('pBoard'), marketsEl=document.getElementById('pMarkets');
       var mCardsEl=document.getElementById('pMasterCards'), sCardsEl=document.getElementById('pSharkCards');
       var mCatEl=document.getElementById('pMasterCat'), sCatEl=document.getElementById('pSharkCat');
-      var statusEl=document.getElementById('pStatus'), historyEl=document.getElementById('pHistory');
+      var statusEl=document.getElementById('pStatus');
       var coinsEl=document.getElementById('pCoins');
       var clearBtn=document.getElementById('pClear');
       var rosterEl=document.getElementById('pRoster'), potEl=document.getElementById('pPot');
@@ -612,9 +611,24 @@ export function pokerPage(user: WebUser): string {
       }
 
       var MARKET_DEFS = [
-        { key:'master', label:'MASTER 승', cls:'m-master', sub:'무승부 시 원금 환불' },
-        { key:'shark',  label:'SHARK 승',  cls:'m-shark',  sub:'무승부 시 원금 환불' },
+        { key:'master', label:'MASTER 승', cls:'m-master' },
+        { key:'shark',  label:'SHARK 승',  cls:'m-shark' },
       ];
+
+      // 승자 상자의 점등 전적 — 등급 상자(dotsHtml)와 같은 읽는 법이다.
+      // 상단에 따로 전적 띠를 두는 대신 각 상자 안에 넣어, 그 시장이 최근에 얼마나
+      // 들어왔는지를 베팅하려는 자리에서 바로 보게 한다.
+      // 무승부는 어느 쪽 승도 아니므로 초록 점으로 따로 표시한다(꺼진 점과 구분된다).
+      function winnerDotsHtml(key){
+        var h=(st.history||[]).slice(0, DOTS), cells=[];
+        for (var i=0;i<DOTS;i++) cells.push(h[i] || null);
+        cells.reverse();
+        return '<span class="m-dots w-'+key+'">' + cells.map(function(c){
+          if (!c) return '<i class="dot"></i>';
+          if (c.winner === 'tie') return '<i class="dot tie"></i>';
+          return '<i class="dot'+(c.winner===key?' hit':'')+'"></i>';
+        }).join('') + '</span>';
+      }
 
       // 최근 DOTS판의 등급 달성 여부 — 오른쪽이 최신, 왼쪽으로 갈수록 예전 판
       function dotsHtml(bucketIdx){
@@ -653,9 +667,7 @@ export function pokerPage(user: WebUser): string {
             winCls = isWin ? ' hit' : ' miss';
           }
         }
-        var foot = opt.bucketIdx != null
-          ? bucketFoot(opt.bucketIdx)
-          : '<span class="m-sub">'+esc(opt.sub)+'</span>';
+        var foot = opt.bucketIdx != null ? bucketFoot(opt.bucketIdx) : winnerDotsHtml(key);
         return '<button type="button" class="market '+cls+(disabled?' disabled':'')+winCls+'" data-market="'+key+'">' +
           '<span class="m-top"><span class="m-total" id="tot-'+key+'">0</span>' +
             '<span class="m-odds">'+(odds==null?'—':odds.toFixed(2)+'x')+'</span></span>' +
@@ -676,7 +688,7 @@ export function pokerPage(user: WebUser): string {
 
         var html = '<div class="market-row">';
         MARKET_DEFS.forEach(function(d){
-          html += marketTile(d.key, d.label, o[d.key], d.cls, betting, { sub:d.sub });
+          html += marketTile(d.key, d.label, o[d.key], d.cls, betting, {});
         });
         html += '</div><div class="market-row bucket-row">';
         (st.bucketNames||[]).forEach(function(name, i){
@@ -762,18 +774,9 @@ export function pokerPage(user: WebUser): string {
         clearBtn.disabled = st.round.phase!=='betting' || staked<=0;
       }
 
-      function renderHistory(){
-        historyEl.innerHTML = (st.history||[]).slice(0,12).map(function(h){
-          var t = h.winner==='master'?'M':h.winner==='shark'?'S':'무';
-          var cls = h.winner==='master'?'w-master':h.winner==='shark'?'w-shark':'w-tie';
-          return '<span class="ch-chip '+cls+'">'+t+'</span>';
-        }).join('');
-      }
-
       function render(){
         var r=st.round;
         setBalance(st.balance);
-        renderHistory();
 
         var newRound = r.id !== lastRoundId;
         if (newRound) { lastRoundId=r.id; clearDeal(); }
