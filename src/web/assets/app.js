@@ -350,6 +350,39 @@
   window.casinoMark('app.js 실행 완료');
 })();
 
+/* ── 규칙 도움말 창 ──────────────────────────────────────────────────
+   네이티브 <dialog>라 Esc 닫기·포커스 가둠·배경 처리는 브라우저가 해준다.
+   여기서는 열고 닫는 것과 "배경을 눌러 닫기"만 붙인다.
+   이 파일은 <head>에서 실행돼 DOM이 아직 없으므로 document에 위임한다. */
+(function(){
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if (!t.closest) return;
+
+    var open = t.closest('[data-help]');
+    if (open) {
+      var dlg = document.getElementById(open.getAttribute('data-help'));
+      if (dlg && dlg.showModal && !dlg.open) dlg.showModal();
+      return;
+    }
+    if (t.closest('[data-help-close]')) {
+      var d = t.closest('dialog');
+      if (d) d.close();
+      return;
+    }
+    // 배경(dialog 자신)을 눌렀을 때만 닫는다 — 내용 위 클릭은 그대로 통과시킨다
+    if (t.tagName === 'DIALOG' && t.classList.contains('helpdlg')) t.close();
+  });
+
+  // Esc 닫기는 <dialog>가 기본으로 해주지만, 그 기본 동작이 막히는 환경이 있어 직접도 처리한다.
+  // 이미 닫힌 창에 close()를 불러도 아무 일도 일어나지 않으므로 두 경로가 겹쳐도 무해하다.
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    var open = document.querySelector('dialog.helpdlg[open]');
+    if (open) open.close();
+  });
+})();
+
 /* ── 프로필 드롭다운 ────────────────────────────────────────────────
    이 파일은 <head>에서 동기로 실행되므로 이 시점에는 헤더 DOM이 아직 없다.
    그래서 요소를 미리 붙잡지 않고 document에 위임해서 클릭이 일어난 순간에 찾는다.
