@@ -83,6 +83,26 @@ export const ROSTER_JS = `
         });
       }
 `;
+/* ── 규칙 도움말 ─────────────────────────────────────────────────────────
+   물음표를 누르면 규칙을 띄운다. 게임마다 붙일 수 있게 공용으로 둔다.
+   네이티브 <dialog>를 쓰는 이유: Esc 닫기·포커스 가둠·배경 어둡게를 브라우저가 해준다.
+   직접 만들면 그 셋을 다 짜야 하고, 그중 포커스 가둠은 빠뜨리기 쉽다. */
+export function helpButton(dialogId: string): string {
+  return `<button class="helpbtn" type="button" data-help="${esc(dialogId)}" aria-label="규칙 보기" title="규칙 보기">?</button>`;
+}
+
+export function helpDialog(dialogId: string, title: string, bodyHtml: string): string {
+  return `<dialog class="helpdlg" id="${esc(dialogId)}">
+    <div class="help-head">
+      <b>${esc(title)}</b>
+      <button class="help-x" type="button" data-help-close aria-label="닫기">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="help-body">${bodyHtml}</div>
+  </dialog>`;
+}
+
 export function pts(n: number): string {
   return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P';
 }
