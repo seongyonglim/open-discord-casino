@@ -1,10 +1,16 @@
 // 디스코드 인터랙션(버튼/슬래시커맨드) 수신 엔드포인트.
 // Gateway(웹소켓) 상시 연결 없이 Discord가 직접 HTTPS로 요청을 쏘는 방식 → fly.io scale-to-zero와 호환된다.
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
 import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
 import { checkIn, rewardSummary } from '../services/economy';
-import { upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard } from '../db/queries';
+import { claim as claimRelief, RELIEF_AMOUNT, RELIEF_COOLDOWN_SEC } from '../services/relief';
+import {
+  upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard,
+  getBoard, setBoard, clearBoard, type BoardKind,
+} from '../db/queries';
 import { pts, signedPts, reasonLabel, esc } from '../web/views';
 import { env } from '../env';
 
@@ -49,24 +55,66 @@ function registerUser(id: string, username: string, avatar: string | null): void
 
 const rest = new REST().setToken(env('DISCORD_TOKEN'));
 
-async function postAttendanceBoard(channelId: string): Promise<void> {
-  await rest.post(Routes.channelMessages(channelId), {
-    body: {
-      content:
-        '**오늘도 출석하고 포인트 받아가세요!**\n' +
-        rewardSummary() + '\n' +
-        '(KST 자정에 초기화됩니다)',
-      components: [{
-        type: ComponentType.ActionRow,
-        components: [{
-          type: ComponentType.Button,
-          style: ButtonStyle.Success,
-          label: '출석체크',
-          custom_id: 'attendance_checkin',
-        }],
-      }],
-    },
-  });
+/* ── 고정(스티키) 버튼 메시지 ──────────────────────────────────────────
+   신청 로그가 하나씩 쌓이면 버튼 메시지가 위로 밀려 올라가 결국 스크롤해야 찾게 된다.
+   그래서 로그를 남길 때마다 이전 버튼 메시지를 지우고 맨 아래에 새로 올려 항상 최신으로 둔다.
+   (디스코드에는 메시지를 아래로 옮기는 기능이 없어서 지우고 다시 올리는 방법뿐이다) */
+interface BoardSpec { content: string; label: string; customId: string; style: number; image?: string | null }
+
+// 파산한 표정의 이미지를 지원금판에 같이 띄운다. 파일이 없으면 조용히 생략한다
+// (존재하지 않는 URL을 넣으면 임베드가 깨진 채로 보인다).
+function reliefImageUrl(): string | null {
+  try {
+    if (!existsSync(join(process.cwd(), 'public', 'img', 'broke.png'))) return null;
+  } catch { return null; }
+  const base = (env('CASINO_URL') || 'https://odcasino.kro.kr').replace(/\/+$/, '');
+  return `${base}/img/broke.png`;
+}
+
+function boardSpec(kind: BoardKind): BoardSpec {
+  if (kind === 'attendance') {
+    return {
+      content: '**오늘도 출석하고 포인트 받아가세요!**\n' + rewardSummary() + '\n(KST 자정에 초기화됩니다)',
+      label: '출석체크', customId: 'attendance_checkin', style: ButtonStyle.Success,
+    };
+  }
+  // 웹에 있던 지원금 페이지를 없앴으므로 안내 문구를 여기로 옮겨 왔다
+  const hours = Math.round(RELIEF_COOLDOWN_SEC / 3600);
+  return {
+    content: '**개인회생 지원금**\n'
+      + '포인트를 전부 잃었을 때 다시 시작할 수 있도록 드리는 지원금입니다.\n\n'
+      + `· 지급액 **${RELIEF_AMOUNT.toLocaleString('ko-KR')}P**\n`
+      + '· 보유 포인트가 **정확히 0P**일 때만 신청할 수 있습니다\n'
+      + `· 한 번 받으면 **${hours}시간** 뒤에 다시 신청할 수 있습니다`,
+    label: '지원금 신청', customId: 'relief_claim', style: ButtonStyle.Primary,
+    image: reliefImageUrl(),
+  };
+}
+
+async function postBoard(kind: BoardKind, channelId: string): Promise<void> {
+  const spec = boardSpec(kind);
+  const body: Record<string, unknown> = {
+    components: [{
+      type: ComponentType.ActionRow,
+      components: [{ type: ComponentType.Button, style: spec.style, label: spec.label, custom_id: spec.customId }],
+    }],
+  };
+  // 이미지는 임베드에만 붙일 수 있어서, 이미지가 있을 때는 본문을 임베드 설명으로 옮긴다
+  if (spec.image) body.embeds = [{ description: spec.content, image: { url: spec.image }, color: 0xd4af37 }];
+  else body.content = spec.content;
+  const msg = await rest.post(Routes.channelMessages(channelId), { body }) as { id?: string };
+  if (msg?.id) setBoard(kind, channelId, msg.id);
+}
+
+// 버튼을 다시 맨 아래로 내린다. 이전 메시지는 이미 지워졌을 수도 있으므로 실패해도 계속 진행한다.
+async function bumpBoard(kind: BoardKind, channelId: string): Promise<void> {
+  const prev = getBoard(kind);
+  if (prev) {
+    await rest.delete(Routes.channelMessage(prev.channel_id, prev.message_id))
+      .catch(() => { /* 이미 지워졌거나 권한이 없으면 그냥 새로 올린다 */ });
+    clearBoard(kind);
+  }
+  await postBoard(kind, channelId);
 }
 
 // 카지노 사이트로 보내는 링크 버튼.
@@ -122,8 +170,19 @@ async function handleCommand(interaction: any, res: ServerResponse): Promise<voi
     // 게시는 성공했는데도 "애플리케이션이 응답하지 않았어요"가 뜬다.
     // 그래서 응답을 먼저 돌려주고 게시는 그 뒤에 이어서 한다.
     ephemeral(res, '이 채널에 출석체크 메시지를 게시합니다.');
-    await postAttendanceBoard(interaction.channel_id)
-      .catch(e => console.error('출석판 게시 실패:', e));
+    await bumpBoard('attendance', interaction.channel_id)
+      .catch((e: unknown) => console.error('출석판 게시 실패:', e));
+    return;
+  }
+
+  if (name === '지원금판생성') {
+    const u = getWebUser(caller.id);
+    if (u?.role !== 'admin') return ephemeral(res, '관리자만 사용할 수 있는 명령어입니다.');
+    if (!interaction.channel_id) return ephemeral(res, '채널 정보를 확인할 수 없습니다.');
+    // 출석판과 같은 이유로 응답을 먼저 보내고 게시는 그 뒤에 한다 (3초 제한)
+    ephemeral(res, '이 채널에 개인회생 지원금 메시지를 게시합니다.');
+    await bumpBoard('relief', interaction.channel_id)
+      .catch((e: unknown) => console.error('지원금판 게시 실패:', e));
     return;
   }
 
@@ -143,6 +202,7 @@ async function handleCommand(interaction: any, res: ServerResponse): Promise<voi
 
 async function handleComponent(interaction: any, res: ServerResponse): Promise<void> {
   const customId = interaction.data?.custom_id;
+  if (customId === 'relief_claim') return await handleReliefClaim(interaction, res);
   if (customId !== 'attendance_checkin') return ephemeral(res, '알 수 없는 버튼입니다.');
 
   const caller = identifyCaller(interaction);
@@ -164,7 +224,7 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
   // 출석 성공은 채널에 공개로 남긴다 — 누가 며칠째 나오는지 서로 보이는 게
   // 출석체크 채널의 존재 이유이고, 랭킹이 이미 공개라 잔액도 비밀이 아니다.
   // (이미 출석한 경우는 위에서 ephemeral로 끝낸다 — 그건 채널에 남길 가치가 없다)
-  return publicReply(
+  publicReply(
     res,
     [
       `**${esc(caller.username)}**님 출석 완료 ${dailyGrant ? signedPts(dailyGrant.delta) : ''} · 연속 **${result.streak}일**`,
@@ -172,6 +232,36 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
       `잔액 ${pts(result.balance)}`,
     ].join('\n')
   );
+  // 방금 남긴 공개 로그 때문에 버튼이 한 칸 위로 밀렸다. 다시 맨 아래로 내린다.
+  // (응답을 이미 보냈으므로 여기서 시간이 더 걸려도 3초 제한과 무관하다)
+  await bumpBoard('attendance', interaction.channel_id)
+    .catch((e: unknown) => console.error('출석판 재게시 실패:', e));
+}
+
+async function handleReliefClaim(interaction: any, res: ServerResponse): Promise<void> {
+  const caller = identifyCaller(interaction);
+  upsertUser(caller.id, caller.username, caller.avatar);
+  const r = claimRelief(caller.id);
+
+  if (!r.ok) {
+    if (r.error === 'not_broke') {
+      return ephemeral(res, `아직 포인트가 남아 있습니다. 보유 포인트가 **정확히 0P**일 때만 신청할 수 있어요.`);
+    }
+    if (r.error === 'cooldown') {
+      // 다음 신청 가능 시각을 디스코드 상대 타임스탬프로 보여준다 (각자의 시간대로 표시된다)
+      return ephemeral(res, `이미 지원금을 받았습니다. <t:${r.nextAvailableAt}:R>에 다시 신청할 수 있어요.`);
+    }
+    return ephemeral(res, '신청 처리 중 문제가 발생했습니다.');
+  }
+
+  // 출석과 마찬가지로 누가 신청했는지 채널에 공개로 남긴다
+  publicReply(
+    res,
+    `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(RELIEF_AMOUNT)}\n`
+    + `잔액 ${pts(r.balance)} · 다음 신청 <t:${r.nextAvailableAt}:R>`
+  );
+  await bumpBoard('relief', interaction.channel_id)
+    .catch((e: unknown) => console.error('지원금판 재게시 실패:', e));
 }
 
 export async function handleInteractions(req: IncomingMessage, res: ServerResponse): Promise<void> {

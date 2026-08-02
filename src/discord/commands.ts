@@ -23,6 +23,11 @@ export const commandModules: CommandModule[] = [
   },
   {
     data: new SlashCommandBuilder()
+      .setName('지원금판생성')
+      .setDescription('[관리자] 이 채널에 개인회생 지원금 신청 버튼 메시지를 게시합니다'),
+  },
+  {
+    data: new SlashCommandBuilder()
       .setName('카지노판생성')
       .setDescription('[관리자] 이 채널에 카지노 입장 버튼 메시지를 게시합니다'),
   },
