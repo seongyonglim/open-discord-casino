@@ -180,6 +180,43 @@ function initSchema(): void {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_baccarat_bets_unique ON baccarat_bets(round_id, user_id, market);
     CREATE INDEX IF NOT EXISTS idx_baccarat_bets_round ON baccarat_bets(round_id);
+
+    -- 블랙잭: 7석 공용 테이블. 결정은 전원이 같은 창에서 동시에 한다.
+    -- 카드를 몇 장 쓸지 미리 알 수 없어(각자 원하는 만큼 힛한다) 슈를 통째로 섞어 저장하고
+    -- 커서(shoe_pos)를 밀며 꺼내 쓴다. shoe_json에는 앞으로 나올 카드가 전부 들어 있으므로
+    -- 절대 클라이언트로 내려보내면 안 된다 — 한 장이 아니라 남은 판 전체가 새는 셈이다.
+    CREATE TABLE IF NOT EXISTS blackjack_rounds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phase TEXT NOT NULL DEFAULT 'betting', -- 'betting'|'deal'|'action'|'dealer'|'done'
+      -- 아무도 앉지 않았으면 NULL이다. 빈 테이블에서 카드가 계속 돌면 볼 사람도 없이
+      -- 슈만 축나고, 들어온 사람은 남의 라운드 끝나기를 기다려야 한다.
+      -- 첫 사람이 앉는 순간 값이 채워지고 그때부터 카운트다운이 시작된다.
+      betting_ends_at INTEGER,               -- 초
+      -- 모두가 결정을 마치면 15초를 다 기다리지 않고 여기에 끝난 시각을 적어 바로 넘어간다
+      action_ended_at INTEGER,
+      shoe_json TEXT NOT NULL,
+      shoe_pos INTEGER NOT NULL DEFAULT 0,
+      dealer_json TEXT NOT NULL DEFAULT '[]',
+      result_json TEXT,
+      resolved_at INTEGER,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE TABLE IF NOT EXISTS blackjack_hands (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id INTEGER NOT NULL,
+      seat INTEGER NOT NULL,                 -- 0~6
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      bet INTEGER NOT NULL,
+      cards_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'playing', -- 'playing'|'stand'|'bust'|'blackjack'
+      outcome TEXT,
+      payout INTEGER,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    -- 한 사람은 한 자리만, 한 자리에는 한 사람만
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bj_hand_user ON blackjack_hands(round_id, user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bj_hand_seat ON blackjack_hands(round_id, seat);
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)
