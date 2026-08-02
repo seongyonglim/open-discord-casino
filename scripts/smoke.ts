@@ -166,6 +166,29 @@ async function main(): Promise<void> {
     console.log('\n[8] DB 자동 생성');
     check('빈 볼륨에 data.db 생성', readdirSync(dataDir).includes('data.db'),
       readdirSync(dataDir).join(','));
+
+    /* 게임끼리 CSS 클래스 이름이 겹치는지.
+       app.css는 게임 전부가 한 파일을 공유하므로, 나중에 정의한 쪽이 앞의 것을 조용히 덮는다.
+       바카라 구슬판에 .bead/.bead-row를 썼다가 이미 같은 이름을 쓰던 사다리 출목표가
+       원형 19px 배지로 뭉개져 카드 밖으로 튀어나온 적이 있다 — 화면을 열어보기 전에는 모른다.
+       미디어 쿼리 안의 재정의는 정상적인 반응형 패턴이므로 최상위 규칙만 본다. */
+    console.log('\n[9] CSS 클래스 중복 정의');
+    {
+      const css = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.css'), 'utf8');
+      // 미디어 쿼리 블록을 통째로 들어낸 뒤 남은 최상위 규칙만 센다
+      const topLevel = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+      const seen = new Map<string, number>();
+      for (const m of topLevel.matchAll(/(^|\})\s*([^{}@]+?)\s*\{/g)) {
+        for (const sel of m[2].split(',')) {
+          const s = sel.trim();
+          // 단일 클래스 선택자만 (.a.b, .a .b 같은 조합은 의도적 재정의인 경우가 많다)
+          if (!/^\.[a-z][a-z0-9-]*$/i.test(s)) continue;
+          seen.set(s, (seen.get(s) ?? 0) + 1);
+        }
+      }
+      const dup = [...seen].filter(([, n]) => n > 1).map(([s, n]) => `${s}×${n}`);
+      check('같은 클래스를 최상위에서 두 번 정의하지 않음', dup.length === 0, dup.join(' '));
+    }
   } finally {
     child.kill();
     await new Promise(r => setTimeout(r, 300));

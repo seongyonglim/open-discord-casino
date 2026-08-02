@@ -189,13 +189,13 @@ export function baccaratPage(user: WebUser): string {
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
-          <div class="bead-head">
+          <div class="bacc-bead-head">
             <span>최근 결과</span>
-            <span class="bead-legend">
-              <i class="bead p"></i>플레이어 <i class="bead b"></i>뱅커 <i class="bead t"></i>타이
+            <span class="bacc-bead-legend">
+              <i class="bacc-bead p"></i>플레이어 <i class="bacc-bead b"></i>뱅커 <i class="bacc-bead t"></i>타이
             </span>
           </div>
-          <div id="bHistory" class="bead-row"></div>
+          <div id="bHistory" class="bacc-bead-row"></div>
 
           <div class="bacc-table">
             <div id="bStatus" class="bacc-status">베팅을 기다리는 중…</div>
@@ -468,14 +468,14 @@ export function baccaratPage(user: WebUser): string {
       /* ── 최근 결과 (구슬판) ─────────────────────────────────────────
          바카라 테이블에 항상 붙어 있는 그 판이다. 최신이 왼쪽. */
       function renderHistory(rows){
-        if (!rows || !rows.length) { histEl.innerHTML = '<span class="bead-empty">아직 기록이 없습니다</span>'; return; }
+        if (!rows || !rows.length) { histEl.innerHTML = '<span class="bacc-bead-empty">아직 기록이 없습니다</span>'; return; }
         var sig = rows.map(function(r){ return r.winner[0]+r.playerTotal+r.bankerTotal; }).join('');
         if (histEl.dataset.sig === sig) return;
         histEl.dataset.sig = sig;
         histEl.innerHTML = rows.map(function(r){
           var c = r.winner === 'player' ? 'p' : r.winner === 'banker' ? 'b' : 't';
           var mark = r.winner === 'player' ? 'P' : r.winner === 'banker' ? 'B' : 'T';
-          return '<span class="bead '+c+'" title="플레이어 '+r.playerTotal+' : 뱅커 '+r.bankerTotal+'">'+mark+'</span>';
+          return '<span class="bacc-bead '+c+'" title="플레이어 '+r.playerTotal+' : 뱅커 '+r.bankerTotal+'">'+mark+'</span>';
         }).join('');
       }
 

@@ -619,24 +619,24 @@
   /* ── 바카라 ──────────────────────────────────────────────────
      색은 실제 바카라 테이블 관례를 그대로 따른다: 플레이어=파랑, 뱅커=빨강, 타이=초록.
      이 배색은 바카라를 아는 사람에게는 설명 없이 읽히고, 모르는 사람에게도 세 갈래가 구분된다. */
-  .bead-head{display:flex;justify-content:space-between;align-items:center;
+  .bacc-bead-head{display:flex;justify-content:space-between;align-items:center;
     font-size:11px;color:var(--muted);margin-bottom:7px}
-  .bead-legend{display:flex;align-items:center;gap:4px;font-size:10.5px}
-  .bead-legend .bead{width:14px;height:14px;font-size:0;margin-left:4px}
-  .bead-row{display:flex;gap:4px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px;
+  .bacc-bead-legend{display:flex;align-items:center;gap:4px;font-size:10.5px}
+  .bacc-bead-legend .bacc-bead{width:14px;height:14px;font-size:0;margin-left:4px}
+  .bacc-bead-row{display:flex;gap:4px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px;
     scrollbar-width:none}
-  .bead-row::-webkit-scrollbar{display:none}
-  .bead-empty{font-size:12px;color:var(--muted)}
+  .bacc-bead-row::-webkit-scrollbar{display:none}
+  .bacc-bead-empty{font-size:12px;color:var(--muted)}
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
      그래서 베팅 상자(.m-player/.m-banker)와 같은 언어로 맞춘다:
      어두운 틴트 배경 + 같은 계열의 테두리 + 그 색의 밝은 글자. 그라디언트도 그림자도 쓰지 않는다. */
-  .bead{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  .bacc-bead{display:inline-flex;align-items:center;justify-content:center;flex:none;
     width:19px;height:19px;border-radius:50%;font-size:10px;font-weight:700;
     font-family:var(--mono);letter-spacing:0;border:1px solid transparent}
-  .bead.p{background:#12233a;border-color:#2c4f80;color:#7fb8ff}
-  .bead.b{background:#33201a;border-color:#6b3d2c;color:#ffa287}
-  .bead.t{background:#14291f;border-color:#2c5a41;color:#6fce9d}
+  .bacc-bead.p{background:#12233a;border-color:#2c4f80;color:#7fb8ff}
+  .bacc-bead.b{background:#33201a;border-color:#6b3d2c;color:#ffa287}
+  .bacc-bead.t{background:#14291f;border-color:#2c5a41;color:#6fce9d}
 
   .bacc-table{background:radial-gradient(120% 100% at 50% 0%, #143024 0%, #0c1a14 70%);
     border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:10px}
