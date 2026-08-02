@@ -36,7 +36,21 @@
   .tab.active{color:var(--gold);border-bottom-color:var(--gold)}
 
   /* 프로필 — 디스코드 아바타 + 닉네임 + 보유 포인트, 눌러서 펼치는 메뉴 */
-  .profwrap{margin-left:auto;position:relative}
+  .profwrap{margin-left:auto;position:relative;display:flex;align-items:center;gap:8px}
+  /* 효과음 스위치 — 프로필 옆에 그대로 둔다. 아이콘 모양이 곧 현재 상태다.
+     꺼져 있을 때만 색이 죽어서, 멀리서 봐도 소리가 나가는 중인지 알 수 있다. */
+  .sfxbtn{display:inline-flex;align-items:center;justify-content:center;flex:none;
+    width:34px;height:34px;padding:0;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    /* 색에는 transition을 걸지 않는다 — 켜짐/꺼짐은 hover 같은 장식이 아니라 상태 표시라
+       즉시 바뀌어야 하고, 페이드가 끼면 눌렀는데 안 바뀐 것처럼 보이는 순간이 생긴다 */
+    color:var(--gold);transition:border-color .12s}
+  .sfxbtn:hover{border-color:var(--gold)}
+  .sfxbtn .off{display:none}
+  html.sfx-off .sfxbtn{color:var(--muted)}
+  html.sfx-off .sfxbtn .on{display:none}
+  html.sfx-off .sfxbtn .off{display:block}
+  @media(max-width:400px){.sfxbtn{display:none}}
   .prof{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);
     border:1px solid var(--line);border-radius:10px;padding:6px 10px 6px 7px;
     cursor:pointer;font-family:inherit;color:var(--txt);white-space:nowrap;transition:border-color .12s}

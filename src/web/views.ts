@@ -132,8 +132,18 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   const ava = u
     ? (u.avatar ? `<img class="ava" src="${esc(u.avatar)}" alt="" width="24" height="24">` : `<span class="ava">${ini}</span>`)
     : '';
+  // 효과음 켜기/끄기 — 프로필 메뉴 안이 아니라 헤더에 그대로 둔다.
+  // 소리를 끄는 건 "지금 당장" 하는 동작이라 두 번 눌러 들어가면 이미 늦고,
+  // 아이콘 모양이 곧 현재 상태라 메뉴를 열지 않고도 켜졌는지 알 수 있다.
+  // 실제 상태 클래스(sfx-off)는 app.js가 <html>에 미리 박아두므로 첫 렌더부터 모양이 맞는다.
+  const sfxBtn = `<button class="sfxbtn" id="sfxBtn" type="button" title="효과음 끄기" aria-label="효과음">
+      <svg class="on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>
+      <svg class="off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/></svg>
+    </button>`;
+
   const authBox = u
     ? `<div class="profwrap">
+        ${sfxBtn}
         <button class="prof" id="profBtn" type="button" aria-haspopup="true" aria-expanded="false">
           ${ava}<span class="pname">${esc(u.username)}</span>
           ${u.role === 'admin' ? '<span class="adm">ADMIN</span>' : ''}
