@@ -8,7 +8,26 @@
   // (효과음 5개를 미리 받는 과정에서 실제로 35개가 찍혔다).
   // 디코딩은 suspended 상태에서도 되므로, resume은 첫 조작이 있었을 때만 시도한다.
   var gestureSeen = false;
+
+  /* ── 효과음 켜기/끄기 ────────────────────────────────────────────────
+     설정은 브라우저에 남겨 새로고침·페이지 이동에도 유지한다(서버에 저장할 이유가 없다 —
+     같은 사람이라도 회사 PC에서는 끄고 집에서는 켜고 싶을 수 있다).
+     이 파일은 <head>에서 동기 실행되므로 <html>에 상태 클래스를 미리 박아 둔다.
+     그래야 헤더가 그려지는 첫 순간부터 아이콘이 올바른 모양으로 나온다(깜빡임 방지). */
+  var SFX_KEY = 'od_sfx';
+  var sfxOn = true;
+  try { sfxOn = localStorage.getItem(SFX_KEY) !== 'off'; } catch(e){}
+  function markSfxState(){
+    var r = document.documentElement;
+    if (r) r.classList.toggle('sfx-off', !sfxOn);
+  }
+  markSfxState();
+
   function ac(){
+    // 꺼져 있으면 아예 컨텍스트를 열지 않는다.
+    // 소리를 내는 모든 경로가 ac()의 null을 확인하고 빠져나가므로, 여기 한 곳만 막으면 된다
+    // (합성음 대체 경로까지 포함해서).
+    if (!sfxOn) return null;
     if (!ctx) {
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -127,6 +146,9 @@
   // 로비·랭킹·로그인 화면에서도 효과음 8종(1.1MB, wav 3개 포함)을 내려받아 디코딩했다.
   // 페이지 로드 400ms 뒤에 그게 시작돼 메인 스레드가 붙들리고 hover가 멈춘 채 렉이 걸렸다.
   function preloadSfx(){
+    // 꺼둔 사람에게 음원 600KB를 내려받게 할 이유가 없다.
+    // 나중에 켜면 playSample이 없는 버퍼를 그 자리에서 받아오므로 저절로 복구된다.
+    if (!sfxOn) return;
     var need = window.__SFX_NEED__;
     if (!need || !need.length) return;
     need.forEach(function(k){ (SFX_SETS[k] || []).forEach(loadSfx); });
@@ -249,6 +271,27 @@
       .catch(function(){ return null; })
       .then(function(v){ clearTimeout(t); return v; });
   };
+
+  // 헤더 스피커 버튼 — 켜고 끄기. 이 파일은 헤더 DOM이 생기기 전에 실행되므로 위임으로 받는다.
+  window.casinoSfxToggle = function(){
+    sfxOn = !sfxOn;
+    try { localStorage.setItem(SFX_KEY, sfxOn ? 'on' : 'off'); } catch(e){}
+    markSfxState();
+    if (sfxOn) {
+      preloadSfx();
+      // 켠 직후 아무 소리도 안 나면 정말 켜진 건지 알 수 없다. 짧게 한 번 들려준다.
+      if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+    }
+    return sfxOn;
+  };
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    var btn = t && t.closest ? t.closest('#sfxBtn') : null;
+    if (!btn) return;
+    var on = window.casinoSfxToggle();
+    btn.setAttribute('aria-pressed', on ? 'false' : 'true');
+    btn.setAttribute('title', on ? '효과음 끄기' : '효과음 켜기');
+  });
 
   // 오디오 컨텍스트는 사용자 조작이 있어야 재생이 풀리므로 첫 클릭에서 깨운다.
   document.addEventListener('pointerdown', function(){ gestureSeen = true; ac(); preloadSfx(); }, { once: true });
