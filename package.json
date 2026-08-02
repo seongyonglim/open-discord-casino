@@ -14,7 +14,13 @@
     "cards:fetch": "node --experimental-sqlite --require tsx/cjs scripts/fetch-cards.ts",
     "bots": "node --experimental-sqlite --require tsx/cjs preview-bots.ts",
     "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts",
-    "sfx:mono": "node --experimental-sqlite --require tsx/cjs scripts/sfx-mono.ts"
+    "sfx:mono": "node --experimental-sqlite --require tsx/cjs scripts/sfx-mono.ts",
+    "audit:economy": "node --experimental-sqlite --require tsx/cjs scripts/audit-economy.ts",
+    "audit:concurrency": "node --experimental-sqlite --require tsx/cjs scripts/audit-concurrency.ts",
+    "audit:e2e": "node --experimental-sqlite --require tsx/cjs scripts/audit-e2e.ts",
+    "audit:security": "node --experimental-sqlite --require tsx/cjs scripts/audit-security.ts",
+    "audit:discord": "node --experimental-sqlite --require tsx/cjs scripts/audit-discord.ts",
+    "audit": "npm run smoke && npm run audit:economy && npm run audit:concurrency && npm run audit:e2e && npm run audit:security && npm run audit:discord"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
