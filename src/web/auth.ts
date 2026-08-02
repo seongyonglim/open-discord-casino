@@ -100,6 +100,16 @@ export function handlePreviewLogin(req: IncomingMessage, res: ServerResponse): v
   res.end();
 }
 
+// GET /go → 디스코드 채널의 "카지노 입장" 버튼이 가리키는 주소.
+// 세션이 있으면 로비로 바로 보내고, 없으면 OAuth로 보낸다.
+// 이미 앱을 승인한 사용자는 디스코드가 확인 화면 없이 즉시 되돌려주므로 클릭 한 번으로 입장이 끝난다.
+// (링크 버튼 자체는 신원을 담지 못하므로, 로그인은 표준 OAuth 경로로만 처리한다)
+export function handleGo(req: IncomingMessage, res: ServerResponse): void {
+  const location = currentUser(req) ? '/' : '/auth/login';
+  res.writeHead(302, { location });
+  res.end();
+}
+
 // GET /auth/login → 디스코드 인증 화면으로 리다이렉트
 export function handleLogin(req: IncomingMessage, res: ServerResponse): void {
   if (!authConfigured()) return sendAuthNotice(res);

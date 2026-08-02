@@ -5,7 +5,7 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { lobbyPage, leaderboardPage } from './pages';
 import { setRequestUser, LOGO_SVG } from './views';
-import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin } from './auth';
+import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
 import { handleInteractions } from '../discord/interactions';
 import { sendJson, sendBody, markEncoding, acceptsGzip } from './http';
@@ -129,6 +129,7 @@ export function startWebServer(): void {
 
       // 인증 라우트
       if (path === '/dev/login') return handlePreviewLogin(req, res);
+      if (path === '/go') return handleGo(req, res);
       if (path === '/auth/login') return handleLogin(req, res);
       if (path === '/auth/callback') return await handleCallback(req, res, url);
       if (path === '/auth/logout') return handleLogout(req, res);

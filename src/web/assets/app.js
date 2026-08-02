@@ -296,3 +296,18 @@
   window.addEventListener('load', function(){ window.casinoMark('load 완료'); });
   window.casinoMark('app.js 실행 완료');
 })();
+
+/* ── 프로필 드롭다운 ──────────────────────────────────────────────── */
+(function(){
+  var b = document.getElementById("profBtn"), m = document.getElementById("profMenu");
+  if (!b || !m) return;
+  function close(){ m.setAttribute("hidden",""); b.classList.remove("open"); b.setAttribute("aria-expanded","false"); }
+  b.addEventListener("click", function(e){
+    e.stopPropagation();
+    if (m.hasAttribute("hidden")) { m.removeAttribute("hidden"); b.classList.add("open"); b.setAttribute("aria-expanded","true"); }
+    else close();
+  });
+  document.addEventListener("click", close);
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape") close(); });
+  m.addEventListener("click", function(e){ e.stopPropagation(); });
+})();

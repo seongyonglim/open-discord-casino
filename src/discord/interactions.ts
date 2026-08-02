@@ -69,6 +69,34 @@ async function postAttendanceBoard(channelId: string): Promise<void> {
   });
 }
 
+// 카지노 사이트로 보내는 링크 버튼.
+// 링크 버튼(style 5)은 URL만 열고 신원을 담지 못하므로 로그인은 사이트의 OAuth가 처리한다.
+// /go 로 보내는 이유: 세션이 있으면 로비로 직행하고, 없으면 OAuth로 넘겨
+// 이미 앱을 승인한 사용자는 확인 화면 없이 되돌아온다(클릭 한 번으로 입장이 끝난다).
+async function postCasinoBoard(channelId: string): Promise<void> {
+  const url = (env('CASINO_URL') || 'https://odcasino.kro.kr').replace(/\/+$/, '') + '/go';
+  await rest.post(Routes.channelMessages(channelId), {
+    body: {
+      embeds: [{
+        title: 'OD CASINO',
+        description: '출석으로 모은 포인트로 즐기는 오픈디코 전용 카지노.\n'
+          + '지뢰찾기 · 사다리게임 · 그래프게임 · 포커 플립\n\n'
+          + '아래 버튼을 누르면 바로 입장합니다. (오픈디코 서버 멤버만 입장 가능)',
+        color: 0xd4af37,
+      }],
+      components: [{
+        type: ComponentType.ActionRow,
+        components: [{
+          type: ComponentType.Button,
+          style: ButtonStyle.Link,
+          label: '카지노 입장',
+          url,
+        }],
+      }],
+    },
+  });
+}
+
 async function handleCommand(interaction: any, res: ServerResponse): Promise<void> {
   const name = interaction.data?.name;
   const caller = identifyCaller(interaction);
@@ -96,6 +124,17 @@ async function handleCommand(interaction: any, res: ServerResponse): Promise<voi
     ephemeral(res, '이 채널에 출석체크 메시지를 게시합니다.');
     await postAttendanceBoard(interaction.channel_id)
       .catch(e => console.error('출석판 게시 실패:', e));
+    return;
+  }
+
+  if (name === '카지노판생성') {
+    const u = getWebUser(caller.id);
+    if (u?.role !== 'admin') return ephemeral(res, '관리자만 사용할 수 있는 명령어입니다.');
+    if (!interaction.channel_id) return ephemeral(res, '채널 정보를 확인할 수 없습니다.');
+    // 출석판과 같은 이유로 응답을 먼저 보내고 게시는 그 뒤에 한다 (3초 제한)
+    ephemeral(res, '이 채널에 카지노 입장 메시지를 게시합니다.');
+    await postCasinoBoard(interaction.channel_id)
+      .catch(e => console.error('카지노판 게시 실패:', e));
     return;
   }
 

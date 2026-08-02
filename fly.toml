@@ -8,6 +8,8 @@ primary_region = "nrt"
   # 비밀값이 아니라 도메인에서 그대로 나오는 고정 URL이라 시크릿이 아니라 여기에 둔다.
   # 디스코드 포털의 OAuth2 리다이렉트 등록값과 한 글자도 달라선 안 된다.
   DISCORD_OAUTH_REDIRECT_URI = "https://odcasino.kro.kr/auth/callback"
+  # 디스코드 "카지노 입장" 버튼이 가리키는 주소 (도메인이 바뀌면 여기만 고친다)
+  CASINO_URL = "https://odcasino.kro.kr"
 
 [[mounts]]
   source = "discord_casino_data"

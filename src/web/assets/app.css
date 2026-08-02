@@ -27,26 +27,65 @@
   .wrap{max-width:1000px;margin:0 auto;padding:0 16px}
   .brand{display:flex;align-items:center;gap:10px;padding:16px 0 10px}
   .brand .logo{border-radius:8px;display:block;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-  .brand b{font-family:var(--display);font-weight:400;font-size:22px;color:var(--gold);letter-spacing:.5px;
-    display:flex;align-items:center;gap:8px}
-  .brand b .suit{color:var(--gold-dim);font-size:15px}
-  header nav{display:flex;gap:4px;padding-bottom:12px}
-  .tab{font-family:var(--display);font-weight:400;font-size:14px;color:var(--muted);padding:8px 14px;
-    border-radius:8px 8px 0 0;border-bottom:2px solid transparent;letter-spacing:.3px}
+  .brand b{font-family:var(--display);font-weight:400;font-size:21px;color:var(--gold);letter-spacing:1px}
+  header nav{display:flex;gap:4px;padding-bottom:0}
+  /* 탭은 밑줄로만 활성을 표시한다 (discord-lol과 같은 결) */
+  .tab{font-size:14px;font-weight:600;color:var(--muted);padding:10px 16px;
+    border-bottom:2px solid transparent;white-space:nowrap;transition:color .12s,border-color .12s}
   .tab:hover{color:var(--txt)}
   .tab.active{color:var(--gold);border-bottom-color:var(--gold)}
-  .prof{margin-left:auto;display:inline-flex;align-items:center;gap:9px;background:var(--panel2);
-    border:1px solid var(--line);border-radius:10px;padding:6px 8px 6px 7px}
-  .prof .chip{width:18px;height:18px;border-radius:50%;flex:none;
-    background:radial-gradient(circle at 35% 30%, var(--gold-hi), var(--gold) 60%, #8a6d1f 100%);
-    box-shadow:inset 0 0 0 2px rgba(0,0,0,.35), 0 0 0 1px rgba(212,175,55,.4)}
+
+  /* 프로필 — 디스코드 아바타 + 닉네임 + 보유 포인트, 눌러서 펼치는 메뉴 */
+  .profwrap{margin-left:auto;position:relative}
+  .prof{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;padding:6px 10px 6px 7px;
+    cursor:pointer;font-family:inherit;color:var(--txt);white-space:nowrap;transition:border-color .12s}
+  .prof:hover,.prof.open{border-color:var(--gold)}
+  .prof .ava{width:24px;height:24px;border-radius:7px;flex:none;object-fit:cover;
+    background:#5865f2;color:#fff;display:inline-flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:800}
   .prof .pname{font-size:13px;font-weight:700;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prof .adm{font-size:10px;font-weight:800;color:var(--gold);
+    border:1px solid var(--gold-dim);border-radius:4px;padding:1px 5px;letter-spacing:.5px}
   .prof .pbal{font-family:var(--mono);font-size:13px;color:var(--gold);font-weight:600}
-  .prof .logout{color:var(--muted);display:flex}
-  .prof .logout:hover{color:var(--lose)}
+  .prof .caret{color:var(--muted);transition:transform .18s}
+  .prof.open .caret{transform:rotate(180deg)}
+  .profmenu{position:absolute;top:calc(100% + 8px);right:0;min-width:150px;z-index:400;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px;
+    box-shadow:0 16px 40px rgba(0,0,0,.6);animation:menuIn .16s cubic-bezier(.16,1,.3,1) both}
+  .profmenu[hidden]{display:none}
+  .pm-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;
+    font-size:13.5px;font-weight:600;color:var(--muted)}
+  .pm-item:hover{background:rgba(212,175,55,.1);color:var(--txt)}
+  .pm-item.danger:hover{background:rgba(229,72,77,.12);color:var(--lose)}
+  @keyframes menuIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+  @media(max-width:520px){.prof .pname,.prof .adm{display:none}}
+
   .loginbtn{margin-left:auto;display:inline-flex;align-items:center;gap:7px;background:#5865f2;color:#fff;
     font-size:13px;font-weight:700;line-height:1;padding:8px 13px;border-radius:10px;white-space:nowrap}
   .loginbtn:hover{background:#4752e0}
+  /* ── 페이지 전환 ────────────────────────────────────────────────────
+     게임을 오갈 때 화면이 뚝 끊기지 않게 부드럽게 넘긴다.
+     크로스 도큐먼트 뷰 트랜지션이라 SSR 다중 페이지 구조에 그대로 쓸 수 있고,
+     지원하지 않는 브라우저는 아래 mainIn 페이드로 대체된다(둘 다 없어도 화면은 정상).
+     헤더는 페이지마다 같으니 고정해 두고 본문만 교차 페이드시킨다. */
+  @view-transition{navigation:auto}
+  header{view-transition-name:od-header}
+  main{view-transition-name:od-main}
+  ::view-transition-old(od-main){animation:vtOut .16s cubic-bezier(.4,0,1,1) both}
+  ::view-transition-new(od-main){animation:vtIn .22s cubic-bezier(0,0,.2,1) both}
+  ::view-transition-old(od-header),::view-transition-new(od-header){animation:none;mix-blend-mode:normal}
+  @keyframes vtOut{to{opacity:0;transform:translateY(-4px)}}
+  @keyframes vtIn{from{opacity:0;transform:translateY(6px)}}
+  /* 뷰 트랜지션 미지원 브라우저용 대체.
+     @supports로 막지 않으면 지원 브라우저에서 뷰 트랜지션과 겹쳐 두 번 페이드된다. */
+  @supports not (view-transition-name:none){
+    @media(prefers-reduced-motion:no-preference){
+      main{animation:mainIn .2s cubic-bezier(0,0,.2,1) both}
+    }
+  }
+  @keyframes mainIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
   main{max-width:1000px;margin:0 auto;padding:16px 16px 40px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;
     box-shadow:inset 0 1px 0 rgba(212,175,55,.14)}

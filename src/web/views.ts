@@ -126,15 +126,24 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   ).join('');
 
   const u = _reqUser;
+  // 아바타는 디스코드 프로필 사진을 쓰고, 없으면 이름 첫 글자로 대체한다
   const ini = u ? esc((u.username.trim()[0] ?? '?').toUpperCase()) : '';
+  const ava = u
+    ? (u.avatar ? `<img class="ava" src="${esc(u.avatar)}" alt="" width="24" height="24">` : `<span class="ava">${ini}</span>`)
+    : '';
   const authBox = u
-    ? `<div class="prof">
-        <span class="chip"></span>
-        <span class="pname">${esc(u.username)}</span>
-        <span class="pbal">${esc(pts(u.balance))}</span>
-        <a class="logout" href="/auth/logout" title="로그아웃">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
-        </a>
+    ? `<div class="profwrap">
+        <button class="prof" id="profBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          ${ava}<span class="pname">${esc(u.username)}</span>
+          ${u.role === 'admin' ? '<span class="adm">ADMIN</span>' : ''}
+          <span class="pbal">${esc(pts(u.balance))}</span>
+          <svg class="caret" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
+        </button>
+        <div class="profmenu" id="profMenu" hidden>
+          <a class="pm-item danger" href="/auth/logout">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>로그아웃
+          </a>
+        </div>
       </div>`
     : `<a class="loginbtn" href="/auth/login">${discordIcon(16)}디스코드 로그인</a>`;
 
@@ -143,7 +152,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} · OPEN 카지노</title>
+<title>${esc(title)} · OD CASINO</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- 브랜드용 Black Han Sans 하나만 받고, 그마저도 렌더를 막지 않게 비동기로 로드한다.
@@ -163,7 +172,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 <header>
   <div class="wrap">
     <div class="brand"><img class="logo" src="/favicon.svg" alt="" width="30" height="30">
-      <b><span class="suit">♠</span>OPEN 카지노<span class="suit">♦</span></b>${authBox}</div>
+      <b>OD CASINO</b>${authBox}</div>
     <nav>${nav}</nav>
   </div>
 </header>
