@@ -109,17 +109,30 @@ export function adjustBalance(userId: string, delta: number, reason: string): nu
   });
 }
 
-// 출석 체크인: 지급 목록(출석 포인트 + 있으면 주간/월간 보너스)을 한 트랜잭션으로 처리하고 연속일수/날짜를 갱신
-export function performCheckIn(userId: string, newStreak: number, dateStr: string, grants: PointsGrant[]): number {
+// 출석 체크인: 지급 목록(출석 포인트 + 있으면 주간/월간 보너스)을 한 트랜잭션으로 처리하고 연속일수/날짜를 갱신.
+// 이미 오늘 출석한 상태면 null을 돌려주고 아무것도 지급하지 않는다.
+//
+// 날짜를 "선점"하는 조건부 UPDATE를 맨 앞에 두는 게 핵심이다. 지급을 먼저 하고 날짜를 나중에 쓰면,
+// 호출자(economy.checkIn)의 날짜 비교와 이 트랜잭션 사이에 같은 유저의 요청이 한 번 더 끼어들 경우
+// 둘 다 통과해 보상이 두 번 나간다. 지금은 checkIn이 await 없이 한 틱에 끝나서 그럴 일이 없지만,
+// 그 사실에만 기대면 나중에 await 한 줄이 끼는 순간 조용히 이중 지급이 된다.
+// (지원금·베팅 차감이 쓰는 것과 같은 방식: WHERE로 조건을 걸고 changes()로 실제 반영 여부를 본다)
+export function performCheckIn(userId: string, newStreak: number, dateStr: string, grants: PointsGrant[]): number | null {
   return tx(() => {
-    let balance = 0;
+    run(
+      `UPDATE users SET current_streak = ?, last_checkin_date = ?
+       WHERE id = ? AND (last_checkin_date IS NULL OR last_checkin_date != ?)`,
+      newStreak, dateStr, userId, dateStr
+    );
+    if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 0) return null;
+
+    let balance = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId)!.balance;
     for (const g of grants) {
       run(`UPDATE users SET balance = balance + ? WHERE id = ?`, g.delta, userId);
       const row = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId)!;
       balance = row.balance;
       run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`, userId, g.delta, g.reason, balance);
     }
-    run(`UPDATE users SET current_streak = ?, last_checkin_date = ? WHERE id = ?`, newStreak, dateStr, userId);
     return balance;
   });
 }
@@ -234,7 +247,8 @@ export interface GameRound {
   settled_at: number | null;
 }
 
-export function createGameRound(userId: string, gameType: string, betAmount: number, state: unknown): number {
+// placeBet 전용 내부 함수. 밖으로 열어두면 잔액 확인·차감을 건너뛰고 라운드만 만들 수 있다.
+function createGameRound(userId: string, gameType: string, betAmount: number, state: unknown): number {
   run(
     `INSERT INTO game_rounds (user_id, game_type, bet_amount, status, state_json) VALUES (?, ?, ?, 'active', ?)`,
     userId, gameType, betAmount, JSON.stringify(state)
@@ -281,9 +295,9 @@ export function settleGameRound(id: number, userId: string, payout: number, mult
 // ----- 사다리게임: 실시간 공용 라운드 (여러 유저가 같은 라운드에 함께 베팅) -----
 
 export const LADDER_BETTING_SEC = 10;
-// 다른 게임과 맞춰 3초. 이 값은 "공 하강 연출 + 결과 감상"을 함께 덮으므로,
-// 하강이 이 안에 끝나야 한다 — 그래서 연출 속도를 최대 1.54초로 잡아두었다(ladder.ts FALL/GROW/CROSS).
-// 연출을 늦추려면 이 값도 함께 올려야 한다. 안 그러면 하강 중에 다음 라운드가 시작된다.
+// 공이 다 내려온 "뒤에" 결과를 보는 시간 3초. 다른 게임의 다음 라운드 대기와 같은 값이다.
+// 실제 공개 구간은 ladder.ts의 revealSecFor()가 ceil(하강시간) + 이 값으로 계산하므로,
+// 연출을 늦춰도 하강 도중에 다음 라운드가 시작되지 않는다(창이 하강 길이에 맞춰 늘어난다).
 export const LADDER_REVEAL_SEC = 3;
 export const LADDER_MULTIPLIER = 1.95; // 출발 또는 도착 중 하나만 맞히는 단일 예측
 export const LADDER_DOUBLE_MULTIPLIER = 3.95; // 출발+도착 둘 다 맞히는 더블 예측

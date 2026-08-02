@@ -59,6 +59,12 @@ export function checkIn(userId: string, username: string, avatar: string | null)
   }
 
   const balance = performCheckIn(userId, newStreak, today, grants);
+  // null이면 위 날짜 비교와 트랜잭션 사이에 다른 요청이 먼저 오늘을 선점했다는 뜻이다.
+  // 그쪽이 이미 지급받았으므로 여기서는 "이미 출석함"으로 돌려준다.
+  if (balance === null) {
+    const now2 = getWebUser(userId)!;
+    return { alreadyCheckedIn: true, streak: now2.current_streak, balance: now2.balance, granted: 0, breakdown: [] };
+  }
   const granted = grants.reduce((sum, g) => sum + g.delta, 0);
   return { alreadyCheckedIn: false, streak: newStreak, balance, granted, breakdown: grants };
 }
