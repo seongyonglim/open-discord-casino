@@ -19,12 +19,11 @@ let _reqUser: HeaderUser | null = null;
 export function setRequestUser(u: HeaderUser | null): void { _reqUser = u; }
 
 // 게임 선택은 로비에서 하므로 별도 '게임' 탭은 두지 않는다. 게임 플레이 화면은 로비 탭을 활성으로 표시.
-export type Tab = 'lobby' | 'leaderboard' | 'relief';
+export type Tab = 'lobby' | 'leaderboard';
 
 const TABS: { key: Tab; label: string; href: string }[] = [
   { key: 'lobby', label: '로비', href: '/' },
   { key: 'leaderboard', label: '랭킹', href: '/leaderboard' },
-  { key: 'relief', label: '재난 지원금', href: '/relief' },
 ];
 
 export function esc(s: unknown): string {
@@ -96,7 +95,7 @@ const REASON_LABEL: Record<string, string> = {
   attendance: '출석 체크',
   weekly_streak_bonus: '주간 개근 보너스',
   monthly_streak_bonus: '월간 개근 보너스',
-  disaster_relief: '재난 지원금',
+  disaster_relief: '개인회생 지원금',
 };
 
 // game_type 내부 식별자(영문) → 화면에 보여줄 한글 게임명. 새 게임 추가할 때마다 여기에 등록.

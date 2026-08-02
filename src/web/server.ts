@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { lobbyPage, leaderboardPage } from './pages';
-import { reliefPage, handleClaim as reliefClaim } from './relief';
 import { setRequestUser, LOGO_SVG } from './views';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -33,9 +32,12 @@ const SFX_FILES = new Set([
   'mine-coin.mp3', 'explode.mp3', // 지뢰찾기 — 안전 칸 금화 / 폭발
 ]);
 const MIME: Record<string, string> = {
-  ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav',
+  ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', png: 'image/png',
   svg: 'image/svg+xml; charset=utf-8',
 };
+// 디스코드 임베드에서 불러가는 이미지. 디스코드 CDN에 올리는 대신 여기서 서빙한다
+// (봇이 파일을 첨부하면 메시지를 지우고 다시 올릴 때마다 업로드가 반복된다).
+const IMG_FILES = new Set(['broke.png']);
 const CARD_FILES = new Set<string>(['back.svg']);
 for (const s of ['s', 'h', 'd', 'c']) {
   for (const r of ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']) {
@@ -47,8 +49,8 @@ for (const s of ['s', 'h', 'd', 'c']) {
 interface CachedAsset { raw: Buffer; gz: Buffer | null }
 const assetCache = new Map<string, CachedAsset>();
 
-function serveAsset(dir: 'sfx' | 'cards', name: string, res: http.ServerResponse): void {
-  const allowed = dir === 'sfx' ? SFX_FILES : CARD_FILES;
+function serveAsset(dir: 'sfx' | 'cards' | 'img', name: string, res: http.ServerResponse): void {
+  const allowed = dir === 'sfx' ? SFX_FILES : dir === 'img' ? IMG_FILES : CARD_FILES;
   if (!allowed.has(name)) { res.writeHead(404); res.end(); return; }
   const mime = MIME[name.split('.').pop() ?? ''] ?? 'application/octet-stream';
   const key = `${dir}/${name}`;
@@ -117,6 +119,7 @@ export function startWebServer(): void {
       if (APP_FILES[path]) return serveAppFile(path, res);
       if (path.startsWith('/sfx/')) return serveAsset('sfx', path.slice(5), res);
       if (path.startsWith('/cards/')) return serveAsset('cards', path.slice(7), res);
+      if (path.startsWith('/img/')) return serveAsset('img', path.slice(5), res);
       if (path === '/favicon.svg') {
         sendBody(res, 200, 'image/svg+xml; charset=utf-8', LOGO_SVG,
           { 'cache-control': 'public, max-age=86400' });
@@ -142,15 +145,6 @@ export function startWebServer(): void {
 
       if (path === '/' || path === '/lobby') return send(res, 200, lobbyPage(me));
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
-
-      if (path === '/relief') {
-        if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
-        return send(res, 200, reliefPage(me));
-      }
-      if (path === '/api/relief/claim' && req.method === 'POST') {
-        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
-        return await reliefClaim(req, res, me.id);
-      }
 
       if (path === '/games/mines') {
         if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
