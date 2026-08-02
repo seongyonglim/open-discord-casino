@@ -329,7 +329,7 @@ export function ladderPage(user: WebUser): string {
         var startCol = round.startSide==='L' ? 0 : 1;
         var col = startCol;
         markNode(svg, 'start', round.startSide); // 출발 지점 먼저 강조
-        await wait(240);
+        await wait(140);
 
         var token = svgEl('circle', { cx:xs[startCol], cy:TOP_PAD, r:9, class:'ladder-token' });
         svg.appendChild(token);
@@ -337,8 +337,10 @@ export function ladderPage(user: WebUser): string {
           svg.insertBefore(svgEl('line', { x1:x1, y1:y1, x2:x2, y2:y2, class:'ladder-trail' }), token);
         }
 
-        // 하강 전체가 최대 3.04초에 끝나도록 잡았다 (LADDER_REVEAL_SEC 6초 중 3초는 결과 확인용)
-        var FALL = 90, GROW = 80, CROSS = 90;
+        // 하강 전체가 최대 1.54초(평균 1.20초)에 끝나도록 잡았다.
+        // LADDER_REVEAL_SEC이 3초이고 이 값이 하강과 결과 감상을 함께 덮으므로,
+        // 여기를 늦추면 공이 내려오는 도중에 다음 라운드가 시작된다.
+        var FALL = 45, GROW = 40, CROSS = 45;
         for (var i=0; i<round.rungs.length; i++){
           var rungY = TOP_PAD + ROW_H*i + ROW_H/2;
           var rowBotY = TOP_PAD + ROW_H*(i+1);

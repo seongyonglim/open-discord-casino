@@ -281,6 +281,11 @@
   .ch-chip.mid{color:var(--gold);background:rgba(212,175,55,.1);border-color:var(--gold-dim)}
   .ch-chip.high{color:#c77dff;background:rgba(199,125,255,.12);border-color:rgba(199,125,255,.4)}
   .ch-chip.bust{color:var(--lose);background:rgba(229,72,77,.12);border-color:rgba(229,72,77,.4)}
+  /* 포커 플립 전적 칩 — 보드의 MASTER(파랑)·SHARK(빨강) 색을 그대로 따라간다.
+     예전에는 그래프게임용 low/bust 색을 빌려 써서 MASTER가 회색으로 보였다 */
+  .ch-chip.w-master{color:var(--side-l);background:rgba(74,144,226,.14);border-color:rgba(74,144,226,.45)}
+  .ch-chip.w-shark{color:var(--lose);background:rgba(229,72,77,.12);border-color:rgba(229,72,77,.4)}
+  .ch-chip.w-tie{color:var(--gold);background:rgba(212,175,55,.1);border-color:var(--gold-dim)}
 
   /* 보드 무대 (게임판이 놓이는 어두운 영역) — 크래시/사다리 공용 */
   .board-stage{position:relative;width:100%;background:#0c0c0e;border:1px solid var(--line);
