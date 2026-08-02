@@ -574,8 +574,18 @@ export function crashPage(user: WebUser): string {
       }
       async function cashout(){
         cashoutBtn.disabled = true;
+        // 눌린 순간 화면에 떠 있던 값과 그때의 보정치를 기록해 둔다 (?perf=1 진단용)
+        var shownAtClick = (st && st.round.phase === 'running' && st.round.startedAtMs != null)
+          ? multAt(serverNow() - st.round.startedAtMs) : null;
+        var clickT = Date.now();
         var res = await post('/api/games/crash/cashout');
         cashoutBtn.disabled = false;
+        if (window.casinoMark && shownAtClick != null) {
+          var got = (res.ok && res.d && res.d.multiplier != null) ? res.d.multiplier : null;
+          window.casinoMark('캐시아웃 — 화면 ' + shownAtClick.toFixed(2) + 'x · 정산 '
+            + (got == null ? ('실패(' + (res.d && res.d.error) + ')') : got.toFixed(2) + 'x')
+            + ' · 왕복 ' + (Date.now() - clickT) + 'ms · clockOffset ' + clockOffset + 'ms');
+        }
         if (!res.ok) { msg.textContent = res.d.error || '오류가 발생했습니다'; poll(); return; }
         setBalance(res.d.balance);
         msg.innerHTML = '<span style="color:var(--win);font-weight:700">캐시아웃</span> ' +
@@ -593,6 +603,12 @@ export function crashPage(user: WebUser): string {
       // 폴링 비용 관리 (사다리와 동일): 탭이 숨겨지거나 오래 조작이 없으면 멈춰 서버가 잠들 수 있게 한다
       var IDLE_MS = 3 * 60 * 1000;
       var timer = null, lastAct = Date.now();
+      // 배율이 오르는 동안에는 더 자주 확인한다.
+      // 클라이언트는 크래시 지점을 모르므로(알면 결과가 새어 나간다) 다음 폴링이 올 때까지 계속 그린다.
+      // 즉 "실제로는 1.40에서 터졌는데 화면은 1.45까지 올라갔다 터지는" 오차가 폴링 간격만큼 생긴다.
+      // 1초 → 0.25초로 줄이면 그 오차도 1/4이 된다(1.40 기준 최대 +0.09 → +0.02).
+      var POLL_RUNNING_MS = 250, POLL_IDLE_MS = 1000;
+      var pollEvery = POLL_IDLE_MS;
       function startPolling(){
         if (timer) return;
         poll();
@@ -604,7 +620,10 @@ export function crashPage(user: WebUser): string {
             return;
           }
           poll();
-        }, 1000);
+          // 단계가 바뀌면 주기를 갈아끼운다
+          var want = (st && st.round.phase === 'running') ? POLL_RUNNING_MS : POLL_IDLE_MS;
+          if (want !== pollEvery) { pollEvery = want; stopPolling(); startPolling(); }
+        }, pollEvery);
       }
       function stopPolling(){ if (timer) { clearInterval(timer); timer = null; } }
       function activity(){ lastAct = Date.now(); if (!timer && !document.hidden) startPolling(); }
