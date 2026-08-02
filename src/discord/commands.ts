@@ -21,4 +21,9 @@ export const commandModules: CommandModule[] = [
       .setName('출석판생성')
       .setDescription('[관리자] 이 채널에 출석체크 버튼 메시지를 게시합니다'),
   },
+  {
+    data: new SlashCommandBuilder()
+      .setName('카지노판생성')
+      .setDescription('[관리자] 이 채널에 카지노 입장 버튼 메시지를 게시합니다'),
+  },
 ];

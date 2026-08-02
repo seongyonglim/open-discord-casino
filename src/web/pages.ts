@@ -47,7 +47,7 @@ export function lobbyPage(user: WebUser | null): string {
     return layout('로그인', 'lobby', `
       <div class="login-hero">
         <div class="login-mark">${LOGO_SVG}</div>
-        <h1 class="login-title">OPEN <span>카지노</span></h1>
+        <h1 class="login-title">OD <span>CASINO</span></h1>
         <p class="login-sub">매일 출석해서 모은 포인트로 즐기는 오픈디코 전용 카지노</p>
         <a class="login-cta" href="/auth/login">${discordIcon(20)}디스코드로 로그인</a>
         <p class="login-note">오픈디코 서버 멤버만 입장할 수 있습니다</p>
