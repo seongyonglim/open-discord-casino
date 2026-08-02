@@ -40,14 +40,49 @@ function computeResult(): { startSide: Side; endSide: Side; rungs: boolean[] } {
   return { startSide, endSide, rungs };
 }
 
+/* ── 하강 연출 타이밍 ────────────────────────────────────────────────────
+   서버(다음 라운드 시각 계산)와 클라이언트(실제 애니메이션)가 반드시 같은 값을 써야
+   "다음 라운드까지 3초"가 연출과 어긋나지 않는다. 그래서 여기 한 곳에만 두고
+   클라이언트 스크립트에는 아래에서 값을 심어 넣는다(양쪽에 따로 적으면 언젠가 갈라진다). */
+const ANIM_INIT_MS = 140;   // 출발 지점을 강조하고 잠깐 멈추는 시간
+const ANIM_FALL_MS = 45;    // 한 칸 내려가는 시간 (행마다 두 번: 가로줄까지, 가로줄에서 바닥까지)
+const ANIM_GROW_MS = 40;    // 가로줄이 자라나는 시간
+const ANIM_CROSS_MS = 45;   // 가로줄을 타고 옆으로 건너가는 시간
+
+// 이 라운드의 하강 연출이 몇 ms 걸리는지. 가로줄(교차) 개수에 따라 달라진다.
+function descentMs(rungs: boolean[]): number {
+  const crossings = rungs.filter(Boolean).length;
+  return ANIM_INIT_MS + rungs.length * (ANIM_FALL_MS * 2) + crossings * (ANIM_GROW_MS + ANIM_CROSS_MS);
+}
+
+// 정산 후 다음 라운드까지 실제로 둘 시간 = 하강 연출 + 결과 감상(LADDER_REVEAL_SEC).
+// 이렇게 해야 "다음 라운드까지 N초" 카운트가 공이 다 내려온 뒤부터 시작된다.
+function revealSecFor(round: LadderRoundRow): number {
+  const rungs: boolean[] = round.rungs_json ? JSON.parse(round.rungs_json) : [];
+  return Math.ceil(descentMs(rungs) / 1000) + LADDER_REVEAL_SEC;
+}
+
+function advance(): LadderRoundRow {
+  return advanceLadderRound(computeResult, revealSecFor);
+}
+
 function secondsLeft(round: LadderRoundRow): number {
   const now = Math.floor(Date.now() / 1000);
   if (round.phase === 'betting') return Math.max(0, round.betting_ends_at - now);
-  return Math.max(0, (round.resolved_at ?? now) + LADDER_REVEAL_SEC - now);
+  // 하강이 끝나기 전에는 카운트다운을 보여주지 않는다(클라이언트가 0 이하를 감춘다).
+  return Math.max(0, (round.resolved_at ?? now) + revealSecFor(round) - now);
+}
+
+// 공이 다 내려온 시각까지 몇 초 남았는지 — 클라이언트가 이 값으로 카운트다운 표시 시점을 정한다
+function descentEndsIn(round: LadderRoundRow): number {
+  if (round.phase !== 'done') return 0;
+  const now = Math.floor(Date.now() / 1000);
+  const rungs: boolean[] = round.rungs_json ? JSON.parse(round.rungs_json) : [];
+  return Math.max(0, (round.resolved_at ?? now) + Math.ceil(descentMs(rungs) / 1000) - now);
 }
 
 export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  const round = advanceLadderRound(computeResult);
+  const round = advance();
   const myBet = getMyLadderBet(round.id, userId);
   return sendJson(res, 200, {
     ok: true,
@@ -55,6 +90,8 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
       id: round.id,
       phase: round.phase,
       secondsLeft: secondsLeft(round),
+      // 공이 다 내려올 때까지 남은 초 — 이 값이 0이 되기 전에는 카운트다운을 감춘다
+      descentLeft: descentEndsIn(round),
       startSide: round.start_side,
       endSide: round.end_side,
       rungs: round.rungs_json ? JSON.parse(round.rungs_json) : null,
@@ -79,7 +116,7 @@ export async function handleBet(req: IncomingMessage, res: ServerResponse, userI
   if (!Number.isFinite(betAmount) || betAmount < 1) return sendJson(res, 400, { error: '베팅 금액은 1P 이상이어야 합니다' });
   if (!startGuess && !parityGuess) return sendJson(res, 400, { error: '출발 또는 홀짝 중 최소 하나는 예측해야 합니다' });
 
-  const round = advanceLadderRound(computeResult);
+  const round = advance();
   if (round.phase !== 'betting') return sendJson(res, 400, { error: '이번 라운드는 베팅이 마감되었습니다. 다음 라운드를 기다려주세요.' });
 
   const result = placeLadderBet(userId, username, round.id, startGuess, parityGuess, betAmount);
@@ -93,7 +130,7 @@ export async function handleBet(req: IncomingMessage, res: ServerResponse, userI
 }
 
 export async function handleCancel(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  const round = advanceLadderRound(computeResult);
+  const round = advance();
   const result = cancelLadderBet(userId, round.id);
   if (!result.ok) {
     const msg = result.error === 'no_bet' ? '취소할 베팅이 없습니다' : '베팅이 마감되어 취소할 수 없습니다';
@@ -329,7 +366,7 @@ export function ladderPage(user: WebUser): string {
         var startCol = round.startSide==='L' ? 0 : 1;
         var col = startCol;
         markNode(svg, 'start', round.startSide); // 출발 지점 먼저 강조
-        await wait(140);
+        await wait(${ANIM_INIT_MS});
 
         var token = svgEl('circle', { cx:xs[startCol], cy:TOP_PAD, r:9, class:'ladder-token' });
         svg.appendChild(token);
@@ -337,10 +374,8 @@ export function ladderPage(user: WebUser): string {
           svg.insertBefore(svgEl('line', { x1:x1, y1:y1, x2:x2, y2:y2, class:'ladder-trail' }), token);
         }
 
-        // 하강 전체가 최대 1.54초(평균 1.20초)에 끝나도록 잡았다.
-        // LADDER_REVEAL_SEC이 3초이고 이 값이 하강과 결과 감상을 함께 덮으므로,
-        // 여기를 늦추면 공이 내려오는 도중에 다음 라운드가 시작된다.
-        var FALL = 45, GROW = 40, CROSS = 45;
+        // 서버가 다음 라운드 시각을 계산할 때 쓰는 값과 동일해야 한다 (ladder.ts 상단에서 주입)
+        var FALL = ${ANIM_FALL_MS}, GROW = ${ANIM_GROW_MS}, CROSS = ${ANIM_CROSS_MS};
         for (var i=0; i<round.rungs.length; i++){
           var rungY = TOP_PAD + ROW_H*i + ROW_H/2;
           var rowBotY = TOP_PAD + ROW_H*(i+1);
@@ -493,9 +528,10 @@ export function ladderPage(user: WebUser): string {
         renderFeed(spoiler ? d.bets.map(maskResult) : d.bets);
 
         var betting = round.phase === 'betting';
+        // 하강 중에는 카운트다운을 띄우지 않는다 — 공이 다 내려온 뒤부터 "다음 라운드까지"를 센다
         countdownEl.textContent = betting
           ? ('베팅 마감까지 ' + round.secondsLeft + '초')
-          : ('다음 라운드까지 ' + round.secondsLeft + '초');
+          : (round.descentLeft > 0 ? '결과 공개 중…' : ('다음 라운드까지 ' + round.secondsLeft + '초'));
         updatePlayBtn(betting);
 
         // 하강 연출은 "보고 있는 동안 결과가 나올 때"만 돌린다.

@@ -317,7 +317,14 @@ function pruneLadderRounds(): void {
 // 지났으면 다음 라운드를 새로 연다. 별도 백그라운드 타이머 없이도(=서버가 잠들어 있어도) 다음 요청이 올 때
 // 자연스럽게 라운드가 진행되므로 fly.io scale-to-zero와 완전히 호환된다.
 // computeResult는 순수 함수(암호학적 동전던지기 + 사다리 모양 생성)라 트랜잭션 안에서 안전하게 호출 가능.
-export function advanceLadderRound(computeResult: () => { startSide: string; endSide: string; rungs: boolean[] }): LadderRoundRow {
+// revealSecFor: 정산 후 다음 라운드까지 몇 초를 둘지 라운드별로 정한다.
+// 사다리는 공이 내려오는 연출이 끝난 뒤부터 "다음 라운드까지 3초"를 세야 하는데,
+// 연출 길이가 가로줄 개수에 따라 달라지므로 상수 하나로는 표현할 수 없다.
+// 그래서 계산은 연출 타이밍을 아는 쪽(ladder.ts)에 맡기고 여기서는 결과만 받는다.
+export function advanceLadderRound(
+  computeResult: () => { startSide: string; endSide: string; rungs: boolean[] },
+  revealSecFor: (round: LadderRoundRow) => number,
+): LadderRoundRow {
   return tx(() => {
     const now = Math.floor(Date.now() / 1000);
     let round = one<LadderRoundRow>(`SELECT * FROM ladder_rounds ORDER BY id DESC LIMIT 1`);
@@ -332,7 +339,7 @@ export function advanceLadderRound(computeResult: () => { startSide: string; end
       round = one<LadderRoundRow>(`SELECT * FROM ladder_rounds WHERE id = ?`, round.id)!;
     }
 
-    if (!round || (round.phase === 'done' && (round.resolved_at ?? 0) + LADDER_REVEAL_SEC <= now)) {
+    if (!round || (round.phase === 'done' && (round.resolved_at ?? 0) + revealSecFor(round) <= now)) {
       run(`INSERT INTO ladder_rounds (phase, betting_ends_at) VALUES ('betting', ?)`, now + LADDER_BETTING_SEC);
       const id = one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id;
       round = one<LadderRoundRow>(`SELECT * FROM ladder_rounds WHERE id = ?`, id)!;
