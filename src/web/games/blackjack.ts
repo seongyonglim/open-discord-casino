@@ -248,9 +248,18 @@ export function blackjackPage(user: WebUser): string {
           </div>
 
           <div id="bjActions" class="bj-actions" hidden>
-            <button type="button" class="btn btn-primary" id="bjHit">힛</button>
-            <button type="button" class="btn" id="bjStand">스탠드</button>
-            <button type="button" class="btn btn-gold" id="bjDouble">더블다운</button>
+            <button type="button" class="bja hit" id="bjHit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span class="bja-t"><b>힛</b><i>한 장 더</i></span>
+            </button>
+            <button type="button" class="bja stand" id="bjStand">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+              <span class="bja-t"><b>스탠드</b><i>여기서 멈춤</i></span>
+            </button>
+            <button type="button" class="bja dbl" id="bjDouble">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg>
+              <span class="bja-t"><b>더블다운</b><i id="bjDblCost">두 배로</i></span>
+            </button>
           </div>
         </div>
 
@@ -289,6 +298,12 @@ export function blackjackPage(user: WebUser): string {
 
       var st=null, coin=null, lastRoundId=null, notedRoundId=null;
       var firstState = true;
+      /* 딜러 카드는 서버가 차례 시작에 전부 뽑아 내려주지만, 화면에는 한 장씩 깐다.
+         한꺼번에 뒤집으면 딜러가 카드를 받아가며 조마조마해지는 구간이 통째로 사라진다. */
+      var shownD = 0, dealerTimers = [];
+      var HOLE_FLIP_MS = 700;   // 업카드 옆 홀 카드를 뒤집기까지
+      var DRAW_STEP_MS = 950;   // 합을 보고 한 장 더 받기까지 — 판단하는 한 박자
+      function clearDealerReveal(){ dealerTimers.forEach(clearTimeout); dealerTimers = []; }
 
       function fmt(n){ return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P'; }
       function compact(n){ return new Intl.NumberFormat('ko-KR').format(n); }
@@ -328,6 +343,51 @@ export function blackjackPage(user: WebUser): string {
         return added;
       }
 
+      /* 깐 만큼만 그린다. 중요한 건 아직 안 뽑은 카드의 "자리"조차 만들지 않는 것이다 —
+         뒷면을 미리 깔아두면 홀 카드를 뒤집기도 전에 딜러가 몇 장을 더 받을지가 다 보인다.
+         실제 테이블 순서는: 두 장 → 합 확인 → 모자라면 그제서야 한 장 → 다시 합 확인 → … */
+      function paintDealer(cards){
+        var vals = cards.slice(0, shownD);
+        if (shownD < 2) vals.push(null);   // 홀 카드는 아직 엎어져 있다
+        var n = syncCards(dCardsEl, 'dealer', vals);
+        var seen = cards.slice(0, shownD);
+        dTotalEl.textContent = shownD >= 2 ? bjTotal(seen)
+          : seen.length ? bjTotal(seen) + ' +?' : '–';
+        return n;
+      }
+      function scheduleDealerReveal(want){
+        if (want <= shownD || dealerTimers.length) return;
+        // 홀 카드를 뒤집고 합을 보여준 뒤, 한 박자 쉬고 다음 장을 받는다.
+        // 간격이 같으면 "뽑을지 말지 판단하는" 구간이 사라져 급발진처럼 보인다.
+        var t = 0;
+        for (var i = shownD; i < want; i++) {
+          t += (i === 1) ? HOLE_FLIP_MS : DRAW_STEP_MS;
+          (function(target, at){
+            dealerTimers.push(setTimeout(function(){
+              shownD = target;
+              paintDealer((st && st.round.dealer.cards) || []);
+              if (window.casinoSfx) {
+                // 홀 카드는 뒤집는 것(넘기기), 그 뒤는 새로 받는 카드(나눠주기)
+                if (target <= 2) window.casinoSfx.card();
+                else window.casinoSfx.deal();
+              }
+            }, at));
+          })(i + 1, t);
+        }
+      }
+      // 화면에 깐 카드만으로 끗수를 낸다 — 서버 합계를 쓰면 아직 안 깐 카드가 미리 반영된다
+      function bjTotal(cards){
+        var total = 0, aces = 0;
+        cards.forEach(function(c){
+          var r = c[0];
+          if (r === 'A') { total += 1; aces++; }
+          else if (r === 'T' || r === 'J' || r === 'Q' || r === 'K') total += 10;
+          else total += Number(r);
+        });
+        if (aces > 0 && total + 10 <= 21) total += 10;
+        return total;
+      }
+
       function statusText(r){
         // 아무도 앉지 않았으면 시간이 흐르지 않는다 — 카운트다운을 띄우면 안 된다
         if (r.phase === 'waiting') return '빈 자리를 눌러 앉으면 시작합니다';
@@ -355,13 +415,14 @@ export function blackjackPage(user: WebUser): string {
         (st.seats||[]).forEach(function(s){ bySeat[s.seat] = s; });
         var betting = r.phase === 'betting' || r.phase === 'waiting';
 
-        var html = '';
+        var html = '', sigParts = [];
         for (var i=0;i<SEATS;i++){
           var s = bySeat[i];
           if (!s) {
             html += '<div class="bj-seat empty' + (betting ? ' open' : '') + '" data-seat="'+i+'">' +
               '<div class="bj-seat-num">' + (i+1) + '</div>' +
               '<div class="bj-seat-hint">' + (betting ? '앉기' : '빈자리') + '</div></div>';
+            sigParts.push(i + ':빈');
             continue;
           }
           var mine = s.userId === MEID;
@@ -372,51 +433,41 @@ export function blackjackPage(user: WebUser): string {
             (s.outcome==='lose'||s.outcome==='bust' ? ' lost' : '');
           html += '<div class="'+cls+'" data-seat="'+i+'">' +
             '<div class="bj-seat-top"><span class="bj-seat-name">'+esc(s.username)+'</span>' +
-              '<span class="bj-seat-total">'+(s.total!=null ? s.total : '')+'</span></div>' +
+              '<span class="bj-seat-total" id="bjt-'+i+'"></span></div>' +
             '<div class="bj-hand small" id="bjh-'+i+'"></div>' +
-            '<div class="bj-spot" id="bjs-'+i+'"></div>' +
+            '<div class="bj-pile" id="bjp-'+i+'"></div>' +
             '<div class="bj-seat-foot">' +
-              '<span class="bj-seat-bet">'+compact(s.bet)+'</span>' +
-              '<span class="bj-seat-tag">'+(s.outcome ? outcomeLabel(s.outcome) : statusLabel(s.status))+'</span>' +
+              '<span class="bj-seat-bet" id="bjb-'+i+'"></span>' +
+              '<span class="bj-seat-tag" id="bjg-'+i+'"></span>' +
             '</div></div>';
+          sigParts.push(i + ':' + s.userId + ':' + cls);
         }
-        // 골격은 구성이 바뀔 때만 다시 그린다 (매초 갈아끼우면 카드 애니메이션이 초기화된다)
-        var sig = html.replace(/<div class="bj-hand small"[^>]*><\\/div>/g, '');
+        /* 골격은 "누가 어느 자리에 앉았나 / 상태 클래스"가 바뀔 때만 다시 그린다.
+           금액·끗수까지 서명에 넣으면 칩을 올릴 때마다 통째로 갈아끼워져서
+           쌓아둔 칩 더미와 카드 애니메이션이 매번 처음부터 다시 시작된다. */
+        var sig = sigParts.join('|') + '|' + betting;
         if (seatsEl.dataset.sig !== sig) {
           seatsEl.dataset.sig = sig;
           seatsEl.innerHTML = html;
           slotCache = Object.keys(slotCache).reduce(function(a,k){ if(k==='dealer') a[k]=slotCache[k]; return a; }, {});
+          // 더미 기록은 버리지 않는다 — 아래 syncPile이 기록 그대로 새 칸에 다시 그린다
         }
         var dealt = 0;
         (st.seats||[]).forEach(function(s){
           var el = document.getElementById('bjh-'+s.seat);
           if (el) dealt += syncCards(el, 'seat'+s.seat, s.cards);
-          syncSpot(s);
+          // 자주 바뀌는 값은 골격을 건드리지 않고 제자리에서 갱신한다
+          var t = document.getElementById('bjt-'+s.seat);
+          if (t) t.textContent = s.total != null ? s.total : '';
+          var b = document.getElementById('bjb-'+s.seat);
+          if (b) b.textContent = compact(s.bet);
+          var g = document.getElementById('bjg-'+s.seat);
+          if (g) g.textContent = s.outcome ? outcomeLabel(s.outcome) : statusLabel(s.status);
+          syncPile(s, r.id);
         });
         return dealt;
       }
 
-      /* ── 베팅 서클 ───────────────────────────────────────────────────
-         포커·바카라처럼 칩을 수북이 쌓지는 않는다. 거기서는 여러 명이 같은 시장에 쌓아
-         더미 자체가 "다들 어디에 걸었나"라는 정보판이 되지만, 블랙잭은 각자 자기 손패에만
-         걸어서 남의 베팅액이 나에게 아무 의미가 없다. 자리도 72px이라 더미가 들어갈 폭이 없다.
-         그래서 실제 테이블처럼 서클 하나에 칩 한 개만 얹는다. */
-      function syncSpot(s){
-        var el = document.getElementById('bjs-'+s.seat);
-        if (!el) return;
-        var key = s.bet + '|' + (s.payout != null ? s.payout : '');
-        if (el.dataset.key === key) return;
-        el.dataset.key = key;
-        el.innerHTML = s.bet > 0
-          ? '<span class="pchip '+chipKind(s.bet)+(s.userId===MEID?' mine':'')+'">'+chipLabel(s.bet)+'</span>'
-          : '';
-      }
-      // 칩 모양은 금액대로 고른다 (코인 단위와 정확히 맞지 않아도 큰 금액은 골드바로 보이게)
-      function chipKind(v){
-        var c = (st && st.coins) || [];
-        return v >= (c[c.length - BAR_COUNT] || 1000) ? 'c-bar' : 'c-coin';
-      }
-      function chipLabel(v){ return v>=10000 ? Math.floor(v/10000)+'만' : (v>=1000 ? Math.floor(v/1000)+'K' : String(v)); }
 
       function renderCoins(){
         if (coinsEl.dataset.done) return;
@@ -486,16 +537,31 @@ export function blackjackPage(user: WebUser): string {
         if (r.id !== lastRoundId) {
           lastRoundId = r.id;
           slotCache = {};
+          clearDealerReveal(); shownD = 0;
           dCardsEl.innerHTML = ''; seatsEl.dataset.sig = '';
           dTotalEl.textContent = '–';
           if (!firstState && window.casinoSfx) window.casinoSfx.shuffle();
         }
 
         // 딜러: 공개 전에는 업카드 한 장 + 뒷면 한 장
+        // 딜러: 공개 전에는 업카드 한 장 + 뒷면 한 장. 공개되면 한 장씩 깐다.
         var d = r.dealer;
-        var dealerSlots = d.hidden ? d.cards.concat([null]) : d.cards;
-        var dealt = syncCards(dCardsEl, 'dealer', dealerSlots);
-        dTotalEl.textContent = d.total != null ? (d.hidden ? d.total + ' +?' : d.total) : '–';
+        var dealt = 0;
+        if (d.hidden) {
+          clearDealerReveal();
+          shownD = 0;
+          dealt += syncCards(dCardsEl, 'dealer', d.cards.length ? d.cards.concat([null]) : []);
+          dTotalEl.textContent = d.total != null ? d.total + ' +?' : '–';
+        } else {
+          // 페이지에 막 들어왔거나 이미 끝난 판이면 연출 없이 다 보여준다
+          if (firstState || r.phase === 'done') { clearDealerReveal(); shownD = d.cards.length; }
+          else {
+            // 업카드는 결정 창 내내 보이고 있었다 — 0부터 그리면 잠깐 사라졌다 다시 나타난다
+            if (shownD === 0) shownD = 1;
+            scheduleDealerReveal(d.cards.length);
+          }
+          dealt += paintDealer(d.cards);
+        }
 
         dealt += renderSeats();
         if (dealt && !firstState && window.casinoSfx) window.casinoSfx.deal();
@@ -506,13 +572,16 @@ export function blackjackPage(user: WebUser): string {
         hitBtn.disabled = !can; standBtn.disabled = !can;
         // 더블은 처음 두 장에서만 뜬다. 못 쓸 때 회색으로 남겨두면 왜 안 되는지 알 수 없어 아예 숨긴다.
         dblBtn.hidden = !(st.myHand && st.myHand.canDouble);
+        // 얼마가 더 나가는지 버튼에 적어 둔다 — '두 배'라는 말만으로는 액수가 안 잡힌다
+        var costEl = document.getElementById('bjDblCost');
+        if (costEl && st.myHand) costEl.textContent = '+' + compact(st.myHand.bet) + 'P';
 
         renderRoster();
         firstState = false;
 
         if (r.phase === 'done' && notedRoundId !== r.id) {
           notedRoundId = r.id;
-          collectWinnings();
+          flyChipsToPot();
           var me = (st.seats||[]).filter(function(s){ return s.userId === MEID; })[0];
           if (me && me.outcome) {
             if ((me.payout||0) > 0) {
@@ -523,11 +592,87 @@ export function blackjackPage(user: WebUser): string {
         }
       }
 
-      /* ── 칩이 날아가는 연출 ──────────────────────────────────────────
-         상자 밖을 지나는 구간이 잘리지 않도록 화면 전체를 덮는 레이어 위에서 날린다.
-         포커·바카라와 같은 방식이지만 여기서는 두 장면만 쓴다:
-         내가 칩을 올릴 때(코인 버튼 → 내 자리)와, 딸 때(내 자리 → 화면 하단).
-         남이 거는 건 날리지 않는다 — 정보값이 없는데 다섯 자리에서 동시에 날면 카드를 가린다. */
+      /* ── 코인 더미 ───────────────────────────────────────────────────
+         포커 플립·바카라와 같은 방식이다. 자리별로 "지금까지 올라온 칩 목록"을 들고 있다가
+         늘어난 만큼만 새 스프라이트를 덧붙인다. 총액에서 매번 새로 그리면 애니메이션이
+         초당 다시 시작되고 쌓이는 느낌이 사라진다.
+         (자리가 132px이라 5열짜리 더미가 들어간다 — 좁은 창 기준으로 재고 안 된다고 판단했었다) */
+      var piles = {};
+      var MAX_CHIPS = 18;
+      function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
+      // 뒤 세 단위(1000·5000·1만)는 골드바, 앞은 동전 — 다른 게임과 같은 규칙
+      function chipKind(v){
+        var c = (st && st.coins) || [], i = c.indexOf(v);
+        return (i >= 0 && i < c.length - BAR_COUNT) ? 'c-coin' : 'c-bar';
+      }
+      function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
+      // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
+      function chipSprite(denom, owner, idx, anim){
+        var col = idx % 5, row = Math.floor(idx / 5);
+        var x = (col - 2) * 14 + jit(idx, 9) - 4;
+        var y = 3 + row * 5 + jit(idx + 7, 3);
+        return '<span class="pchip '+chipKind(denom)+(owner===MEID?' mine':'')+(anim?' '+anim:'')+
+          '" data-owner="'+esc(owner)+'"'+
+          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
+      }
+      // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
+      function decompose(amount){
+        var out=[], d=(st.coins||[]).slice().sort(function(a,b){return b-a;});
+        for (var i=0;i<d.length && out.length<60;i++){
+          while (amount >= d[i] && out.length < 60) { out.push(d[i]); amount -= d[i]; }
+        }
+        return out;
+      }
+      function pushChips(el, pile, denoms, owner, anim){
+        var added = [];
+        for (var i=0;i<denoms.length;i++){
+          if (pile.list.length >= MAX_CHIPS) { pile.list.shift(); if (el.firstChild) el.removeChild(el.firstChild); }
+          var slot = pile.n++ % MAX_CHIPS;
+          pile.list.push({ d: denoms[i], o: owner, i: slot });
+          el.insertAdjacentHTML('beforeend', chipSprite(denoms[i], owner, slot, anim));
+          added.push(el.lastElementChild);
+        }
+        return added;
+      }
+      /* 기록해 둔 칩 목록 그대로 다시 그린다.
+         총액을 다시 쪼개면(decompose) 500 두 개가 1K 한 개로 합쳐져 버린다 —
+         올린 그대로 보여야 하므로 복원은 반드시 목록 기준이다. */
+      function paintPile(el, pile){
+        el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
+        el.innerHTML = '';
+        for (var i=0;i<pile.list.length;i++){
+          var c = pile.list[i];
+          el.insertAdjacentHTML('beforeend', chipSprite(c.d, c.o, c.i, ''));
+        }
+      }
+      function rebuildPile(el, seat, bet, owner, roundId){
+        var pile = piles[seat] = { round: roundId, bet: 0, list: [], n: 0 };
+        el.style.opacity = '';
+        el.innerHTML = '';
+        // 판 도중에 들어왔거나 남의 자리를 처음 볼 땐 총액밖에 모르니 그때만 쪼갠다
+        if (bet > 0) { pile.bet = bet; pushChips(el, pile, decompose(bet), owner, ''); }
+      }
+      function syncPile(s, roundId){
+        var el = document.getElementById('bjp-'+s.seat);
+        if (!el) return;
+        var pile = piles[s.seat];
+        if (!pile || pile.round !== roundId) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
+        // 줄었으면(회수) 애니메이션 없이 다시 그린다
+        if (s.bet < pile.bet) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
+        var delta = s.bet - pile.bet;
+        if (delta > 0) {
+          pile.bet = s.bet;
+          // 내 칩은 클릭 즉시(dropMyChip) 올려놨으므로 여기서 또 올리지 않는다
+          if (s.userId === MEID) return;
+          var added = pushChips(el, pile, decompose(delta), s.userId, 'pending');
+          tossFrom(rosterAvatar(s.userId), added);
+          return;
+        }
+        // 금액은 그대로인데 칸이 비었다면 골격을 다시 그린 것이다 — 기록대로 복원
+        if (el.childElementCount !== pile.list.length) paintPile(el, pile);
+      }
+
+      /* 칩이 자리 밖을 지나는 구간이 잘리지 않도록 화면 전체를 덮는 레이어 위에서 날린다 */
       var fxLayer = null;
       function getFxLayer(){
         if (!fxLayer || !fxLayer.parentNode) {
@@ -539,57 +684,77 @@ export function blackjackPage(user: WebUser): string {
       }
       function cloneAt(chip, rect, cls){
         var c = chip.cloneNode(true);
-        c.className = chip.className.replace(/\\b(toss|fly)\\b/g, '').trim() + ' ' + cls;
+        c.className = chip.className.replace(/\\b(toss|pending|fly)\\b/g, '').trim() + ' ' + cls;
         c.style.cssText = 'position:fixed;margin:0;left:'+rect.left+'px;top:'+rect.top+'px;' +
           'width:'+rect.width+'px;height:'+rect.height+'px;';
         getFxLayer().appendChild(c);
         return c;
       }
-      // 코인 버튼에서 내 자리 서클로 칩이 날아온다
-      function tossToSeat(seat, denom){
-        var spot = document.getElementById('bjs-'+seat);
-        var src = coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face');
-        if (!spot || !src) return;
-        var a = src.getBoundingClientRect(), b = spot.getBoundingClientRect();
-        if (!a.width || !b.width) return;
-        var ghost = document.createElement('span');
-        ghost.className = 'pchip ' + chipKind(denom) + ' mine';
-        ghost.textContent = chipLabel(denom);
-        var c = cloneAt(ghost, { left: b.left + b.width/2 - 11, top: b.top + b.height/2 - 11, width: 22, height: 22 }, 'toss');
-        c.style.setProperty('--fx', Math.round((a.left+a.width/2) - (b.left+b.width/2)) + 'px');
-        c.style.setProperty('--fy', Math.round((a.top+a.height/2) - (b.top+b.height/2)) + 'px');
-        c.style.setProperty('--fs', (Math.min(2.6, a.width / 22)).toFixed(2));
-        setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 380);
+      function rosterAvatar(uid){
+        return rosterEl.querySelector('.rw[data-uid="'+cssEsc(uid)+'"] .rw-av');
       }
-      // 딴 칩이 내 쪽(화면 하단 칩 바)으로 빨려 들어온다
-      function collectWinnings(){
+      // src 위치에서 chips(제자리에 숨겨둔 원본)로 칩이 날아온다
+      function tossFrom(src, chips){
+        if (!chips || !chips.length) return;
+        if (!src) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        var a = src.getBoundingClientRect();
+        if (!a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        chips.forEach(function(ch, i){
+          var b = ch.getBoundingClientRect();
+          if (!b.width) { ch.classList.remove('pending'); return; }
+          var c = cloneAt(ch, b, 'toss');
+          c.style.setProperty('--fx', Math.round((a.left+a.width/2) - (b.left+b.width/2)) + 'px');
+          c.style.setProperty('--fy', Math.round((a.top+a.height/2) - (b.top+b.height/2)) + 'px');
+          c.style.setProperty('--fs', (Math.min(2.6, a.width / b.width)).toFixed(2));
+          c.style.animationDelay = (i * 70) + 'ms';
+          setTimeout(function(){
+            if (c.parentNode) c.parentNode.removeChild(c);
+            ch.classList.remove('pending');
+          }, 380 + i * 70);
+        });
+      }
+      // 내 클릭은 폴링을 기다리지 않고 즉시 칩을 올린다.
+      // 방금 누른 코인 버튼의 실제 화면 위치에서 출발해 자리 안 제자리로 날아온다.
+      function dropMyChip(seat, denom){
+        var el = document.getElementById('bjp-'+seat), pile = piles[seat];
+        if (!el || !pile) return;
+        var added = pushChips(el, pile, [denom], MEID, 'pending');
+        pile.bet += denom;
+        tossFrom(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), added);
+      }
+      /* 딴 자리의 칩을 각자 주인에게 돌려보낸다.
+         내 것은 화면 아래 중앙(칩 바)으로, 남의 것은 오른쪽 참가자 아이콘으로 —
+         포커 플립·바카라와 같은 규칙이다. */
+      function flyChipsToPot(){
         var controls = document.querySelector('.poker-controls');
-        var target = (controls || coinsEl).getBoundingClientRect();
+        var myTarget = (controls || coinsEl).getBoundingClientRect();
         var sent = [], n = 0;
         (st.seats||[]).forEach(function(s){
           if (!(s.payout > 0)) return;
-          var spot = document.getElementById('bjs-'+s.seat);
-          var chip = spot && spot.querySelector('.pchip');
-          if (!chip) return;
-          var r = chip.getBoundingClientRect();
-          if (!r.width) return;
-          // 남의 것은 오른쪽 참가자 아이콘으로, 내 것은 화면 하단으로
-          var t = target;
-          if (s.userId !== MEID) {
-            var av = rosterEl.querySelector('.rw[data-uid="'+cssEsc(s.userId)+'"] .rw-av');
-            var ab = av && av.getBoundingClientRect();
-            if (ab && ab.width) t = ab;
-          }
-          var c = cloneAt(chip, r, 'fly');
-          c.style.setProperty('--tx', Math.round((t.left+t.width/2) - (r.left+r.width/2)) + 'px');
-          c.style.setProperty('--ty', Math.round((t.top+t.height/2) - (r.top+r.height/2)) + 'px');
-          c.style.animationDelay = (n++ * 60) + 'ms';
-          sent.push(c);
-          spot.style.opacity = '0';
+          var pile = document.getElementById('bjp-'+s.seat);
+          if (!pile) return;
+          Array.prototype.forEach.call(pile.querySelectorAll('.pchip'), function(ch){
+            var r = ch.getBoundingClientRect();
+            if (!r.width) return;
+            var t = myTarget;
+            if (ch.classList.contains('mine')) t = myTarget;
+            else {
+              var av = rosterAvatar(ch.getAttribute('data-owner') || '');
+              var ab = av && av.getBoundingClientRect();
+              if (ab && ab.width) t = ab;
+            }
+            var c = cloneAt(ch, r, 'fly');
+            c.style.setProperty('--tx', Math.round((t.left+t.width/2) - (r.left+r.width/2)) + 'px');
+            c.style.setProperty('--ty', Math.round((t.top+t.height/2) - (r.top+r.height/2)) + 'px');
+            c.style.animationDelay = (n++ * 40) + 'ms';
+            sent.push(c);
+          });
+          pile.style.opacity = '0';
         });
         if (!n) return;
-        setTimeout(function(){ sent.forEach(function(c){ if (c.parentNode) c.parentNode.removeChild(c); }); }, 900 + n*60);
+        setTimeout(function(){ sent.forEach(function(c){ if (c.parentNode) c.parentNode.removeChild(c); }); }, 900 + n*40);
       }
+
 
       /* ── 입력 ───────────────────────────────────────────────────── */
       async function post(url, body){
@@ -608,7 +773,7 @@ export function blackjackPage(user: WebUser): string {
         var res = await post('/api/games/blackjack/bet', { seat: seat, amount: coin });
         if (res.ok) {
           setBalance(res.d.balance);
-          tossToSeat(seat, coin);
+          dropMyChip(seat, coin);
           if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
         } else {
           // 문구를 띄우면 아래 내용이 밀려서 다음 클릭이 엉뚱한 데로 간다. 자리만 짧게 튕긴다.
@@ -626,7 +791,8 @@ export function blackjackPage(user: WebUser): string {
         if (res.ok) {
           setBalance(res.d.balance);
           // 베팅이 두 배가 됐으니 서클 칩도 한 개 더 날려 보낸다
-          if (st.myHand) tossToSeat(st.myHand.seat, coin || 0);
+          // 베팅이 두 배가 됐으니 그만큼 칩을 더 올린다
+          if (st.myHand) dropMyChip(st.myHand.seat, st.myHand.bet);
           if (window.casinoSfx) window.casinoSfx.card();
         }
         poll();

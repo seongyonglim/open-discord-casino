@@ -285,7 +285,7 @@ export function pokerPage(user: WebUser): string {
       // 상단 띠의 총액 — 만 단위로 줄이면 10,010이 "1만"으로 보여 정확한 금액을 알 수 없으므로
       // 항상 실제 금액을 그대로 쓴다
       function compact(n){ return new Intl.NumberFormat('ko-KR').format(n); }
-      function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : (v>=1000 ? (v/1000)+'K' : String(v)); }
+      function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
       function coinLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }
       // 코인 단위 배열에서 위쪽 2단은 골드바, 나머지는 동전.
       // 칩 스프라이트는 c-coin/c-bar, 버튼은 kind-coin/kind-bar로 클래스를 분리한다
