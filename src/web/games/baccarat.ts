@@ -312,6 +312,84 @@ export function baccaratPage(user: WebUser): string {
         return revealed;
       }
 
+      /* ── 딜링 연출 ───────────────────────────────────────────────────
+         베팅 10초 동안 테이블이 비어 있으면 셔플 소리만 나고 볼 게 없다.
+         그래서 새 라운드가 열리면 뒷면 네 장을 딜러 자리에서 한 장씩 내려놓는다.
+         순서는 실제 바카라 그대로 플레이어 → 뱅커 → 플레이어 → 뱅커.
+         마감되면 이 뒷면들이 그 자리에서 앞면으로 뒤집힌다(.pcard의 cardFlip). */
+      var dealtRoundId = null, dealing = false, pendingDeal = [];
+      function dealSlots(){
+        return [
+          { el: pCardsEl, i: 0 }, { el: bCardsEl, i: 0 },
+          { el: pCardsEl, i: 1 }, { el: bCardsEl, i: 1 },
+        ];
+      }
+      function showAllCards(){
+        [pCardsEl, bCardsEl].forEach(function(el){
+          Array.prototype.forEach.call(el.querySelectorAll('.pcard'), function(c){ c.style.visibility = ''; });
+        });
+        if (fxLayer) {
+          Array.prototype.forEach.call(fxLayer.querySelectorAll('.deal-in'), function(c){
+            if (c.parentNode) c.parentNode.removeChild(c);
+          });
+        }
+      }
+      function clearDeal(){
+        pendingDeal.forEach(clearTimeout);
+        pendingDeal = [];
+        dealing = false;
+        showAllCards();
+      }
+      // 카드가 테이블 상단 중앙(딜러 자리)에서 제자리로 날아온다.
+      // 원본은 잠깐 숨기고 화면 전체 레이어에 복제본을 띄운다 — 자리 상자 밖 구간이 잘리지 않게.
+      function flyCardIn(card){
+        var r = card.getBoundingClientRect();
+        if (!r.width) return;
+        var stage = document.querySelector('.bacc-table');
+        var s = stage ? stage.getBoundingClientRect() : { left: r.left, top: r.top, width: 0 };
+        var c = card.cloneNode(true);
+        c.className = card.className.replace(/\\bdeal-in\\b/g, '').trim();
+        c.style.cssText = 'position:fixed;margin:0;left:' + r.left + 'px;top:' + r.top + 'px;' +
+          'width:' + r.width + 'px;height:' + r.height + 'px;';
+        c.style.setProperty('--dfx', Math.round((s.left + s.width / 2) - (r.left + r.width / 2)) + 'px');
+        c.style.setProperty('--dfy', Math.round((s.top - 34) - r.top) + 'px');
+        c.classList.add('deal-in');
+        getFxLayer().appendChild(c);
+        card.style.visibility = 'hidden';
+        // 이 타이머도 pendingDeal에 넣어야 중단 시 clearDeal이 함께 정리하고 카드를 되살린다
+        pendingDeal.push(setTimeout(function(){
+          if (c.parentNode) c.parentNode.removeChild(c);
+          card.style.visibility = '';
+        }, 300));
+      }
+      function dealSequence(roundId){
+        if (dealing || dealtRoundId === roundId) return;
+        dealing = true; dealtRoundId = roundId;
+
+        var slots = dealSlots();
+        slots.forEach(function(s){
+          var c = s.el.children[s.i];
+          if (c) c.style.visibility = 'hidden';
+        });
+        if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle();
+
+        // 셔플 소리가 잦아든 뒤부터 한 장씩. 네 장에 1.2초 남짓이라 10초 베팅 창에 넉넉히 들어간다.
+        var SHUFFLE_MS = 500, STEP = 175;
+        slots.forEach(function(s, n){
+          pendingDeal.push(setTimeout(function(){
+            var card = s.el.children[s.i];
+            if (!card) return;
+            card.style.visibility = '';
+            flyCardIn(card);
+            if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
+            if (n === slots.length - 1) { dealing = false; showAllCards(); }
+          }, SHUFFLE_MS + n * STEP));
+        });
+        // 연출이 어떤 이유로 끊겨도 반드시 카드가 다시 보이도록 하는 안전장치
+        pendingDeal.push(setTimeout(function(){ dealing = false; showAllCards(); },
+          SHUFFLE_MS + slots.length * STEP + 800));
+      }
+
       /* ── 최근 결과 (구슬판) ─────────────────────────────────────────
          바카라 테이블에 항상 붙어 있는 그 판이다. 최신이 왼쪽. */
       function renderHistory(rows){
@@ -640,15 +718,30 @@ export function baccaratPage(user: WebUser): string {
 
         if (r.id !== lastRoundId) {
           lastRoundId = r.id;
+          clearDeal();                 // 지난 라운드의 딜링 타이머를 정리한다
           slotCache = {};
           pCardsEl.innerHTML = ''; bCardsEl.innerHTML = '';
           pTotalEl.textContent = '–'; bTotalEl.textContent = '–';
           pSeatEl.classList.remove('win','lose'); bSeatEl.classList.remove('win','lose');
-          if (!firstState && window.casinoSfx) window.casinoSfx.shuffle();
         }
 
-        var dealt = syncCards(pCardsEl, 'p', r.player) + syncCards(bCardsEl, 'b', r.banker);
-        if (dealt && !firstState && window.casinoSfx) window.casinoSfx.deal();
+        // 베팅 중에는 뒷면 두 장씩 깔아 둔다. 마감되면 같은 자리에서 앞면으로 뒤집힌다.
+        var betting = r.phase === 'betting';
+        var dealt = syncCards(pCardsEl, 'p', betting ? [null, null] : r.player)
+                  + syncCards(bCardsEl, 'b', betting ? [null, null] : r.banker);
+
+        if (betting) {
+          // 페이지에 막 들어온 순간에는 연출을 돌리지 않는다 —
+          // 이미 진행 중인 베팅 창 한가운데일 수 있어, 그때 딜링을 시작하면 앞뒤가 안 맞는다.
+          if (!firstState) dealSequence(r.id);
+        } else if (dealt && !firstState && window.casinoSfx) {
+          // 처음 네 장은 "나눠주는" 소리, 세 번째 카드는 "넘기는" 소리로 갈라 쓴다.
+          // 세 번째 카드는 이 게임에서 판을 뒤집는 유일한 순간인데(절반쯤은 아예 오지도 않는다)
+          // 같은 소리로 울리면 그냥 카드가 한 장 더 나온 걸로만 들린다.
+          // 두 음원 다 이미 받아둔 것이라 추가 용량은 없다.
+          if (r.phase === 'third') window.casinoSfx.card();
+          else window.casinoSfx.deal();
+        }
 
         pTotalEl.textContent = r.playerTotal != null ? r.playerTotal : '–';
         bTotalEl.textContent = r.bankerTotal != null ? r.bankerTotal : '–';
