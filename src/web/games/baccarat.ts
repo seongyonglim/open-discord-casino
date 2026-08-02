@@ -1,0 +1,725 @@
+// 바카라(푼토 방코): 여러 유저가 같은 라운드에 함께 베팅하는 실시간 공용 게임.
+//
+// 포커 플립과 화면 구조·칩 조작은 같지만, 게임 원리가 다르다:
+//   · 플레이어가 내리는 선택이 하나도 없다. 몇 장을 더 받을지가 규칙 표로 고정돼 있다.
+//   · 그래서 확률이 매 라운드 똑같고, 배당도 고정이다(포커처럼 라운드마다 다시 계산하지 않는다).
+//   · 대신 "무엇이 나올지"가 아니라 "어느 쪽에 걸지"만 정하면 되므로 판단이 빠르고 회전이 빠르다.
+//
+// 시장 5개: 플레이어 / 뱅커 / 타이 + 사이드 베팅 P페어 · B페어.
+// 무승부가 나면 플레이어·뱅커 베팅은 원금을 그대로 돌려준다(배당 계산이 그 환불분을 이미 반영한다).
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { randomInt } from 'node:crypto';
+import {
+  advanceBaccaratRound, stackBaccaratBet, clearBaccaratBets,
+  getBaccaratBets, getBaccaratPlayers, getMyBaccaratBets, getRecentBaccaratResults, getWebUser,
+  BACC_THIRD_SEC, BACC_SETTLE_SEC, BACC_REVEAL_SEC,
+  type BaccRoundRow, type BaccOutcome, type WebUser,
+} from '../../db/queries';
+import { baccaratProbabilities, drawRound, playRound, cardsToStrings, handTotal } from '../../services/baccarat';
+import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
+import { readJson, sendJson } from '../http';
+import { layout, jsonForScript } from '../views';
+import { ASSET_V } from '../assets';
+import { gameSwitcher } from '../pages';
+import { COIN_SIZES } from './poker';
+
+const HOUSE_EDGE = 0.01;
+
+/* ── 배당 ────────────────────────────────────────────────────────────────
+   확률이 고정이므로 배당도 고정이다. 프로세스 시작 때 한 번만 구해 캐시한다.
+   플레이어·뱅커는 무승부가 환불이라 oddsForWinMarket(환불분을 빼고 계산)을 쓴다. */
+export interface BaccOdds {
+  player: number; banker: number; tie: number; ppair: number; bpair: number;
+}
+
+let oddsCache: BaccOdds | null = null;
+
+export function baccaratOdds(): BaccOdds {
+  if (oddsCache) return oddsCache;
+  const p = baccaratProbabilities();
+  // 확률이 0이 되는 시장이 없으므로 여기서 null이 나올 수 없다. 그래도 타입을 좁혀 둔다.
+  const need = (v: number | null, name: string): number => {
+    if (v == null) throw new Error(`바카라 ${name} 배당을 계산할 수 없습니다`);
+    return v;
+  };
+  const pair = need(oddsFromProbability(p.pair, HOUSE_EDGE), 'pair');
+  oddsCache = {
+    player: need(oddsForWinMarket(p.player, p.tie, HOUSE_EDGE), 'player'),
+    banker: need(oddsForWinMarket(p.banker, p.tie, HOUSE_EDGE), 'banker'),
+    tie: need(oddsFromProbability(p.tie, HOUSE_EDGE), 'tie'),
+    ppair: pair, bpair: pair,
+  };
+  return oddsCache;
+}
+
+const VALID_MARKETS = new Set(['player', 'banker', 'tie', 'ppair', 'bpair']);
+
+/* ── 라운드 진행 ─────────────────────────────────────────────────────── */
+
+function resolve(cards: number[]): BaccOutcome {
+  const o = playRound(cards);
+  return {
+    winner: o.winner,
+    playerTotal: o.playerTotal, bankerTotal: o.bankerTotal,
+    playerPair: o.playerPair, bankerPair: o.bankerPair,
+    natural: o.natural,
+    playerCards: o.playerCards, bankerCards: o.bankerCards,
+  };
+}
+
+function advance(): BaccRoundRow {
+  return advanceBaccaratRound(() => drawRound(randomInt), resolve);
+}
+
+/* 공개 범위: 마감 즉시 양쪽 두 장 → 세 번째 카드 → 정산.
+   공개 전 카드는 절대 클라이언트로 내려보내지 않는다(미리 알면 게임이 성립하지 않는다).
+
+   끗수는 보이는 카드만으로 그때그때 계산한다. 정산 결과(result_json)를 기다렸다가 쓰면
+   카드가 다 나온 뒤에도 큰 숫자가 '–'로 남아, 정작 결론이 제일 늦게 보인다.
+   첫 두 장의 끗수는 "세 번째 카드가 올지"를 가늠하는 정보라 실제 테이블에서도 바로 보여준다. */
+interface VisibleHands { player: string[]; banker: string[]; playerTotal: number | null; bankerTotal: number | null }
+
+function visible(round: BaccRoundRow): VisibleHands {
+  if (round.phase === 'betting') {
+    return { player: [], banker: [], playerTotal: null, bankerTotal: null };
+  }
+  const o = playRound(JSON.parse(round.cards_json) as number[]);
+  // deal 단계에서는 첫 두 장까지만
+  const n = round.phase === 'deal' ? 2 : 3;
+  const p = o.playerCards.slice(0, n);
+  const b = o.bankerCards.slice(0, n);
+  return {
+    player: cardsToStrings(p),
+    banker: cardsToStrings(b),
+    playerTotal: handTotal(p),
+    bankerTotal: handTotal(b),
+  };
+}
+
+function secondsLeft(round: BaccRoundRow): number {
+  const now = Math.floor(Date.now() / 1000);
+  if (round.phase === 'betting') return Math.max(0, round.betting_ends_at - now);
+  if (round.phase === 'done') return Math.max(0, (round.resolved_at ?? now) + BACC_REVEAL_SEC - now);
+  const e = now - round.betting_ends_at;
+  const next = e < BACC_THIRD_SEC ? BACC_THIRD_SEC : BACC_SETTLE_SEC;
+  return Math.max(0, next - e);
+}
+
+function statePayload(round: BaccRoundRow, userId: string) {
+  const vis = visible(round);
+  const result = round.result_json ? JSON.parse(round.result_json) as BaccOutcome : null;
+  const p = baccaratProbabilities();
+
+  return {
+    ok: true,
+    round: {
+      id: round.id,
+      phase: round.phase,
+      secondsLeft: secondsLeft(round),
+      player: vis.player,
+      banker: vis.banker,
+      playerTotal: vis.playerTotal,
+      bankerTotal: vis.bankerTotal,
+      result: result && round.phase === 'done'
+        ? {
+            winner: result.winner,
+            playerTotal: result.playerTotal, bankerTotal: result.bankerTotal,
+            playerPair: result.playerPair, bankerPair: result.bankerPair,
+            natural: result.natural,
+          }
+        : null,
+    },
+    odds: baccaratOdds(),
+    prob: { player: p.player, banker: p.banker, tie: p.tie, pair: p.pair },
+    coins: COIN_SIZES,
+    me: userId,
+    balance: getWebUser(userId)?.balance ?? 0,
+    bets: getBaccaratBets(round.id),
+    myBets: getMyBaccaratBets(round.id, userId),
+    players: getBaccaratPlayers(round.id),
+    history: getRecentBaccaratResults(20),
+  };
+}
+
+export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
+  return sendJson(res, 200, statePayload(advance(), userId));
+}
+
+export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {
+  // 본문 파싱(await)을 먼저 끝낸다 — 라운드 확인과 베팅 사이에 await가 있으면 그 틈에
+  // 라운드가 마감·정산되어 이미 끝난 라운드에 베팅이 들어갈 수 있다.
+  const data = await readJson(req);
+  const market = String(data?.market ?? '');
+  const amount = Math.floor(Number(data?.amount));
+  if (!VALID_MARKETS.has(market)) return sendJson(res, 400, { error: '알 수 없는 베팅 시장입니다' });
+  if (!COIN_SIZES.includes(amount)) return sendJson(res, 400, { error: '코인 단위가 올바르지 않습니다' });
+
+  const round = advance();
+  if (round.phase !== 'betting') return sendJson(res, 400, { error: '베팅이 마감되었습니다. 다음 라운드를 기다려주세요.' });
+
+  const odds = baccaratOdds()[market as keyof BaccOdds];
+  const r = stackBaccaratBet(userId, username, round.id, market, amount, odds);
+  if (!r.ok) {
+    return sendJson(res, 400, {
+      error: r.error === 'closed' ? '베팅이 마감되었습니다. 다음 라운드를 기다려주세요.' : '잔액이 부족합니다',
+    });
+  }
+  return sendJson(res, 200, { ok: true, balance: r.balance, staked: r.staked });
+}
+
+export async function handleClear(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
+  const round = advance();
+  const r = clearBaccaratBets(userId, round.id);
+  if (!r.ok) {
+    return sendJson(res, 400, {
+      error: r.error === 'nothing' ? '회수할 칩이 없습니다' : '베팅이 마감되어 회수할 수 없습니다',
+    });
+  }
+  return sendJson(res, 200, { ok: true, balance: r.balance, refunded: r.refunded });
+}
+
+/* ── 화면 ────────────────────────────────────────────────────────────── */
+
+export function baccaratPage(user: WebUser): string {
+  const o = baccaratOdds();
+  const p = baccaratProbabilities();
+
+  const body = `
+    ${gameSwitcher('baccarat')}
+    <div class="game-shell">
+      <div class="game-main">
+        <div class="card">
+          <div class="bead-head">
+            <span>최근 결과</span>
+            <span class="bead-legend">
+              <i class="bead p"></i>플레이어 <i class="bead b"></i>뱅커 <i class="bead t"></i>타이
+            </span>
+          </div>
+          <div id="bHistory" class="bead-row"></div>
+
+          <div class="bacc-table">
+            <div id="bStatus" class="bacc-status">베팅을 기다리는 중…</div>
+            <div class="bacc-seats">
+              <div class="bacc-seat side-player" id="bPlayerSeat">
+                <div class="bacc-name">PLAYER</div>
+                <div id="bPlayerCards" class="bacc-hand"></div>
+                <div id="bPlayerTotal" class="bacc-total">–</div>
+              </div>
+              <div class="bacc-vs">VS</div>
+              <div class="bacc-seat side-banker" id="bBankerSeat">
+                <div class="bacc-name">BANKER</div>
+                <div id="bBankerCards" class="bacc-hand"></div>
+                <div id="bBankerTotal" class="bacc-total">–</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 상자 골격은 스크립트가 통째로 그린다 — 칩 더미가 상자 안에 살기 때문에
+               라운드/결과가 바뀔 때만 다시 그려야 쌓아둔 칩이 날아가지 않는다 -->
+          <div class="market-grid" id="bMarkets"></div>
+        </div>
+
+        <div class="card game-controls poker-controls">
+          <div class="coin-row" id="bCoins"></div>
+          <button id="bClear" class="btn" type="button">Clear Screen</button>
+        </div>
+      </div>
+
+      <div class="card game-side">
+        <div class="side-head"><span>참가자</span><span id="bPot" class="num">0P</span></div>
+        <div id="bRoster" class="roster"><div class="empty" style="padding:16px 0">아직 참가자가 없습니다</div></div>
+      </div>
+    </div>
+    <script>
+      window.__ME__ = ${jsonForScript(user.username)};
+      window.__MEID__ = ${jsonForScript(user.id)};
+      window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];
+    </script>
+    <script>
+    (function(){
+      var AV = ${JSON.stringify(ASSET_V)};
+      var ODDS = ${jsonForScript(o)};
+      var PROB = ${jsonForScript({ player: p.player, banker: p.banker, tie: p.tie, pair: p.pair })};
+
+      var statusEl=document.getElementById('bStatus'), histEl=document.getElementById('bHistory');
+      var marketsEl=document.getElementById('bMarkets');
+      var pCardsEl=document.getElementById('bPlayerCards'), bCardsEl=document.getElementById('bBankerCards');
+      var pTotalEl=document.getElementById('bPlayerTotal'), bTotalEl=document.getElementById('bBankerTotal');
+      var pSeatEl=document.getElementById('bPlayerSeat'), bSeatEl=document.getElementById('bBankerSeat');
+      var coinsEl=document.getElementById('bCoins'), clearBtn=document.getElementById('bClear');
+      var rosterEl=document.getElementById('bRoster'), potEl=document.getElementById('bPot');
+      var pbal=document.querySelector('.prof .pbal');
+      var card=document.querySelector('.card');
+
+      var st=null, coin=null, lastRoundId=null, notedRoundId=null;
+      // 페이지 진입 직후에는 카드 공개음을 건너뛴다 — 들어오자마자 소리가 몰아치면 정신없다
+      var firstState = true;
+      var MAX_CHIPS = 18;   // 상자 하나에 그리는 칩 스프라이트 상한 (넘으면 오래된 것부터 제거)
+
+      var MARKET_DEFS = [
+        { key:'player', label:'플레이어', sub:'PLAYER', cls:'m-player' },
+        { key:'tie',    label:'타이',     sub:'TIE',    cls:'m-tie' },
+        { key:'banker', label:'뱅커',     sub:'BANKER', cls:'m-banker' }
+      ];
+      var PAIR_DEFS = [
+        { key:'ppair', label:'플레이어 페어', sub:'첫 두 장 같은 숫자', cls:'m-pair' },
+        { key:'bpair', label:'뱅커 페어',     sub:'첫 두 장 같은 숫자', cls:'m-pair' }
+      ];
+      var ALL_KEYS = ['player','tie','banker','ppair','bpair'];
+
+      function fmt(n){ return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P'; }
+      function compact(n){ return new Intl.NumberFormat('ko-KR').format(n); }
+      function setBalance(n){ if(pbal && typeof n==='number') pbal.textContent = fmt(n); }
+      function replay(el, cls){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+      function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+      function cssEsc(s){ return String(s).replace(/["\\\\]/g, '\\\\$&'); }
+      function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : (v>=1000 ? (v/1000)+'K' : String(v)); }
+      function coinLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }
+
+      // 뒤 세 단위(1000·5000·1만)는 골드바, 앞은 동전 — 포커 플립과 같은 규칙
+      var BAR_COUNT = 3;
+      function chipKind(v){
+        var c = (st && st.coins) || [], i = c.indexOf(v);
+        return (i >= 0 && i < c.length - BAR_COUNT) ? 'c-coin' : 'c-bar';
+      }
+      function buttonKind(v){ return chipKind(v) === 'c-coin' ? 'kind-coin' : 'kind-bar'; }
+
+      var SUIT_SYM={s:'\\u2660',h:'\\u2665',d:'\\u2666',c:'\\u2663'};
+      function cardHtml(cstr){
+        if (!cstr) return '<img class="pcard back" src="/cards/back.svg?v='+AV+'" alt="">';
+        var rank = (cstr[0]==='T'?'10':cstr[0]);
+        return '<img class="pcard" src="/cards/'+cstr+'.svg?v='+AV+'" alt="'+rank+SUIT_SYM[cstr[1]]+'">';
+      }
+
+      /* ── 카드 슬롯 동기화 ────────────────────────────────────────────
+         매 폴링마다 innerHTML을 통째로 갈아끼우면 카드가 초당 한 번씩 다시 튀고
+         순차 공개 연출이 사라진다. 그래서 내용이 바뀐 칸만 교체한다.
+         바카라는 손패 장수 자체가 2장에서 3장으로 늘어나므로 길이 변화도 함께 다룬다. */
+      var slotCache={};
+      function syncCards(el, key, values){
+        var cache = slotCache[key];
+        if (!cache) { cache = slotCache[key] = []; el.innerHTML = ''; }
+        // 장수가 줄었으면(새 라운드) 통째로 비운다
+        if (values.length < cache.length) { el.innerHTML = ''; cache = slotCache[key] = []; }
+        var revealed = 0;
+        for (var i=0;i<values.length;i++){
+          if (cache[i] === values[i]) continue;
+          cache[i] = values[i];
+          if (el.children[i]) el.children[i].outerHTML = cardHtml(values[i]);
+          else el.insertAdjacentHTML('beforeend', cardHtml(values[i]));
+          revealed++;
+        }
+        return revealed;
+      }
+
+      /* ── 최근 결과 (구슬판) ─────────────────────────────────────────
+         바카라 테이블에 항상 붙어 있는 그 판이다. 최신이 왼쪽. */
+      function renderHistory(rows){
+        if (!rows || !rows.length) { histEl.innerHTML = '<span class="bead-empty">아직 기록이 없습니다</span>'; return; }
+        var sig = rows.map(function(r){ return r.winner[0]+r.playerTotal+r.bankerTotal; }).join('');
+        if (histEl.dataset.sig === sig) return;
+        histEl.dataset.sig = sig;
+        histEl.innerHTML = rows.map(function(r){
+          var c = r.winner === 'player' ? 'p' : r.winner === 'banker' ? 'b' : 't';
+          var mark = r.winner === 'player' ? 'P' : r.winner === 'banker' ? 'B' : 'T';
+          return '<span class="bead '+c+'" title="플레이어 '+r.playerTotal+' : 뱅커 '+r.bankerTotal+'">'+mark+'</span>';
+        }).join('');
+      }
+
+      /* ── 베팅 상자 ──────────────────────────────────────────────────
+         골격은 라운드/단계/결과가 바뀔 때만 다시 그린다.
+         매초 새로 만들면 그 순간의 클릭이 씹히고 쌓아둔 칩 더미도 날아간다. */
+      function marketTile(d, betting, isPair){
+        var res = st.round.result;
+        var winCls = '';
+        if (res) {
+          var hit = (d.key==='player' && res.winner==='player')
+                 || (d.key==='banker' && res.winner==='banker')
+                 || (d.key==='tie'    && res.winner==='tie')
+                 || (d.key==='ppair'  && res.playerPair)
+                 || (d.key==='bpair'  && res.bankerPair);
+          // 무승부는 플레이어·뱅커에 승패가 아니라 환불이므로 흐리게 처리하지 않는다
+          if ((d.key==='player'||d.key==='banker') && res.winner==='tie') winCls = '';
+          else winCls = hit ? ' hit' : ' miss';
+        }
+        var pr = isPair ? PROB.pair : PROB[d.key];
+        return '<button type="button" class="market '+d.cls+(betting?'':' disabled')+winCls+'" data-market="'+d.key+'">' +
+          '<span class="m-top"><span class="m-total" id="tot-'+d.key+'">0</span>' +
+            '<span class="m-odds">'+ODDS[d.key].toFixed(2)+'x</span></span>' +
+          '<span class="m-pile" id="pile-'+d.key+'"></span>' +
+          '<span class="m-body"><span class="m-label">'+d.label+'</span>' +
+            '<span class="m-sub">'+d.sub+' · '+(pr*100).toFixed(1)+'%</span></span>' +
+          '</button>';
+      }
+      var marketSig=null;
+      function renderMarkets(){
+        var betting = st.round.phase==='betting';
+        var sig = st.round.id+'|'+st.round.phase+'|'+JSON.stringify(st.round.result||null);
+        if (sig === marketSig) return;
+        marketSig = sig;
+        var html = '<div class="market-row bacc-main">' +
+          MARKET_DEFS.map(function(d){ return marketTile(d, betting, false); }).join('') +
+          '</div><div class="market-row bacc-pair">' +
+          PAIR_DEFS.map(function(d){ return marketTile(d, betting, true); }).join('') +
+          '</div>';
+        marketsEl.innerHTML = html;
+        piles = {};   // 골격을 새로 만들었으니 더미 캐시도 초기화
+        marketsEl.querySelectorAll('.market').forEach(function(el){
+          el.addEventListener('click', function(){
+            if (el.classList.contains('disabled')) return;
+            placeChip(el.getAttribute('data-market'));
+          });
+        });
+      }
+
+      /* ── 코인 더미 ───────────────────────────────────────────────────
+         상자별로 "지금까지 올라온 칩 목록"을 들고 있다가, 늘어난 만큼만 새 스프라이트를
+         덧붙인다. 총액에서 매번 새로 그리면 애니메이션이 초당 다시 시작되고
+         쌓이는 느낌이 사라진다. (포커 플립과 같은 방식)                            */
+      var piles={};
+      function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
+      // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
+      // owner를 심어두면 정산 때 그 칩을 주인 아이콘으로 돌려보낼 수 있다.
+      function chipSprite(denom, owner, idx, anim){
+        var col = idx % 5, row = Math.floor(idx / 5);
+        var x = (col - 2) * 14 + jit(idx, 9) - 4;
+        var y = 3 + row * 5 + jit(idx + 7, 3);
+        return '<span class="pchip '+chipKind(denom)+(owner===st.me?' mine':'')+(anim?' '+anim:'')+
+          '" data-owner="'+esc(owner)+'"'+
+          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
+      }
+      // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
+      function decompose(amount){
+        var out=[], d=(st.coins||[]).slice().sort(function(a,b){return b-a;});
+        for (var i=0;i<d.length && out.length<60;i++){
+          while (amount >= d[i] && out.length < 60) { out.push(d[i]); amount -= d[i]; }
+        }
+        return out;
+      }
+      function pushChips(el, pile, denoms, owner, anim){
+        var added = [];
+        for (var i=0;i<denoms.length;i++){
+          if (pile.list.length >= MAX_CHIPS) { pile.list.shift(); if (el.firstChild) el.removeChild(el.firstChild); }
+          pile.list.push(denoms[i]);
+          el.insertAdjacentHTML('beforeend', chipSprite(denoms[i], owner, pile.n++ % MAX_CHIPS, anim));
+          added.push(el.lastElementChild);
+        }
+        return added;
+      }
+      function rebuildPile(el, market, byUser, roundId){
+        var pile = piles[market] = { round: roundId, byUser: {}, list: [], n: 0 };
+        el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
+        el.innerHTML = '';
+        Object.keys(byUser).forEach(function(uid){
+          pile.byUser[uid] = byUser[uid];
+          pushChips(el, pile, decompose(byUser[uid]), uid, '');
+        });
+      }
+      function syncPile(market, byUser, roundId){
+        var el = document.getElementById('pile-'+market);
+        if (!el) return;
+        var pile = piles[market];
+        if (!pile || pile.round !== roundId) return rebuildPile(el, market, byUser, roundId);
+
+        // 누구든 금액이 줄었으면(회수/Clear Screen) 애니메이션 없이 다시 그린다
+        var uids = Object.keys(pile.byUser);
+        for (var i=0;i<uids.length;i++){
+          if ((byUser[uids[i]]||0) < pile.byUser[uids[i]]) return rebuildPile(el, market, byUser, roundId);
+        }
+        // 늘어난 사람만큼 그 사람 아이콘에서 칩이 날아온다
+        Object.keys(byUser).forEach(function(uid){
+          var delta = byUser[uid] - (pile.byUser[uid]||0);
+          if (delta <= 0) return;
+          pile.byUser[uid] = byUser[uid];
+          // 내 칩은 이미 클릭 즉시(dropMyChip) 올려놨으므로 여기서 또 올리지 않는다
+          if (uid === st.me) return;
+          var added = pushChips(el, pile, decompose(delta), uid, 'pending');
+          tossFrom(rosterAvatar(uid), added);
+        });
+      }
+
+      // 칩이 상자 밖을 지나는 구간은 .market의 overflow:hidden에 잘려 보이지 않으므로,
+      // 날아가는 연출은 전부 화면 전체를 덮는 이 레이어 위에서 한다.
+      var fxLayer = null;
+      function getFxLayer(){
+        if (!fxLayer || !fxLayer.parentNode) {
+          fxLayer = document.createElement('div');
+          fxLayer.className = 'chip-fly-layer';
+          document.body.appendChild(fxLayer);
+        }
+        return fxLayer;
+      }
+      function cloneAt(chip, rect, cls){
+        var c = chip.cloneNode(true);
+        c.className = chip.className.replace(/\\b(drop|toss|pending|fly)\\b/g, '').trim() + ' ' + cls;
+        c.style.cssText = 'position:fixed;margin:0;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+          'width:' + rect.width + 'px;height:' + rect.height + 'px;';
+        getFxLayer().appendChild(c);
+        return c;
+      }
+      // 우측 참가자 패널에서 그 사람의 아바타 요소를 찾는다 (칩의 출발지·도착지)
+      function rosterAvatar(uid){
+        return rosterEl.querySelector('.rw[data-uid="'+cssEsc(uid)+'"] .rw-av');
+      }
+      // src 요소 위치에서 chips(제자리에 숨겨둔 원본)로 칩이 날아오게 한다
+      function tossFrom(src, chips){
+        if (!chips || !chips.length) return;
+        if (!src) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        var a = src.getBoundingClientRect();
+        if (!a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        chips.forEach(function(ch, i){
+          var b = ch.getBoundingClientRect();
+          if (!b.width) { ch.classList.remove('pending'); return; }
+          var c = cloneAt(ch, b, 'toss');
+          c.style.setProperty('--fx', Math.round((a.left+a.width/2) - (b.left+b.width/2)) + 'px');
+          c.style.setProperty('--fy', Math.round((a.top+a.height/2) - (b.top+b.height/2)) + 'px');
+          c.style.setProperty('--fs', (Math.min(2.6, a.width / b.width)).toFixed(2));
+          c.style.animationDelay = (i * 70) + 'ms';
+          setTimeout(function(){
+            if (c.parentNode) c.parentNode.removeChild(c);
+            ch.classList.remove('pending');
+          }, 380 + i * 70);
+        });
+      }
+      // 내 클릭은 폴링을 기다리지 않고 즉시 칩을 올린다.
+      // 방금 누른 코인 버튼의 실제 화면 위치에서 출발해 상자 안 제자리로 날아온다.
+      function dropMyChip(market, denom){
+        var el = document.getElementById('pile-'+market), pile = piles[market];
+        if (!el || !pile) return;
+        var added = pushChips(el, pile, [denom], st.me, 'pending');
+        pile.byUser[st.me] = (pile.byUser[st.me]||0) + denom;
+        tossFrom(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), added);
+      }
+      // 돈이 나온 상자의 칩을 각자 주인에게 돌려보낸다.
+      // 내 것은 화면 아래 중앙(칩 바)으로 빨려들어오고, 남의 것은 오른쪽 참가자 아이콘으로 간다.
+      function flyChipsToPot(markets){
+        var controls = document.querySelector('.poker-controls');
+        var myTarget = (controls || coinsEl).getBoundingClientRect();
+        var sent = [], n = 0;
+        markets.forEach(function(m){
+          var pile = document.getElementById('pile-' + m);
+          if (!pile) return;
+          Array.prototype.forEach.call(pile.querySelectorAll('.pchip'), function(ch){
+            var r = ch.getBoundingClientRect();
+            if (!r.width) return;
+            var t;
+            if (ch.classList.contains('mine')) t = myTarget;
+            else {
+              var av = rosterAvatar(ch.getAttribute('data-owner') || '');
+              t = (av && av.getBoundingClientRect().width) ? av.getBoundingClientRect() : myTarget;
+            }
+            var c = cloneAt(ch, r, 'fly');
+            c.style.setProperty('--tx', Math.round((t.left + t.width/2) - (r.left + r.width/2)) + 'px');
+            c.style.setProperty('--ty', Math.round((t.top + t.height/2) - (r.top + r.height/2)) + 'px');
+            c.style.animationDelay = (n++ * 40) + 'ms';
+            sent.push(c);
+          });
+          pile.style.opacity = '0';
+        });
+        if (!n) return;
+        setTimeout(function(){
+          sent.forEach(function(c){ if (c.parentNode) c.parentNode.removeChild(c); });
+        }, 900 + n * 40);
+      }
+      // 돈이 나온 상자 — 무승부면 플레이어·뱅커도 원금이 돌아가므로 함께 회수한다
+      function payingMarkets(res){
+        var out = res.winner === 'tie' ? ['player','banker','tie'] : [res.winner];
+        if (res.playerPair) out.push('ppair');
+        if (res.bankerPair) out.push('bpair');
+        return out;
+      }
+
+      /* ── 코인 버튼 ──────────────────────────────────────────────── */
+      function renderCoins(){
+        if (coinsEl.dataset.done) return;
+        coinsEl.dataset.done = '1';
+        coinsEl.innerHTML = (st.coins||[]).map(function(v){
+          return '<button type="button" class="coin '+buttonKind(v)+'" data-coin="'+v+'">' +
+            '<span class="face">'+coinLabel(v)+'</span></button>';
+        }).join('');
+        coin = (st.coins||[])[0];
+        coinsEl.querySelectorAll('.coin').forEach(function(b){
+          b.addEventListener('click', function(){
+            coin = Number(b.dataset.coin);
+            syncCoinActive();
+          });
+        });
+        syncCoinActive();
+      }
+      function syncCoinActive(){
+        coinsEl.querySelectorAll('.coin').forEach(function(b){
+          b.classList.toggle('active', Number(b.dataset.coin) === coin);
+        });
+      }
+
+      /* ── 우측 참가자 패널 ──────────────────────────────────────────
+         칩이 아바타에서 출발하고 아바타로 돌아가므로 더미보다 먼저 그려져 있어야 한다. */
+      var rosterSig=null, lastBal={};
+      function renderRoster(){
+        var players = st.players || [];
+        var sig = players.map(function(p){ return p.user_id; }).join(',');
+        if (sig !== rosterSig) {
+          rosterSig = sig;
+          if (!players.length) {
+            rosterEl.innerHTML = '<div class="empty" style="padding:16px 0">아직 참가자가 없습니다</div>';
+          } else {
+            rosterEl.innerHTML = players.map(function(p){
+              var ini = esc((String(p.username||'?').trim()[0] || '?').toUpperCase());
+              var av = p.avatar
+                ? '<img class="rw-av" src="'+esc(p.avatar)+'" alt="" referrerpolicy="no-referrer">'
+                : '<span class="rw-av">'+ini+'</span>';
+              return '<div class="rw'+(p.user_id===st.me?' me':'')+'" data-uid="'+esc(p.user_id)+'">' +
+                av +
+                '<span class="rw-mid"><span class="rw-name">'+esc(p.username)+'</span>' +
+                '<span class="rw-bal" id="bal-'+esc(p.user_id)+'">'+fmt(p.balance)+'</span></span>' +
+                '<span class="rw-bet" id="bet-'+esc(p.user_id)+'"></span></div>';
+            }).join('');
+          }
+        }
+        players.forEach(function(p){
+          var balEl = document.getElementById('bal-'+p.user_id);
+          if (balEl) {
+            var prev = lastBal[p.user_id];
+            if (prev != null && p.balance !== prev) replay(balEl, p.balance > prev ? 'up' : 'down');
+            balEl.textContent = fmt(p.balance);
+          }
+          lastBal[p.user_id] = p.balance;
+          var betEl = document.getElementById('bet-'+p.user_id);
+          if (betEl) {
+            betEl.innerHTML = (p.payout > 0)
+              ? '<span class="pos">+'+fmt(p.payout)+'</span>'
+              : fmt(p.staked);
+          }
+          var row = rosterEl.querySelector('.rw[data-uid="'+cssEsc(p.user_id)+'"]');
+          if (row) row.classList.toggle('won', p.payout > 0);
+        });
+      }
+
+      // 총액 표기 + 코인 더미는 매 폴링마다 갱신 (골격은 건드리지 않는다)
+      function updateTotals(){
+        var byMarket={}, total=0;
+        (st.bets||[]).forEach(function(b){
+          if (!byMarket[b.market]) byMarket[b.market] = {};
+          byMarket[b.market][b.user_id] = (byMarket[b.market][b.user_id]||0) + b.amount;
+          total += b.amount;
+        });
+        ALL_KEYS.forEach(function(k){
+          var per = byMarket[k] || {};
+          var t = 0;
+          Object.keys(per).forEach(function(u){ t += per[u]; });
+          var el=document.getElementById('tot-'+k);
+          if (el) el.textContent = compact(t);
+          syncPile(k, per, st.round.id);
+        });
+        potEl.textContent = fmt(total);
+        var staked = (st.myBets||[]).reduce(function(a,b){return a+b.amount;},0);
+        clearBtn.disabled = st.round.phase!=='betting' || staked<=0;
+      }
+
+      function phaseText(r){
+        if (r.phase === 'betting') return '베팅 마감까지 ' + r.secondsLeft + '초';
+        if (r.phase === 'deal') return '카드 공개 · ' + r.secondsLeft + '초';
+        if (r.phase === 'third') {
+          // 세 번째 카드가 아예 안 오는 판이 절반쯤 된다(내추럴이거나 양쪽 다 스탠드).
+          // 그때도 "세 번째 카드"라고 띄우면 오지 않는 카드를 기다리게 된다.
+          var drew = r.player.length > 2 || r.banker.length > 2;
+          return (drew ? '세 번째 카드' : '추가 카드 없음') + ' · ' + r.secondsLeft + '초';
+        }
+        var w = r.result && r.result.winner;
+        var name = w==='player' ? '플레이어' : w==='banker' ? '뱅커' : '타이';
+        return name + ' 승 · 다음 라운드까지 ' + r.secondsLeft + '초';
+      }
+
+      function render(){
+        var r = st.round;
+        setBalance(st.balance);
+        renderCoins();
+        renderHistory(st.history);
+        statusEl.textContent = phaseText(r);
+        statusEl.className = 'bacc-status' + (r.phase === 'betting' ? ' live' : '');
+
+        if (r.id !== lastRoundId) {
+          lastRoundId = r.id;
+          slotCache = {};
+          pCardsEl.innerHTML = ''; bCardsEl.innerHTML = '';
+          pTotalEl.textContent = '–'; bTotalEl.textContent = '–';
+          pSeatEl.classList.remove('win','lose'); bSeatEl.classList.remove('win','lose');
+          if (!firstState && window.casinoSfx) window.casinoSfx.shuffle();
+        }
+
+        var dealt = syncCards(pCardsEl, 'p', r.player) + syncCards(bCardsEl, 'b', r.banker);
+        if (dealt && !firstState && window.casinoSfx) window.casinoSfx.deal();
+
+        pTotalEl.textContent = r.playerTotal != null ? r.playerTotal : '–';
+        bTotalEl.textContent = r.bankerTotal != null ? r.bankerTotal : '–';
+
+        var res = r.result;
+        pSeatEl.classList.toggle('win', !!res && res.winner === 'player');
+        bSeatEl.classList.toggle('win', !!res && res.winner === 'banker');
+        pSeatEl.classList.toggle('lose', !!res && res.winner === 'banker');
+        bSeatEl.classList.toggle('lose', !!res && res.winner === 'player');
+
+        renderMarkets();
+        renderRoster();   // 칩이 아바타에서 출발하므로 더미보다 먼저 그려져 있어야 한다
+        updateTotals();
+        firstState = false;
+
+        if (res && notedRoundId !== r.id) {
+          notedRoundId = r.id;
+          flyChipsToPot(payingMarkets(res));
+          var mine = (st.myBets||[]);
+          if (mine.length) {
+            var gained = mine.reduce(function(a,b){ return a + (b.payout||0); }, 0);
+            var net = mine.reduce(function(a,b){ return a + ((b.payout||0) - b.amount); }, 0);
+            if (gained > 0) {
+              if (window.casinoSfx) window.casinoSfx.win();
+              if (net > 0) {
+                if (card) replay(card, 'gold-flash');
+                if (pbal) replay(pbal, 'bump');
+              }
+            } else if (window.casinoSfx) {
+              window.casinoSfx.lose();
+            }
+          }
+        }
+      }
+
+      /* ── 입력 ───────────────────────────────────────────────────── */
+      async function post(url, body){
+        var r = await fetch(url, { method:'POST', headers:{'content-type':'application/json'},
+          body: body?JSON.stringify(body):undefined });
+        var d = await r.json();
+        return { ok:r.ok, d:d };
+      }
+      async function placeChip(market){
+        var bet = coin;
+        var res = await post('/api/games/baccarat/bet', { market:market, amount:bet });
+        if (!res.ok) return;   // 실패하면 칩이 올라가지 않는 것으로 드러난다 (문구 미표시)
+        setBalance(res.d.balance);
+        dropMyChip(market, bet);
+        if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+        poll();
+      }
+      clearBtn.addEventListener('click', async function(){
+        var res = await post('/api/games/baccarat/clear');
+        if (!res.ok) { poll(); return; }
+        setBalance(res.d.balance);
+        poll();
+      });
+
+      /* ── 폴링 ───────────────────────────────────────────────────── */
+      var pollFails = 0;
+      async function poll(){
+        var d = await window.casinoPoll('/api/games/baccarat/state');
+        if (!d) { if (++pollFails >= 2) statusEl.textContent = '서버에 연결하는 중…'; return; }
+        pollFails = 0;
+        st = d;
+        render();
+      }
+      poll();
+      setInterval(poll, 1000);
+    })();
+    </script>`;
+
+  return layout('바카라', 'lobby', body, 'poker-wide');
+}

@@ -19,6 +19,9 @@ import {
 import {
   pokerPage, handleState as pokerState, handleBet as pokerBet, handleClear as pokerClear,
 } from './games/poker';
+import {
+  baccaratPage, handleState as baccState, handleBet as baccBet, handleClear as baccClear,
+} from './games/baccarat';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
@@ -216,6 +219,23 @@ export function startWebServer(): void {
       if (path === '/api/games/poker/clear' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await pokerClear(req, res, me.id);
+      }
+
+      if (path === '/games/baccarat') {
+        if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
+        return send(res, 200, baccaratPage(me));
+      }
+      if (path === '/api/games/baccarat/state' && req.method === 'GET') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await baccState(req, res, me.id);
+      }
+      if (path === '/api/games/baccarat/bet' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await baccBet(req, res, me.id, me.username);
+      }
+      if (path === '/api/games/baccarat/clear' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await baccClear(req, res, me.id);
       }
 
       notFound(res);

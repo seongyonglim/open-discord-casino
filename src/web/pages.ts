@@ -7,7 +7,7 @@ const GAMES: { key: string; name: string; desc: string; icon: string; ready: boo
   { key: 'ladder', name: '사다리게임', desc: '출발·도착의 좌우를 예측하세요. 하나만 맞히면 1.95배, 둘 다 맞히면 3.95배.', icon: ladderIcon, ready: true },
   { key: 'graph', name: '그래프게임', desc: '배율이 계속 오릅니다. 터지기 전에 캐시아웃하세요. 늦으면 전액 손실!', icon: chartIcon, ready: true },
   { key: 'poker', name: '포커 플립', desc: '홀덤 두 핸드를 보고 승자와 완성 등급에 베팅. 배당은 공개된 카드로 매번 새로 계산됩니다.', icon: cardsIcon, ready: true },
-  { key: 'baccarat', name: '바카라', desc: '뱅커/플레이어/타이 중 승자를 맞춰보세요.', icon: cardsIcon, ready: false },
+  { key: 'baccarat', name: '바카라', desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어까지 다섯 갈래에 칩을 올려보세요.', icon: cardsIcon, ready: true },
   { key: 'blackjack', name: '블랙잭', desc: '21에 가깝게, 딜러를 이기세요.', icon: cardsIcon, ready: false },
 ];
 
