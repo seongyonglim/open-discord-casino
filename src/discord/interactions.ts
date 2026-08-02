@@ -39,6 +39,21 @@ function publicReply(res: ServerResponse, content: string): void {
   json(res, { type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content } });
 }
 
+// 버튼을 눌렀다는 사실만 조용히 인정하고 아무 메시지도 만들지 않는다.
+//
+// 버튼 클릭에 대한 응답 메시지는 디스코드가 "버튼이 달린 메시지에 대한 답글"로 붙인다.
+// 그런데 우리는 버튼을 맨 아래로 내리려고 그 원본 메시지를 지운다 → 남아 있는 로그마다
+// "원본 메시지가 삭제되었어요"가 달려 지저분해진다.
+// 그래서 응답으로는 아무것도 만들지 않고, 로그는 postChannelMessage로 독립 메시지로 찍는다.
+function ackSilently(res: ServerResponse): void {
+  json(res, { type: InteractionResponseType.DEFERRED_UPDATE_MESSAGE });
+}
+
+// 답글이 아닌 독립 메시지로 채널에 남긴다 (버튼 메시지를 지워도 영향받지 않는다)
+async function postChannelMessage(channelId: string, content: string): Promise<void> {
+  await rest.post(Routes.channelMessages(channelId), { body: { content } });
+}
+
 // 인터랙션 페이로드에서 호출자 식별 (길드 채널: interaction.member.user, DM: interaction.user)
 function identifyCaller(interaction: any): { id: string; username: string; avatar: string | null } {
   const u = interaction.member?.user ?? interaction.user;
@@ -224,16 +239,16 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
   // 출석 성공은 채널에 공개로 남긴다 — 누가 며칠째 나오는지 서로 보이는 게
   // 출석체크 채널의 존재 이유이고, 랭킹이 이미 공개라 잔액도 비밀이 아니다.
   // (이미 출석한 경우는 위에서 ephemeral로 끝낸다 — 그건 채널에 남길 가치가 없다)
-  publicReply(
-    res,
-    [
-      `**${esc(caller.username)}**님 출석 완료 ${dailyGrant ? signedPts(dailyGrant.delta) : ''} · 연속 **${result.streak}일**`,
-      ...bonusLines,
-      `잔액 ${pts(result.balance)}`,
-    ].join('\n')
-  );
-  // 방금 남긴 공개 로그 때문에 버튼이 한 칸 위로 밀렸다. 다시 맨 아래로 내린다.
-  // (응답을 이미 보냈으므로 여기서 시간이 더 걸려도 3초 제한과 무관하다)
+  ackSilently(res);
+  const log = [
+    `**${esc(caller.username)}**님 출석 완료 ${dailyGrant ? signedPts(dailyGrant.delta) : ''} · 연속 **${result.streak}일**`,
+    ...bonusLines,
+    `잔액 ${pts(result.balance)}`,
+  ].join('\n');
+  // 응답을 이미 보냈으므로 아래 REST 호출이 길어져도 3초 제한과 무관하다.
+  // 로그를 먼저 찍고 버튼을 그 아래로 내려야 버튼이 항상 맨 밑에 남는다.
+  await postChannelMessage(interaction.channel_id, log)
+    .catch((e: unknown) => console.error('출석 로그 게시 실패:', e));
   await bumpBoard('attendance', interaction.channel_id)
     .catch((e: unknown) => console.error('출석판 재게시 실패:', e));
 }
@@ -255,11 +270,11 @@ async function handleReliefClaim(interaction: any, res: ServerResponse): Promise
   }
 
   // 출석과 마찬가지로 누가 신청했는지 채널에 공개로 남긴다
-  publicReply(
-    res,
-    `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(RELIEF_AMOUNT)}\n`
-    + `잔액 ${pts(r.balance)} · 다음 신청 <t:${r.nextAvailableAt}:R>`
-  );
+  ackSilently(res);
+  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(RELIEF_AMOUNT)}\n`
+    + `잔액 ${pts(r.balance)} · 다음 신청 <t:${r.nextAvailableAt}:R>`;
+  await postChannelMessage(interaction.channel_id, log)
+    .catch((e: unknown) => console.error('지원금 로그 게시 실패:', e));
   await bumpBoard('relief', interaction.channel_id)
     .catch((e: unknown) => console.error('지원금판 재게시 실패:', e));
 }
