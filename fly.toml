@@ -1,7 +1,9 @@
-[build]
-
+# app·primary_region은 최상위 키다. [build] 뒤에 두면 TOML이 [build] 테이블의 필드로
+# 읽어서 "the config for your app is missing an app name"으로 배포가 막힌다.
 app = "open-discord-casino"
 primary_region = "nrt"
+
+[build]
 
 [env]
   DB_PATH = "/data"
