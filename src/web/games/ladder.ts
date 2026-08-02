@@ -44,10 +44,12 @@ function computeResult(): { startSide: Side; endSide: Side; rungs: boolean[] } {
    서버(다음 라운드 시각 계산)와 클라이언트(실제 애니메이션)가 반드시 같은 값을 써야
    "다음 라운드까지 3초"가 연출과 어긋나지 않는다. 그래서 여기 한 곳에만 두고
    클라이언트 스크립트에는 아래에서 값을 심어 넣는다(양쪽에 따로 적으면 언젠가 갈라진다). */
-const ANIM_INIT_MS = 140;   // 출발 지점을 강조하고 잠깐 멈추는 시간
-const ANIM_FALL_MS = 45;    // 한 칸 내려가는 시간 (행마다 두 번: 가로줄까지, 가로줄에서 바닥까지)
-const ANIM_GROW_MS = 40;    // 가로줄이 자라나는 시간
-const ANIM_CROSS_MS = 45;   // 가로줄을 타고 옆으로 건너가는 시간
+// 카운트다운이 하강이 끝난 뒤부터 시작되므로 연출 길이를 자유롭게 정할 수 있다.
+// (예전에는 3초 창 안에 욱여넣느라 45ms까지 줄여야 했다 → 눈으로 따라가기 급했다)
+const ANIM_INIT_MS = 200;   // 출발 지점을 강조하고 잠깐 멈추는 시간
+const ANIM_FALL_MS = 70;    // 한 칸 내려가는 시간 (행마다 두 번: 가로줄까지, 가로줄에서 바닥까지)
+const ANIM_GROW_MS = 60;    // 가로줄이 자라나는 시간
+const ANIM_CROSS_MS = 70;   // 가로줄을 타고 옆으로 건너가는 시간
 
 // 이 라운드의 하강 연출이 몇 ms 걸리는지. 가로줄(교차) 개수에 따라 달라진다.
 function descentMs(rungs: boolean[]): number {
