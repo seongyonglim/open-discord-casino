@@ -297,17 +297,32 @@
   window.casinoMark('app.js 실행 완료');
 })();
 
-/* ── 프로필 드롭다운 ──────────────────────────────────────────────── */
+/* ── 프로필 드롭다운 ────────────────────────────────────────────────
+   이 파일은 <head>에서 동기로 실행되므로 이 시점에는 헤더 DOM이 아직 없다.
+   그래서 요소를 미리 붙잡지 않고 document에 위임해서 클릭이 일어난 순간에 찾는다.
+   (요소를 붙잡는 방식으로 짰다가 getElementById가 null이라 메뉴가 아예 안 열렸다) */
 (function(){
-  var b = document.getElementById("profBtn"), m = document.getElementById("profMenu");
-  if (!b || !m) return;
-  function close(){ m.setAttribute("hidden",""); b.classList.remove("open"); b.setAttribute("aria-expanded","false"); }
-  b.addEventListener("click", function(e){
-    e.stopPropagation();
-    if (m.hasAttribute("hidden")) { m.removeAttribute("hidden"); b.classList.add("open"); b.setAttribute("aria-expanded","true"); }
-    else close();
+  function el(id){ return document.getElementById(id); }
+  function close(){
+    var b = el('profBtn'), m = el('profMenu');
+    if (!m || !b) return;
+    m.setAttribute('hidden', '');
+    b.classList.remove('open');
+    b.setAttribute('aria-expanded', 'false');
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    var inBtn = t.closest ? t.closest('#profBtn') : null;
+    var inMenu = t.closest ? t.closest('#profMenu') : null;
+    if (inMenu) return;                 // 메뉴 안(로그아웃 링크 등) 클릭은 그대로 통과
+    if (!inBtn) return close();         // 바깥 클릭이면 닫는다
+    var b = el('profBtn'), m = el('profMenu');
+    if (!b || !m) return;
+    if (m.hasAttribute('hidden')) {
+      m.removeAttribute('hidden');
+      b.classList.add('open');
+      b.setAttribute('aria-expanded', 'true');
+    } else close();
   });
-  document.addEventListener("click", close);
-  document.addEventListener("keydown", function(e){ if (e.key === "Escape") close(); });
-  m.addEventListener("click", function(e){ e.stopPropagation(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
 })();
