@@ -11,6 +11,7 @@
  */
 import { randomInt } from 'node:crypto';
 import * as H from '../src/services/holdem';
+import * as T from '../src/services/tournament';
 
 let pass = 0, fail = 0;
 function ck(name: string, ok: boolean, extra = ''): void {
@@ -359,6 +360,216 @@ section('[9] 덱');
   // 매 핸드 새 덱이므로 두 번 섞으면 순서가 달라야 한다
   const d2 = H.shuffleDeck(randomInt);
   ck('두 번 섞으면 순서가 다르다', d.join() !== d2.join());
+}
+
+/* ── 10. 일정 (KST) ─────────────────────────────────────────────── */
+section('[10] 일정 (KST)');
+{
+  // 2026-08-03은 월요일
+  const mon = T.scheduleForDate('2026-08-03');
+  ck('월요일 = 평일 · 배수 1,000P', !mon.weekend && mon.prizeMultiplier === 1000, JSON.stringify(mon));
+  ck('평일 제목', mon.title === '데일리 프리롤', mon.title);
+  const sat = T.scheduleForDate('2026-08-08');
+  ck('토요일 = 주말 · 배수 2,000P', sat.weekend && sat.prizeMultiplier === 2000, JSON.stringify(sat));
+  ck('일요일 = 주말', T.scheduleForDate('2026-08-09').weekend);
+  ck('주말 제목', sat.title === '주말 더블 프리롤', sat.title);
+
+  /* 시각이 정말 KST인지 본다. 서버는 UTC로 돌아가므로 여기서 틀리면
+     운영에서 한 시간씩 어긋난 채로 아무도 모른다. */
+  const fmt = (u: number) => new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(u * 1000));
+  ck('등록 오픈 = KST 21:00', fmt(mon.regOpenAt) === '21:00', fmt(mon.regOpenAt));
+  ck('예정 시작 = KST 22:00', fmt(mon.scheduledStartAt) === '22:00', fmt(mon.scheduledStartAt));
+  ck('대기 마감 = KST 22:20', fmt(mon.graceEndsAt) === '22:20', fmt(mon.graceEndsAt));
+  ck('등록→시작 정확히 1시간', mon.scheduledStartAt - mon.regOpenAt === 3600);
+  ck('대기 20분', mon.graceEndsAt - mon.scheduledStartAt === 1200);
+  ck('KST 요일 판정 (2026-08-03 = 월)', T.kstWeekday(mon.scheduledStartAt * 1000) === 1,
+    String(T.kstWeekday(mon.scheduledStartAt * 1000)));
+}
+
+/* ── 11. 상태 판정 ──────────────────────────────────────────────── */
+section('[11] 토너먼트 상태 판정');
+{
+  const s = T.scheduleForDate('2026-08-03');
+  const none: T.TournamentFacts = { startedAt: null, finishedAt: null, cancelledAt: null };
+
+  ck('20:59 → SCHEDULED', T.statusAt(s.regOpenAt - 60, s, none, 0) === 'SCHEDULED');
+  ck('21:00 → REGISTRATION_OPEN', T.statusAt(s.regOpenAt, s, none, 0) === 'REGISTRATION_OPEN');
+  ck('21:59 → REGISTRATION_OPEN', T.statusAt(s.scheduledStartAt - 1, s, none, 2) === 'REGISTRATION_OPEN');
+  ck('22:00 · 3명 → RUNNING', T.statusAt(s.scheduledStartAt, s, none, 3) === 'RUNNING');
+  ck('22:00 · 2명 → WAITING_MIN_PLAYERS',
+    T.statusAt(s.scheduledStartAt, s, none, 2) === 'WAITING_MIN_PLAYERS');
+  ck('22:10 · 2명 → 계속 대기',
+    T.statusAt(s.scheduledStartAt + 600, s, none, 2) === 'WAITING_MIN_PLAYERS');
+  ck('22:10 · 3명 채워짐 → 즉시 RUNNING',
+    T.statusAt(s.scheduledStartAt + 600, s, none, 3) === 'RUNNING');
+  ck('22:20 · 2명 → CANCELLED', T.statusAt(s.graceEndsAt, s, none, 2) === 'CANCELLED');
+  ck('22:25 · 2명 → CANCELLED', T.statusAt(s.graceEndsAt + 300, s, none, 2) === 'CANCELLED');
+
+  // 저장된 "되돌릴 수 없는 사실"이 계산보다 우선한다
+  const started: T.TournamentFacts = { startedAt: s.scheduledStartAt, finishedAt: null, cancelledAt: null };
+  ck('시작 기록이 있으면 인원과 무관하게 RUNNING',
+    T.statusAt(s.scheduledStartAt + 5000, s, started, 1) === 'RUNNING');
+  const finished: T.TournamentFacts = {
+    startedAt: s.scheduledStartAt, finishedAt: s.scheduledStartAt + 4000, cancelledAt: null,
+  };
+  ck('종료 기록이 있으면 FINISHED', T.statusAt(s.scheduledStartAt + 9999, s, finished, 5) === 'FINISHED');
+  const cancelled: T.TournamentFacts = { startedAt: null, finishedAt: null, cancelledAt: s.graceEndsAt };
+  ck('취소 기록이 있으면 CANCELLED', T.statusAt(s.graceEndsAt + 10, s, cancelled, 9) === 'CANCELLED');
+  ck('취소 후 인원이 늘어도 되살아나지 않는다',
+    T.statusAt(s.graceEndsAt + 600, s, cancelled, 9) === 'CANCELLED');
+}
+
+/* ── 12. 등록 · 늦은 등록 ───────────────────────────────────────── */
+section('[12] 등록 · 늦은 등록');
+{
+  const s = T.scheduleForDate('2026-08-03');
+  const none: T.TournamentFacts = { startedAt: null, finishedAt: null, cancelledAt: null };
+  const started: T.TournamentFacts = { startedAt: s.scheduledStartAt, finishedAt: null, cancelledAt: null };
+
+  ck('20:00 → 아직 안 열림', T.canRegister(s.regOpenAt - 3600, s, none, 0, 0).ok === false);
+  ck('21:30 → 등록 가능', T.canRegister(s.regOpenAt + 1800, s, none, 1, 1).ok === true);
+  ck('9명이면 자리 없음', T.canRegister(s.regOpenAt + 1800, s, none, 9, 9).ok === false);
+  ck('시작 후 10분 · 빈자리 있음 → 늦은 등록 가능',
+    T.canRegister(s.scheduledStartAt + 600, s, started, 5, 4).ok === true);
+  ck('시작 후 23분 59초 → 아직 가능',
+    T.canRegister(s.scheduledStartAt + 24 * 60 - 1, s, started, 5, 4).ok === true);
+  ck('시작 후 정확히 24분 → 마감',
+    T.canRegister(s.scheduledStartAt + 24 * 60, s, started, 5, 4).ok === false);
+  {
+    const r = T.canRegister(s.scheduledStartAt + 24 * 60, s, started, 5, 4);
+    ck('마감 이유가 late_reg_closed', r.ok === false && r.reason === 'late_reg_closed', r.ok ? '' : r.reason);
+  }
+  ck('늦은 등록 창 안이지만 9명 꽉 참 → 거절',
+    T.canRegister(s.scheduledStartAt + 600, s, started, 12, 9).ok === false);
+  ck('탈락자가 생겨 8명이면 → 허용',
+    T.canRegister(s.scheduledStartAt + 600, s, started, 12, 8).ok === true);
+  ck('늦은 등록 남은 시간 (시작 후 4분 → 20분)',
+    T.lateRegLeft(s.scheduledStartAt + 240, started) === 20 * 60,
+    String(T.lateRegLeft(s.scheduledStartAt + 240, started)));
+  ck('창이 닫히면 null', T.lateRegLeft(s.scheduledStartAt + 24 * 60, started) === null);
+  ck('시작 전이면 null', T.lateRegLeft(s.regOpenAt, none) === null);
+}
+
+/* ── 13. 블라인드 구조 ──────────────────────────────────────────── */
+section('[13] 블라인드 구조');
+{
+  ck('11단계', T.BLIND_LEVELS.length === 11, String(T.BLIND_LEVELS.length));
+  ck('레벨 1 = 25/50', T.BLIND_LEVELS[0].sb === 25 && T.BLIND_LEVELS[0].bb === 50);
+  ck('레벨 11 = 1000/2000 앤티 250',
+    T.BLIND_LEVELS[10].sb === 1000 && T.BLIND_LEVELS[10].bb === 2000 && T.BLIND_LEVELS[10].ante === 250);
+  ck('BB = SB × 2 (전 레벨)', T.BLIND_LEVELS.every(l => l.bb === l.sb * 2));
+  ck('블라인드가 단조 증가', T.BLIND_LEVELS.every((l, i) => i === 0 || l.bb > T.BLIND_LEVELS[i - 1].bb));
+  ck('앤티가 줄어들지 않는다', T.BLIND_LEVELS.every((l, i) => i === 0 || l.ante >= T.BLIND_LEVELS[i - 1].ante));
+
+  ck('0초 → 레벨 1', T.levelAt(0).level === 1);
+  ck('7분59초 → 레벨 1', T.levelAt(479).level === 1);
+  ck('정확히 8분 → 레벨 2', T.levelAt(480).level === 2);
+  ck('스펙 예시: 16분 → 레벨 3 (75/150 앤티 0)', (() => {
+    const l = T.levelAt(960);
+    return l.level === 3 && l.sb === 75 && l.bb === 150 && l.ante === 0;
+  })(), JSON.stringify(T.levelAt(960)));
+  ck('80분 → 레벨 11', T.levelAt(4800).level === 11);
+  ck('11레벨을 넘겨도 마지막 레벨 유지 (블라인드 폭주 방지)',
+    T.levelAt(99999).level === 11, String(T.levelAt(99999).level));
+  ck('음수 경과도 레벨 1', T.levelAt(-100).level === 1);
+  ck('다음 상승까지 (0초 → 480초)', T.nextLevelIn(0) === 480, String(T.nextLevelIn(0)));
+  ck('다음 상승까지 (200초 → 280초)', T.nextLevelIn(200) === 280, String(T.nextLevelIn(200)));
+  ck('마지막 레벨이면 null', T.nextLevelIn(4800) === null);
+}
+
+/* ── 14. ITM 인원 ───────────────────────────────────────────────── */
+section('[14] ITM 인원');
+{
+  ck('3명 → 1명', T.itmCount(3) === 1);
+  ck('4명 → 2명', T.itmCount(4) === 2);
+  ck('5명 → 2명', T.itmCount(5) === 2);
+  ck('6명 → 3명', T.itmCount(6) === 3);
+  ck('8명 → 3명', T.itmCount(8) === 3);
+  ck('9명 → ceil(9×0.4) = 4명', T.itmCount(9) === 4, String(T.itmCount(9)));
+  ck('12명 → ceil(4.8) = 5명', T.itmCount(12) === 5, String(T.itmCount(12)));
+  ck('20명 → 8명', T.itmCount(20) === 8, String(T.itmCount(20)));
+  ck('100명 → 40명', T.itmCount(100) === 40, String(T.itmCount(100)));
+  ck('ITM 비율이 40~45% 구간', [9, 12, 20, 50, 100].every(n => {
+    const r = T.itmCount(n) / n;
+    return r >= 0.40 && r <= 0.45;
+  }));
+  ck('ITM은 참가자 수를 넘지 않는다',
+    Array.from({ length: 60 }, (_, i) => i + 1).every(n => T.itmCount(n) <= n));
+}
+
+/* ── 15. 상금 비율 ──────────────────────────────────────────────── */
+section('[15] 상금 비율');
+{
+  for (const k of [1, 2, 3, 4, 5, 8, 10, 20, 40]) {
+    const sh = T.prizeShares(k);
+    const sum = sh.reduce((a, b) => a + b, 0);
+    const mono = sh.every((v, i) => i === 0 || v <= sh[i - 1] + 1e-12);
+    ck(`k=${k}: 합 1 · 단조 감소 · 1위 ${(sh[0] * 100).toFixed(1)}%`,
+      Math.abs(sum - 1) < 1e-9 && mono, `합=${sum} 단조=${mono}`);
+  }
+  ck('1명이면 100%', T.prizeShares(1)[0] === 1);
+  // 여기가 스펙을 그대로 따르면 안 되는 곳이다. 2명에게 40/60을 주면 2위가 더 받는다.
+  ck('2명은 1위가 절반 초과 (2위가 더 받으면 안 된다)', T.prizeShares(2)[0] > 0.5);
+  ck('3명 1위 50% 근처', Math.abs(T.prizeShares(3)[0] - 0.5) < 0.01);
+  ck('4명 이상은 1위가 40~45%',
+    [4, 5, 8, 10, 20, 40].every(k => { const t = T.prizeShares(k)[0]; return t >= 0.395 && t <= 0.455; }),
+    [4, 5, 8, 10, 20, 40].map(k => k + ':' + (T.prizeShares(k)[0] * 100).toFixed(1)).join(' '));
+  ck('모든 비율이 양수', [1, 2, 3, 4, 9, 40].every(k => T.prizeShares(k).every(v => v > 0)));
+}
+
+/* ── 16. 상금 금액 ──────────────────────────────────────────────── */
+section('[16] 상금 금액 — 합이 정확히 상금 풀');
+{
+  const cases: [number, number][] = [
+    [3000, 3], [4000, 4], [5000, 5], [6000, 6], [9000, 9],
+    [18000, 9], [1, 3], [7, 4], [13, 6], [100, 9], [1_000_000, 40],
+  ];
+  let bad = 0;
+  for (const [pool, players] of cases) {
+    const amts = T.prizeAmounts(pool, players);
+    const sum = amts.reduce((a, b) => a + b, 0);
+    const mono = amts.every((v, i) => i === 0 || v <= amts[i - 1]);
+    const ints = amts.every(v => Number.isInteger(v) && v >= 0);
+    if (sum !== pool || !mono || !ints) {
+      bad++; console.log(`    (${pool}P/${players}명) → ${JSON.stringify(amts)} 합=${sum}`);
+    }
+  }
+  ck('표 사례 전부 합 일치 · 단조 감소 · 정수', bad === 0, `${bad}건 실패`);
+
+  /* 무작위. 합이 상금 풀과 한 포인트라도 다르면 포인트가 새로 생기거나 사라진다 —
+     내림만 하면 나머지가 사라지고, 올리면 없던 포인트가 발행된다. */
+  let rbad = 0;
+  for (let i = 0; i < 20_000; i++) {
+    const players = 3 + randomInt(58);
+    const pool = randomInt(200_000);
+    const amts = T.prizeAmounts(pool, players);
+    if (amts.reduce((a, b) => a + b, 0) !== pool) rbad++;
+    if (amts.length !== T.itmCount(players)) rbad++;
+    if (amts.some(v => v < 0 || !Number.isInteger(v))) rbad++;
+  }
+  ck('무작위 2만 건 — 합 = 상금 풀 · 인원 = ITM · 정수', rbad === 0, `${rbad}건`);
+
+  console.log('\n  실제 예상 배분:');
+  for (const n of [3, 4, 5, 6, 9]) {
+    const pool = T.prizePool(n, T.WEEKDAY_MULTIPLIER);
+    console.log(`    평일 ${n}명 (${pool.toLocaleString('ko-KR')}P) → ${JSON.stringify(T.prizeAmounts(pool, n))}`);
+  }
+  for (const n of [3, 5, 9]) {
+    const pool = T.prizePool(n, T.WEEKEND_MULTIPLIER);
+    console.log(`    주말 ${n}명 (${pool.toLocaleString('ko-KR')}P) → ${JSON.stringify(T.prizeAmounts(pool, n))}`);
+  }
+}
+
+/* ── 17. 상금 풀 ────────────────────────────────────────────────── */
+section('[17] 상금 풀');
+{
+  ck('누적 참가자 기준 (9명 × 1000 = 9000)', T.prizePool(9, 1000) === 9000);
+  ck('주말 배수 (5명 × 2000 = 10000)', T.prizePool(5, 2000) === 10000);
+  ck('늦은 등록으로 누적이 늘면 풀도 늘어난다 (12명 → 12000)', T.prizePool(12, 1000) === 12000);
+  ck('0명이면 0', T.prizePool(0, 1000) === 0);
+  ck('음수 방어', T.prizePool(-5, 1000) === 0);
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
