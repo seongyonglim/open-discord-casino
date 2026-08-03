@@ -237,7 +237,10 @@ export function blackjackPage(user: WebUser): string {
             <div class="bj-dealer">
               <div class="bj-dealer-head">
                 <span class="bj-label">DEALER</span>
-                <span id="bjDealerTotal" class="bj-total">–</span>
+                <!-- 끗수와 "아직 안 깐 장" 표시를 따로 둔다. 한 덩어리 텍스트로 "4 +?"라고
+                     붙이면 같은 크기·굵기로 나란히 서서 수식처럼 읽힌다. -->
+                <span id="bjDealerTotal" class="bj-total"><span id="bjDealerNum">–</span
+                  ><i id="bjDealerHole" class="bj-hole" hidden>+?</i></span>
               </div>
               <div id="bjDealerCards" class="bj-hand"></div>
               <!-- 딜러가 21을 넘긴 순간 카드 위에 찍히는 도장. 서 있던 모든 자리가 이기는 순간이다 -->
@@ -290,6 +293,13 @@ export function blackjackPage(user: WebUser): string {
 
       var statusEl=document.getElementById('bjStatus'), seatsEl=document.getElementById('bjSeats');
       var dCardsEl=document.getElementById('bjDealerCards'), dTotalEl=document.getElementById('bjDealerTotal');
+      var dNumEl=document.getElementById('bjDealerNum'), dHoleEl=document.getElementById('bjDealerHole');
+      /* 끗수 표기는 여기 한 곳에서만 만든다.
+         세 군데서 각자 문자열을 조립하다가 표기가 갈렸다(한쪽은 '4 +?', 한쪽은 '–'). */
+      function setDealerTotal(total, hole){
+        dNumEl.textContent = total == null ? '–' : total;
+        dHoleEl.hidden = !hole;
+      }
       var bustEl=document.getElementById('bjDealerBust'), tableEl=document.querySelector('.bj-table');
       var actionsEl=document.getElementById('bjActions');
       var hitBtn=document.getElementById('bjHit'), standBtn=document.getElementById('bjStand');
@@ -354,8 +364,7 @@ export function blackjackPage(user: WebUser): string {
         if (shownD < 2) vals.push(null);   // 홀 카드는 아직 엎어져 있다
         var n = syncCards(dCardsEl, 'dealer', vals);
         var seen = cards.slice(0, shownD);
-        dTotalEl.textContent = shownD >= 2 ? bjTotal(seen)
-          : seen.length ? bjTotal(seen) + ' +?' : '–';
+        setDealerTotal(seen.length ? bjTotal(seen) : null, shownD < 2 && seen.length > 0);
         // 깐 카드만으로 21을 넘겼는지 본다 — 안 깐 카드로 미리 판정하면 결과가 새어나간다
         markDealerBust(shownD >= 2 && bjTotal(seen) > 21);
         return n;
@@ -584,7 +593,7 @@ export function blackjackPage(user: WebUser): string {
           slotCache = {};
           clearDealerReveal(); shownD = 0;
           dCardsEl.innerHTML = ''; seatsEl.dataset.sig = '';
-          dTotalEl.textContent = '–';
+          setDealerTotal(null, false);
           seatBust = {};   // 지난 판의 버스트 도장 기록을 버린다
           if (!firstState && window.casinoSfx) window.casinoSfx.shuffle();
         }
@@ -597,7 +606,7 @@ export function blackjackPage(user: WebUser): string {
           clearDealerReveal();
           shownD = 0;
           dealt += syncCards(dCardsEl, 'dealer', d.cards.length ? d.cards.concat([null]) : []);
-          dTotalEl.textContent = d.total != null ? d.total + ' +?' : '–';
+          setDealerTotal(d.total, d.total != null);
           markDealerBust(false);   // 새 판이 시작됐다 — 지난 판의 도장을 걷는다
         } else {
           // 페이지에 막 들어왔거나 이미 끝난 판이면 연출 없이 다 보여준다

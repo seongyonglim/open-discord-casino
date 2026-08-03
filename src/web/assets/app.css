@@ -771,6 +771,11 @@
   .bj-dealer-head{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px}
   .bj-label{font-size:11px;font-weight:800;letter-spacing:1.6px;color:#9fc0ad}
   .bj-total{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--gold);min-width:34px}
+  /* 아직 안 깐 장이 있다는 표시. 끗수와 같은 크기·굵기로 "4 +?"라고 붙여 쓰면
+     둘이 대등하게 보여서 수식처럼 읽힌다 — 작고 흐리게 딸려 있어야 보조 정보로 읽힌다. */
+  .bj-hole{font-style:normal;font-size:.58em;font-weight:600;opacity:.45;
+    margin-left:4px;vertical-align:.22em;letter-spacing:.5px}
+  .bj-hole[hidden]{display:none}
   .bj-hand{display:flex;gap:6px;justify-content:center;min-height:72px}
   /* 딜러 버스트 — 판이 뒤집히는 순간이라 숫자만 22로 바뀌고 끝나면 안 된다.
      카드 위에 도장을 찍고 끗수를 붉게 물들이고 테이블을 한 번 번쩍인다. */
