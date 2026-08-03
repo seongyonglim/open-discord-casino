@@ -378,9 +378,22 @@ export function holdemPage(user: WebUser): string {
       </div>
     </div>
 
+    <!-- 우승 축하 — 토너먼트가 끝나는 순간 한 번 뜬다.
+         결과표만 조용히 갈아끼우면 대회가 끝난 게 아니라 화면이 넘어간 것처럼 느껴진다. -->
+    <div class="ht-win" id="htWin" hidden>
+      <div class="ht-win-box">
+        <div class="ht-win-crown">👑</div>
+        <div class="ht-win-title">WINNER</div>
+        <div class="ht-win-who" id="htWinWho"></div>
+        <div class="ht-win-prize" id="htWinPrize"></div>
+        <div class="ht-win-rest" id="htWinRest"></div>
+        <button type="button" class="btn btn-gold ht-win-close" id="htWinClose">확인</button>
+      </div>
+    </div>
+
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
-    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin'];</script>
+    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','fanfare'];</script>
   <script>
   (function(){
     var MEID = window.__MEID__;
@@ -398,6 +411,35 @@ export function holdemPage(user: WebUser): string {
     var msgEl = document.getElementById('htMsg');
     var readEl = document.getElementById('htRead');
     var rabbitBtn = document.getElementById('htRabbit');
+    var winEl = document.getElementById('htWin');
+
+    /* ── 우승 축하 ───────────────────────────────────────────────────
+       한 대회에 한 번만 뜬다. 세션에 표시해 두므로 새로고침해도 다시 뜨지 않는다
+       (같은 결과 화면을 볼 때마다 팡파레가 울리면 축하가 아니라 잡음이다). */
+    function celebrate(){
+      var t = st.tournament;
+      if (t.status !== 'FINISHED') return;
+      var results = st.results || [];
+      if (!results.length) return;
+      var key = 'od_ht_win_' + t.id;
+      try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); }
+      catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }
+
+      var first = results[0];
+      document.getElementById('htWinWho').textContent = first.username;
+      document.getElementById('htWinPrize').textContent =
+        first.prize > 0 ? num(first.prize) + 'P' : '';
+      document.getElementById('htWinRest').innerHTML = results.slice(1, 4).map(function(r){
+        return '<div class="ht-win-row"><span>' + r.place + '위</span>' +
+          '<span>' + esc(r.username) + '</span>' +
+          '<span>' + (r.prize > 0 ? num(r.prize) + 'P' : '-') + '</span></div>';
+      }).join('');
+      winEl.hidden = false;
+      if (window.casinoSfx && window.casinoSfx.victory) window.casinoSfx.victory();
+    }
+    document.getElementById('htWinClose').addEventListener('click', function(){
+      winEl.hidden = true;
+    });
     var ctrlEl = document.getElementById('htControls');
     var rangeEl = document.getElementById('htRange');
     var amountEl = document.getElementById('htAmount');
@@ -1127,7 +1169,7 @@ export function holdemPage(user: WebUser): string {
       lobbyEl.hidden = showTable;
       tableEl.hidden = !showTable;
       if (showTable) { renderTable(); updatePreLabels(); firstTablePaint = false; }
-      else renderLobby();
+      else { renderLobby(); celebrate(); }
     }
     function post(url, body){
       return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },

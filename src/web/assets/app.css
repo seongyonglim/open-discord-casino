@@ -1294,3 +1294,37 @@
   /* 스택 숫자가 바뀔 때 판 폭이 흔들리면 카드까지 밀린다 — 최소 폭을 잡아 고정한다 */
   /* 스택 칸도 폭을 고정한다 — 9,850 → 10,000 처럼 자릿수가 늘 때 판이 넓어지지 않게 */
   .ht-who{width:60px;min-width:60px}
+
+  /* 우승 축하 — 대회가 끝나는 순간 한 번. 결과표만 조용히 갈아끼우면
+     대회가 끝난 게 아니라 화면이 넘어간 것처럼 느껴진다. */
+  .ht-win{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.72);backdrop-filter:blur(3px);
+    animation:htWinFade .3s ease-out}
+  .ht-win[hidden]{display:none}
+  @keyframes htWinFade{from{opacity:0}to{opacity:1}}
+  .ht-win-box{position:relative;width:min(420px,92vw);padding:30px 26px 24px;border-radius:20px;
+    text-align:center;
+    background:linear-gradient(180deg,#241d08,#14110a);
+    border:1px solid rgba(240,205,110,.45);
+    box-shadow:0 20px 60px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05) inset;
+    animation:htWinPop .42s cubic-bezier(.2,1.4,.4,1) both}
+  @keyframes htWinPop{
+    from{opacity:0;transform:translateY(18px) scale(.9)}
+    to{opacity:1;transform:none}
+  }
+  .ht-win-crown{font-size:38px;line-height:1;margin-bottom:6px;
+    animation:htCrown 2.4s ease-in-out infinite}
+  @keyframes htCrown{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-5px) rotate(4deg)}}
+  .ht-win-title{font-family:var(--mono);font-size:13px;font-weight:900;letter-spacing:5px;
+    color:var(--gold);margin-bottom:10px}
+  .ht-win-who{font-size:26px;font-weight:800;letter-spacing:-.3px;margin-bottom:4px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ht-win-prize{font-family:var(--mono);font-size:20px;font-weight:800;color:var(--gold);
+    margin-bottom:18px}
+  .ht-win-rest{display:flex;flex-direction:column;gap:4px;margin-bottom:20px}
+  .ht-win-row{display:grid;grid-template-columns:38px 1fr auto;gap:8px;align-items:center;
+    padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.05);
+    font-size:12.5px;text-align:left}
+  .ht-win-row span:first-child{font-family:var(--mono);color:var(--muted);font-size:11px}
+  .ht-win-row span:last-child{font-family:var(--mono);font-weight:700;color:#cbd8cf}
+  .ht-win-close{width:100%}

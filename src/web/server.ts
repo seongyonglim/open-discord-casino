@@ -44,6 +44,8 @@ const SFX_FILES = new Set([
   // 홀덤은 포인트가 아니라 토너먼트 칩을 다루므로 "동전 넣는" 소리가 아니라
   // 칩을 테이블에 내려놓는 소리를 쓴다. 두 종류를 무작위로 번갈아 낸다.
   'chip-bet.mp3', 'chip-bet2.mp3', 'chips-to-winner.mp3',
+  // 우승 음원은 아직 파일이 없다 — 넣는 순간 서빙되도록 목록에만 올려 둔다
+  'tournament-win.mp3',
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',
