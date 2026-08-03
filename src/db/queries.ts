@@ -1181,7 +1181,12 @@ export const BJ_BETTING_SEC = 10;  // 첫 사람이 앉은 순간부터 센다
 // 아래는 전부 "구간 길이"다. 절대 시각은 betting_ends_at을 기준으로 더해 구한다.
 export const BJ_DEAL_SEC = 3;     // 카드 배분을 보는 시간
 export const BJ_ACTION_SEC = 15;  // 힛/스탠드/더블 결정 창 (모두 끝나면 일찍 닫힌다)
-export const BJ_DEALER_SEC = 4;   // 딜러가 카드를 받는 시간
+/* 딜러가 카드를 받는 시간. 클라이언트 공개 속도(홀 카드 0.7초 + 한 장당 0.95초)에
+   맞춰 잡는다. 폴링이 최대 1초 늦게 도착하는 것까지 더해도 마지막 장이 놓인 뒤
+   약 1.3초 뒤에 정산으로 넘어간다 — 결과를 읽을 딱 한 박자다.
+   예전엔 4초 + 장당 2초여서, 두 장 더 받는 판은 8초 창에 공개가 2.6초에 끝나고
+   4~5초를 멍하니 기다렸다(딜러가 버스트한 판이 특히 그랬다). */
+export const BJ_DEALER_SEC = 3;   // 기본 창
 export const BJ_REVEAL_SEC = 3;   // 정산 후 다음 라운드까지
 export const BJ_KEEP_ROUNDS = 30;
 
@@ -1231,9 +1236,11 @@ export function bjSchedule(r: BjRoundRow): { deal: number; action: number; deale
   const action = r.action_ended_at ?? (deal + BJ_ACTION_SEC);
   // 딜러가 더 받은 장수만큼 차례를 늘린다. 고정 길이로 두면 카드를 여러 장 받는 판에서
   // 뒷장들이 한꺼번에 튀어나오고 결과까지 겹쳐서 김이 샌다.
+  // 장당 1초 = 클라이언트 공개 간격(0.95초)과 거의 같다. 2초씩 주면 공개가 끝난 뒤
+  // 장수만큼 빈 시간이 쌓여서 결과를 기다리는 게 지루해진다.
   let extra = 0;
   try { extra = Math.max(0, (JSON.parse(r.dealer_json) as number[]).length - 2); } catch { /* 아직 안 뽑음 */ }
-  return { deal, action, dealer: action + BJ_DEALER_SEC + extra * 2 };
+  return { deal, action, dealer: action + BJ_DEALER_SEC + extra };
 }
 
 function bjHands(roundId: number): BjHandRow[] {
