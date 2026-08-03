@@ -221,6 +221,125 @@ function initSchema(): void {
        (기본 전략이 실제로 쪼개는 상황은 39판에 1번뿐이라 그 값어치가 없다고 판단했다) */
     CREATE UNIQUE INDEX IF NOT EXISTS idx_bj_hand_user ON blackjack_hands(round_id, user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_bj_hand_seat ON blackjack_hands(round_id, seat);
+
+    /* ── 홀덤 프리롤 토너먼트 ────────────────────────────────────────
+       구조는 스펙 9항의 Tournament → Tables → Seats → Players 를 그대로 따른다.
+       지금은 한 테이블(STT)만 쓰지만 holdem_tables를 사이에 둬서 MTT로 늘릴 때
+       스키마를 바꾸지 않아도 되게 했다.
+
+       상태를 저장하는 원칙: "되돌릴 수 없는 사실"만 적는다.
+       started_at / finished_at / cancelled_at 이 그 셋이고, 나머지(SCHEDULED·
+       REGISTRATION_OPEN·WAITING_MIN_PLAYERS 같은 단계)는 시각에서 계산한다.
+       서버가 절전에 들어가도 깨어나서 올바른 상태를 내려면 이래야 한다. */
+    CREATE TABLE IF NOT EXISTS holdem_tournaments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date_str TEXT NOT NULL,              -- KST 'YYYY-MM-DD' — 하루 하나라는 규칙의 키
+      title TEXT NOT NULL,
+      reg_open_at INTEGER NOT NULL,
+      scheduled_start_at INTEGER NOT NULL,
+      grace_ends_at INTEGER NOT NULL,
+      prize_multiplier INTEGER NOT NULL,
+      started_at INTEGER,
+      finished_at INTEGER,
+      cancelled_at INTEGER,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    -- 하루에 토너먼트 하나. 동시에 두 개가 생기는 것을 DB가 막는다.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ht_date ON holdem_tournaments(date_str);
+
+    /* 등록자. 상금 풀의 근거는 "누적 참가자 수"이므로 탈락해도 행을 지우지 않는다.
+       freezeout이라 재입장이 없으니 (tournament_id, user_id)가 유니크다 —
+       마지막 자리를 두고 두 요청이 겹쳐도 DB가 한쪽만 받는다. */
+    CREATE TABLE IF NOT EXISTS holdem_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      registered_at INTEGER NOT NULL,
+      finish_place INTEGER,                -- 1 = 우승. 토너먼트가 끝날 때 확정한다
+      /* 탈락 순서(1부터). 등수를 탈락 시점에 "남은 인원 + 1"로 매기면 늦은 등록으로
+         참가자가 늘었을 때 번호가 어긋난다(이미 4등을 준 뒤 5번째가 등록되는 경우).
+         그래서 순서만 기록해 두고 등수는 끝날 때 한꺼번에 계산한다. */
+      elim_seq INTEGER,
+      eliminated_at INTEGER,
+      prize INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_he_user ON holdem_entries(tournament_id, user_id);
+    CREATE INDEX IF NOT EXISTS idx_he_place ON holdem_entries(tournament_id, finish_place);
+
+    CREATE TABLE IF NOT EXISTS holdem_tables (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER NOT NULL,
+      table_no INTEGER NOT NULL DEFAULT 0,
+      button_seat INTEGER NOT NULL DEFAULT 0,
+      hand_no INTEGER NOT NULL DEFAULT 0,
+      -- 다음 핸드를 시작할 시각. 쇼다운을 보여주는 동안 비어 있다.
+      next_hand_at INTEGER,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_htb_no ON holdem_tables(tournament_id, table_no);
+
+    /* 좌석. 토너먼트 칩(스택)이 사는 곳이다 — 포인트가 아니라 칩이라 원장과 무관하다.
+       presence는 접속 상태다: ACTIVE / SIT_OUT / DISCONNECTED / OUT(탈락).
+       스펙 8항대로 브라우저가 끊겨도 자리를 빼지 않는다. */
+    CREATE TABLE IF NOT EXISTS holdem_seats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_id INTEGER NOT NULL,
+      seat INTEGER NOT NULL,               -- 0~8
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      stack INTEGER NOT NULL,
+      presence TEXT NOT NULL DEFAULT 'ACTIVE',
+      last_seen_at INTEGER NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_hs_seat ON holdem_seats(table_id, seat);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_hs_user ON holdem_seats(table_id, user_id);
+
+    /* 한 판(핸드). deck_json은 절대 클라이언트로 내보내지 않는다 —
+       남은 카드가 새면 이후 모든 판이 무의미해진다. */
+    CREATE TABLE IF NOT EXISTS holdem_hands (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_id INTEGER NOT NULL,
+      hand_no INTEGER NOT NULL,
+      level INTEGER NOT NULL,
+      sb INTEGER NOT NULL,
+      bb INTEGER NOT NULL,
+      ante INTEGER NOT NULL,
+      button_seat INTEGER NOT NULL,
+      deck_json TEXT NOT NULL,
+      deck_pos INTEGER NOT NULL DEFAULT 0,
+      board_json TEXT NOT NULL DEFAULT '[]',
+      street TEXT NOT NULL DEFAULT 'preflop',
+      to_act_seat INTEGER,
+      action_deadline INTEGER,
+      last_raise_size INTEGER NOT NULL DEFAULT 0,
+      ended_at INTEGER,
+      result_json TEXT,                    -- 쇼다운 결과 (끝난 뒤에만 공개)
+      started_at INTEGER NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_hh_no ON holdem_hands(table_id, hand_no);
+
+    /* 핸드 안에서의 좌석 상태. hole_json은 본인에게만 내려보낸다.
+       committed(핸드 총 투입액)가 사이드 팟 계산의 유일한 근거다 —
+       스트리트별 bet만 들고 있으면 스트리트가 넘어갈 때 정보가 사라진다. */
+    CREATE TABLE IF NOT EXISTS holdem_hand_seats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hand_id INTEGER NOT NULL,
+      seat INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      hole_json TEXT NOT NULL DEFAULT '[]',
+      stack INTEGER NOT NULL,              -- 핸드 진행 중 남은 스택
+      bet INTEGER NOT NULL DEFAULT 0,      -- 이 스트리트에 낸 금액
+      committed INTEGER NOT NULL DEFAULT 0,-- 이 핸드에 총 낸 금액
+      state TEXT NOT NULL DEFAULT 'active',-- active|folded|allin|out
+      acted INTEGER NOT NULL DEFAULT 0,
+      won INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_hhs_seat ON holdem_hand_seats(hand_id, seat);
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)
