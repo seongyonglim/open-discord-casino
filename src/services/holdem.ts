@@ -9,7 +9,11 @@
  * 카드 표현은 포커 플립과 같다: rank*4 + suit (rank 0='2' … 8='T' 9='J' 10='Q' 11='K' 12='A').
  * 그래서 7장 평가기(evaluate7)를 그대로 쓴다 — 홀덤 엔진에서 가장 어려운 조각이 이미 있다.
  */
-import { evaluate7, cardToString } from './poker';
+import {
+  evaluate7, cardToString, straightHigh,
+  CAT_HIGH, CAT_PAIR, CAT_TWO_PAIR, CAT_TRIPS, CAT_STRAIGHT,
+  CAT_FLUSH, CAT_FULL_HOUSE, CAT_QUADS, CAT_STRAIGHT_FLUSH,
+} from './poker';
 
 export type Street = 'preflop' | 'flop' | 'turn' | 'river';
 export type SeatState = 'active' | 'folded' | 'allin' | 'out';
@@ -376,6 +380,86 @@ export function nextButton(occupied: number[], buttonSeat: number, seatCount: nu
 /** 카드 배열을 사람이 읽는 표기로 (클라이언트 전송용) */
 export function cardsToStrings(cards: number[]): string[] {
   return cards.map(cardToString);
+}
+
+/* ── 내 손패 등급 읽어주기 ───────────────────────────────────────────
+   "지금 내 두 장 + 보드로 뭐가 완성됐나"를 글로 보여준다. 초심자에게 이게 없으면
+   플러시가 되어 있는데도 모르고 폴드한다.
+
+   evaluate7은 정확히 7장을 요구하므로 플랍(5장)·턴(6장)에는 쓸 수 없다.
+   그래서 2~7장 아무 개수나 받는 판정을 따로 둔다. 카운트와 무늬 수만 보면 되므로
+   조합을 전개할 필요가 없다.
+   내 카드로 계산한 내 정보만 내려보내므로 히든 정보가 새지 않는다. */
+
+const RANK_LABEL = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+export interface HandRead {
+  /** 등급 번호 (CAT_* 와 같은 체계). 2장뿐일 때는 null */
+  category: number | null;
+  /** 화면에 그대로 쓰는 한 줄 — 예: "원페어 (Q)", "A 하이", "플러시" */
+  text: string;
+}
+
+export function readHand(hole: number[], board: number[]): HandRead {
+  const cards = hole.concat(board);
+  if (!hole.length) return { category: null, text: '' };
+
+  const rankCount = new Array<number>(13).fill(0);
+  const suitCount = new Array<number>(4).fill(0);
+  let rankMask = 0;
+  for (const c of cards) {
+    const r = c >> 2;
+    rankCount[r]++;
+    suitCount[c & 3]++;
+    rankMask |= 1 << r;
+  }
+  // 무늬별 랭크 마스크 — 스트레이트 플러시 판정에 필요하다
+  const suitMask = [0, 0, 0, 0];
+  for (const c of cards) suitMask[c & 3] |= 1 << (c >> 2);
+
+  const flushSuit = suitCount.findIndex(n => n >= 5);
+  const straight = straightHigh(rankMask);
+  const sfHigh = flushSuit >= 0 ? straightHigh(suitMask[flushSuit]) : -1;
+
+  const counts = rankCount
+    .map((n, r) => ({ r, n }))
+    .filter(x => x.n > 0)
+    .sort((a, b) => (b.n - a.n) || (b.r - a.r));
+  const top = counts[0];
+  const pairs = counts.filter(x => x.n === 2);
+  const trips = counts.filter(x => x.n === 3);
+
+  const L = (r: number) => RANK_LABEL[r];
+
+  if (sfHigh >= 0) {
+    return { category: CAT_STRAIGHT_FLUSH, text: sfHigh === 12 ? '로열 플러시' : '스트레이트 플러시' };
+  }
+  if (top.n === 4) return { category: CAT_QUADS, text: `포카드 (${L(top.r)})` };
+  if (trips.length && (pairs.length || trips.length > 1)) {
+    return { category: CAT_FULL_HOUSE, text: `풀하우스 (${L(trips[0].r)})` };
+  }
+  if (flushSuit >= 0) return { category: CAT_FLUSH, text: '플러시' };
+  if (straight >= 0) return { category: CAT_STRAIGHT, text: `스트레이트 (${L(straight)} 하이)` };
+  if (top.n === 3) return { category: CAT_TRIPS, text: `트리플 (${L(top.r)})` };
+  if (pairs.length >= 2) {
+    return { category: CAT_TWO_PAIR, text: `투페어 (${L(pairs[0].r)}·${L(pairs[1].r)})` };
+  }
+  if (pairs.length === 1) return { category: CAT_PAIR, text: `원페어 (${L(pairs[0].r)})` };
+
+  /* 아무것도 안 됐을 때.
+     보드가 아직 안 깔린 프리플랍은 "무엇이 완성됐나"를 말할 수 없으므로
+     내 두 장을 읽어준다(수티드인지가 이 시점의 유일한 정보다). */
+  if (!board.length && hole.length === 2) {
+    const a = hole[0] >> 2, b = hole[1] >> 2;
+    const suited = (hole[0] & 3) === (hole[1] & 3);
+    const hi = Math.max(a, b), lo = Math.min(a, b);
+    return {
+      category: null,
+      text: `${L(hi)}${L(lo)} ${suited ? '수티드' : '오프수트'}`,
+    };
+  }
+  const best = Math.max(...cards.map(c => c >> 2));
+  return { category: CAT_HIGH, text: `${L(best)} 하이` };
 }
 
 /** 52장 덱을 섞는다. 홀덤은 매 핸드 새 덱이다(슈를 쓰지 않는다). */

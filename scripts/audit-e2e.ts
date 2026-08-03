@@ -286,6 +286,131 @@ async function main(): Promise<void> {
     }
   }
 
+  /* ── 홀덤 프리롤 ─────────────────────────────────────────────────
+     HTTP 경로로 실제 토너먼트를 돌린다. 여기서 제일 중요한 것은 히든 정보다:
+     남의 홀 카드와 남은 덱이 응답에 섞여 나오면 게임이 성립하지 않는다. */
+  section('[5b] 홀덤 프리롤');
+  {
+    const sessions = ['h1', 'h2', 'h3'].map(id => ({ id, c: mkSession(id, 1000) }));
+    const nowSec = () => Math.floor(Date.now() / 1000);
+    const state = (c: string) => req('GET', '/api/games/holdem/state', c);
+
+    // 페이지가 뜨는지
+    const page = await req('GET', '/games/holdem', sessions[0].c);
+    ck('홀덤 페이지 200', page.status === 200, String(page.status));
+    ck('페이지에 덱이 섞여 나오지 않음',
+      !/deck_json|deck_pos/.test(page.text));
+
+    let s0 = (await state(sessions[0].c)).body;
+    ck('상태 응답 정상', s0?.ok === true && s0.tournament != null, JSON.stringify(s0?.tournament?.status));
+
+    /* 등록 창을 연다. cancelled_at·finished_at·started_at 도 같이 비워야 한다 —
+       감사를 22:20(KST) 이후에 돌리면 첫 state() 호출에서 이미 인원 미달 취소가
+       기록돼 버려서, 시각만 되돌려도 CANCELLED에 머문다. 실제로 이 검사가
+       밤에만 실패했다. 검사는 하루 중 언제 돌려도 같아야 한다. */
+    db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
+      started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
+      .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+    for (const s of sessions) {
+      const r = await req('POST', '/api/games/holdem/register', s.c, {});
+      ck(`${s.id} 등록 수락`, r.body?.ok === true, JSON.stringify(r.body));
+    }
+    const dup = await req('POST', '/api/games/holdem/register', sessions[0].c, {});
+    ck('중복 등록 거절', dup.status === 400, String(dup.status));
+
+    s0 = (await state(sessions[0].c)).body;
+    ck('참가자 3명 · 상금 풀 = 3 × 배수',
+      s0.tournament.registered === 3
+      && s0.tournament.prizePool === 3 * s0.tournament.multiplier,
+      `${s0.tournament.registered}명 / ${s0.tournament.prizePool}P`);
+
+    // 시작
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+    s0 = (await state(sessions[0].c)).body;
+    ck('RUNNING 전환', s0.tournament.status === 'RUNNING', s0.tournament.status);
+    ck('테이블 정보가 내려온다', s0.table != null);
+    ck('내 자리가 있다', s0.table?.mySeat != null, String(s0.table?.mySeat));
+    ck('레벨 1 · 25/50', s0.table?.level?.sb === 25 && s0.table?.level?.bb === 50,
+      JSON.stringify(s0.table?.level));
+
+    // 히든 정보 — 여기가 핵심
+    {
+      const mine = s0.table.seats.filter((x: any) => x.userId === 'h1')[0];
+      const others = s0.table.seats.filter((x: any) => x.userId !== 'h1');
+      ck('내 홀 카드는 두 장 보인다', mine?.cards?.length === 2, JSON.stringify(mine?.cards));
+      ck('남의 홀 카드는 안 보인다 (진행 중)',
+        others.every((o: any) => !o.cards || o.cards.length === 0),
+        JSON.stringify(others.map((o: any) => o.cards)));
+      const raw = (await state(sessions[0].c)).text;
+      ck('응답에 덱이 없다', !/"deck/.test(raw) && !/deck_json/.test(raw));
+      ck('응답에 남의 hole_json이 없다', !/hole_json/.test(raw));
+      // 다른 사람 시점에서도 같은지
+      const s1 = (await state(sessions[1].c)).body;
+      const mine1 = s1.table.seats.filter((x: any) => x.userId === 'h2')[0];
+      const other1 = s1.table.seats.filter((x: any) => x.userId === 'h1')[0];
+      ck('h2 시점에서 h2 카드만 보인다',
+        mine1?.cards?.length === 2 && (!other1?.cards || other1.cards.length === 0));
+      ck('두 사람의 홀 카드가 서로 다르다',
+        JSON.stringify(mine?.cards) !== JSON.stringify(mine1?.cards));
+    }
+
+    // 액션 — 차례가 아닌 사람은 거절
+    {
+      const notMine = sessions.find(s => {
+        const seat = s0.table.seats.filter((x: any) => x.userId === s.id)[0];
+        return seat && seat.seat !== s0.table.toActSeat;
+      })!;
+      const bad = await req('POST', '/api/games/holdem/action', notMine.c, { action: 'fold' });
+      ck('차례가 아니면 액션 거절', bad.status === 400, String(bad.status));
+      const nonsense = await req('POST', '/api/games/holdem/action', sessions[0].c, { action: '??' });
+      ck('알 수 없는 액션 거절', nonsense.status === 400);
+    }
+
+    // 실제로 한 판을 끝까지 (차례인 사람이 콜 또는 체크)
+    {
+      let steps = 0, acted = 0;
+      while (steps++ < 60) {
+        const cur = (await state(sessions[0].c)).body;
+        if (!cur.table || cur.table.ended) break;
+        const seatNo = cur.table.toActSeat;
+        if (seatNo == null) { db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE ended_at IS NULL`).run(nowSec() - 1); continue; }
+        const who = cur.table.seats.filter((x: any) => x.seat === seatNo)[0];
+        const s = sessions.find(x => x.id === who?.userId);
+        if (!s) break;
+        const la = (await state(s.c)).body.table.legal;
+        const kind = la?.canCheck ? 'check' : la?.canCall ? 'call' : 'fold';
+        const r = await req('POST', '/api/games/holdem/action', s.c, { action: kind });
+        if (r.body?.ok) acted++;
+        else db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE ended_at IS NULL`).run(nowSec() - 1);
+      }
+      ck('실제 액션이 처리됐다', acted > 0, String(acted));
+      const done = (await state(sessions[0].c)).body;
+      ck('핸드가 끝났다', done.table?.ended === true, JSON.stringify(done.table?.street));
+      ck('끝난 뒤 결과가 내려온다', done.table?.result != null);
+      const chips = done.table.seats.reduce((a: number, x: any) => a + x.stack, 0);
+      ck('칩 총량 = 10,000 × 3', chips === 30000, String(chips));
+    }
+
+    // 자리 비움 → 복귀
+    {
+      db.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT'`).run();
+      const before = (await state(sessions[0].c)).body;
+      ck('자리 비움 상태가 내려온다', before.table?.myPresence === 'SIT_OUT', before.table?.myPresence);
+      const r = await req('POST', '/api/games/holdem/sitin', sessions[0].c, {});
+      ck('복귀 요청 수락', r.body?.ok === true);
+      const after = (await state(sessions[0].c)).body;
+      ck('복귀 후 ACTIVE', after.table?.myPresence === 'ACTIVE', after.table?.myPresence);
+    }
+
+    // 인증 없이는 못 쓴다
+    {
+      const anon = await req('GET', '/api/games/holdem/state', '');
+      ck('비로그인 상태 조회 401', anon.status === 401, String(anon.status));
+      const anonAct = await req('POST', '/api/games/holdem/action', '', { action: 'fold' });
+      ck('비로그인 액션 401', anonAct.status === 401, String(anonAct.status));
+    }
+  }
+
   section('[6] 최종 원장 정합성');
   {
     const users = db.prepare(`SELECT id, balance FROM users`).all() as any[];

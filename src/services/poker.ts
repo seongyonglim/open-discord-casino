@@ -43,7 +43,7 @@ export function cardToString(c: number): string {
 
 // 랭크 비트마스크에서 스트레이트의 최고 랭크를 찾는다. 없으면 -1.
 // A-2-3-4-5(휠)는 '5'(랭크 3) 하이로 취급한다.
-function straightHigh(mask: number): number {
+export function straightHigh(mask: number): number {
   for (let hi = 12; hi >= 4; hi--) {
     let ok = true;
     for (let k = 0; k < 5; k++) {

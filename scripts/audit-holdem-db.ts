@@ -38,13 +38,6 @@ function mkUser(id: string): void {
   Q.upsertUser(id, id, null);
 }
 
-/** 토너먼트 시각을 과거로 당겨 즉시 시작 조건을 만든다 */
-function backdateSchedule(sec: number): void {
-  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = reg_open_at - ?,
-    scheduled_start_at = scheduled_start_at - ?, grace_ends_at = grace_ends_at - ?`)
-    .run(sec, sec, sec);
-}
-
 /** 현재 핸드의 액션 마감을 과거로 — 자동 액션을 유발한다 */
 function expireAction(): void {
   db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE ended_at IS NULL`).run(nowSec() - 1);
@@ -65,19 +58,31 @@ for (let i = 0; i < N; i++) mkUser('p' + i);
 let st = HD.advanceHoldem();
 ck('오늘 토너먼트가 생성됨', st.tournament != null && st.tournament.date_str.length === 10,
   st.tournament?.date_str);
-ck('처음 상태는 SCHEDULED 또는 REGISTRATION_OPEN',
-  st.status === 'SCHEDULED' || st.status === 'REGISTRATION_OPEN', st.status);
 
-// 인원 미달 취소 경로 — 등록 0명인 채로 대기 시간까지 넘긴다
-backdateSchedule(3600 * 3);
+/* 상태 검사는 시각을 먼저 못 박고 한다.
+   이 감사를 22:20(KST) 이후에 돌리면 갓 만든 토너먼트가 곧바로 "인원 미달 취소"로
+   판정되는 게 맞다 — 제품이 옳고 단정이 틀린 경우였다. 그래서 검사할 상태마다
+   그 상태가 되는 시각을 직접 만들어 준다. 하루 중 언제 돌려도 결과가 같아야 한다. */
+function setWindow(regOpen: number, start: number, grace: number): void {
+  db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
+    started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
+    .run(nowSec() + regOpen, nowSec() + start, nowSec() + grace);
+}
+
+setWindow(600, 1200, 2400);            // 등록이 아직 안 열렸다
+ck('등록 전 → SCHEDULED', HD.advanceHoldem().status === 'SCHEDULED');
+setWindow(-60, 600, 1800);             // 등록만 열렸다
+ck('등록 창 안 → REGISTRATION_OPEN', HD.advanceHoldem().status === 'REGISTRATION_OPEN');
+setWindow(-3600, -60, 1800);           // 시작 시각은 지났고 인원 0
+ck('시작 시각 지났지만 인원 미달 → WAITING_MIN_PLAYERS',
+  HD.advanceHoldem().status === 'WAITING_MIN_PLAYERS');
+setWindow(-7200, -3600, -60);          // 대기 마감까지 지났고 인원 0
 st = HD.advanceHoldem();
-ck('인원 미달로 대기 마감이 지나면 CANCELLED', st.status === 'CANCELLED', st.status);
+ck('대기 마감까지 미달 → CANCELLED', st.status === 'CANCELLED', st.status);
 ck('취소 시각이 기록됨', st.tournament.cancelled_at != null);
 
 // 같은 판을 되살려 이어서 쓴다 (취소를 지우고 시각을 다시 앞으로)
-db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, reg_open_at = ?,
-  scheduled_start_at = ?, grace_ends_at = ?`)
-  .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+setWindow(-60, 600, 1800);
 st = HD.advanceHoldem();
 ck('등록 오픈됨', st.status === 'REGISTRATION_OPEN', st.status);
 
@@ -243,8 +248,7 @@ console.log('\n[6] 블라인드는 진행 중인 핸드 도중에 오르지 않�
   db.prepare(`DELETE FROM holdem_entries`).run();
   db.prepare(`DELETE FROM holdem_tournaments`).run();
   HD.advanceHoldem();
-  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
-    .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+  setWindow(-60, 600, 1800);
   for (let i = 0; i < 3; i++) { mkUser('q' + i); HD.registerHoldem('q' + i, 'q' + i); }
   db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
   const s2 = HD.advanceHoldem();
@@ -282,6 +286,8 @@ console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');
   db.prepare(`DELETE FROM holdem_tables`).run();
   db.prepare(`DELETE FROM holdem_seats`).run();
   HD.advanceHoldem();
+  // 진행 중(started_at 있고 취소·종료 아님) 상태를 만들어야 부팅 취소가 걸린다
+  setWindow(-3600, -60, 1800);
   db.prepare(`UPDATE holdem_tournaments SET started_at = ?`).run(nowSec());
   const n = HD.cancelRunningHoldemOnBoot();
   ck('진행 중 토너먼트가 취소됐다', n === 1, String(n));
@@ -308,8 +314,7 @@ console.log('\n[8] 무작위 토너먼트 반복 (칩 보존 · 순위 · 상금
     for (let i = 0; i < n; i++) { const u = `f${iter}_${i}`; mkUser(u); users.push(u); }
 
     HD.advanceHoldem();
-    db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
-      .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+    setWindow(-60, 600, 1800);
     // 일부는 나중에 늦은 등록으로 들어온다
     const upfront = Math.max(T.MIN_PLAYERS, n - rnd(3));
     for (let i = 0; i < upfront; i++) HD.registerHoldem(users[i], users[i]);

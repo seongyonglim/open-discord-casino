@@ -149,7 +149,8 @@ async function main(): Promise<void> {
         Buffer.compare(decoded(r), orig) === 0);
     }
     const cardFiles = readdirSync(join(ROOT, 'public', 'cards'));
-    check(`카드 53장 존재 (실제 ${cardFiles.length}장)`, cardFiles.length === 53);
+    // 앞면 52장 + 뒷면 2종(남색·마룬)
+    check(`카드 54장 존재 (실제 ${cardFiles.length}장)`, cardFiles.length === 54);
     let cardOk = 0;
     for (const f of cardFiles) {
       const r = await getGz(`/cards/${f}`);

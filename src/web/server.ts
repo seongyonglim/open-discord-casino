@@ -26,6 +26,10 @@ import {
   blackjackPage, handleState as bjState, handleBet as bjBet,
   handleClear as bjClear, handleAction as bjAction,
 } from './games/blackjack';
+import {
+  holdemPage, handleState as htState, handleRegister as htRegister,
+  handleAction as htAction, handleSitIn as htSitIn,
+} from './games/holdem';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
@@ -45,7 +49,8 @@ const MIME: Record<string, string> = {
 // 디스코드 임베드에서 불러가는 이미지. 디스코드 CDN에 올리는 대신 여기서 서빙한다
 // (봇이 파일을 첨부하면 메시지를 지우고 다시 올릴 때마다 업로드가 반복된다).
 const IMG_FILES = new Set(['broke.jpg']);
-const CARD_FILES = new Set<string>(['back.svg']);
+// 뒷면 두 종류 — back(남색)은 블랙잭·바카라·포커 플립, back-red(마룬)은 홀덤 테이블이 쓴다
+const CARD_FILES = new Set<string>(['back.svg', 'back-red.svg']);
 for (const s of ['s', 'h', 'd', 'c']) {
   for (const r of ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']) {
     CARD_FILES.add(`${r}${s}.svg`);
@@ -261,6 +266,27 @@ export function startWebServer(): void {
       if (path === '/api/games/blackjack/action' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await bjAction(req, res, me.id);
+      }
+
+      if (path === '/games/holdem') {
+        if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
+        return send(res, 200, holdemPage(me));
+      }
+      if (path === '/api/games/holdem/state' && req.method === 'GET') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htState(req, res, me.id);
+      }
+      if (path === '/api/games/holdem/register' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htRegister(req, res, me.id, me.username);
+      }
+      if (path === '/api/games/holdem/action' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htAction(req, res, me.id);
+      }
+      if (path === '/api/games/holdem/sitin' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htSitIn(req, res, me.id);
       }
 
       notFound(res);

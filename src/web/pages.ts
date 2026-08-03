@@ -9,6 +9,7 @@ const GAMES: { key: string; name: string; desc: string; icon: string; ready: boo
   { key: 'poker', name: '포커 플립', desc: '홀덤 두 핸드를 보고 승자와 완성 등급에 베팅. 배당은 공개된 카드로 매번 새로 계산됩니다.', icon: cardsIcon, ready: true },
   { key: 'baccarat', name: '바카라', desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어까지 다섯 갈래에 칩을 올려보세요.', icon: cardsIcon, ready: true },
   { key: 'blackjack', name: '블랙잭', desc: '5석 테이블에서 딜러를 함께 상대합니다. 21을 넘기지 않고 딜러보다 높으면 승리.', icon: cardsIcon, ready: true },
+  { key: 'holdem', name: '홀덤 프리롤', desc: '매일 22:00 시작하는 참가비 없는 토너먼트. 노리밋 홀덤으로 겨루고 상위 입상자가 상금을 받습니다.', icon: cardsIcon, ready: true },
 ];
 
 // 게임 화면 상단의 게임 전환 바 — 로비를 거치지 않고 바로 다른 게임으로 이동할 수 있게 한다.
