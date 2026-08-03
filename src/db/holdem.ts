@@ -135,6 +135,14 @@ export function rabbitBoard(hand: HtHandRow): string[] {
   return G.cardsToStrings(rest);
 }
 
+/** 등록자들의 디스코드 아바타 해시. 결과·우승 축하 화면에 프로필로 쓴다. */
+export function getEntryAvatars(tournamentId: number): Map<string, string | null> {
+  const rows = all<{ user_id: string; avatar: string | null }>(
+    `SELECT e.user_id, u.avatar FROM holdem_entries e JOIN users u ON u.id = e.user_id
+     WHERE e.tournament_id = ?`, tournamentId);
+  return new Map(rows.map(r => [r.user_id, r.avatar]));
+}
+
 /** 자리에 앉은 사람들의 디스코드 아바타 해시 (화면에 원형 프로필로 쓴다) */
 export function getSeatAvatars(tableId: number): Map<string, string | null> {
   const rows = all<{ user_id: string; avatar: string | null }>(

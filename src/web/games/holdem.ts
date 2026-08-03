@@ -11,7 +11,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   advanceHoldem, registerHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
-  getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, rabbitBoard,
+  getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   ACTION_SEC, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
@@ -62,9 +62,15 @@ function statePayload(st: HoldemStatus, userId: string) {
     },
     // 결과는 끝난 뒤에만 (진행 중 순위를 흘리면 남은 사람의 정보가 된다)
     results: st.status === 'FINISHED'
-      ? entries.filter(e => e.finish_place != null)
-        .sort((a, b) => a.finish_place! - b.finish_place!)
-        .map(e => ({ place: e.finish_place, username: e.username, prize: e.prize }))
+      ? (() => {
+        const av = getEntryAvatars(t.id);
+        return entries.filter(e => e.finish_place != null)
+          .sort((a, b) => a.finish_place! - b.finish_place!)
+          .map(e => ({
+            place: e.finish_place, username: e.username, prize: e.prize,
+            userId: e.user_id, avatar: av.get(e.user_id) ?? null,
+          }));
+      })()
       : [],
     table: null as unknown,
   };
@@ -384,7 +390,8 @@ export function holdemPage(user: WebUser): string {
       <div class="ht-win-box">
         <div class="ht-win-crown">👑</div>
         <div class="ht-win-title">WINNER</div>
-        <div class="ht-win-who" id="htWinWho"></div>
+        <!-- 디스코드 프로필 + 이름을 한 줄에 — 누가 이겼는지가 한눈에 잡혀야 한다 -->
+        <div class="ht-win-id"><span id="htWinAv"></span><span class="ht-win-who" id="htWinWho"></span></div>
         <div class="ht-win-prize" id="htWinPrize"></div>
         <div class="ht-win-rest" id="htWinRest"></div>
         <button type="button" class="btn btn-gold ht-win-close" id="htWinClose">확인</button>
@@ -393,7 +400,7 @@ export function holdemPage(user: WebUser): string {
 
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
-    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','fanfare'];</script>
+    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory'];</script>
   <script>
   (function(){
     var MEID = window.__MEID__;
@@ -426,12 +433,15 @@ export function holdemPage(user: WebUser): string {
       catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }
 
       var first = results[0];
+      document.getElementById('htWinAv').innerHTML =
+        avatarHtml(first.userId, first.avatar, first.username, 'ht-win-av');
       document.getElementById('htWinWho').textContent = first.username;
       document.getElementById('htWinPrize').textContent =
         first.prize > 0 ? num(first.prize) + 'P' : '';
       document.getElementById('htWinRest').innerHTML = results.slice(1, 4).map(function(r){
         return '<div class="ht-win-row"><span>' + r.place + '위</span>' +
-          '<span>' + esc(r.username) + '</span>' +
+          avatarHtml(r.userId, r.avatar, r.username, 'ht-win-av sm') +
+          '<span class="ht-win-nm">' + esc(r.username) + '</span>' +
           '<span>' + (r.prize > 0 ? num(r.prize) + 'P' : '-') + '</span></div>';
       }).join('');
       winEl.hidden = false;
@@ -704,10 +714,21 @@ export function holdemPage(user: WebUser): string {
       var can = tb.ended && rest.length > 0;
       rabbitBtn.hidden = !can || rabbitShownHand === tb.handNo;
       if (!can || rabbitShownHand !== tb.handNo) return;
-      // 이미 눌렀다 — 실제 보드 뒤에 이어 붙여 보여준다
-      var html = (tb.board||[]).map(function(c){ return cardImg(c); }).join('') +
-        rest.map(function(c){ return cardImg(c, 'rabbit'); }).join('');
-      if (boardEl.dataset.sig !== html) { boardEl.dataset.sig = html; boardEl.innerHTML = html; }
+      /* 이미 눌렀다 — 실제 보드 뒤에 이어 붙인다.
+         실제 카드는 paintBoard로 유지하고(이미 깔린 장은 건드리지 않는다)
+         래빗 카드만 뒤에 덧붙인다. */
+      var real = tb.board || [];
+      paintBoard(real, real.length);
+      for (var i = 0; i < rest.length; i++) {
+        var at = real.length + i;
+        var src = '/cards/' + rest[i] + '.svg?v=' + CARD_V;
+        var cur = boardEl.children[at];
+        if (!cur) boardEl.insertAdjacentHTML('beforeend', cardImg(rest[i], 'rabbit'));
+        else if (cur.getAttribute('src') !== src) cur.outerHTML = cardImg(rest[i], 'rabbit');
+      }
+      while (boardEl.children.length > real.length + rest.length) {
+        boardEl.removeChild(boardEl.lastChild);
+      }
     }
     rabbitBtn.addEventListener('click', function(){
       if (!st || !st.table) return;
@@ -793,51 +814,83 @@ export function holdemPage(user: WebUser): string {
        그대로 그리면 프리플랍이 끝난 순간 세 장이 뿅 나타난다.
        그래서 클라이언트가 "지금 몇 장까지 보여줄지"를 따로 들고, 남은 장을
        한 장씩 늘려가며 깐다. 서버는 초 단위 해상도라 이 박자는 클라이언트 몫이다. */
-    var BOARD_STEP_MS = 260;      // 플랍 세 장 사이 간격
-    var BOARD_FIRST_MS = 340;     // 스트리트가 바뀐 뒤 첫 장까지
+    var BOARD_FIRST_MS = 340;     // 플랍 첫 장까지
+    var BOARD_STEP_MS = 260;      // 플랍 세 장 사이
+    var BOARD_STREET_MS = 850;    // 턴·리버 앞의 한 박자 — 여기서 쉬어야 스트리트로 읽힌다
     var shownBoard = 0, boardTimers = [], boardHandNo = null;
+    /* 보드를 다 깔았나. 올인으로 판이 즉시 끝나는 경우가 이 값의 존재 이유다 —
+       서버는 액션이 끝나면 보드를 끝까지 깔고 정산까지 해버리므로, 클라이언트가
+       ended만 보고 전부 그리면 플랍도 못 보고 결과가 뜬다. 결과를 아는 것과
+       보여주는 속도는 별개다. 이 값이 false인 동안 결과 표시·칩 회수를 미룬다. */
+    var boardRevealed = true;
 
     function clearBoardReveal(){
       boardTimers.forEach(clearTimeout);
       boardTimers = [];
     }
-    function paintBoard(cards, n){
-      var html = cards.slice(0, n).map(function(c){ return cardImg(c); }).join('');
-      if (boardEl.dataset.sig === html) return;
-      boardEl.dataset.sig = html;
-      boardEl.innerHTML = html;
-      if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+    /* 보드도 "바뀐 칸만" 갈아 끼운다.
+       innerHTML을 통째로 쓰면 턴 한 장을 열 때 이미 깔려 있던 플랍 3장까지 새로 만들어져
+       네 장 모두 cardFlip이 재생된다 — 실측으로 확인했다(기존 요소 3개가 전부 파괴됐다).
+       소리도 새로 깔린 장수만큼만 낸다. */
+    function paintBoard(cards, n, cls){
+      var want = cards.slice(0, n);
+      var added = 0;
+      while (boardEl.children.length > want.length) boardEl.removeChild(boardEl.lastChild);
+      for (var i = 0; i < want.length; i++) {
+        var src = '/cards/' + want[i] + '.svg?v=' + CARD_V;
+        var cur = boardEl.children[i];
+        if (!cur) {
+          boardEl.insertAdjacentHTML('beforeend', cardImg(want[i], cls));
+          added++;
+        } else if (cur.getAttribute('src') !== src) {
+          cur.outerHTML = cardImg(want[i], cls);
+          added++;
+        }
+      }
+      if (added && window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+      return added;
+    }
+    // 몇 번째 카드인지에 따라 앞에 두는 간격 (0~2 = 플랍, 3 = 턴, 4 = 리버)
+    function boardGap(i){
+      if (i === 0) return BOARD_FIRST_MS;
+      if (i <= 2) return BOARD_STEP_MS;
+      return BOARD_STREET_MS;
     }
     function syncBoard(tb){
       var cards = tb.board || [];
       // 래빗을 펼쳐 둔 판이면 그쪽이 보드를 그린다
       if (rabbitShownHand === tb.handNo) { syncRabbit(tb); return; }
-      // 새 핸드면 처음부터
       if (tb.handNo !== boardHandNo) {
         boardHandNo = tb.handNo;
         clearBoardReveal();
         shownBoard = 0;
-        boardEl.dataset.sig = '';
         boardEl.innerHTML = '';
       }
-      // 판에 처음 들어왔거나 이미 끝난 판이면 연출 없이 다 보여준다
-      if (firstTablePaint || tb.ended) {
+      /* 판에 처음 들어온 순간만 연출을 건너뛴다(이미 진행 중인 판을 구경하는 경우).
+         끝난 판이어도 연출은 그대로 돈다 — 올인 판에서 플랍·턴·리버를 한 장씩 봐야 한다. */
+      if (firstTablePaint) {
         clearBoardReveal();
         shownBoard = cards.length;
+        boardRevealed = true;
         paintBoard(cards, shownBoard);
         return;
       }
-      if (cards.length <= shownBoard) { paintBoard(cards, shownBoard); return; }
+      if (cards.length <= shownBoard) {
+        paintBoard(cards, shownBoard);
+        boardRevealed = true;
+        return;
+      }
+      boardRevealed = false;
       if (boardTimers.length) return;          // 이미 깔고 있는 중
       var t = 0;
       for (var i = shownBoard; i < cards.length; i++) {
-        t += (i === shownBoard) ? BOARD_FIRST_MS : BOARD_STEP_MS;
+        t += boardGap(i);
         (function(upto, at){
           boardTimers.push(setTimeout(function(){
             shownBoard = upto;
-            paintBoard((st.table && st.table.board) || [], upto);
-            boardTimers = boardTimers.filter(function(x){ return x !== undefined; });
-            if (upto >= ((st.table && st.table.board) || []).length) clearBoardReveal();
+            var now = (st.table && st.table.board) || [];
+            paintBoard(now, upto);
+            if (upto >= now.length) { boardRevealed = true; clearBoardReveal(); }
           }, at));
         })(i + 1, t);
       }
@@ -989,11 +1042,14 @@ export function holdemPage(user: WebUser): string {
       renderSide();
       // 칩이 중앙으로 밀려가고, 판이 끝나면 승자에게 넘어간다
       rememberSpots(tb);
-      flyPotToWinners(tb);
-      syncRabbit(tb);
+      // 팟 회수와 래빗 버튼은 보드를 다 깐 뒤에 — 결과가 카드보다 먼저 오면 안 된다
+      if (boardRevealed) { flyPotToWinners(tb); syncRabbit(tb); }
 
       var msg = '';
-      if (tb.ended && tb.result) {
+      if (tb.ended && !boardRevealed) {
+        // 보드를 아직 깔고 있다 — 결과를 먼저 말해버리면 카드를 볼 이유가 없어진다
+        msg = '';
+      } else if (tb.ended && tb.result) {
         var aw = tb.result.awards || [];
         msg = aw.map(function(a){
           var s = (tb.seats||[]).filter(function(x){ return x.seat === a.seat; })[0];
@@ -1019,7 +1075,7 @@ export function holdemPage(user: WebUser): string {
 
       /* 내 조합 — 초심자가 플러시를 완성해 놓고도 모르고 폴드하는 걸 막는다.
          내 카드로 계산한 내 정보라 남에게 새지 않는다. */
-      var mh = tb.myHand;
+      var mh = boardRevealed ? tb.myHand : null;
       readEl.hidden = !mh || !mh.text;
       if (mh && mh.text) {
         readEl.textContent = mh.text;
