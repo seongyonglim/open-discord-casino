@@ -20,7 +20,8 @@
     "audit:e2e": "node --experimental-sqlite --require tsx/cjs scripts/audit-e2e.ts",
     "audit:security": "node --experimental-sqlite --require tsx/cjs scripts/audit-security.ts",
     "audit:discord": "node --experimental-sqlite --require tsx/cjs scripts/audit-discord.ts",
-    "audit": "npm run smoke && npm run audit:economy && npm run audit:concurrency && npm run audit:e2e && npm run audit:security && npm run audit:discord"
+    "audit:holdem": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem.ts",
+    "audit": "npm run smoke && npm run audit:economy && npm run audit:concurrency && npm run audit:e2e && npm run audit:security && npm run audit:discord && npm run audit:holdem"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
