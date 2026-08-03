@@ -69,7 +69,8 @@
   var SFX_EXT = { 'coin-insert':'wav', 'card-shuffle':'wav', 'win-fanfare':'wav',
                   'card-flip':'mp3', 'card-deal':'mp3',
                   'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3',
-                  'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3' };
+                  'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3',
+                  'tournament-win':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
   // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
@@ -152,6 +153,10 @@
        울려도 기계적으로 들리지 않는다. */
     chipbet: ['chip-bet', 'chip-bet2'],
     chipwin: ['chips-to-winner'],   // 팟이 승자에게 밀려가는 소리
+    /* 토너먼트 우승 — 음원 파일(public/sfx/tournament-win.mp3)은 아직 없다.
+       없으면 playSample이 false를 돌려주고 기존 팡파레로 대체되므로 지금도 동작한다.
+       파일을 넣는 순간 자동으로 그쪽이 쓰인다(SFX_NORM에 보정값만 재서 넣으면 된다). */
+    victory: ['tournament-win'],
   };
   // 페이지가 쓰지도 않는 음원까지 받으면 WAV가 커서 낭비가 크다.
   // 각 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다.
@@ -262,6 +267,11 @@
       if (playSample('chipbet', 1)) return;
       var c = ac(); if (!c) return;
       clinkAt(c, c.currentTime, 0.05);   // 음원이 아직 안 받아졌을 때만 쓰는 대체음
+    },
+    // 토너먼트 우승 — 전용 음원이 없으면 팡파레로 대체한다
+    victory: function(){
+      if (playSample('victory', 1)) return;
+      this.win('fanfare');
     },
     // 팟이 승자에게 밀려가는 소리 (홀덤 핸드 종료)
     chipWin: function(){
