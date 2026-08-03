@@ -270,13 +270,16 @@ const HELP_BODY = `
  *
  *  · 테이블은 스타디움(양끝이 둥근 사각). 바깥에 두꺼운 레일, 안쪽에 초록 펠트,
  *    펠트 안쪽으로 한 겹 더 얇은 트랙 선.
- *  · 딜러는 상단 중앙, 레일에 걸치게 놓는다.
+ *  · 라이브 딜러는 두지 않는다. 홀덤은 버튼이 플레이어를 돌기 때문에 상단에 딜러를
+ *    앉히면 "누가 딜러인가"가 두 곳에서 말해져 오히려 헷갈린다. 버튼 퍽만 쓴다.
  *  · 좌석 9개는 테이블 둘레 바깥에. 내(Hero) 자리는 언제나 6시 방향이고,
  *    나머지는 자리 번호 순서대로 시계방향으로 돌려서 붙인다.
  *  · 좌석판은 가로형: [아바타][Seat N (이름)] / [스택]
  *  · 각 좌석의 카드 두 장은 좌석판 "바로 위"에. 모든 자리가 같은 규칙이라
  *    위치가 들쭉날쭉해 보이지 않는다.
  *  · 베팅 칩은 좌석과 테이블 중앙 "사이"에. 좌석마다 안쪽 좌표를 따로 잡아 둔다.
+ *  · 딜러 버튼(퍽)은 그 좌석판의 중앙을 향한 옆면에 붙인다 — 펠트 위에 띄워 두면
+ *    "떠 있는 물체"로 보여서 누구 버튼인지 한눈에 안 잡힌다.
  *  · 보드 5장과 POT은 중앙. 액션 버튼은 테이블 아래.
  *  · 오른쪽 패널에 토너먼트 정보와 칩 순위.
  */
@@ -296,16 +299,19 @@ export function holdemPage(user: WebUser): string {
             <div class="ht-cloth">
               <div class="ht-track" aria-hidden="true"></div>
 
-              <div class="ht-dealer">
-                <span class="ht-dealer-av">🂠</span>
-                <span class="ht-dealer-nm">Dealer</span>
-              </div>
 
               <div class="ht-center">
                 <div class="ht-pot"><span class="ht-pot-k">POT</span><span id="htPot">0</span></div>
                 <div class="ht-board" id="htBoard"></div>
                 <div class="ht-msg" id="htMsg"></div>
                 <div class="ht-read" id="htRead" hidden></div>
+              </div>
+
+              <!-- 자리 비움 배너 — 오른쪽 패널의 버튼만으로는 놓치기 쉽다.
+                   지금 자동으로 체크/폴드되고 있다는 사실과 복귀 방법을 테이블 위에 붙인다. -->
+              <div class="ht-sitout-bar" id="htSitBar" hidden>
+                <span class="ht-sitout-t">자리 비움 — 내 차례는 자동으로 체크(불가하면 폴드)됩니다</span>
+                <button type="button" class="btn btn-gold ht-sitout-btn" id="htBack2">게임 복귀</button>
               </div>
 
               <div id="htSeats" class="ht-seats"></div>
@@ -359,12 +365,12 @@ export function holdemPage(user: WebUser): string {
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
   </div>
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
-    window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];</script>
+    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin'];</script>
   <script>
   (function(){
     var MEID = window.__MEID__;
     var CARD_V = ${jsonForScript(ASSET_V)};
-    var st = null, unit = 'chip', spectate = false;
+    var st = null, unit = 'chip', spectate = false, paidHandNo = null;
 
     var lobbyEl = document.getElementById('htLobby');
     var tableEl = document.getElementById('htTable');
@@ -378,6 +384,7 @@ export function holdemPage(user: WebUser): string {
     var amountEl = document.getElementById('htAmount');
     var unitTag = document.getElementById('htUnitTag');
     var backBtn = document.getElementById('htBack');
+    var sitBar = document.getElementById('htSitBar');
     var infoEl = document.getElementById('htInfo');
     var rankEl = document.getElementById('htRank');
     var sideTitle = document.getElementById('htSideTitle');
@@ -494,15 +501,15 @@ export function holdemPage(user: WebUser): string {
          bet    베팅 칩 자리 — 좌석과 중앙 사이
        카드는 좌석판 바로 위에 붙이므로 좌표가 따로 필요 없다(CSS가 위로 쌓는다). */
     var POS = [
-      { plate: [50, 93], bet: [50, 76], puck: [61, 82] },   // 0 = 6시 (Hero)
-      { plate: [25, 90], bet: [31, 74], puck: [37, 84] },
-      { plate: [8,  68], bet: [20, 62], puck: [19, 73] },
-      { plate: [8,  41], bet: [20, 45], puck: [19, 34] },
-      { plate: [25, 16], bet: [32, 30], puck: [35, 22] },
-      { plate: [75, 16], bet: [68, 30], puck: [65, 22] },
-      { plate: [92, 41], bet: [80, 45], puck: [81, 34] },
-      { plate: [92, 68], bet: [80, 62], puck: [81, 73] },
-      { plate: [75, 90], bet: [69, 74], puck: [63, 84] },
+      { plate: [50, 93], bet: [50, 76] },   // 0 = 6시 (Hero)
+      { plate: [25, 90], bet: [31, 74] },
+      { plate: [8,  68], bet: [20, 62] },
+      { plate: [8,  41], bet: [20, 45] },
+      { plate: [25, 16], bet: [32, 30] },
+      { plate: [75, 16], bet: [68, 30] },
+      { plate: [92, 41], bet: [80, 45] },
+      { plate: [92, 68], bet: [80, 62] },
+      { plate: [75, 90], bet: [69, 74] },
     ];
 
     function renderSeats(){
@@ -542,17 +549,15 @@ export function holdemPage(user: WebUser): string {
                   ? '<span class="ht-allin">ALL IN</span>'
                   : '<span class="ht-stk">' + stackText(s.stack) + '</span>') +
               '</span>' +
+              (s.seat === tb.buttonSeat
+                ? '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼">D</span>'
+                : '') +
               (s.state === 'folded' ? '<span class="ht-fold-b" title="폴드">F</span>'
                 : s.presence === 'SIT_OUT' ? '<span class="ht-zzz" title="자리 비움">II</span>' : '') +
 
             '</div>' +
           '</div>';
 
-        /* 딜러 퍽 — 좌석판 모서리에 붙여 두면 19px짜리가 아바타에 묻혀 안 보인다.
-           실제 테이블처럼 펠트 위에 따로 놓는다. */
-        if (s.seat === tb.buttonSeat) {
-          html += '<span class="ht-puck" style="left:' + p.puck[0] + '%;top:' + p.puck[1] + '%">D</span>';
-        }
         // 베팅 칩 — 좌석과 중앙 사이 (좌석판과 별개 요소라 겹치지 않는다)
         if (s.bet > 0) {
           html += '<div class="ht-spot" style="left:' + p.bet[0] + '%;top:' + p.bet[1] + '%">' +
@@ -609,7 +614,9 @@ export function holdemPage(user: WebUser): string {
           '<span class="ht-rw-st">' + stackText(s.stack) + '</span>' +
           '</div>';
       }).join('') || '<div class="empty" style="padding:14px 0">아직 없습니다</div>';
-      backBtn.hidden = tb.myPresence !== 'SIT_OUT';
+      var out = tb.myPresence === 'SIT_OUT';
+      backBtn.hidden = !out;
+      sitBar.hidden = !out;
     }
 
     /* ── 테이블 ───────────────────────────────────────────────────── */
@@ -634,6 +641,17 @@ export function holdemPage(user: WebUser): string {
           + (tb.actionLeft != null ? ' · ' + tb.actionLeft + '초' : '');
       }
       msgEl.textContent = msg;
+
+      /* 소리 두 가지.
+         · 남이 칩을 올렸을 때 (내 것은 클릭 순간에 이미 울렸다)
+         · 팟이 승자에게 밀려갈 때 — 한 판에 딱 한 번. 폴링이 같은 종료 상태를 계속
+           보내오므로 핸드 번호로 이미 울렸는지 표시해 둔다. */
+      playBetSounds();
+      if (tb.ended && paidHandNo !== tb.handNo) {
+        paidHandNo = tb.handNo;
+        if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+      }
+
       /* 내 조합 — 초심자가 플러시를 완성해 놓고도 모르고 폴드하는 걸 막는다.
          내 카드로 계산한 내 정보라 남에게 새지 않는다. */
       var mh = tb.myHand;
@@ -704,7 +722,27 @@ export function holdemPage(user: WebUser): string {
       renderControls();
     });
 
+    /* 남의 베팅은 폴링으로만 알 수 있다. 자리별 "이번 스트리트 베팅액"을 기억해 두고
+       늘어난 자리가 있을 때 칩 소리를 낸다. 여러 명이 한꺼번에 늘어도 한 번만 울린다 —
+       같은 소리가 겹치면 지저분해진다. 내 자리는 클릭 순간에 이미 울렸으니 뺀다. */
+    var lastBets = {}, betHandNo = null;
+    function playBetSounds(){
+      var tb = st.table;
+      if (!tb) return;
+      if (tb.handNo !== betHandNo) { lastBets = {}; betHandNo = tb.handNo; }
+      var any = false;
+      (tb.seats || []).forEach(function(s){
+        if (s.bet > (lastBets[s.seat] || 0) && s.seat !== tb.mySeat) any = true;
+        lastBets[s.seat] = s.bet;
+      });
+      if (any && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+    }
+
     function act(kind, amount){
+      // 칩이 실제로 나가는 액션에만 소리를 낸다 (폴드·체크는 칩이 안 나간다).
+      // 서버 응답을 기다리지 않고 클릭 순간에 울려야 손맛이 난다.
+      if (kind !== 'fold' && kind !== 'check'
+          && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
       return post('/api/games/holdem/action', { action: kind, amount: amount || 0 })
         .then(function(r){
           if (!r.ok && r.d && r.d.error) msgEl.textContent = r.d.error;
@@ -719,7 +757,9 @@ export function holdemPage(user: WebUser): string {
       var target = currentTarget();
       act(target >= la.maxRaiseTo ? 'allin' : (la.raiseIsBet ? 'bet' : 'raise'), target);
     });
-    backBtn.addEventListener('click', function(){ post('/api/games/holdem/sitin', {}).then(poll); });
+    function sitIn(){ post('/api/games/holdem/sitin', {}).then(poll); }
+    backBtn.addEventListener('click', sitIn);
+    document.getElementById('htBack2').addEventListener('click', sitIn);
 
     /* ── 사전 액션 ───────────────────────────────────────────────────
        내 차례가 오기 전에 미리 정해두는 것. 상황이 바뀌면(베팅·레이즈가 들어오면)

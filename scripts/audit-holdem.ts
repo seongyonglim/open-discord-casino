@@ -573,7 +573,10 @@ section('[16] 상금 금액 — 합이 정확히 상금 풀 (최대잉여법)');
     const pool = randomInt(200_000);
     const amts = T.prizeAmounts(pool, players);
     if (amts.reduce((a, b) => a + b, 0) !== pool) rbad++;
-    if (amts.length !== T.itmCount(players)) rbad++;
+    /* 상금 풀이 0이면 나눌 것이 없으니 빈 배열이 맞다 — 실제로는 풀이 최소
+       3,000P(3명 × 1,000)라 0이 될 수 없지만, 무작위 표본에는 섞여 들어온다.
+       예전엔 길이를 무조건 ITM 인원과 비교해서 이 경우를 실패로 봤다. */
+    if (pool > 0 && amts.length !== T.itmCount(players)) rbad++;
     if (amts.some(v => v < 0 || !Number.isInteger(v))) rbad++;
   }
   ck('무작위 2만 건 — 합 = 상금 풀 · 인원 = ITM · 정수', rbad === 0, `${rbad}건`);
