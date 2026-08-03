@@ -775,7 +775,10 @@
   /* 딜러 버스트 — 판이 뒤집히는 순간이라 숫자만 22로 바뀌고 끝나면 안 된다.
      카드 위에 도장을 찍고 끗수를 붉게 물들이고 테이블을 한 번 번쩍인다. */
   .bj-total.bust{color:#ff7b7b;text-shadow:0 0 12px rgba(255,90,90,.6)}
+  /* 쉬는 자리(애니메이션 없이 그냥 보일 때)에도 가운데 정렬이 맞도록 기본 transform을 둔다.
+     keyframes에만 두면 pop 클래스가 없을 때 도장이 오른쪽 아래로 밀려 나간다. */
   .bj-bust{position:absolute;left:50%;top:56%;z-index:6;
+    transform:translate(-50%,-50%) rotate(-11deg);
     padding:5px 14px;border:2px solid rgba(255,90,90,.85);border-radius:7px;
     background:rgba(46,8,8,.62);color:#ff8a8a;white-space:nowrap;pointer-events:none;
     font-size:17px;font-weight:800;letter-spacing:3px;
@@ -800,7 +803,7 @@
 
   /* 다섯 자리를 한 줄에 두고 아래로 곡선을 준다 (가운데가 가장 깊다) */
   .bj-seats{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:6px}
-  .bj-seat{flex:1 1 0;min-width:0;max-width:132px;
+  .bj-seat{position:relative;flex:1 1 0;min-width:0;max-width:132px;
     background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.09);border-radius:12px;
     padding:7px 5px 6px;display:flex;flex-direction:column;gap:4px;min-height:150px;
     transition:border-color .12s,opacity .18s,background .18s}
@@ -817,7 +820,25 @@
   .bj-seat-num{font-family:var(--mono);font-size:15px;font-weight:700}
   .bj-seat-hint{font-size:10px}
   .bj-seat.mine{border-color:var(--gold);background:rgba(212,175,55,.08)}
-  .bj-seat.bust{opacity:.5}
+  /* 버스트한 자리는 흐려진다. 흐림을 자리가 아니라 자식들에게 주는 게 중요하다 —
+     자리 자체에 opacity를 걸면 위에 얹은 BUST 도장까지 같이 반투명해져 흐지부지해진다. */
+  .bj-seat.bust > *:not(.bj-seat-bust){opacity:.5;transition:opacity .18s}
+  /* 플레이어 버스트 도장 — 딜러 쪽과 같은 모양을 자리 크기에 맞춰 줄인 것 */
+  .bj-seat-bust{position:absolute;left:50%;top:44%;z-index:5;
+    transform:translate(-50%,-50%) rotate(-11deg);
+    padding:3px 8px;border:2px solid rgba(255,90,90,.9);border-radius:5px;
+    background:rgba(46,8,8,.72);color:#ff8a8a;white-space:nowrap;pointer-events:none;
+    font-size:12px;font-weight:800;letter-spacing:2px;
+    text-shadow:0 2px 6px rgba(0,0,0,.7);box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  .bj-seat-bust[hidden]{display:none}
+  .bj-seat-bust.pop{animation:bustPop .42s cubic-bezier(.2,1.45,.4,1) both}
+  /* 자리는 transform으로 반원 배치를 하고 있어 흔들면 그 배치가 깨진다 — 붉은 테두리광으로 알린다.
+     border-color는 건드리지 않는다: 내 자리는 금색 테두리라 흰색에서 시작하면 색이 튄다. */
+  .bj-seat.bustshake{animation:seatBustFlash .55s ease-out}
+  @keyframes seatBustFlash{
+    0%,100%{box-shadow:0 0 0 0 rgba(255,70,70,0)}
+    30%{box-shadow:0 0 0 3px rgba(255,70,70,.4),0 0 16px rgba(255,70,70,.35)}
+  }
   .bj-seat.won{border-color:var(--win);box-shadow:0 0 0 1px var(--win) inset}
   .bj-seat.lost{opacity:.45}
   .bj-seat-top{display:flex;align-items:center;justify-content:space-between;gap:3px}
@@ -841,6 +862,7 @@
   .bj-seat-bet{font-family:var(--mono);font-size:10px;color:#9fb8aa}
   .bj-seat-tag{font-size:9.5px;font-weight:700;color:var(--gold)}
   .bj-seat.bust .bj-seat-tag{color:var(--lose)}
+  .bj-seat.bust .bj-seat-total{color:#ff8a8a}
   .bj-seat.won .bj-seat-tag{color:var(--win)}
 
   /* 자리 클릭이 거절됐을 때 (이미 남이 앉았거나 마감됨) — 문구 대신 짧게 튕긴다.
@@ -859,6 +881,9 @@
     .bj-hand.small .pcard{width:25px;height:37px;margin-left:-11px}
     .bj-hand.small{padding-left:11px}
     .bj-table{border-radius:14px 14px 80px 80px/14px 14px 44px 44px}
+    /* 자리가 53px까지 좁아지면 기본 도장(62px)이 옆자리로 삐져나온다 */
+    .bj-seat-bust{font-size:9px;letter-spacing:1px;padding:2px 5px;border-width:1px;border-radius:4px}
+    .bj-bust{font-size:13px;letter-spacing:2px;padding:4px 10px}
   }
 
   /* ── 규칙 도움말 ─────────────────────────────────────────────
