@@ -95,19 +95,25 @@ function cardSvg(rank: string, suit: Suit): string {
     `</svg>`;
 }
 
-function backSvg(): string {
+/* 뒷면 두 종류.
+   기본(남색)은 블랙잭·바카라·포커 플립이 쓰고, 홀덤 테이블은 마룬(back-red)을 쓴다 —
+   초록 펠트 위에서 남색은 가라앉아 보이고, 실제 포커룸도 붉은 계열을 쓴다. */
+function backSvg(theme: 'navy' | 'red' = 'navy'): string {
+  const c = theme === 'red'
+    ? { g0: '#7a2230', g1: '#41101a', edge: '#94303c', hub: '#41101a' }
+    : { g0: '#2a3a63', g1: '#141b30', edge: '#3a4a76', hub: '#141b30' };
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">` +
     `<defs>` +
     `<linearGradient id="b" x1="0" y1="0" x2="0.5" y2="1">` +
-    `<stop offset="0" stop-color="#2a3a63"/><stop offset="1" stop-color="#141b30"/></linearGradient>` +
+    `<stop offset="0" stop-color="${c.g0}"/><stop offset="1" stop-color="${c.g1}"/></linearGradient>` +
     `<pattern id="lat" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
     `<path d="M0 0 H22 M0 11 H22" stroke="#d4af37" stroke-width="1.6" opacity=".30"/>` +
     `<path d="M0 0 V22 M11 0 V22" stroke="#d4af37" stroke-width="1.6" opacity=".30"/>` +
     `</pattern></defs>` +
-    `<rect x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="${18 * S}" fill="url(#b)" stroke="#3a4a76" stroke-width="3"/>` +
+    `<rect x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="${18 * S}" fill="url(#b)" stroke="${c.edge}" stroke-width="3"/>` +
     `<rect x="${14 * S}" y="${14 * S}" width="${W - 28 * S}" height="${H - 28 * S}" rx="${12 * S}" fill="url(#lat)"/>` +
     `<rect x="${14 * S}" y="${14 * S}" width="${W - 28 * S}" height="${H - 28 * S}" rx="${12 * S}" fill="none" stroke="#d4af37" stroke-width="2.5" opacity=".65"/>` +
-    `<circle cx="${W / 2}" cy="${H / 2}" r="${42 * S}" fill="#141b30" stroke="#d4af37" stroke-width="2.5" opacity=".9"/>` +
+    `<circle cx="${W / 2}" cy="${H / 2}" r="${42 * S}" fill="${c.hub}" stroke="#d4af37" stroke-width="2.5" opacity=".9"/>` +
     pip('s', '#d4af37', W / 2, H / 2, 46 * S) +
     `</svg>`;
 }
@@ -128,5 +134,6 @@ for (const suit of SUITS) {
     made++;
   }
 }
-writeFileSync(join(outDir, 'back.svg'), backSvg());
-console.log(`뒷면 1장 생성. 앞면: 자체 생성 ${made}장, 받아둔 원본 유지 ${kept}장 (${outDir})`);
+writeFileSync(join(outDir, 'back.svg'), backSvg('navy'));
+writeFileSync(join(outDir, 'back-red.svg'), backSvg('red'));
+console.log(`뒷면 2장 생성(남색·마룬). 앞면: 자체 생성 ${made}장, 받아둔 원본 유지 ${kept}장 (${outDir})`);

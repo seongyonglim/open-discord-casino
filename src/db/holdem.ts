@@ -111,6 +111,14 @@ export function getHandSeats(handId: number): HtHandSeatRow[] {
   return all<HtHandSeatRow>(`SELECT * FROM holdem_hand_seats WHERE hand_id = ? ORDER BY seat ASC`, handId);
 }
 
+/** 자리에 앉은 사람들의 디스코드 아바타 해시 (화면에 원형 프로필로 쓴다) */
+export function getSeatAvatars(tableId: number): Map<string, string | null> {
+  const rows = all<{ user_id: string; avatar: string | null }>(
+    `SELECT s.user_id, u.avatar FROM holdem_seats s JOIN users u ON u.id = s.user_id
+     WHERE s.table_id = ?`, tableId);
+  return new Map(rows.map(r => [r.user_id, r.avatar]));
+}
+
 /** 남아 있는(탈락하지 않은) 좌석 */
 function livingSeats(tableId: number): HtSeatRow[] {
   return getSeats(tableId).filter(s => s.presence !== 'OUT');
