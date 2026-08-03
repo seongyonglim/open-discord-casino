@@ -280,6 +280,42 @@ console.log('\n[6] 블라인드는 진행 중인 핸드 도중에 오르지 않�
   ck('오른 블라인드가 반영됨 (레벨 4 = 100/200)', h2.sb === 100 && h2.bb === 200, `${h2.sb}/${h2.bb}`);
 }
 
+/* ── 자정을 넘겨도 진행 중인 판을 계속 쓴다 ────────────────────────
+   22:00에 시작한 판이 자정을 넘기면(레이트 레그가 붙거나 판이 길어지면 실제로 넘어간다)
+   "오늘 판"이 새로 생기면서 진행 중이던 테이블이 화면에서 사라진다 — 플레이 중에
+   로비로 튕긴다. 실제로 자정을 넘기며 이 일이 일어나는 것을 보고 넣은 검사다. */
+console.log('\n[6b] 자정을 넘겨도 진행 중인 판이 유지된다');
+{
+  for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+    'holdem_tables', 'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${tb}`).run();
+  HD.advanceHoldem();
+  setWindow(-60, 600, 1800);
+  for (let i = 0; i < 3; i++) { mkUser('m' + i); HD.registerHoldem('m' + i, 'm' + i); }
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  const live = HD.advanceHoldem();
+  ck('판이 시작됐다', live.status === 'RUNNING', live.status);
+  const runningId = live.tournament.id;
+
+  // 날짜만 어제로 돌린다 = 자정을 넘긴 상황
+  db.prepare(`UPDATE holdem_tournaments SET date_str = '2000-01-01' WHERE id = ?`).run(runningId);
+  const after = HD.advanceHoldem();
+  ck('날짜가 바뀌어도 같은 판을 계속 본다',
+    after.tournament.id === runningId && after.status === 'RUNNING',
+    `id ${after.tournament.id} (기대 ${runningId}) · ${after.status}`);
+  ck('오늘 날짜로 새 판을 만들지 않았다',
+    (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 1);
+
+  // 버려진 판(6시간 초과)은 취소하고 새 판으로 넘어간다
+  db.prepare(`UPDATE holdem_tournaments SET started_at = ? WHERE id = ?`)
+    .run(nowSec() - HD.ABANDON_SEC - 60, runningId);
+  const fresh = HD.advanceHoldem();
+  ck('6시간 넘게 방치된 판은 취소되고 새 판이 열린다', fresh.tournament.id !== runningId,
+    `id ${fresh.tournament.id}`);
+  ck('방치된 판에 취소가 기록됐다',
+    (db.prepare(`SELECT cancelled_at FROM holdem_tournaments WHERE id = ?`)
+      .get(runningId) as { cancelled_at: number | null }).cancelled_at != null);
+}
+
 console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');
 {
   db.prepare(`DELETE FROM holdem_tournaments`).run();
