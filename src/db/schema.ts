@@ -315,6 +315,14 @@ function initSchema(): void {
       to_act_seat INTEGER,
       action_deadline INTEGER,
       last_raise_size INTEGER NOT NULL DEFAULT 0,
+      /* 이 핸드에서 가장 마지막으로 이뤄진 행동. 좌석의 last_action과 따로 두는 이유가 있다 —
+         스트리트가 넘어갈 때 좌석의 행동 표시는 초기화되는데, 그 초기화가 스트리트를 넘긴
+         바로 그 행동을 같은 트랜잭션에서 지워버린다. 폴링 주기가 1초라 클라이언트는
+         그 행동을 한 번도 못 보고 보드가 깔리는 것만 본다("딜러가 체크했는데 안 보이고
+         플랍이 바로 깔린다"). 여기 기록은 스트리트 초기화가 건드리지 않는다. */
+      last_actor_seat INTEGER,
+      last_actor_action TEXT,
+      last_actor_amount INTEGER NOT NULL DEFAULT 0,
       ended_at INTEGER,
       result_json TEXT,                    -- 쇼다운 결과 (끝난 뒤에만 공개)
       started_at INTEGER NOT NULL,
@@ -361,4 +369,8 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 홀덤: 판이 끝난 뒤 자발적 패 공개
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN shown INTEGER NOT NULL DEFAULT 0`); } catch {}
+  // 홀덤: 스트리트를 닫은 마지막 행동 (스트리트 초기화가 지우지 못하는 자리)
+  try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_seat INTEGER`); } catch {}
+  try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_action TEXT`); } catch {}
+  try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
 }

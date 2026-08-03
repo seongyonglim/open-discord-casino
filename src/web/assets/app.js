@@ -181,7 +181,10 @@
   // 칩을 연타하면 1초 넘는 소리가 겹겹이 쌓여 지저분해지므로, 종류별로 동시에 울리는
   // 개수를 제한하고 넘치면 가장 오래된 것부터 끊는다.
   // 지뢰 연쇄 폭발은 90ms 간격으로 최대 5번 울리므로 그만큼 동시 재생을 허용한다
-  var VOICES = { explode: 5 };
+  /* 홀덤은 한 판에 최대 18장을 90~220ms 간격으로 돌린다. 상한이 3이면 각 딜링음이
+     300ms도 못 가서 강제로 끊기고, 앞뒤가 뭉쳐 "사사삭" 하는 잡음으로 들린다.
+     카드 소리는 짧아서 여러 개가 겹쳐도 지저분해지지 않으므로 넉넉히 준다. */
+  var VOICES = { explode: 5, deal: 8 };
   var DEFAULT_VOICES = 3;
   var playing = {};
   function playSample(set, gain){
@@ -301,7 +304,9 @@
       clinkAt(c, c.currentTime, 0.028);
     },
     // 새 라운드 시작 — 카드 섞는 소리
-    shuffle: function(){ playSample('shuffle', 1); },
+    /* 셔플 소리(약 2초)는 기본 크기로 쓰면 그 뒤에 이어지는 딜링음을 덮는다.
+       홀덤처럼 셔플 직후 카드를 여러 장 돌리는 곳은 작게 깔라고 인자를 받는다. */
+    shuffle: function(gain){ playSample('shuffle', gain == null ? 1 : gain); },
     // 카드를 한 장 나눠줄 때
     deal: function(){ playSample('deal', 1); }
   };

@@ -142,6 +142,36 @@ console.log('\n[3] 자동 액션 (마감 초과)');
     hand.to_act_seat !== before || hand.ended_at != null, String(hand.to_act_seat));
 }
 
+/* ── 스트리트를 닫은 마지막 행동 ──────────────────────────────────
+   nextStreet가 좌석의 last_action을 같은 트랜잭션에서 지우기 때문에, 폴링 주기 1초로는
+   스트리트를 닫은 행동이 클라이언트에 한 번도 도달하지 않았다("딜러가 체크했는데
+   안 보이고 플랍이 바로 깔린다"). 그 행동은 핸드 쪽(last_actor_*)에 남아야 한다. */
+console.log('\n[3b] 스트리트를 닫은 행동이 핸드에 남는다');
+{
+  // 프리플랍이 닫힐 때까지 자동 진행
+  let steps = 0;
+  while (steps++ < 200) {
+    hand = HD.getCurrentHand(table.id)!;
+    if (hand.street !== 'preflop' || hand.ended_at != null) break;
+    expireAction();
+    HD.advanceHoldem();
+  }
+  hand = HD.getCurrentHand(table.id)!;
+  ck('프리플랍을 벗어났다 (검증이 헛돌지 않았다)',
+    hand.street !== 'preflop' || hand.ended_at != null, hand.street);
+  ck('마지막 행동자가 기록됐다', hand.last_actor_seat != null, String(hand.last_actor_seat));
+  ck('마지막 행동 종류가 기록됐다', !!hand.last_actor_action, String(hand.last_actor_action));
+  const hs = HD.getHandSeats(hand.id);
+  const closer = hs.find(h => h.seat === hand.last_actor_seat)!;
+  ck('그 좌석의 표시는 초기화됐다 (핸드 쪽 기록이 없으면 화면에 못 띄운다)',
+    closer.last_action === null || closer.last_action === 'fold',
+    String(closer.last_action));
+  ck('행동 종류가 실제 액션 이름이다',
+    ['fold', 'check', 'call', 'bet', 'raise', 'allin'].includes(hand.last_actor_action!),
+    String(hand.last_actor_action));
+  ck('금액이 음수가 아니다', hand.last_actor_amount >= 0, String(hand.last_actor_amount));
+}
+
 console.log('\n[4] 한 판을 자동으로 끝까지');
 {
   let steps = 0;

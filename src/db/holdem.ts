@@ -55,6 +55,7 @@ export interface HtHandRow {
   street: G.Street; to_act_seat: number | null; action_deadline: number | null;
   last_raise_size: number; ended_at: number | null; result_json: string | null;
   started_at: number;
+  last_actor_seat: number | null; last_actor_action: string | null; last_actor_amount: number;
 }
 export interface HtHandSeatRow {
   id: number; hand_id: number; seat: number; user_id: string;
@@ -199,10 +200,21 @@ function toViews(rows: HtHandSeatRow[]): G.SeatView[] {
   }));
 }
 
-/** 마지막 행동을 기록한다. 화면에 "콜 300"처럼 띄우는 용도다. */
+/**
+ * 마지막 행동을 기록한다. 화면에 "콜 300"처럼 띄우는 용도다.
+ *
+ * 두 곳에 쓴다.
+ *  · 좌석 행 — 이 스트리트에서 그 사람이 뭘 했는지. 스트리트가 넘어가면 초기화된다.
+ *  · 핸드 행 — 이 핸드에서 가장 마지막 행동. 초기화되지 않는다.
+ * 두 번째가 필요한 이유: 스트리트를 닫는 행동은 nextStreet가 같은 트랜잭션에서
+ * 좌석 표시를 지워버리기 때문에, 1초 폴링으로는 그 행동이 클라이언트에 한 번도
+ * 도달하지 않는다. 그래서 "누가 마지막에 뭘 했나"를 핸드 쪽에 따로 남긴다.
+ */
 function noteAction(handId: number, seat: number, kind: G.ActionKind, paid: number): void {
   run(`UPDATE holdem_hand_seats SET last_action = ?, last_amount = ?
        WHERE hand_id = ? AND seat = ?`, kind, paid, handId, seat);
+  run(`UPDATE holdem_hands SET last_actor_seat = ?, last_actor_action = ?, last_actor_amount = ?
+       WHERE id = ?`, seat, kind, paid, handId);
 }
 
 function saveViews(handId: number, views: G.SeatView[]): void {
