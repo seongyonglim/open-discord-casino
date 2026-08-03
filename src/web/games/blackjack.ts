@@ -240,6 +240,8 @@ export function blackjackPage(user: WebUser): string {
                 <span id="bjDealerTotal" class="bj-total">–</span>
               </div>
               <div id="bjDealerCards" class="bj-hand"></div>
+              <!-- 딜러가 21을 넘긴 순간 카드 위에 찍히는 도장. 서 있던 모든 자리가 이기는 순간이다 -->
+              <span id="bjDealerBust" class="bj-bust" hidden>DEALER BUST</span>
               <p class="bj-rule">blackjack pays 3 to 2 · dealer stands on all 17</p>
             </div>
             ${helpButton('bjHelp')}
@@ -288,6 +290,7 @@ export function blackjackPage(user: WebUser): string {
 
       var statusEl=document.getElementById('bjStatus'), seatsEl=document.getElementById('bjSeats');
       var dCardsEl=document.getElementById('bjDealerCards'), dTotalEl=document.getElementById('bjDealerTotal');
+      var bustEl=document.getElementById('bjDealerBust'), tableEl=document.querySelector('.bj-table');
       var actionsEl=document.getElementById('bjActions');
       var hitBtn=document.getElementById('bjHit'), standBtn=document.getElementById('bjStand');
       var dblBtn=document.getElementById('bjDouble');
@@ -353,7 +356,25 @@ export function blackjackPage(user: WebUser): string {
         var seen = cards.slice(0, shownD);
         dTotalEl.textContent = shownD >= 2 ? bjTotal(seen)
           : seen.length ? bjTotal(seen) + ' +?' : '–';
+        // 깐 카드만으로 21을 넘겼는지 본다 — 안 깐 카드로 미리 판정하면 결과가 새어나간다
+        markDealerBust(shownD >= 2 && bjTotal(seen) > 21);
         return n;
+      }
+      /* 딜러 버스트 연출.
+         이 게임에서 가장 결정적인 순간인데 숫자만 조용히 22로 바뀌고 끝나서 밋밋했다.
+         카드 위에 도장을 찍고, 끗수를 붉게 물들이고, 테이블을 한 번 번쩍이고,
+         짧은 "쿵" 소리를 낸다. 한 번 찍힌 판에서는 다시 재생하지 않는다. */
+      var bustShown = false;
+      function markDealerBust(on){
+        if (on === bustShown) return;
+        bustShown = on;
+        dTotalEl.classList.toggle('bust', on);
+        bustEl.hidden = !on;
+        if (!on) { bustEl.classList.remove('pop'); tableEl.classList.remove('bustflash'); return; }
+        if (firstState) return;   // 이미 끝난 판을 열었을 뿐이다 — 도장만 남기고 연출은 생략
+        replay(bustEl, 'pop');
+        replay(tableEl, 'bustflash');
+        if (window.casinoSfx && window.casinoSfx.bust) window.casinoSfx.bust();
       }
       function scheduleDealerReveal(want){
         if (want <= shownD || dealerTimers.length) return;
@@ -552,6 +573,7 @@ export function blackjackPage(user: WebUser): string {
           shownD = 0;
           dealt += syncCards(dCardsEl, 'dealer', d.cards.length ? d.cards.concat([null]) : []);
           dTotalEl.textContent = d.total != null ? d.total + ' +?' : '–';
+          markDealerBust(false);   // 새 판이 시작됐다 — 지난 판의 도장을 걷는다
         } else {
           // 페이지에 막 들어왔거나 이미 끝난 판이면 연출 없이 다 보여준다
           if (firstState || r.phase === 'done') { clearDealerReveal(); shownD = d.cards.length; }

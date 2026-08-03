@@ -394,7 +394,7 @@ section('[8] 블랙잭');
   const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
   const {
     advanceBlackjackRound, seatBlackjackBet, clearBlackjackBet, blackjackAction,
-    getBlackjackHands, BJ_SEATS,
+    getBlackjackHands, BJ_SEATS, BJ_BETTING_SEC,
   } = require('../src/db/queries') as typeof import('../src/db/queries');
 
   const H = {
@@ -450,6 +450,8 @@ section('[8] 블랙잭');
   seatBlackjackBet('j2', 'j2', round.id, 1, 1000);
   ck('회수하면 전액 환불', clearBlackjackBet('j2', round.id).ok && bal('j2') === 20000, String(bal('j2')));
   ck('회수 후 그 자리 재착석 가능', seatBlackjackBet('j3', 'j3', round.id, 1, 800).ok);
+  ck('한 명이 회수해도 남은 사람이 있으면 카운트다운 유지',
+    advanceBlackjackRound(H).phase === 'betting');
 
   // 배분 — 카드와 슈 소비
   expire('blackjack_rounds', round.id, 1);
@@ -528,6 +530,44 @@ section('[8] 블랙잭');
     mkUser('j_late', 5000);
     ck('마감된 라운드 착석 거절', !seatBlackjackBet('j_late', 'l', round.id, 4, 100).ok);
     ck('마감 거절 후 차감 없음', bal('j_late') === 5000, String(bal('j_late')));
+  }
+
+  /* 빈 테이블로 되돌리기.
+     마지막 사람이 칩을 회수해 테이블이 비면 카운트다운을 풀고 대기로 돌아가야 한다.
+     안 풀면 아무도 없는 판에 카드가 돌고, 그 판이 끝날 때까지 새로 온 사람이 기다린다.
+     (앞의 검사들이 라운드를 다 소진했으니 여기서 새 라운드를 하나 얻어 쓴다) */
+  {
+    mkUser('jz', 20000);
+    // 진행 중인 판을 정산까지 밀어낸 뒤, 결과 표시 시간도 지난 것으로 만들어 새 라운드를 연다
+    expire('blackjack_rounds', round.id, 60);
+    advanceBlackjackRound(H);
+    db.prepare(`UPDATE blackjack_rounds SET resolved_at = ? WHERE id = ?`).run(nowSec() - 60, round.id);
+    const empty = advanceBlackjackRound(H);
+    ck('새 테이블은 대기 상태 · 카운트다운 없음',
+      empty.phase === 'waiting' && empty.betting_ends_at === null,
+      empty.phase + ' / ' + empty.betting_ends_at);
+    ck('한 명 앉으면 카운트다운 시작',
+      seatBlackjackBet('jz', 'jz', empty.id, 2, 500).ok
+      && advanceBlackjackRound(H).betting_ends_at !== null);
+    ck('그 한 명이 회수하면 다시 대기 · 카운트다운 해제', (() => {
+      if (!clearBlackjackBet('jz', empty.id).ok) return false;
+      const back = advanceBlackjackRound(H);
+      return back.id === empty.id && back.phase === 'waiting' && back.betting_ends_at === null;
+    })());
+    ck('다시 앉으면 카운트다운이 처음부터 (남은 시간이 잘려 있지 않다)', (() => {
+      const t = nowSec();
+      if (!seatBlackjackBet('jz', 'jz', empty.id, 4, 500).ok) return false;
+      const on = advanceBlackjackRound(H);
+      const left = on.betting_ends_at! - t;
+      return on.phase === 'betting' && left >= BJ_BETTING_SEC - 1 && left <= BJ_BETTING_SEC;
+    })());
+    // 한 번 되돌린 라운드도 평소처럼 카드가 돌아야 한다
+    expire('blackjack_rounds', empty.id, 1);
+    const dealt = advanceBlackjackRound(H);
+    ck('되돌린 라운드도 정상 배분',
+      (JSON.parse(dealt.dealer_json) as number[]).length === 2
+      && getBlackjackHands(dealt.id).every(x => (JSON.parse(x.cards_json) as number[]).length === 2),
+      dealt.phase + ' / ' + dealt.dealer_json);
   }
 }
 auditLedger('블랙잭 후');

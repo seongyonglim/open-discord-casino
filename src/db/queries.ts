@@ -1453,6 +1453,15 @@ export function clearBlackjackBet(userId: string, roundId: number):
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       userId, hand.bet, 'game:blackjack:bet', after.balance);
+    /* 마지막 사람이 칩을 회수해 테이블이 다시 비었으면 카운트다운을 되돌린다.
+       안 되돌리면 아무도 없는 테이블에 카드가 돌고, 그 판이 끝날 때까지
+       새로 온 사람이 남의 빈 판을 기다려야 한다. 첫 사람이 다시 앉는 순간부터 다시 센다. */
+    const left = one<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM blackjack_hands WHERE round_id = ?`, roundId
+    )!.n;
+    if (left === 0) {
+      run(`UPDATE blackjack_rounds SET phase = 'waiting', betting_ends_at = NULL WHERE id = ?`, roundId);
+    }
     return { ok: true, balance: after.balance, refunded: hand.bet };
   });
 }

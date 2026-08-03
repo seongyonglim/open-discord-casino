@@ -388,7 +388,7 @@ export function pokerPage(user: WebUser): string {
 
         if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle();
 
-        var SHUFFLE_MS = 620, STEP = 165;
+        var SHUFFLE_MS = 620, STEP = 165, FLY_MS = 300;   // FLY_MS = .deal-in 애니메이션 길이
         slots.forEach(function(s, n){
           pendingDeal.push(setTimeout(function(){
             var card = s.el.children[s.i];
@@ -396,9 +396,15 @@ export function pokerPage(user: WebUser): string {
             card.style.visibility = '';
             flyCardIn(card);
             if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
-            if (n === slots.length - 1) { dealing = false; showAllCards(); }
           }, SHUFFLE_MS + n * STEP));
         });
+        /* 마지막 장이 날아 도착한 뒤에 연출을 닫는다.
+           마지막 장의 콜백 안에서 showAllCards()를 부르면 그 순간 아직 날고 있던
+           복제본(마지막 장 + 그 앞 장)까지 같이 걷어내서, 끝의 두 장이 밀려오지 않고
+           제자리에 툭 생겨나는 것처럼 보인다 — 딜링이 끊기는 느낌의 원인이었다.
+           각 카드는 flyCardIn이 자기 타이머로 되살리니 여기서 되살릴 필요도 없다. */
+        pendingDeal.push(setTimeout(function(){ dealing = false; },
+          SHUFFLE_MS + (slots.length - 1) * STEP + FLY_MS));
         // 연출이 어떤 이유로 끊겨도 반드시 카드가 다시 보이도록 하는 안전장치
         pendingDeal.push(setTimeout(function(){ dealing = false; showAllCards(); },
           SHUFFLE_MS + slots.length * STEP + 800));
