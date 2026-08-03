@@ -163,6 +163,50 @@ console.log('\n[4] 한 판을 자동으로 끝까지');
   ck('다음 핸드가 예약됐다', HD.getTable(st.tournament.id)!.next_hand_at != null);
 }
 
+/* ── 자발적 패 공개 ────────────────────────────────────────────────
+   끝난 판에서만 열려야 한다. 진행 중에 자기 패를 흘리면 남은 사람에게
+   정보를 주는 것이고 담합의 통로가 된다. [4]에서 판이 막 끝난 상태를 그대로 쓴다. */
+console.log('\n[4b] 내 패 공개 (끝난 판에서만)');
+{
+  const mine = HD.getHandSeats(hand.id)[0];
+  const other = HD.getHandSeats(hand.id)[1];
+  ck('처음에는 아무도 공개 상태가 아니다',
+    HD.getHandSeats(hand.id).every(h => h.shown === 0));
+
+  ck('끝난 판에서는 공개가 받아들여진다', HD.showHoldemCards(mine.user_id).ok);
+  let hs = HD.getHandSeats(hand.id);
+  ck('공개한 사람만 shown이 켜졌다',
+    hs.find(h => h.seat === mine.seat)!.shown === 1
+    && hs.filter(h => h.shown === 1).length === 1,
+    JSON.stringify(hs.map(h => [h.seat, h.shown])));
+  ck('같은 요청을 다시 보내도 안전하다 (멱등)',
+    HD.showHoldemCards(mine.user_id).ok
+    && HD.getHandSeats(hand.id).filter(h => h.shown === 1).length === 1);
+
+  // 새 판을 시작시킨 뒤에는 지난 판을 열 수 없다
+  expireNextHand();
+  HD.advanceHoldem();
+  const next = HD.getCurrentHand(table.id)!;
+  ck('새 판이 시작됐다 (검증이 헛돌지 않았다)', next.id !== hand.id && next.ended_at == null);
+  ck('진행 중에는 공개가 거부된다', HD.showHoldemCards(other.user_id).ok === false);
+  ck('진행 중인 판에 shown이 켜지지 않았다',
+    HD.getHandSeats(next.id).every(h => h.shown === 0));
+  ck('지난 판의 공개 기록은 그대로 남는다',
+    HD.getHandSeats(hand.id).filter(h => h.shown === 1).length === 1);
+  ck('참가하지 않은 사람은 공개할 수 없다', HD.showHoldemCards('nobody-xyz').ok === false);
+
+  /* 열어놓은 판을 닫아 [5]에게 넘긴다. [5]는 "판이 끝난 상태"에서 시작해
+     판마다 시간을 밀어 블라인드를 올리는데, 여기서 진행 중인 판을 남기면
+     그 판만큼 활주로가 줄어 레벨이 오르기 전에 토너먼트가 끝난다. */
+  let close = 0;
+  while (close++ < 200 && HD.getCurrentHand(table.id)!.ended_at == null) {
+    expireAction();
+    HD.advanceHoldem();
+  }
+  hand = HD.getCurrentHand(table.id)!;
+  ck('[5]로 넘기기 전에 판을 닫았다', hand.ended_at != null, `steps=${close}`);
+}
+
 console.log('\n[5] 토너먼트를 끝까지 (실제 액션 — 전원 올인)');
 {
   /* 전원 폴드만 하면 칩이 순환만 하고 아무도 안 죽는다(블라인드가 오르지 않으면 영원히).

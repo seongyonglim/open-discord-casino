@@ -19,12 +19,16 @@ import * as T from '../services/tournament';
 
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
-/** 쇼다운을 보여주는 시간 (다음 핸드까지) */
-export const SHOWDOWN_SEC = 8;
-/* 폴드로 끝난 판. 3초로 뒀더니 마지막 사람이 무슨 액션을 했는지 볼 틈도 없이
-   다음 판이 시작돼 "그냥 스킵됐다"는 느낌이 났다. 칩이 팟으로 밀려가고
-   행동 표시를 읽을 시간까지 준다. */
-export const FOLD_END_SEC = 5;
+/* 쇼다운을 보여주는 시간 (다음 핸드까지).
+   최악의 경우(프리플랍 올인 → 보드 5장을 한꺼번에 공개)에 클라이언트가 카드를 다 까는 데
+   2.56초, 폴링 지연까지 3.56초가 걸린다. 6초로 두면 그 뒤에도 2.4초는 결과를 읽을 수 있고,
+   보드가 이미 다 깔린 일반적인 리버 쇼다운은 5초가 온전히 남는다.
+   8초였을 때는 체감이 10초를 넘어 판 사이가 늘어졌다. */
+export const SHOWDOWN_SEC = 6;
+/* 폴드로 끝난 판. 읽을 것이 승자 이름뿐이라 쇼다운보다 짧아도 된다.
+   처음 3초였다가 "액션을 볼 틈이 없다"는 이유로 5초로 늘렸는데, 그때는 행동 표시 자체가
+   없어서 그렇게 느껴진 것이었다. 행동 표시와 칩 이동 연출이 들어간 뒤로는 3초로 충분하다. */
+export const FOLD_END_SEC = 3;
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
 
@@ -56,7 +60,7 @@ export interface HtHandSeatRow {
   id: number; hand_id: number; seat: number; user_id: string;
   hole_json: string; stack: number; bet: number; committed: number;
   state: G.SeatState; acted: number; won: number;
-  last_action: string | null; last_amount: number;
+  last_action: string | null; last_amount: number; shown: number;
 }
 export interface HtEntryRow {
   id: number; tournament_id: number; user_id: string; username: string;
@@ -133,6 +137,37 @@ export function rabbitBoard(hand: HtHandRow): string[] {
   if (board.length === 0) { pos++; for (let i = 0; i < 3 && pos < deck.length; i++) rest.push(deck[pos++]); }
   while (board.length + rest.length < 5 && pos + 1 < deck.length) { pos++; rest.push(deck[pos++]); }
   return G.cardsToStrings(rest);
+}
+
+/**
+ * 끝난 판에서 내 패를 자발적으로 공개한다 (머킹된 패를 굳이 보여주는 실제 관례).
+ *
+ * 진행 중에는 절대 허용하지 않는다 — 아직 결과가 안 나온 판에서 자기 패를 흘리면
+ * 남은 사람에게 정보를 주는 것이고, 담합의 통로가 된다. 조건을 `WHERE`에 박아
+ * 판이 끝났고(ended_at) 내가 그 판에 있었을 때만 한 행이 바뀌게 한다.
+ * 이미 쇼다운에 공개된 패라면 굳이 막지 않는다(멱등하다).
+ */
+export function showHoldemCards(userId: string): { ok: boolean } {
+  const t = one<HtRow>(`SELECT * FROM holdem_tournaments
+      WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
+      ORDER BY id DESC LIMIT 1`);
+  if (!t) return { ok: false };
+  const table = getTable(t.id);
+  if (!table) return { ok: false };
+  /* "가장 최근 판이면서 끝난 판"만 고른다. `ended_at IS NOT NULL`을 안쪽 조회에 걸면
+     새 판이 도는 중에도 지난 판을 여는 요청이 통과한다 — 정보가 새지는 않지만
+     화면(현재 판만 그린다)과 서버가 어긋난다. 하위 조회는 최신 판만 집고,
+     끝났는지는 밖에서 본다. */
+  run(`UPDATE holdem_hand_seats SET shown = 1
+       WHERE user_id = ? AND hand_id = (
+         SELECT id FROM holdem_hands
+         WHERE table_id = ? AND ended_at IS NOT NULL
+         ORDER BY hand_no DESC LIMIT 1)
+         AND hand_id = (
+         SELECT id FROM holdem_hands
+         WHERE table_id = ? ORDER BY hand_no DESC LIMIT 1)`,
+    userId, table.id, table.id);
+  return { ok: one<{ n: number }>(`SELECT changes() AS n`)!.n > 0 };
 }
 
 /** 등록자들의 디스코드 아바타 해시. 결과·우승 축하 화면에 프로필로 쓴다. */
