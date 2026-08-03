@@ -283,7 +283,11 @@ console.log('\n[6] 블라인드는 진행 중인 핸드 도중에 오르지 않�
 /* ── 자정을 넘겨도 진행 중인 판을 계속 쓴다 ────────────────────────
    22:00에 시작한 판이 자정을 넘기면(레이트 레그가 붙거나 판이 길어지면 실제로 넘어간다)
    "오늘 판"이 새로 생기면서 진행 중이던 테이블이 화면에서 사라진다 — 플레이 중에
-   로비로 튕긴다. 실제로 자정을 넘기며 이 일이 일어나는 것을 보고 넣은 검사다. */
+   로비로 튕긴다. 실제로 자정을 넘기며 이 일이 일어나는 것을 보고 넣은 검사다.
+
+   "인원 미달 취소"와는 다른 상황이다. 3명이 안 차서 시작조차 못 한 판은 22:20에
+   CANCELLED로 끝난다([11]에서 검증). 여기서 보는 건 이미 시작해 카드까지 돌린 판이며,
+   그 판은 다음 판 등록이 열리는 순간에만 버려진다. */
 console.log('\n[6b] 자정을 넘겨도 진행 중인 판이 유지된다');
 {
   for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
@@ -296,24 +300,30 @@ console.log('\n[6b] 자정을 넘겨도 진행 중인 판이 유지된다');
   ck('판이 시작됐다', live.status === 'RUNNING', live.status);
   const runningId = live.tournament.id;
 
-  // 날짜만 어제로 돌린다 = 자정을 넘긴 상황
+  // 날짜만 옛날로 돌린다 = 자정을 넘긴 상황
   db.prepare(`UPDATE holdem_tournaments SET date_str = '2000-01-01' WHERE id = ?`).run(runningId);
+  // 오늘 판 행이 생기되, 등록은 아직 열리지 않은 상태로 둔다
   const after = HD.advanceHoldem();
+  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
+    .run(nowSec() + 3600, runningId);
+  const kept = HD.advanceHoldem();
   ck('날짜가 바뀌어도 같은 판을 계속 본다',
-    after.tournament.id === runningId && after.status === 'RUNNING',
-    `id ${after.tournament.id} (기대 ${runningId}) · ${after.status}`);
-  ck('오늘 날짜로 새 판을 만들지 않았다',
-    (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 1);
+    kept.tournament.id === runningId && kept.status === 'RUNNING',
+    `id ${kept.tournament.id} (기대 ${runningId}) · ${kept.status}`);
+  void after;
 
-  // 버려진 판(6시간 초과)은 취소하고 새 판으로 넘어간다
-  db.prepare(`UPDATE holdem_tournaments SET started_at = ? WHERE id = ?`)
-    .run(nowSec() - HD.ABANDON_SEC - 60, runningId);
+  // 오늘 등록이 열리는 순간 어제 판은 버려진다
+  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
+    .run(nowSec() - 60, runningId);
   const fresh = HD.advanceHoldem();
-  ck('6시간 넘게 방치된 판은 취소되고 새 판이 열린다', fresh.tournament.id !== runningId,
-    `id ${fresh.tournament.id}`);
-  ck('방치된 판에 취소가 기록됐다',
+  ck('오늘 등록이 열리면 어제 판은 버려지고 오늘 판으로 넘어간다',
+    fresh.tournament.id !== runningId, `id ${fresh.tournament.id}`);
+  ck('버려진 판에 취소가 기록됐다',
     (db.prepare(`SELECT cancelled_at FROM holdem_tournaments WHERE id = ?`)
       .get(runningId) as { cancelled_at: number | null }).cancelled_at != null);
+  ck('오늘 판은 등록을 받을 수 있는 상태',
+    fresh.status === 'REGISTRATION_OPEN' || fresh.status === 'WAITING_MIN_PLAYERS'
+    || fresh.status === 'CANCELLED', fresh.status);
 }
 
 console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');

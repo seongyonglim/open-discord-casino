@@ -337,6 +337,11 @@ function initSchema(): void {
       state TEXT NOT NULL DEFAULT 'active',-- active|folded|allin|out
       acted INTEGER NOT NULL DEFAULT 0,
       won INTEGER NOT NULL DEFAULT 0,
+      /* 마지막으로 한 행동과 그 금액. 화면에 "콜 300"처럼 띄우려면 서버가 알려줘야 한다 —
+         클라이언트가 베팅액 변화만 보고 유추하면 스트리트가 넘어갈 때 베팅이 0으로
+         초기화되면서 무엇을 했는지 알 수 없고, 1초 폴링 사이에 두 번 행동하면 놓친다. */
+      last_action TEXT,
+      last_amount INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER DEFAULT (unixepoch())
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hhs_seat ON holdem_hand_seats(hand_id, seat);
@@ -348,4 +353,7 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE ladder_bets ADD COLUMN parity_guess TEXT`); } catch {}
   // 개인회생 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 쿨다운 판정에 쓴다.
   try { d.exec(`ALTER TABLE users ADD COLUMN last_relief_at INTEGER`); } catch {}
+  // 홀덤: 마지막 행동 표시 (이미 만들어진 DB에도 붙인다)
+  try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_action TEXT`); } catch {}
+  try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
 }
