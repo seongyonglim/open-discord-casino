@@ -88,6 +88,12 @@
     'coin-insert': 0.78, 'coin-gain': 0.71, 'card-flip': 0.71, 'card-shuffle': 0.94,
     'card-deal': 1.04, 'win-fanfare': 0.28, 'mine-coin': 2.6, 'explode': 0.16,
     'chip-bet': 0.24, 'chip-bet2': 0.23, 'chips-to-winner': 0.87,
+    /* 우승 음악. 실측 RMS -11.2dB · 피크 +0.3dB(원본이 클리핑돼 있다)로 전체 중 가장 크다.
+       기존 평균(-29.8dB)에 맞추면 0.117인데, 4.14초짜리 "음악"이라 짧은 효과음과 같은
+       RMS로 맞춰도 지속음이어서 훨씬 크게 느껴진다. 그래서 2dB 더 낮춰 0.09로 둔다
+       (실효 -32.1dB — 가장 조용한 mine-coin과 같은 수준).
+       축하 음악이 다른 소리를 압도하면 안 된다. */
+    'tournament-win': 0.09,
   };
 
   // 음원 앞뒤의 무음을 잘라낸다.
