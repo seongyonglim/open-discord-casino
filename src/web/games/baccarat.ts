@@ -379,7 +379,7 @@ export function baccaratPage(user: WebUser): string {
         if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle();
 
         // 셔플 소리가 잦아든 뒤부터 한 장씩. 네 장에 1.2초 남짓이라 10초 베팅 창에 넉넉히 들어간다.
-        var SHUFFLE_MS = 500, STEP = 175;
+        var SHUFFLE_MS = 500, STEP = 175, FLY_MS = 300;   // FLY_MS = .deal-in 애니메이션 길이
         slots.forEach(function(s, n){
           pendingDeal.push(setTimeout(function(){
             var card = s.el.children[s.i];
@@ -387,9 +387,14 @@ export function baccaratPage(user: WebUser): string {
             card.style.visibility = '';
             flyCardIn(card);
             if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
-            if (n === slots.length - 1) { dealing = false; showAllCards(); }
           }, SHUFFLE_MS + n * STEP));
         });
+        /* 마지막 장이 날아 도착한 뒤에 연출을 닫는다.
+           마지막 장의 콜백 안에서 showAllCards()를 부르면 그 순간 아직 날고 있던
+           복제본(넷째 장 + 셋째 장)까지 같이 걷어내서, 두 장이 밀려오지 않고 제자리에
+           툭 생겨나는 것처럼 보인다 — 딜링이 끊기는 느낌의 원인이었다. */
+        pendingDeal.push(setTimeout(function(){ dealing = false; },
+          SHUFFLE_MS + (slots.length - 1) * STEP + FLY_MS));
         // 연출이 어떤 이유로 끊겨도 반드시 카드가 다시 보이도록 하는 안전장치
         pendingDeal.push(setTimeout(function(){ dealing = false; showAllCards(); },
           SHUFFLE_MS + slots.length * STEP + 800));

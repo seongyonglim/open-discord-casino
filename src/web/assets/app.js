@@ -219,6 +219,15 @@
       var c = ac(); if (!c) return;
       tone(c, 1046.5, c.currentTime, 0.075, 0.05, 'triangle'); // C6
     },
+    /* 버스트 — 21을 넘겨 죽는 순간의 짧고 둔탁한 "쿵".
+       낙첨음(lose)과 따로 둔다: 블랙잭에서 딜러 버스트는 플레이어에게 승리라
+       같은 소리를 쓰면 방금 이겼는데 진 것처럼 들린다. 합성음이라 다운로드가 없다. */
+    bust: function(){
+      var c = ac(); if (!c) return;
+      var t = c.currentTime;
+      tone(c, 233.1, t, 0.15, 0.075, 'sawtooth');        // A#3
+      tone(c, 155.6, t + 0.06, 0.30, 0.060, 'sawtooth'); // D#3
+    },
     // 낙첨 — 조용히 내려가는 2음 (승리음과 반대 방향)
     lose: function(){
       var c = ac(); if (!c) return;

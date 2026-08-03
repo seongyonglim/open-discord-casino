@@ -189,6 +189,20 @@ async function main(): Promise<void> {
       const dup = [...seen].filter(([, n]) => n > 1).map(([s, n]) => `${s}×${n}`);
       check('같은 클래스를 최상위에서 두 번 정의하지 않음', dup.length === 0, dup.join(' '));
     }
+
+    /* 딜링 연출이 자기 마지막 장을 잘라먹는지.
+       카드마다 복제본을 날리는 구조인데, 마지막 장의 콜백에서 showAllCards()를 부르면
+       그 순간 아직 날고 있던 복제본까지 걷어내서 끝의 두 장이 제자리에 툭 생겨난다.
+       포커 플립·바카라에서 실제로 그랬고, 화면을 눈으로 봐도 "왜 끊기지" 정도로만 보였다.
+       연출을 닫는 일은 마지막 장이 도착한 뒤(별도 타이머)에만 해야 한다. */
+    console.log('\n[10] 딜링 연출 — 마지막 장 잘림');
+    for (const g of ['poker', 'baccarat']) {
+      const src = readFileSync(join(process.cwd(), 'src', 'web', 'games', `${g}.ts`), 'utf8');
+      const loop = src.match(/slots\.forEach\(function\(s, n\)\{[\s\S]*?\}, SHUFFLE_MS \+ n \* STEP\)\);/);
+      check(`${g} — 카드별 콜백이 연출을 닫지 않음`,
+        loop != null && !loop[0].includes('showAllCards'),
+        loop ? '콜백 안에 showAllCards 호출이 있다' : '딜링 루프를 못 찾음');
+    }
   } finally {
     child.kill();
     await new Promise(r => setTimeout(r, 300));
