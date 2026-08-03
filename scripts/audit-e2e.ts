@@ -132,7 +132,10 @@ async function main(): Promise<void> {
       ck('실패 시 잔액 변화 없음', bal('e_crash') === before - 400, String(bal('e_crash')));
     }
 
-    const done = await waitPhase('/api/games/crash/state', c, 'done');
+    /* 크래시 라운드는 최대 배율(10000배)까지 가면 95.9초까지 이어진다.
+       기본 45초로 기다리면 15배를 넘는 라운드(확률 약 6.5%)에서 아직 running인 상태를
+       done으로 잘못 판정해 간헐적으로 실패했다 — 제품 버그가 아니라 이 대기 시간 탓이다. */
+    const done = await waitPhase('/api/games/crash/state', c, 'done', 110_000);
     ck('종료 후 크래시 지점 공개', (done.round.crashPoint ?? done.round.crash_point) != null, JSON.stringify(done.round));
   }
 
