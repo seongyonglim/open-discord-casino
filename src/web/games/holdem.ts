@@ -11,7 +11,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   advanceHoldem, registerHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
-  getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars,
+  getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, rabbitBoard,
   ACTION_SEC, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
@@ -127,6 +127,8 @@ function statePayload(st: HoldemStatus, userId: string) {
       ended,
       result,
       nextHandIn: table.next_hand_at != null ? Math.max(0, table.next_hand_at - now) : null,
+      // 래빗 헌트 — 끝난 판에서만 채워진다(rabbitBoard가 진행 중에는 빈 배열을 준다)
+      rabbit: hand ? rabbitBoard(hand) : [],
       level,
       nextLevelIn: T.nextLevelIn(elapsed),
       remaining: living.length,
@@ -151,6 +153,9 @@ function statePayload(st: HoldemStatus, userId: string) {
           bet: h?.bet ?? 0,
           state: h?.state ?? 'out',
           won: h?.won ?? 0,
+          // 마지막으로 한 행동 ("콜 300"처럼 자리 옆에 띄운다)
+          act: h?.last_action ?? null,
+          actAmount: h?.last_amount ?? 0,
           // 내 카드는 항상, 남의 카드는 공개된 것만
           cards: s.user_id === userId && h
             ? G.cardsToStrings(JSON.parse(h.hole_json) as number[])
@@ -293,7 +298,6 @@ const HELP_BODY = `
 
 export function holdemPage(user: WebUser): string {
   const body = `
-  <div class="wrap">
     ${gameSwitcher('holdem')}
 
     <div id="htLobby" class="ht-lobby" hidden></div>
@@ -312,6 +316,8 @@ export function holdemPage(user: WebUser): string {
                 <div class="ht-board" id="htBoard"></div>
                 <div class="ht-msg" id="htMsg"></div>
                 <div class="ht-read" id="htRead" hidden></div>
+                <!-- 래빗 헌트 — 폴드로 일찍 끝난 판에서 "깔렸을 카드"를 확인한다 -->
+                <button type="button" class="ht-rabbit" id="htRabbit" hidden>🐇 남은 카드 보기</button>
               </div>
 
               <!-- 자리 비움 배너 — 오른쪽 패널의 버튼만으로는 놓치기 쉽다.
@@ -322,6 +328,9 @@ export function holdemPage(user: WebUser): string {
               </div>
 
               <div id="htSeats" class="ht-seats"></div>
+              <!-- 베팅 칩·행동 표시는 좌석과 분리한다. 여기가 매 액션마다 바뀌어도
+                   좌석의 카드는 그대로 남아 움찔거리지 않는다. -->
+              <div id="htSpots" class="ht-seats"></div>
             </div>
           </div>
         </div>
@@ -370,7 +379,6 @@ export function holdemPage(user: WebUser): string {
     </div>
 
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
-  </div>
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin'];</script>
   <script>
@@ -378,14 +386,18 @@ export function holdemPage(user: WebUser): string {
     var MEID = window.__MEID__;
     var CARD_V = ${jsonForScript(ASSET_V)};
     var st = null, unit = 'chip', spectate = false, paidHandNo = null;
+    // 판에 처음 들어온 순간에는 연출 없이 현재 상태를 그대로 보여준다
+    var firstTablePaint = true;
 
     var lobbyEl = document.getElementById('htLobby');
     var tableEl = document.getElementById('htTable');
     var seatsEl = document.getElementById('htSeats');
+    var spotsEl = document.getElementById('htSpots');
     var boardEl = document.getElementById('htBoard');
     var potEl = document.getElementById('htPot');
     var msgEl = document.getElementById('htMsg');
     var readEl = document.getElementById('htRead');
+    var rabbitBtn = document.getElementById('htRabbit');
     var ctrlEl = document.getElementById('htControls');
     var rangeEl = document.getElementById('htRange');
     var amountEl = document.getElementById('htAmount');
@@ -540,54 +552,140 @@ export function holdemPage(user: WebUser): string {
          자리 번호는 서버가 정한 그대로 두고 화면 위치만 돌린다 —
          내가 3번이든 7번이든 언제나 아래 가운데에서 플레이한다. */
       var anchor = tb.mySeat != null ? tb.mySeat : (seats.length ? seats[0].seat : 0);
-      var html = '';
+      var html = '', vol = '', sigParts = [];
       seats.forEach(function(s){
         var rot = ((s.seat - anchor) % 9 + 9) % 9;
         var p = POS[rot];
-        var cls = 'ht-seat';
-        if (s.userId === MEID) cls += ' hero';
-        if (s.seat === tb.toActSeat) cls += ' turn';
-        if (s.state === 'folded') cls += ' folded';
-        if (s.presence === 'SIT_OUT') cls += ' sitout';
-        if (s.state === 'allin') cls += ' allin';
-        if (s.presence === 'DISCONNECTED') cls += ' disc';
 
-        /* 카드 — 내 것은 앞면 크게, 남의 것은 마룬 뒷면 (쇼다운에 공개되면 앞면).
-           폴드한 사람의 카드는 흑백으로 죽이고 비스듬히 눕혀 '버린 패'로 보이게 한다.
-           좌석 전체를 흐리게 하는 것만으로는 누가 팟에 남았는지 한눈에 안 읽힌다. */
-        var cardCls = (s.userId === MEID ? 'hero' : 'sm') + (s.state === 'folded' ? ' mucked' : '');
-        var cards = s.cards && s.cards.length
-          ? s.cards.map(function(c){ return cardImg(c, cardCls); }).join('')
-          : (s.inHand ? cardImg(null, cardCls) + cardImg(null, cardCls) : '');
-
-        html += '<div class="' + cls + '" style="left:' + p.plate[0] + '%;top:' + p.plate[1] + '%">' +
-            '<div class="ht-hole">' + cards + '</div>' +
+        html += '<div class="ht-seat" data-seat="' + s.seat + '"' +
+            ' style="left:' + p.plate[0] + '%;top:' + p.plate[1] + '%">' +
+            '<div class="ht-hole"></div>' +
             '<div class="ht-plate">' +
               avatarHtml(s.userId, s.avatar, s.username, 'ht-av') +
               '<span class="ht-who">' +
                 '<span class="ht-nm">Seat ' + (s.seat + 1) +
                   (s.userId === MEID ? ' (나)' : '') + '</span>' +
-                (s.state === 'allin'
-                  ? '<span class="ht-allin">ALL IN</span>'
-                  : '<span class="ht-stk">' + stackText(s.stack) + '</span>') +
+                '<span class="ht-stk" id="htstk-' + s.seat + '"></span>' +
               '</span>' +
-              (s.seat === tb.buttonSeat
-                ? '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼">D</span>'
-                : '') +
-              (s.state === 'folded' ? '<span class="ht-fold-b" title="폴드">F</span>'
-                : s.presence === 'SIT_OUT' ? '<span class="ht-zzz" title="자리 비움">II</span>' : '') +
-
+              '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼" hidden>D</span>' +
+              '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
+              '<span class="ht-zzz" title="자리 비움" hidden>II</span>' +
             '</div>' +
           '</div>';
 
-        // 베팅 칩 — 좌석과 중앙 사이 (좌석판과 별개 요소라 겹치지 않는다)
+        /* 골격 서명은 "누가 어느 자리에 앉았나"만 본다.
+           카드·상태·딜러 버튼·스택은 전부 아래에서 제자리 갱신한다.
+           여기에 하나라도 변하는 값을 넣으면 그때마다 좌석 DOM이 새로 만들어지고,
+           카드 요소가 다시 생겨 cardFlip이 재생되고 판 폭이 흔들려 카드가 움찔거린다.
+           실제로 카드가 액션마다 최대 7.5px씩 움직였다. */
+        sigParts.push(s.seat + ':' + s.userId);
+
+        // 베팅 칩과 행동 표시는 카드와 무관한 별도 레이어에 그린다 (여기가 바뀌어도 카드는 그대로)
         if (s.bet > 0) {
-          html += '<div class="ht-spot" style="left:' + p.bet[0] + '%;top:' + p.bet[1] + '%">' +
+          vol += '<div class="ht-spot" id="htspot-' + s.seat + '"' +
+            ' style="left:' + p.bet[0] + '%;top:' + p.bet[1] + '%">' +
             '<span class="ht-spot-chips">' + chipStack(s.bet) + '</span>' +
             '<span class="ht-spot-amt">' + stackText(s.bet) + '</span></div>';
         }
+        /* 마지막으로 한 행동 — 베팅 칩이 없을 때(체크·폴드)도 무엇을 했는지 보여야 한다.
+           칩이 있으면 금액이 이미 보이니 행동 이름만 칩 위에 얹는다. */
+        if (s.act) {
+          vol += '<div class="ht-act' + (s.bet > 0 ? ' onchip' : '') + '"' +
+            ' style="left:' + p.bet[0] + '%;top:' + (p.bet[1] - (s.bet > 0 ? 9 : 0)) + '%">' +
+            actLabel(s.act, s.actAmount) + '</div>';
+        }
       });
-      seatsEl.innerHTML = html;
+
+      var sig = sigParts.join('|');
+      if (seatsEl.dataset.sig !== sig) { seatsEl.dataset.sig = sig; seatsEl.innerHTML = html; }
+      if (spotsEl.dataset.sig !== vol) { spotsEl.dataset.sig = vol; spotsEl.innerHTML = vol; }
+
+      // 자주 바뀌는 것은 골격을 건드리지 않고 제자리에서 갱신한다
+      seats.forEach(function(s){
+        var el = document.getElementById('htstk-' + s.seat);
+        if (el) {
+          el.textContent = s.state === 'allin' ? 'ALL IN' : stackText(s.stack);
+          el.className = s.state === 'allin' ? 'ht-allin' : 'ht-stk';
+        }
+        var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
+        if (!seatEl) return;
+        seatEl.classList.toggle('hero', s.userId === MEID);
+        seatEl.classList.toggle('turn', s.seat === tb.toActSeat);
+        seatEl.classList.toggle('folded', s.state === 'folded');
+        seatEl.classList.toggle('allin', s.state === 'allin');
+        seatEl.classList.toggle('sitout', s.presence === 'SIT_OUT');
+        seatEl.classList.toggle('disc', s.presence === 'DISCONNECTED');
+        // 딜러 버튼·배지는 만들어 두고 감췄다 켠다 (요소를 새로 만들면 카드까지 딸려 다시 생긴다)
+        var puck = seatEl.querySelector('.ht-puck');
+        if (puck) puck.hidden = s.seat !== tb.buttonSeat;
+        var foldB = seatEl.querySelector('.ht-fold-b');
+        if (foldB) foldB.hidden = s.state !== 'folded';
+        var zzz = seatEl.querySelector('.ht-zzz');
+        if (zzz) zzz.hidden = !(s.state !== 'folded' && s.presence === 'SIT_OUT');
+        syncHole(seatEl.querySelector('.ht-hole'), s);
+      });
+    }
+
+    /* 홀 카드를 "바뀐 칸만" 갈아 끼운다.
+       카드마다 cardFlip 애니메이션이 걸려 있어서, 같은 카드인데 요소를 새로 만들면
+       애니메이션이 다시 재생되고 위치도 흔들린다. src가 실제로 달라진 칸만 교체한다
+       (다른 게임의 syncCards와 같은 방식). */
+    function syncHole(hole, s){
+      if (!hole) return;
+      var cls = s.userId === MEID ? 'hero' : 'sm';
+      var want = (s.cards && s.cards.length) ? s.cards.slice()
+        : (s.inHand ? [null, null] : []);
+      while (hole.children.length > want.length) hole.removeChild(hole.lastChild);
+      for (var i = 0; i < want.length; i++) {
+        var src = want[i] ? '/cards/' + want[i] + '.svg?v=' + CARD_V
+          : '/cards/back-red.svg?v=' + CARD_V;
+        var cur = hole.children[i];
+        if (!cur) {
+          hole.insertAdjacentHTML('beforeend', cardImg(want[i], cls));
+          cur = hole.lastChild;
+        } else if (cur.getAttribute('src') !== src) {
+          cur.outerHTML = cardImg(want[i], cls);
+          cur = hole.children[i];
+        }
+        // 버린 패 표시는 클래스만 바꾼다 — 요소를 다시 만들지 않는다
+        if (cur && cur.classList) cur.classList.toggle('mucked', s.state === 'folded');
+      }
+    }
+
+    /* ── 래빗 헌트 ───────────────────────────────────────────────────
+       폴드로 일찍 끝난 판에서 "그대로 갔으면 뭐가 깔렸을까"를 확인한다.
+       서버는 핸드가 끝난 뒤에만 이 카드를 내려보낸다(rabbitBoard가 직접 막는다).
+       버튼을 누른 판만 보여주고, 새 판이 시작되면 저절로 닫힌다. */
+    var rabbitShownHand = null;
+    function syncRabbit(tb){
+      var rest = tb.rabbit || [];
+      var can = tb.ended && rest.length > 0;
+      rabbitBtn.hidden = !can || rabbitShownHand === tb.handNo;
+      if (!can || rabbitShownHand !== tb.handNo) return;
+      // 이미 눌렀다 — 실제 보드 뒤에 이어 붙여 보여준다
+      var html = (tb.board||[]).map(function(c){ return cardImg(c); }).join('') +
+        rest.map(function(c){ return cardImg(c, 'rabbit'); }).join('');
+      if (boardEl.dataset.sig !== html) { boardEl.dataset.sig = html; boardEl.innerHTML = html; }
+    }
+    rabbitBtn.addEventListener('click', function(){
+      if (!st || !st.table) return;
+      rabbitShownHand = st.table.handNo;
+      rabbitBtn.hidden = true;
+      if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+      syncRabbit(st.table);
+    });
+
+    /* 행동 이름. 금액이 의미 있는 것만 금액을 붙인다 —
+       "체크 0" 같은 표기는 정보가 아니라 잡음이다. */
+    function actLabel(kind, amount){
+      if (kind === 'fold') return '폴드';
+      if (kind === 'check') return '체크';
+      if (kind === 'allin') return 'ALL IN';
+      if (kind === 'call') return '콜';
+      if (kind === 'bet') return '베팅';
+      if (kind === 'raise') return '레이즈';
+      void amount;
+      return '';
     }
 
     /* 칩 더미 — 금액이 클수록 층이 높아 보이게 최대 3장까지 겹친다.
@@ -604,7 +702,7 @@ export function holdemPage(user: WebUser): string {
     function renderSide(){
       var t = st.tournament, tb = st.table;
       sideTitle.textContent = t.title;
-      infoEl.innerHTML =
+      var infoHtml =
         '<div class="ht-i"><span class="k">블라인드</span><span class="v gold">' +
           num(tb.level.sb) + ' / ' + num(tb.level.bb) +
           (tb.level.ante ? ' <i>앤티 ' + num(tb.level.ante) + '</i>' : '') + '</span></div>' +
@@ -621,14 +719,19 @@ export function holdemPage(user: WebUser): string {
         '<div class="ht-i"><span class="k">표시 단위</span>' +
           '<span class="v"><button type="button" class="ht-unit" id="htUnit">' +
           (unit === 'chip' ? '칩' : 'BB') + '</button></span></div>';
-      document.getElementById('htUnit').addEventListener('click', function(){
-        unit = unit === 'chip' ? 'bb' : 'chip';
-        render();
-      });
+      if (infoEl.dataset.sig !== infoHtml) {
+        infoEl.dataset.sig = infoHtml;
+        infoEl.innerHTML = infoHtml;
+        // 버튼이 새로 만들어질 때만 이벤트를 다시 붙인다
+        document.getElementById('htUnit').addEventListener('click', function(){
+          unit = unit === 'chip' ? 'bb' : 'chip';
+          render();
+        });
+      }
 
       // 칩 순위 — 스택 많은 순. 참고 디자인처럼 번호·아바타·이름·스택 한 줄.
       var rows = (tb.seats||[]).slice().sort(function(a,b){ return b.stack - a.stack; });
-      rankEl.innerHTML = rows.map(function(s, i){
+      var rankHtml = rows.map(function(s, i){
         return '<div class="ht-rw' + (s.userId === MEID ? ' me' : '') + '">' +
           '<span class="ht-rw-n">' + (i+1) + '</span>' +
           avatarHtml(s.userId, s.avatar, s.username, 'ht-rw-av') +
@@ -636,18 +739,216 @@ export function holdemPage(user: WebUser): string {
           '<span class="ht-rw-st">' + stackText(s.stack) + '</span>' +
           '</div>';
       }).join('') || '<div class="empty" style="padding:14px 0">아직 없습니다</div>';
+      if (rankEl.dataset.sig !== rankHtml) { rankEl.dataset.sig = rankHtml; rankEl.innerHTML = rankHtml; }
       var out = tb.myPresence === 'SIT_OUT';
       backBtn.hidden = !out;
       sitBar.hidden = !out;
     }
 
     /* ── 테이블 ───────────────────────────────────────────────────── */
+    /* ── 보드를 한 장씩 깐다 ─────────────────────────────────────────
+       서버는 플랍 세 장을 한꺼번에 준다(스트리트 단위로 상태가 바뀐다).
+       그대로 그리면 프리플랍이 끝난 순간 세 장이 뿅 나타난다.
+       그래서 클라이언트가 "지금 몇 장까지 보여줄지"를 따로 들고, 남은 장을
+       한 장씩 늘려가며 깐다. 서버는 초 단위 해상도라 이 박자는 클라이언트 몫이다. */
+    var BOARD_STEP_MS = 260;      // 플랍 세 장 사이 간격
+    var BOARD_FIRST_MS = 340;     // 스트리트가 바뀐 뒤 첫 장까지
+    var shownBoard = 0, boardTimers = [], boardHandNo = null;
+
+    function clearBoardReveal(){
+      boardTimers.forEach(clearTimeout);
+      boardTimers = [];
+    }
+    function paintBoard(cards, n){
+      var html = cards.slice(0, n).map(function(c){ return cardImg(c); }).join('');
+      if (boardEl.dataset.sig === html) return;
+      boardEl.dataset.sig = html;
+      boardEl.innerHTML = html;
+      if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+    }
+    function syncBoard(tb){
+      var cards = tb.board || [];
+      // 래빗을 펼쳐 둔 판이면 그쪽이 보드를 그린다
+      if (rabbitShownHand === tb.handNo) { syncRabbit(tb); return; }
+      // 새 핸드면 처음부터
+      if (tb.handNo !== boardHandNo) {
+        boardHandNo = tb.handNo;
+        clearBoardReveal();
+        shownBoard = 0;
+        boardEl.dataset.sig = '';
+        boardEl.innerHTML = '';
+      }
+      // 판에 처음 들어왔거나 이미 끝난 판이면 연출 없이 다 보여준다
+      if (firstTablePaint || tb.ended) {
+        clearBoardReveal();
+        shownBoard = cards.length;
+        paintBoard(cards, shownBoard);
+        return;
+      }
+      if (cards.length <= shownBoard) { paintBoard(cards, shownBoard); return; }
+      if (boardTimers.length) return;          // 이미 깔고 있는 중
+      var t = 0;
+      for (var i = shownBoard; i < cards.length; i++) {
+        t += (i === shownBoard) ? BOARD_FIRST_MS : BOARD_STEP_MS;
+        (function(upto, at){
+          boardTimers.push(setTimeout(function(){
+            shownBoard = upto;
+            paintBoard((st.table && st.table.board) || [], upto);
+            boardTimers = boardTimers.filter(function(x){ return x !== undefined; });
+            if (upto >= ((st.table && st.table.board) || []).length) clearBoardReveal();
+          }, at));
+        })(i + 1, t);
+      }
+    }
+
+    /* ── 칩 이동 연출 ────────────────────────────────────────────────
+       화면 전체를 덮는 레이어 위에서 복제본을 날린다. 자리 안에서 움직이면
+       테이블 밖을 지나는 구간이 잘린다 (포커 플립·바카라와 같은 방식).      */
+    var fxLayer = null;
+    function getFx(){
+      if (!fxLayer || !fxLayer.parentNode) {
+        fxLayer = document.createElement('div');
+        fxLayer.className = 'chip-fly-layer';
+        document.body.appendChild(fxLayer);
+      }
+      return fxLayer;
+    }
+    function flyChip(fromRect, toRect, delay, cls){
+      var c = document.createElement('i');
+      c.className = 'ht-chip fly' + (cls ? ' ' + cls : '');
+      c.style.cssText = 'position:fixed;left:' + fromRect.left + 'px;top:' + fromRect.top + 'px;' +
+        'width:18px;height:11px;';
+      c.style.setProperty('--tx', Math.round((toRect.left + toRect.width/2) - fromRect.left) + 'px');
+      c.style.setProperty('--ty', Math.round((toRect.top + toRect.height/2) - fromRect.top) + 'px');
+      c.style.animationDelay = delay + 'ms';
+      getFx().appendChild(c);
+      setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 700 + delay);
+    }
+
+    /* 스트리트가 끝나면 각자 앞의 칩이 중앙 팟으로 밀려간다.
+       서버는 스트리트가 넘어갈 때 베팅을 0으로 초기화하므로, 그 순간을 잡아
+       "직전에 칩이 있던 자리"에서 팟으로 날린다. 초기화된 뒤에 날리려 하면
+       출발 위치가 이미 사라져 있다 — 그래서 좌표를 미리 기억해 둔다. */
+    var prevSpots = {}, spotStreet = null, spotHand = null;
+    function rememberSpots(tb){
+      var next = {};
+      (tb.seats||[]).forEach(function(s){
+        var el = document.getElementById('htspot-' + s.seat);
+        if (el && s.bet > 0) {
+          var r = el.getBoundingClientRect();
+          next[s.seat] = { left: r.left, top: r.top, width: r.width, height: r.height };
+        }
+      });
+      var streetChanged = (tb.handNo === spotHand && tb.street !== spotStreet);
+      if (streetChanged) {
+        var pot = potEl.getBoundingClientRect();
+        var n = 0;
+        Object.keys(prevSpots).forEach(function(k){
+          flyChip(prevSpots[k], pot, n * 60, 'topot');
+          n++;
+        });
+      }
+      prevSpots = next;
+      spotStreet = tb.street; spotHand = tb.handNo;
+    }
+
+    /* 핸드가 끝나면 팟이 승자에게 밀려간다. 한 판에 한 번만. */
+    var potPaidHand = null;
+    function flyPotToWinners(tb){
+      if (!tb.ended || !tb.result || potPaidHand === tb.handNo) return;
+      potPaidHand = tb.handNo;
+      var pot = potEl.getBoundingClientRect();
+      var n = 0;
+      (tb.result.awards || []).forEach(function(a){
+        var seat = seatsEl.querySelector('.ht-seat[data-seat="' + a.seat + '"]');
+        var target = seat ? seat.querySelector('.ht-plate') : null;
+        if (!target) return;
+        var tr = target.getBoundingClientRect();
+        // 금액이 클수록 여러 개가 날아가 팟이 크다는 게 보인다
+        var count = a.amount >= tb.level.bb * 20 ? 5 : a.amount >= tb.level.bb * 5 ? 3 : 2;
+        for (var i = 0; i < count; i++) flyChip(pot, tr, (n++) * 55, 'towin');
+      });
+    }
+
+    /* ── 딜링 연출 ───────────────────────────────────────────────────
+       서버는 "두 장을 다 받은 상태"만 준다. 그대로 그리면 카드가 그냥 생겨 있다.
+       실제 딜러처럼 테이블 중앙에서 각 자리로 한 장씩, 두 바퀴 돌며 날린다.
+       카드 값 자체는 서버가 준 것만 쓰고 남의 것은 뒷면이라 이 연출이 결과를 노출하지 않는다.
+
+       포커 플립·바카라에서 배운 것: 마지막 장의 콜백에서 연출을 닫으면 아직 날고 있던
+       복제본까지 걷어내 끝의 두 장이 툭 생겨난다. 닫는 일은 별도 타이머로 뺀다. */
+    var DEAL_STEP_MS = 130;
+    var dealtHandNo = null, dealTimers = [];
+    function clearDeal(){
+      dealTimers.forEach(clearTimeout);
+      dealTimers = [];
+      seatsEl.querySelectorAll('.ht-hole').forEach(function(h){ h.style.visibility = ''; });
+    }
+    function dealSequence(tb){
+      if (tb.handNo === dealtHandNo) return;
+      dealtHandNo = tb.handNo;
+      clearDeal();
+      if (firstTablePaint || tb.ended) return;      // 들어온 순간이거나 이미 끝난 판이면 연출 없이
+
+      var order = (tb.seats || []).filter(function(s){ return s.inHand; });
+      if (!order.length) return;
+      if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle();
+
+      // 두 바퀴 — 실제 테이블처럼 한 사람에게 두 장을 몰아주지 않는다
+      var steps = [];
+      for (var pass = 0; pass < 2; pass++) {
+        for (var i = 0; i < order.length; i++) steps.push({ seat: order[i].seat, idx: pass });
+      }
+      // 먼저 전부 감춘다
+      steps.forEach(function(x){
+        var hole = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-hole');
+        if (hole) hole.style.visibility = 'hidden';
+      });
+
+      var center = potEl.getBoundingClientRect();
+      steps.forEach(function(x, n){
+        dealTimers.push(setTimeout(function(){
+          var hole = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-hole');
+          if (!hole) return;
+          var card = hole.children[x.idx];
+          if (!card) return;
+          hole.style.visibility = '';
+          // 중앙에서 그 카드 자리로 날아오는 복제본
+          var r = card.getBoundingClientRect();
+          if (r.width) {
+            var c = card.cloneNode(true);
+            c.className = card.className.replace(/\\bdeal-in\\b/g, '').trim() + ' deal-in';
+            c.style.cssText = 'position:fixed;margin:0;left:' + r.left + 'px;top:' + r.top + 'px;' +
+              'width:' + r.width + 'px;height:' + r.height + 'px;z-index:60;';
+            c.style.setProperty('--dfx',
+              Math.round((center.left + center.width/2) - (r.left + r.width/2)) + 'px');
+            c.style.setProperty('--dfy',
+              Math.round((center.top + center.height/2) - (r.top + r.height/2)) + 'px');
+            getFx().appendChild(c);
+            card.style.visibility = 'hidden';
+            dealTimers.push(setTimeout(function(){
+              if (c.parentNode) c.parentNode.removeChild(c);
+              card.style.visibility = '';
+            }, 300));
+          }
+          if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
+        }, 380 + n * DEAL_STEP_MS));
+      });
+      // 연출이 끊겨도 카드는 반드시 다시 보이게 하는 안전장치
+      dealTimers.push(setTimeout(clearDeal, 380 + steps.length * DEAL_STEP_MS + 900));
+    }
+
     function renderTable(){
       var tb = st.table;
-      boardEl.innerHTML = (tb.board||[]).map(function(c){ return cardImg(c); }).join('');
+      syncBoard(tb);
       potEl.textContent = stackText(tb.pot) + (unit === 'chip' ? ' P' : '');
       renderSeats();
+      dealSequence(tb);
       renderSide();
+      // 칩이 중앙으로 밀려가고, 판이 끝나면 승자에게 넘어간다
+      rememberSpots(tb);
+      flyPotToWinners(tb);
+      syncRabbit(tb);
 
       var msg = '';
       if (tb.ended && tb.result) {
@@ -825,7 +1126,7 @@ export function holdemPage(user: WebUser): string {
       var showTable = st.table != null && (st.table.mySeat != null || spectate);
       lobbyEl.hidden = showTable;
       tableEl.hidden = !showTable;
-      if (showTable) { renderTable(); updatePreLabels(); }
+      if (showTable) { renderTable(); updatePreLabels(); firstTablePaint = false; }
       else renderLobby();
     }
     function post(url, body){

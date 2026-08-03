@@ -1041,7 +1041,13 @@
      제외하는 게 핵심이다 — 흐름에 두면 카드 높이만큼 박스가 커지고,
      translate(-50%,-50%)가 그 커진 박스를 기준으로 잡아 판이 좌표에서 밀려난다
      (Hero는 카드가 커서 테이블 아래로 10px 튀어나갔다). */
-  .ht-seat{position:absolute;transform:translate(-50%,-50%);transition:opacity .18s}
+  /* 좌석 박스 폭을 고정한다. 폭을 판(plate)이 정하게 두면 스택 숫자 자릿수나
+     ALL IN 배지 때문에 판 폭이 바뀌고, 그 박스의 50%에 걸린 카드가 좌우로 움찔거린다.
+     실제로 액션마다 내 카드가 움직였다. */
+  /* 폭과 높이를 둘 다 고정한다. 높이를 판(plate)에 맡기면 ALL IN 배지가 붙고 떨어질 때
+     좌석 높이가 바뀌고, bottom:100%로 걸린 카드가 위아래로 움찔거린다. */
+  .ht-seat{position:absolute;transform:translate(-50%,-50%);transition:opacity .18s;
+    width:126px;height:40px;display:flex;align-items:center;justify-content:center}
   /* 팟에 남은 사람 vs 폴드한 사람.
      좌석 전체를 흐리게만 하면(예전 방식) 누가 아직 겨루는 중인지 한눈에 안 읽힌다.
      그래서 세 겹으로 구분한다: 카드를 버린 모습으로 + 아바타 흑백 + F 배지. */
@@ -1069,7 +1075,7 @@
     box-shadow:0 3px 10px rgba(0,0,0,.5)}
   .ht-seat.hero .ht-hole{gap:3px}
 
-  .ht-plate{position:relative;display:flex;align-items:center;gap:7px;
+  .ht-plate{position:relative;max-width:100%;display:flex;align-items:center;gap:7px;
     padding:4px 12px 4px 4px;border-radius:10px;
     background:linear-gradient(180deg,rgba(22,28,25,.94),rgba(10,14,12,.94));
     border:1px solid rgba(255,255,255,.14);box-shadow:0 3px 10px rgba(0,0,0,.4)}
@@ -1089,7 +1095,8 @@
   .ht-who{display:flex;flex-direction:column;gap:0;line-height:1.25;min-width:0}
   .ht-nm{font-size:10.5px;font-weight:600;color:#dce8e0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;max-width:74px}
-  .ht-stk{font-family:var(--mono);font-size:11.5px;font-weight:800;color:var(--gold)}
+  .ht-stk{font-family:var(--mono);font-size:11.5px;font-weight:800;color:var(--gold);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* 딜러 퍽 — 좌석판의 "중앙을 향한 옆면"에 붙인다.
      펠트 위 별도 좌표에 띄워 두면 떠 있는 물체로 보여서 누구 버튼인지 한눈에 안 잡혔다.
      카드는 판 위, 베팅 칩은 더 안쪽이라 어느 것과도 겹치지 않는다. */
@@ -1100,6 +1107,8 @@
     display:flex;align-items:center;justify-content:center;
     border:2px solid rgba(0,0,0,.3);
     box-shadow:0 2px 7px rgba(0,0,0,.6),0 0 0 3px rgba(255,255,255,.13)}
+  /* display:flex가 있으면 hidden 속성이 무시된다 — 명시적으로 막아야 한다 */
+  .ht-puck[hidden],.ht-fold-b[hidden],.ht-zzz[hidden]{display:none}
   .ht-puck.r{left:100%;transform:translate(6px,-50%)}
   .ht-puck.l{right:100%;transform:translate(-6px,-50%)}
 
@@ -1112,7 +1121,7 @@
     border-color:rgba(255,235,160,.6)}
   /* 올인 — 스택이 0이라 숫자 자리가 죽는다. 그 자리를 ALL IN으로 바꿔 쓰고
      좌석판에 붉은 맥박을 준다. 작은 알약을 아래에 달아두는 것보다 훨씬 눈에 띈다. */
-  .ht-allin{display:inline-block;padding:1px 7px;border-radius:4px;
+  .ht-allin{display:inline-block;padding:1px 7px;border-radius:4px;white-space:nowrap;
     background:linear-gradient(180deg,#e2483f,#a81f18);color:#fff;
     font-family:var(--mono);font-size:10px;font-weight:900;letter-spacing:1px;
     box-shadow:0 1px 4px rgba(255,60,50,.5)}
@@ -1212,7 +1221,9 @@
     .ht-cloth{height:430px}
     .ht-board .pcard{width:44px;height:66px}
     .pcard.hero{width:34px;height:51px}
-    .ht-nm{max-width:58px}
+    .ht-seat{width:104px}
+    .ht-who{width:48px;min-width:48px}
+    .ht-nm{max-width:44px}
   }
   @media (max-width:820px){
     .ht-rail{padding:11px}
@@ -1223,7 +1234,11 @@
     .pcard.hero{width:29px;height:43px}
     .ht-plate{padding:3px 9px 3px 3px;gap:5px}
     .ht-av{width:24px;height:24px}
-    .ht-nm{max-width:46px;font-size:9.5px}
+    .ht-seat{width:92px}
+    .ht-who{width:40px;min-width:40px}
+    .ht-seat{width:92px}
+    .ht-who{width:40px;min-width:40px}
+    .ht-nm{max-width:36px;font-size:9.5px}
     .ht-stk{font-size:10.5px}
     .ht-grid{grid-template-columns:repeat(2,1fr)}
     .ht-acts{flex-wrap:wrap}
@@ -1237,8 +1252,45 @@
     .ht-seat.hero .ht-hole{min-height:37px}
     .ht-plate{padding:2px 7px 2px 2px}
     .ht-av{width:20px;height:20px}
-    .ht-nm{max-width:34px;font-size:9px}
+    .ht-seat{width:78px}
+    .ht-who{width:34px;min-width:34px}
+    .ht-seat{width:78px}
+    .ht-who{width:34px;min-width:34px}
+    .ht-nm{max-width:30px;font-size:9px}
     .ht-stk{font-size:9.5px}
     .ht-spot-amt{font-size:9.5px}
     .ht-board .pcard{width:30px;height:45px}
   }
+
+  /* 행동 표시 — "무슨 액션을 했는지"가 보이지 않으면 판이 그냥 스킵된 것처럼 느껴진다.
+     베팅 칩이 있으면 금액은 칩이 말해주므로 행동 이름만 칩 위에 얹는다. */
+  .ht-act{position:absolute;transform:translate(-50%,-50%);z-index:3;
+    padding:2px 9px;border-radius:999px;white-space:nowrap;
+    background:rgba(8,12,10,.9);border:1px solid rgba(255,255,255,.22);
+    font-size:10.5px;font-weight:800;letter-spacing:.3px;color:#e6f2ea;
+    box-shadow:0 2px 6px rgba(0,0,0,.5);animation:htActPop .22s ease-out}
+  @keyframes htActPop{from{opacity:0;transform:translate(-50%,-30%)}to{opacity:1}}
+
+  /* 칩이 중앙 팟으로 / 팟이 승자에게 밀려가는 연출.
+     자리 안에서 움직이면 테이블 밖을 지나는 구간이 잘리므로 화면 전체 레이어에서 날린다. */
+  .ht-chip.fly{position:fixed;z-index:60;pointer-events:none;
+    animation:htChipFly .62s cubic-bezier(.4,.02,.3,1) forwards}
+  @keyframes htChipFly{
+    0%{opacity:0;transform:translate(0,0) scale(.7)}
+    12%{opacity:1;transform:translate(0,0) scale(1)}
+    100%{opacity:.15;transform:translate(var(--tx),var(--ty)) scale(.8)}
+  }
+
+  /* 래빗 헌트 버튼 — 폴드로 일찍 끝난 판에서만 나온다 */
+  .ht-rabbit{padding:4px 12px;border-radius:999px;cursor:pointer;
+    font-size:11.5px;font-weight:700;color:#dcece2;
+    background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.2)}
+  .ht-rabbit:hover{border-color:var(--gold);color:var(--gold)}
+  .ht-rabbit[hidden]{display:none}
+  /* 실제로 깔리지 않은 카드는 흐리게 + 점선으로 구분한다 — 결과와 혼동하면 안 된다 */
+  .pcard.rabbit{opacity:.5;filter:saturate(.6);outline:1.5px dashed rgba(255,255,255,.45);
+    outline-offset:-2px}
+
+  /* 스택 숫자가 바뀔 때 판 폭이 흔들리면 카드까지 밀린다 — 최소 폭을 잡아 고정한다 */
+  /* 스택 칸도 폭을 고정한다 — 9,850 → 10,000 처럼 자릿수가 늘 때 판이 넓어지지 않게 */
+  .ht-who{width:60px;min-width:60px}

@@ -20,9 +20,11 @@ import * as T from '../services/tournament';
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
 /** 쇼다운을 보여주는 시간 (다음 핸드까지) */
-export const SHOWDOWN_SEC = 6;
-/** 아무도 안 보고 폴드로 끝난 판은 짧게 */
-export const FOLD_END_SEC = 3;
+export const SHOWDOWN_SEC = 8;
+/* 폴드로 끝난 판. 3초로 뒀더니 마지막 사람이 무슨 액션을 했는지 볼 틈도 없이
+   다음 판이 시작돼 "그냥 스킵됐다"는 느낌이 났다. 칩이 팟으로 밀려가고
+   행동 표시를 읽을 시간까지 준다. */
+export const FOLD_END_SEC = 5;
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
 
@@ -54,6 +56,7 @@ export interface HtHandSeatRow {
   id: number; hand_id: number; seat: number; user_id: string;
   hole_json: string; stack: number; bet: number; committed: number;
   state: G.SeatState; acted: number; won: number;
+  last_action: string | null; last_amount: number;
 }
 export interface HtEntryRow {
   id: number; tournament_id: number; user_id: string; username: string;
@@ -111,6 +114,27 @@ export function getHandSeats(handId: number): HtHandSeatRow[] {
   return all<HtHandSeatRow>(`SELECT * FROM holdem_hand_seats WHERE hand_id = ? ORDER BY seat ASC`, handId);
 }
 
+/**
+ * 래빗 헌트 — 폴드로 일찍 끝난 판에서 "깔렸을 카드"를 보여준다.
+ *
+ * 반드시 핸드가 끝난 뒤에만 부른다. 진행 중에 이걸 내려보내면 남은 카드가 새어
+ * 이후 모든 판이 무의미해진다 — 그래서 호출부가 아니라 여기서 직접 막는다.
+ * 실제로 깔린 보드는 그대로 두고, 그 뒤에 올 카드만 돌려준다(버닝 카드 규칙까지 그대로).
+ */
+export function rabbitBoard(hand: HtHandRow): string[] {
+  if (hand.ended_at == null) return [];
+  const board = JSON.parse(hand.board_json) as number[];
+  if (board.length >= 5) return [];          // 이미 다 깔렸다 — 볼 게 없다
+  const deck = JSON.parse(hand.deck_json) as number[];
+  let pos = hand.deck_pos;
+  const rest: number[] = [];
+  /* 플랍 전이면 버닝 한 장 + 세 장, 그 뒤로는 스트리트마다 버닝 한 장 + 한 장.
+     실제 딜링과 같은 순서로 뽑아야 "그때 나왔을 카드"가 된다. */
+  if (board.length === 0) { pos++; for (let i = 0; i < 3 && pos < deck.length; i++) rest.push(deck[pos++]); }
+  while (board.length + rest.length < 5 && pos + 1 < deck.length) { pos++; rest.push(deck[pos++]); }
+  return G.cardsToStrings(rest);
+}
+
 /** 자리에 앉은 사람들의 디스코드 아바타 해시 (화면에 원형 프로필로 쓴다) */
 export function getSeatAvatars(tableId: number): Map<string, string | null> {
   const rows = all<{ user_id: string; avatar: string | null }>(
@@ -130,6 +154,12 @@ function toViews(rows: HtHandSeatRow[]): G.SeatView[] {
     seat: r.seat, bet: r.bet, stack: r.stack, committed: r.committed,
     state: r.state, acted: r.acted === 1,
   }));
+}
+
+/** 마지막 행동을 기록한다. 화면에 "콜 300"처럼 띄우는 용도다. */
+function noteAction(handId: number, seat: number, kind: G.ActionKind, paid: number): void {
+  run(`UPDATE holdem_hand_seats SET last_action = ?, last_amount = ?
+       WHERE hand_id = ? AND seat = ?`, kind, paid, handId, seat);
 }
 
 function saveViews(handId: number, views: G.SeatView[]): void {
@@ -165,9 +195,6 @@ function ensureTournament(now: number): HtRow {
   return findTournament(s.dateStr)!;
 }
 
-/** 진행 중이던 판을 버려도 되는 시각. 이 시간을 넘기면 부팅 취소와 같은 취급을 한다. */
-export const ABANDON_SEC = 6 * 3600;
-
 /**
  * 지금 다뤄야 할 토너먼트.
  *
@@ -176,20 +203,29 @@ export const ABANDON_SEC = 6 * 3600;
  * 날짜가 바뀌는 순간 "오늘 판"이 새로 생기고, 진행 중이던 테이블은 화면에서 사라진다 —
  * 플레이 중에 로비로 튕긴다. 실제로 자정을 넘기며 이 일이 일어나는 것을 확인했다.
  *
- * 다만 아무도 없는 판이 영원히 다음 날을 막으면 안 되므로, 시작 후 6시간이 지난 판은
- * 버려진 것으로 보고 취소한다(정상 토너먼트는 블라인드 11레벨 × 8분 ≈ 1시간 30분이면 끝난다).
+ * 여기서 다루는 것은 "인원 미달"과 다른 상황이다.
+ *   · 3명이 안 차서 시작조차 못 한 판 → 22:20에 CANCELLED (statusAt이 판정한다)
+ *   · 이미 시작해 카드까지 돌린 판 → 시작한 뒤에는 22:20 규칙이 적용되지 않는다.
+ *     아무도 안 보는 사이 얼어붙어 있을 수 있고, 그 판을 계속 붙들면 다음 날 로비를 연
+ *     사람이 어제의 시체를 보게 된다.
+ *
+ * 그래서 버리는 기준을 "다음 판 등록이 열리는 순간"으로 잡는다. 임의의 시간(6시간 등)을
+ * 두는 것보다 정확하다 — 충돌이 생길 수 있는 시점이 정확히 그 순간이기 때문이다.
+ * 그 전까지는(자정을 넘겨도) 진행 중인 판이 우선이다.
  */
 function activeTournament(now: number): HtRow {
   const running = one<HtRow>(
     `SELECT * FROM holdem_tournaments
       WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
       ORDER BY id DESC LIMIT 1`);
-  if (running) {
-    if (now - (running.started_at ?? now) < ABANDON_SEC) return running;
-    run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`,
-      now, running.id);
-  }
-  return ensureTournament(now);
+  const today = ensureTournament(now);
+  if (!running || running.id === today.id) return today;
+  // 오늘 등록이 아직 열리지 않았다면 어제 판이 진행 중이어도 문제될 게 없다.
+  // 판단 기준은 저장된 값이다 — 매번 날짜에서 다시 계산하면 감사가 시각을 조절할 수 없다.
+  if (now < today.reg_open_at) return running;
+  run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`,
+    now, running.id);
+  return today;
 }
 
 function facts(t: HtRow): T.TournamentFacts {
@@ -326,6 +362,7 @@ function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
     const r = G.applyAction(views, seat, la.canCheck ? 'check' : 'fold', 0, hand.last_raise_size, hand.bb);
     if (r.ok) {
       saveViews(hand.id, views);
+      noteAction(hand.id, seat, r.kind, r.paid);
       run(`UPDATE holdem_hands SET last_raise_size = ? WHERE id = ?`, r.lastRaiseSize, hand.id);
     }
     run(`UPDATE holdem_seats SET presence = 'SIT_OUT'
@@ -444,7 +481,11 @@ function nextStreet(hand: HtHandRow, views: G.SeatView[], now: number): void {
   run(`UPDATE holdem_hands SET street = ?, board_json = ?, deck_pos = ?, last_raise_size = ?,
          to_act_seat = NULL, action_deadline = NULL WHERE id = ?`,
     next, JSON.stringify(board), pos, hand.bb, hand.id);
-  run(`UPDATE holdem_hand_seats SET bet = 0, acted = 0 WHERE hand_id = ?`, hand.id);
+  // 스트리트가 바뀌면 지난 스트리트의 행동 표시도 지운다 (폴드는 남겨 둔다 — 계속 유효하다)
+  run(`UPDATE holdem_hand_seats SET bet = 0, acted = 0,
+         last_action = CASE WHEN last_action = 'fold' THEN 'fold' ELSE NULL END,
+         last_amount = 0
+       WHERE hand_id = ?`, hand.id);
   saveViews(hand.id, views);
 
   const fresh = one<HtHandRow>(`SELECT * FROM holdem_hands WHERE id = ?`, hand.id)!;
@@ -680,6 +721,7 @@ export function holdemAction(
     const r = G.applyAction(views, seatRow.seat, kind, amount, hand.last_raise_size, hand.bb);
     if (!r.ok) return { ok: false, error: 'illegal', detail: r.error };
     saveViews(hand.id, views);
+    noteAction(hand.id, seatRow.seat, r.kind, r.paid);
     run(`UPDATE holdem_hands SET last_raise_size = ? WHERE id = ?`, r.lastRaiseSize, hand.id);
     // 직접 행동했으니 앉아 있는 상태로 되돌린다
     run(`UPDATE holdem_seats SET presence = 'ACTIVE', last_seen_at = ?
