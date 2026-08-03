@@ -342,6 +342,9 @@ function initSchema(): void {
          초기화되면서 무엇을 했는지 알 수 없고, 1초 폴링 사이에 두 번 행동하면 놓친다. */
       last_action TEXT,
       last_amount INTEGER NOT NULL DEFAULT 0,
+      /* 판이 끝난 뒤 본인이 직접 패를 공개했는가. 래빗과 달리 서버에 남겨야 한다 —
+         래빗은 나 혼자 보는 것이지만, 이건 남에게 보여주는 것이 목적이다. */
+      shown INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER DEFAULT (unixepoch())
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hhs_seat ON holdem_hand_seats(hand_id, seat);
@@ -356,4 +359,6 @@ function initSchema(): void {
   // 홀덤: 마지막 행동 표시 (이미 만들어진 DB에도 붙인다)
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
+  // 홀덤: 판이 끝난 뒤 자발적 패 공개
+  try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN shown INTEGER NOT NULL DEFAULT 0`); } catch {}
 }

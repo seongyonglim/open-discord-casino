@@ -1158,7 +1158,9 @@
   .ht-controls{margin-top:12px;background:var(--panel);border:1px solid rgba(255,255,255,.07);
     border-radius:12px;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
   .ht-controls[hidden]{display:none}
+  /* [hidden]은 명시적 display에 밀린다 — 판이 끝나 이 줄만 접을 때 필요하다 */
   .ht-ctop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .ht-ctop[hidden]{display:none}
   .ht-quick{display:flex;gap:6px;flex-wrap:wrap}
   .ht-q{padding:6px 11px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;
     color:#c8d8ce;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13)}
@@ -1178,6 +1180,13 @@
   .hta.check{background:linear-gradient(180deg,#1c2630,#131a21);border-color:rgba(150,195,255,.32);color:#bcd9ff}
   .hta.call{background:linear-gradient(180deg,#182a20,#101c15);border-color:rgba(130,220,165,.34);color:#b6efce}
   .hta.raise{background:linear-gradient(180deg,#33290e,#231c08);border-color:rgba(240,205,110,.5);color:#ffdd8a}
+  /* 판이 끝난 뒤 나오는 두 버튼. 액션 버튼과 같은 줄을 쓰되(끝나면 그쪽이 비니까)
+     행동이 아니라 선택이라는 걸 알 수 있게 조금 낮은 톤으로 둔다.
+     둘 중 하나만 뜰 때도 줄의 절반만 차지하도록 flex-basis를 잡는다. */
+  .hta.post{flex:0 1 calc(50% - 4px);padding:12px 8px;font-size:13.5px;font-weight:700;
+    background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.18);color:#cfe0d5}
+  .hta.post.rabbit{margin-right:auto}
+  .hta.post.show{margin-left:auto;border-color:rgba(240,205,110,.4);color:#f0dda6}
 
   .ht-pre{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#a9bdb1}
   .ht-pre[hidden]{display:none}
@@ -1281,15 +1290,12 @@
     100%{opacity:.15;transform:translate(var(--tx),var(--ty)) scale(.8)}
   }
 
-  /* 래빗 헌트 버튼 — 폴드로 일찍 끝난 판에서만 나온다 */
-  .ht-rabbit{padding:4px 12px;border-radius:999px;cursor:pointer;
-    font-size:11.5px;font-weight:700;color:#dcece2;
-    background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.2)}
-  .ht-rabbit:hover{border-color:var(--gold);color:var(--gold)}
-  .ht-rabbit[hidden]{display:none}
   /* 실제로 깔리지 않은 카드는 흐리게 + 점선으로 구분한다 — 결과와 혼동하면 안 된다 */
   .pcard.rabbit{opacity:.5;filter:saturate(.6);outline:1.5px dashed rgba(255,255,255,.45);
     outline-offset:-2px}
+  /* 본인이 굳이 깐 패 — 쇼다운 공개와 구분되게 금색 테두리를 준다 */
+  .pcard.shown{outline:1.5px solid rgba(240,205,110,.8);outline-offset:-2px;
+    box-shadow:0 0 8px rgba(240,205,110,.35)}
 
   /* 스택 숫자가 바뀔 때 판 폭이 흔들리면 카드까지 밀린다 — 최소 폭을 잡아 고정한다 */
   /* 스택 칸도 폭을 고정한다 — 9,850 → 10,000 처럼 자릿수가 늘 때 판이 넓어지지 않게 */

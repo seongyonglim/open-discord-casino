@@ -28,7 +28,7 @@ import {
 } from './games/blackjack';
 import {
   holdemPage, handleState as htState, handleRegister as htRegister,
-  handleAction as htAction, handleSitIn as htSitIn,
+  handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
 } from './games/holdem';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
@@ -292,6 +292,10 @@ export function startWebServer(): void {
       if (path === '/api/games/holdem/sitin' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await htSitIn(req, res, me.id);
+      }
+      if (path === '/api/games/holdem/show' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htShow(req, res, me.id);
       }
 
       notFound(res);

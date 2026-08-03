@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   advanceHoldem, registerHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
+  showHoldemCards,
   ACTION_SEC, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
@@ -162,16 +163,23 @@ function statePayload(st: HoldemStatus, userId: string) {
           // 마지막으로 한 행동 ("콜 300"처럼 자리 옆에 띄운다)
           act: h?.last_action ?? null,
           actAmount: h?.last_amount ?? 0,
-          // 내 카드는 항상, 남의 카드는 공개된 것만
-          cards: s.user_id === userId && h
+          /* 내 카드는 항상, 남의 카드는 공개된 것만.
+             본인이 끝난 판에서 직접 공개(shown)했다면 그것도 공개된 것으로 본다. */
+          cards: (s.user_id === userId || (ended && h?.shown === 1)) && h
             ? G.cardsToStrings(JSON.parse(h.hole_json) as number[])
             : revealed.get(s.seat) ?? [],
+          // 자발적으로 깐 패는 쇼다운 공개와 구분해서 표시한다
+          shown: ended && h?.shown === 1 && !revealed.has(s.seat),
         };
       }),
       // 내 두 장 + 보드로 지금 무엇이 완성됐는지. 내 카드로 계산한 내 정보다.
       myHand: myHand
         ? G.readHand(JSON.parse(myHand.hole_json) as number[], boardCards)
         : null,
+      /* 패 공개 버튼을 띄울지. 판이 끝났고, 내가 그 판에 있었고,
+         쇼다운에서 이미 까이지도 않았고, 아직 내가 까지도 않았을 때만. */
+      canShow: ended && myHand != null && myHand.shown !== 1
+        && !revealed.has(myHand.seat),
       mySeat: mySeat?.seat ?? null,
       myPresence: mySeat?.presence ?? null,
       legal: myLegal,
@@ -249,6 +257,15 @@ export async function handleSitIn(
   return sendJson(res, 200, { ok: true });
 }
 
+export async function handleShow(
+  _req: IncomingMessage, res: ServerResponse, userId: string
+): Promise<void> {
+  // 판이 끝났는지는 showHoldemCards가 SQL 조건으로 직접 확인한다.
+  const r = showHoldemCards(userId);
+  if (!r.ok) return sendJson(res, 400, { error: '지금은 패를 공개할 수 없습니다' });
+  return sendJson(res, 200, { ok: true });
+}
+
 /* ── 도움말 ──────────────────────────────────────────────────────── */
 
 const HELP_BODY = `
@@ -322,8 +339,7 @@ export function holdemPage(user: WebUser): string {
                 <div class="ht-board" id="htBoard"></div>
                 <div class="ht-msg" id="htMsg"></div>
                 <div class="ht-read" id="htRead" hidden></div>
-                <!-- 래빗 헌트 — 폴드로 일찍 끝난 판에서 "깔렸을 카드"를 확인한다 -->
-                <button type="button" class="ht-rabbit" id="htRabbit" hidden>🐇 남은 카드 보기</button>
+                <!-- 래빗 헌트 · 패 공개 버튼은 아래 액션 버튼 줄에 있다 (ht-acts) -->
               </div>
 
               <!-- 자리 비움 배너 — 오른쪽 패널의 버튼만으로는 놓치기 쉽다.
@@ -342,7 +358,7 @@ export function holdemPage(user: WebUser): string {
         </div>
 
         <div class="ht-controls" id="htControls" hidden>
-          <div class="ht-ctop">
+          <div class="ht-ctop" id="htCtop">
             <div class="ht-quick" id="htQuick">
               <button type="button" class="ht-q" data-q="third">1/3 팟</button>
               <button type="button" class="ht-q" data-q="half">1/2 팟</button>
@@ -362,6 +378,11 @@ export function holdemPage(user: WebUser): string {
             <button type="button" class="hta check" id="htCheck">체크</button>
             <button type="button" class="hta call" id="htCall">콜</button>
             <button type="button" class="hta raise" id="htRaise">레이즈</button>
+            <!-- 판이 끝나면 위 네 버튼이 사라지므로 그 자리를 그대로 쓴다.
+                 테이블 중앙의 작은 버튼은 눈에 잘 들어오지 않았다.
+                 래빗은 왼쪽(나만 보는 것), 패 공개는 오른쪽(남에게 보이는 것). -->
+            <button type="button" class="hta post rabbit" id="htRabbit" hidden>🐇 남은 카드 보기</button>
+            <button type="button" class="hta post show" id="htShow" hidden>👁 내 패 공개</button>
           </div>
           <div class="ht-pre" id="htPre">
             <label><input type="checkbox" id="htPreCheckFold"> 체크 / 폴드</label>
@@ -418,6 +439,7 @@ export function holdemPage(user: WebUser): string {
     var msgEl = document.getElementById('htMsg');
     var readEl = document.getElementById('htRead');
     var rabbitBtn = document.getElementById('htRabbit');
+    var showBtn = document.getElementById('htShow');
     var winEl = document.getElementById('htWin');
 
     /* ── 우승 축하 ───────────────────────────────────────────────────
@@ -451,6 +473,11 @@ export function holdemPage(user: WebUser): string {
       winEl.hidden = true;
     });
     var ctrlEl = document.getElementById('htControls');
+    var ctopEl = document.getElementById('htCtop');
+    var preEl = document.getElementById('htPre');
+    var ACT_BTNS = ['htFold', 'htCheck', 'htCall', 'htRaise'].map(function(id){
+      return document.getElementById(id);
+    });
     var rangeEl = document.getElementById('htRange');
     var amountEl = document.getElementById('htAmount');
     var unitTag = document.getElementById('htUnitTag');
@@ -699,8 +726,12 @@ export function holdemPage(user: WebUser): string {
           cur.outerHTML = cardImg(want[i], cls);
           cur = hole.children[i];
         }
-        // 버린 패 표시는 클래스만 바꾼다 — 요소를 다시 만들지 않는다
-        if (cur && cur.classList) cur.classList.toggle('mucked', s.state === 'folded');
+        /* 버린 패 · 자발적 공개 표시는 클래스만 바꾼다 — 요소를 다시 만들지 않는다.
+           본인이 깐 패는 흐리게 하지 않는다. 굳이 보여준 것을 가릴 이유가 없다. */
+        if (cur && cur.classList) {
+          cur.classList.toggle('mucked', s.state === 'folded' && !s.shown);
+          cur.classList.toggle('shown', !!s.shown);
+        }
       }
     }
 
@@ -736,6 +767,29 @@ export function holdemPage(user: WebUser): string {
       rabbitBtn.hidden = true;
       if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
       syncRabbit(st.table);
+    });
+
+    /* ── 내 패 공개 ──────────────────────────────────────────────────
+       래빗과 달리 이건 서버에 남는다 — 나만 보는 게 아니라 남에게 보여주는 것이
+       목적이니까. 폴드했더라도 공개할 수 있다(블러프를 보여주는 실제 관례).
+       판이 끝난 뒤에만 되고, 서버가 SQL 조건으로 다시 확인한다. */
+    var showSent = null;                 // 눌러놓고 폴링을 기다리는 판 번호
+    function syncShow(tb){
+      // 이미 눌렀으면 서버가 반영해줄 때까지 다시 못 누르게 둔다
+      showBtn.hidden = !tb.canShow || showSent === tb.handNo;
+    }
+    showBtn.addEventListener('click', function(){
+      if (!st || !st.table || !st.table.ended) return;
+      showSent = st.table.handNo;
+      showBtn.hidden = true;
+      fetch('/api/games/holdem/show', { method: 'POST' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.error) { showSent = null; return; }
+          if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+          poll();                        // 내가 깐 게 바로 보이게 한 번 당겨온다
+        })
+        .catch(function(){ showSent = null; });
     });
 
     /* 행동 이름. 금액이 의미 있는 것만 금액을 붙인다 —
@@ -816,7 +870,13 @@ export function holdemPage(user: WebUser): string {
        한 장씩 늘려가며 깐다. 서버는 초 단위 해상도라 이 박자는 클라이언트 몫이다. */
     var BOARD_FIRST_MS = 340;     // 플랍 첫 장까지
     var BOARD_STEP_MS = 260;      // 플랍 세 장 사이
-    var BOARD_STREET_MS = 850;    // 턴·리버 앞의 한 박자 — 여기서 쉬어야 스트리트로 읽힌다
+    var BOARD_STREET_MS = 500;    // 한 번에 여러 스트리트를 열 때(올인) 스트리트 사이의 박자
+    /* 스트리트가 넘어갈 때 카드를 깔기 전에 두는 정지.
+       서버는 마지막 액션과 새 스트리트를 같은 응답에 담아 보낸다 — 그래서 이게 없으면
+       "콜 300"이 뜨는 것과 플랍이 깔리는 것이 거의 동시에 일어나 마지막 액션을 볼 틈이 없다.
+       실제 딜러도 액션이 끝나면 칩을 팟으로 모으고 나서 카드를 깐다. 칩이 팟으로
+       날아가는 연출(약 700ms)과 겹쳐, 칩이 도착할 즈음 첫 장이 나오게 맞췄다. */
+    var ACTION_HOLD_MS = 650;
     var shownBoard = 0, boardTimers = [], boardHandNo = null;
     /* 보드를 다 깔았나. 올인으로 판이 즉시 끝나는 경우가 이 값의 존재 이유다 —
        서버는 액션이 끝나면 보드를 끝까지 깔고 정산까지 해버리므로, 클라이언트가
@@ -882,7 +942,9 @@ export function holdemPage(user: WebUser): string {
       }
       boardRevealed = false;
       if (boardTimers.length) return;          // 이미 깔고 있는 중
-      var t = 0;
+      /* 첫 장 앞에만 정지를 둔다. 한 번에 여러 스트리트를 여는 올인 판에서도
+         정지는 맨 앞에 한 번이고, 그 뒤 스트리트 사이는 BOARD_STREET_MS로 이어진다. */
+      var t = ACTION_HOLD_MS;
       for (var i = shownBoard; i < cards.length; i++) {
         t += boardGap(i);
         (function(upto, at){
@@ -972,7 +1034,8 @@ export function holdemPage(user: WebUser): string {
 
        포커 플립·바카라에서 배운 것: 마지막 장의 콜백에서 연출을 닫으면 아직 날고 있던
        복제본까지 걷어내 끝의 두 장이 툭 생겨난다. 닫는 일은 별도 타이머로 뺀다. */
-    var DEAL_STEP_MS = 130;
+    // 한 장씩 도는 간격. 9인 테이블이면 18장이라 130ms로는 2.3초가 걸려 늘어진다.
+    var DEAL_STEP_MS = 100;
     var dealtHandNo = null, dealTimers = [];
     function clearDeal(){
       dealTimers.forEach(clearTimeout);
@@ -1043,7 +1106,8 @@ export function holdemPage(user: WebUser): string {
       // 칩이 중앙으로 밀려가고, 판이 끝나면 승자에게 넘어간다
       rememberSpots(tb);
       // 팟 회수와 래빗 버튼은 보드를 다 깐 뒤에 — 결과가 카드보다 먼저 오면 안 된다
-      if (boardRevealed) { flyPotToWinners(tb); syncRabbit(tb); }
+      if (boardRevealed) { flyPotToWinners(tb); syncRabbit(tb); syncShow(tb); }
+      else showBtn.hidden = true;
 
       var msg = '';
       if (tb.ended && !boardRevealed) {
@@ -1100,8 +1164,20 @@ export function holdemPage(user: WebUser): string {
 
     function renderControls(){
       var la = st.table.legal;
-      ctrlEl.hidden = !la;
-      if (!la) return;
+      /* 판이 끝난 뒤의 두 버튼도 이 패널 안(ht-acts)에 있다. 그래서 내 차례가 아니라고
+         패널 전체를 접으면 그 버튼이 뜨고 싶어도 보이지 않는다 — 실제로 그렇게 됐다.
+         버튼이 하나라도 뜰 상황이면 패널은 열어두고, 베팅 금액 줄과 미리 지정 줄만 접는다. */
+      var post = !rabbitBtn.hidden || !showBtn.hidden;
+      ctrlEl.hidden = !la && !post;
+      ctopEl.hidden = !la;
+      preEl.hidden = !la;
+      if (!la) {
+        /* 행동할 수 없으면 네 버튼을 반드시 내린다. 전에는 패널이 통째로 닫혀서
+           그냥 두어도 보이지 않았는데, 이제 판이 끝나도 패널이 열려 있으므로
+           내리지 않으면 지난 판의 "폴드·콜 100"이 공개 버튼 옆에 그대로 남는다. */
+        ACT_BTNS.forEach(function(b){ b.hidden = true; });
+        return;
+      }
       var lo = la.minRaiseTo == null ? la.maxRaiseTo : la.minRaiseTo;
       rangeEl.min = String(lo);
       rangeEl.max = String(la.maxRaiseTo);
