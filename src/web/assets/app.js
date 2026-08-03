@@ -68,7 +68,8 @@
   var sfxBuf = {};
   var SFX_EXT = { 'coin-insert':'wav', 'card-shuffle':'wav', 'win-fanfare':'wav',
                   'card-flip':'mp3', 'card-deal':'mp3',
-                  'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3' };
+                  'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3',
+                  'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
   // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
@@ -76,9 +77,16 @@
   // 아래는 각 파일을 같은 체감 음량(RMS -32dB)에 맞추되 피크가 -3dB를 넘지 않도록 제한해 구한 보정값이다.
   // 적용 후 편차 6.5dB. 재생 시 넘기는 gain은 "상대적 강조"만 담당한다(기본 1).
   // 효과음 파일을 교체하면 이 표도 다시 재야 한다.
+  //
+  // 새로 넣은 홀덤 칩 음원 셋은 브라우저에서 직접 재서 같은 기준선에 맞췄다.
+  // 기존 8개의 "보정 후 실효 RMS"는 -27.4 ~ -32.0dB이고 평균 -29.9dB이다.
+  // 실측: chip-bet RMS -17.4dB / chip-bet2 -17.1dB / chips-to-winner -28.7dB
+  //       (앞의 둘은 피크 0dB로 아주 뜨겁게 녹음돼 있어 보정 없이 쓰면 다른 소리를 다 눌러버린다)
+  // 그 평균에 맞춘 값이 아래 세 항목이다. 실효 RMS는 셋 다 -29.8 ~ -29.9dB.
   var SFX_NORM = {
     'coin-insert': 0.78, 'coin-gain': 0.71, 'card-flip': 0.71, 'card-shuffle': 0.94,
     'card-deal': 1.04, 'win-fanfare': 0.28, 'mine-coin': 2.6, 'explode': 0.16,
+    'chip-bet': 0.24, 'chip-bet2': 0.23, 'chips-to-winner': 0.87,
   };
 
   // 음원 앞뒤의 무음을 잘라낸다.
@@ -139,6 +147,11 @@
     shuffle: ['card-shuffle'],  // 새 라운드 셔플
     deal: ['card-deal'],        // 카드 한 장 배분
     card: ['card-flip'],        // 보드 카드 공개
+    /* 홀덤 — 여기서 다루는 건 포인트가 아니라 토너먼트 칩이라 "동전 넣는" 소리가 맞지 않는다.
+       칩 베팅은 두 음원을 넣어두면 playSample이 매번 무작위로 골라, 한 판에 여러 번
+       울려도 기계적으로 들리지 않는다. */
+    chipbet: ['chip-bet', 'chip-bet2'],
+    chipwin: ['chips-to-winner'],   // 팟이 승자에게 밀려가는 소리
   };
   // 페이지가 쓰지도 않는 음원까지 받으면 WAV가 커서 낭비가 크다.
   // 각 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다.
@@ -243,6 +256,17 @@
       if (playSample('explode', Math.min(1, g / 0.16))) return;
       var c = ac(); if (!c) return;
       boomAt(c, c.currentTime, g, pitch);
+    },
+    /* 홀덤 칩 베팅 — 칩을 테이블에 내려놓는 소리. 두 음원 중 하나가 무작위로 난다. */
+    chipBet: function(){
+      if (playSample('chipbet', 1)) return;
+      var c = ac(); if (!c) return;
+      clinkAt(c, c.currentTime, 0.05);   // 음원이 아직 안 받아졌을 때만 쓰는 대체음
+    },
+    // 팟이 승자에게 밀려가는 소리 (홀덤 핸드 종료)
+    chipWin: function(){
+      if (playSample('chipwin', 1)) return;
+      this.win();
     },
     // 칩 올리기 — 동전 넣는 소리 (동전·골드바 공통)
     chip: function(){

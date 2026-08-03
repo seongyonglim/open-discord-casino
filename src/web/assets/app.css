@@ -1013,15 +1013,15 @@
   .ht-track{position:absolute;inset:26px 46px;border-radius:999px;
     border:1.5px solid rgba(255,255,255,.13);pointer-events:none}
 
-  /* 딜러 — 상단 중앙, 레일에 걸치게 */
-  .ht-dealer{position:absolute;left:50%;top:-2px;transform:translate(-50%,-50%);
-    display:flex;flex-direction:column;align-items:center;gap:4px;z-index:3}
-  .ht-dealer-av{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;
-    justify-content:center;font-size:22px;color:#f0e2c0;
-    background:linear-gradient(180deg,#3c4d43,#1e2a23);
-    border:2px solid rgba(255,255,255,.5);box-shadow:0 3px 10px rgba(0,0,0,.5)}
-  .ht-dealer-nm{padding:2px 10px;border-radius:999px;background:rgba(0,0,0,.62);
-    font-size:10.5px;font-weight:700;letter-spacing:.5px;color:#e8f0ea}
+  /* 자리 비움 배너 — 테이블 위쪽에 걸친다. 오른쪽 패널의 버튼만으로는 놓치기 쉬워서,
+     "지금 자동으로 처리되고 있다"는 사실과 복귀 버튼을 눈앞에 둔다. */
+  .ht-sitout-bar{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:5;
+    display:flex;align-items:center;gap:12px;padding:7px 10px 7px 14px;border-radius:999px;
+    background:rgba(28,20,4,.92);border:1px solid rgba(240,181,66,.55);
+    box-shadow:0 4px 14px rgba(0,0,0,.5);white-space:nowrap;max-width:94%}
+  .ht-sitout-bar[hidden]{display:none}
+  .ht-sitout-t{font-size:12px;font-weight:700;color:#f0b542;overflow:hidden;text-overflow:ellipsis}
+  .ht-sitout-btn{padding:5px 12px;font-size:12px;flex:none}
 
   /* 중앙 — POT · 보드 · 안내 */
   .ht-center{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
@@ -1090,13 +1090,18 @@
   .ht-nm{font-size:10.5px;font-weight:600;color:#dce8e0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;max-width:74px}
   .ht-stk{font-family:var(--mono);font-size:11.5px;font-weight:800;color:var(--gold)}
-  /* 딜러 퍽 — 좌석판에 붙이면 아바타에 묻혀 안 보였다. 펠트 위에 따로 놓는다. */
-  .ht-puck{position:absolute;transform:translate(-50%,-50%);z-index:2;
-    width:26px;height:26px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#ffffff,#d9d9d4);
-    color:#1a1a1a;font-size:12px;font-weight:900;letter-spacing:.3px;
+  /* 딜러 퍽 — 좌석판의 "중앙을 향한 옆면"에 붙인다.
+     펠트 위 별도 좌표에 띄워 두면 떠 있는 물체로 보여서 누구 버튼인지 한눈에 안 잡혔다.
+     카드는 판 위, 베팅 칩은 더 안쪽이라 어느 것과도 겹치지 않는다. */
+  .ht-puck{position:absolute;top:50%;z-index:4;
+    width:24px;height:24px;border-radius:50%;
+    background:radial-gradient(circle at 34% 28%,#ffffff,#dcdcd6);
+    color:#141414;font-size:11.5px;font-weight:900;
     display:flex;align-items:center;justify-content:center;
-    border:2px solid rgba(0,0,0,.28);box-shadow:0 3px 8px rgba(0,0,0,.55)}
+    border:2px solid rgba(0,0,0,.3);
+    box-shadow:0 2px 7px rgba(0,0,0,.6),0 0 0 3px rgba(255,255,255,.13)}
+  .ht-puck.r{left:100%;transform:translate(6px,-50%)}
+  .ht-puck.l{right:100%;transform:translate(-6px,-50%)}
 
   /* 내 조합 — 보드 아래 한 줄. 투페어 이상이면 금색으로 힘을 준다. */
   .ht-read{padding:3px 12px;border-radius:999px;font-family:var(--mono);
@@ -1226,7 +1231,6 @@
   }
   @media (max-width:640px){
     .ht-cloth{height:330px}
-    .ht-dealer-av{width:36px;height:36px;font-size:17px}
     .ht-hole{min-height:30px}
     .pcard.sm{width:18px;height:27px}
     .pcard.hero{width:25px;height:37px}
