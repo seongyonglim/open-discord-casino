@@ -1,0 +1,397 @@
+/* 홀덤 프리롤 — DB 계층 실증 검사.
+ *
+ * 순수 엔진(audit-holdem.ts)과 달리 여기서는 실제 SQLite에 토너먼트를 만들어
+ * 끝까지 돌린다. 서버 타이머가 없으므로 시각을 DB에서 당겨 단계를 넘긴다 —
+ * 다른 게임 감사가 쓰는 expire() 방식과 같다.
+ *
+ * 핵심 불변식 셋:
+ *   1. 칩 총량 = 시작 스택 × 등록자 수 (핸드가 끝난 어느 시점에서도)
+ *   2. 팟 합계 = 분배 합계 (한 칩도 새지 않는다)
+ *   3. 등수 1..N이 빈틈없이 · 지급 합계 = 상금 풀 · 잔액 = 원장 누적합
+ *
+ * 이 검사가 실제로 잡아낸 버그 셋:
+ *   · 콜되지 않은 초과 베팅이 반환되지 않아 1,150칩이 증발했다
+ *   · 상대가 전부 올인인데도 남은 한 명에게 계속 액션을 물어봤다(폴드까지 가능했다)
+ *   · 늦은 등록이 들어오면 탈락 시점에 매긴 등수가 어긋났다
+ */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+process.env.DB_PATH = mkdtempSync(join(tmpdir(), 'ht-'));
+
+const { getDb } = require('../src/db/schema') as typeof import('../src/db/schema');
+const Q = require('../src/db/queries') as typeof import('../src/db/queries');
+const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
+const T = require('../src/services/tournament') as typeof import('../src/services/tournament');
+const G = require('../src/services/holdem') as typeof import('../src/services/holdem');
+
+const db = getDb();
+const nowSec = () => Math.floor(Date.now() / 1000);
+let pass = 0, fail = 0;
+function ck(name: string, ok: boolean, extra = ''): void {
+  if (ok) { pass++; console.log('  PASS  ' + name); }
+  else { fail++; console.log('  FAIL  ' + name + (extra ? ' — ' + extra : '')); }
+}
+
+function mkUser(id: string): void {
+  Q.upsertUser(id, id, null);
+}
+
+/** 토너먼트 시각을 과거로 당겨 즉시 시작 조건을 만든다 */
+function backdateSchedule(sec: number): void {
+  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = reg_open_at - ?,
+    scheduled_start_at = scheduled_start_at - ?, grace_ends_at = grace_ends_at - ?`)
+    .run(sec, sec, sec);
+}
+
+/** 현재 핸드의 액션 마감을 과거로 — 자동 액션을 유발한다 */
+function expireAction(): void {
+  db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE ended_at IS NULL`).run(nowSec() - 1);
+}
+/** 다음 핸드 시작 예약을 지금으로 */
+function expireNextHand(): void {
+  db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE next_hand_at IS NOT NULL`).run(nowSec() - 1);
+}
+
+function totalChips(tableId: number): number {
+  return HD.getSeats(tableId).reduce((a, s) => a + s.stack, 0);
+}
+
+console.log('[1] 등록 · 시작');
+const N = 4;
+for (let i = 0; i < N; i++) mkUser('p' + i);
+
+let st = HD.advanceHoldem();
+ck('오늘 토너먼트가 생성됨', st.tournament != null && st.tournament.date_str.length === 10,
+  st.tournament?.date_str);
+ck('처음 상태는 SCHEDULED 또는 REGISTRATION_OPEN',
+  st.status === 'SCHEDULED' || st.status === 'REGISTRATION_OPEN', st.status);
+
+// 인원 미달 취소 경로 — 등록 0명인 채로 대기 시간까지 넘긴다
+backdateSchedule(3600 * 3);
+st = HD.advanceHoldem();
+ck('인원 미달로 대기 마감이 지나면 CANCELLED', st.status === 'CANCELLED', st.status);
+ck('취소 시각이 기록됨', st.tournament.cancelled_at != null);
+
+// 같은 판을 되살려 이어서 쓴다 (취소를 지우고 시각을 다시 앞으로)
+db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, reg_open_at = ?,
+  scheduled_start_at = ?, grace_ends_at = ?`)
+  .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+st = HD.advanceHoldem();
+ck('등록 오픈됨', st.status === 'REGISTRATION_OPEN', st.status);
+
+for (let i = 0; i < N; i++) {
+  const r = HD.registerHoldem('p' + i, 'p' + i);
+  if (!r.ok) console.log('    등록 실패 p' + i + ': ' + r.error);
+}
+st = HD.advanceHoldem();
+ck(`${N}명 등록됨`, st.registered === N, String(st.registered));
+ck('중복 등록 거절', HD.registerHoldem('p0', 'p0').ok === false);
+
+// 시작 시각을 지금으로
+db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?, grace_ends_at = ?`)
+  .run(nowSec() - 1, nowSec() + 1200);
+st = HD.advanceHoldem();
+ck('3명 이상이면 RUNNING', st.status === 'RUNNING', st.status);
+ck('시작 시각이 기록됨', st.tournament.started_at != null);
+
+const table = HD.getTable(st.tournament.id)!;
+ck('테이블이 생성됨', table != null);
+ck(`${N}명이 앉음`, HD.getSeats(table.id).length === N, String(HD.getSeats(table.id).length));
+ck('시작 칩 총량 = 10,000 × 인원', totalChips(table.id) === T.STARTING_STACK * N,
+  String(totalChips(table.id)));
+
+console.log('\n[2] 첫 핸드');
+let hand = HD.getCurrentHand(table.id)!;
+ck('핸드 1이 시작됨', hand != null && hand.hand_no === 1, String(hand?.hand_no));
+ck('레벨 1 (25/50)', hand.sb === 25 && hand.bb === 50, `${hand.sb}/${hand.bb}`);
+{
+  const hs = HD.getHandSeats(hand.id);
+  ck('전원 홀 카드 2장', hs.length === N && hs.every(h => (JSON.parse(h.hole_json) as number[]).length === 2));
+  const holes = hs.flatMap(h => JSON.parse(h.hole_json) as number[]);
+  ck('홀 카드가 서로 겹치지 않음', new Set(holes).size === holes.length);
+  const posted = hs.filter(h => h.committed > 0);
+  ck('블라인드 두 명만 냈다', posted.length === 2, JSON.stringify(posted.map(p => [p.seat, p.committed])));
+  ck('SB 25 · BB 50 이 걷혔다',
+    posted.map(p => p.committed).sort((a, b) => a - b).join() === '25,50',
+    posted.map(p => p.committed).join());
+  ck('행동할 사람이 정해졌다', hand.to_act_seat != null, String(hand.to_act_seat));
+  ck('마감 시각이 있다', hand.action_deadline != null);
+  ck('아직 아무도 acted가 아니다 (블라인드는 행동이 아니다)', hs.every(h => h.acted === 0));
+}
+
+console.log('\n[3] 자동 액션 (마감 초과)');
+{
+  const before = hand.to_act_seat!;
+  expireAction();
+  HD.advanceHoldem();
+  hand = HD.getCurrentHand(table.id)!;
+  const hs = HD.getHandSeats(hand.id);
+  const acted = hs.find(h => h.seat === before)!;
+  ck('마감 지난 사람이 자동 처리됐다 (폴드 또는 체크)',
+    acted.acted === 1 || acted.state === 'folded', JSON.stringify(acted));
+  const seat = HD.getSeats(table.id).find(s => s.seat === before)!;
+  ck('그 사람이 SIT_OUT으로 내려갔다', seat.presence === 'SIT_OUT', seat.presence);
+  ck('다음 사람으로 차례가 넘어갔다 (또는 라운드 종료)',
+    hand.to_act_seat !== before || hand.ended_at != null, String(hand.to_act_seat));
+}
+
+console.log('\n[4] 한 판을 자동으로 끝까지');
+{
+  let steps = 0;
+  while (steps++ < 200) {
+    hand = HD.getCurrentHand(table.id)!;
+    if (hand.ended_at != null) break;
+    expireAction();
+    HD.advanceHoldem();
+  }
+  hand = HD.getCurrentHand(table.id)!;
+  ck('핸드가 끝났다', hand.ended_at != null, `steps=${steps}`);
+  ck('결과가 기록됐다', hand.result_json != null);
+  ck('칩 총량이 보존됐다', totalChips(table.id) === T.STARTING_STACK * N,
+    `${totalChips(table.id)} vs ${T.STARTING_STACK * N}`);
+  const res = JSON.parse(hand.result_json!);
+  const potSum = (res.pots as { amount: number }[]).reduce((a, p) => a + p.amount, 0);
+  const awSum = (res.awards as { amount: number }[]).reduce((a, x) => a + x.amount, 0);
+  ck('팟 합계 = 분배 합계', potSum === awSum, `${potSum} vs ${awSum}`);
+  ck('다음 핸드가 예약됐다', HD.getTable(st.tournament.id)!.next_hand_at != null);
+}
+
+console.log('\n[5] 토너먼트를 끝까지 (실제 액션 — 전원 올인)');
+{
+  /* 전원 폴드만 하면 칩이 순환만 하고 아무도 안 죽는다(블라인드가 오르지 않으면 영원히).
+     실제 액션을 넣어야 탈락·사이드 팟·순위 확정이 돌아간다. 가장 거친 전략인
+     "차례가 오면 올인"으로 몰아붙인다 — 사이드 팟이 매 판 생긴다. */
+  let steps = 0, hands = 0, allins = 0, chipBreak = 0, levelUps = 0;
+  let lastTotal = totalChips(table.id);
+  let maxLevel = 1;
+  while (steps++ < 6000) {
+    const s = HD.advanceHoldem();
+    if (s.status === 'FINISHED') break;
+    const h = HD.getCurrentHand(table.id);
+    if (!h) break;
+    maxLevel = Math.max(maxLevel, h.level);
+
+    if (h.ended_at != null) {
+      hands++;
+      const tot = totalChips(table.id);
+      if (tot !== T.STARTING_STACK * N) chipBreak++;
+      lastTotal = tot;
+      // 판마다 8분씩 흐르게 해서 블라인드를 올린다 (올인 판은 금방 끝나므로)
+      db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ?`)
+        .run(T.LEVEL_DURATION_SEC);
+      levelUps++;
+      expireNextHand();
+      continue;
+    }
+
+    if (h.to_act_seat == null) { expireAction(); continue; }
+    const seat = HD.getSeats(table.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+    if (!seat) { expireAction(); continue; }
+    const r = HD.holdemAction(seat.user_id, 'allin', 0);
+    if (r.ok) allins++; else expireAction();
+  }
+  const fin = HD.advanceHoldem();
+  ck('토너먼트가 종료됐다', fin.status === 'FINISHED',
+    `${fin.status} steps=${steps} hands=${hands} allin=${allins} maxLevel=${maxLevel}`);
+  ck('실제 액션이 수락됐다', allins > 0, String(allins));
+  ck('블라인드 레벨이 올라갔다', maxLevel > 1, `최대 레벨 ${maxLevel} (${levelUps}회 상승)`);
+  ck('진행 중 칩 총량이 한 번도 깨지지 않았다', chipBreak === 0, `${chipBreak}회 · 마지막 ${lastTotal}`);
+
+  const entries = HD.getEntries(fin.tournament.id);
+  ck('전원 순위가 정해졌다', entries.every(e => e.finish_place != null),
+    JSON.stringify(entries.map(e => [e.username, e.finish_place])));
+  const places = entries.map(e => e.finish_place!).sort((a, b) => a - b);
+  ck('순위가 1..N 로 빠짐없이 채워졌다',
+    places.join() === Array.from({ length: N }, (_, i) => i + 1).join(), places.join());
+
+  const pool = T.prizePool(entries.length, fin.tournament.prize_multiplier);
+  const paid = entries.reduce((a, e) => a + e.prize, 0);
+  ck('지급 합계 = 상금 풀', paid === pool, `${paid} vs ${pool}`);
+  const expect = T.prizeAmounts(pool, entries.length);
+  const actual = entries.filter(e => e.prize > 0)
+    .sort((a, b) => a.finish_place! - b.finish_place!).map(e => e.prize);
+  ck('순위별 금액이 정책과 일치', JSON.stringify(actual) === JSON.stringify(expect),
+    `${JSON.stringify(actual)} vs ${JSON.stringify(expect)}`);
+
+  // 잔액 = 원장 누적합
+  let ledgerBad = 0;
+  for (const e of entries) {
+    const bal = Q.getWebUser(e.user_id)!.balance;
+    const sum = db.prepare(`SELECT COALESCE(SUM(delta),0) AS s FROM points_ledger WHERE user_id = ?`)
+      .get(e.user_id) as { s: number };
+    if (bal !== sum.s) ledgerBad++;
+  }
+  ck('잔액 = 원장 누적합', ledgerBad === 0, `${ledgerBad}명 불일치`);
+  ck('두 번 정산해도 추가 지급 없음', (() => {
+    const before = entries.reduce((a, e) => a + Q.getWebUser(e.user_id)!.balance, 0);
+    HD.advanceHoldem(); HD.advanceHoldem();
+    const after = HD.getEntries(fin.tournament.id)
+      .reduce((a, e) => a + Q.getWebUser(e.user_id)!.balance, 0);
+    return before === after;
+  })());
+}
+
+console.log('\n[6] 블라인드는 진행 중인 핸드 도중에 오르지 않는다 (스펙 5항)');
+{
+  // 새 판을 세운다
+  db.prepare(`DELETE FROM holdem_hand_seats`).run();
+  db.prepare(`DELETE FROM holdem_hands`).run();
+  db.prepare(`DELETE FROM holdem_seats`).run();
+  db.prepare(`DELETE FROM holdem_tables`).run();
+  db.prepare(`DELETE FROM holdem_entries`).run();
+  db.prepare(`DELETE FROM holdem_tournaments`).run();
+  HD.advanceHoldem();
+  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
+    .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+  for (let i = 0; i < 3; i++) { mkUser('q' + i); HD.registerHoldem('q' + i, 'q' + i); }
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  const s2 = HD.advanceHoldem();
+  const tb2 = HD.getTable(s2.tournament.id)!;
+  const h1 = HD.getCurrentHand(tb2.id)!;
+  ck('첫 핸드는 레벨 1', h1.level === 1, String(h1.level));
+
+  // 핸드 도중에 세 레벨만큼 시간이 흐르게 한다
+  db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ?`)
+    .run(T.LEVEL_DURATION_SEC * 3);
+  HD.advanceHoldem();
+  const h1b = HD.getCurrentHand(tb2.id)!;
+  ck('시간이 흘러도 진행 중인 핸드의 레벨은 그대로', h1b.level === 1 && h1b.id === h1.id,
+    `레벨 ${h1b.level}`);
+  ck('블라인드 금액도 그대로', h1b.sb === 25 && h1b.bb === 50, `${h1b.sb}/${h1b.bb}`);
+
+  // 그 핸드를 끝내면 다음 핸드에서 오른다
+  let guard = 0;
+  while (guard++ < 300) {
+    const h = HD.getCurrentHand(tb2.id)!;
+    if (h.ended_at != null) break;
+    expireAction(); HD.advanceHoldem();
+  }
+  expireNextHand();
+  HD.advanceHoldem();
+  const h2 = HD.getCurrentHand(tb2.id)!;
+  ck('다음 핸드에서 레벨이 오른다', h2.hand_no > h1.hand_no && h2.level === 4,
+    `핸드 ${h2.hand_no} 레벨 ${h2.level} (기대 4)`);
+  ck('오른 블라인드가 반영됨 (레벨 4 = 100/200)', h2.sb === 100 && h2.bb === 200, `${h2.sb}/${h2.bb}`);
+}
+
+console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');
+{
+  db.prepare(`DELETE FROM holdem_tournaments`).run();
+  db.prepare(`DELETE FROM holdem_tables`).run();
+  db.prepare(`DELETE FROM holdem_seats`).run();
+  HD.advanceHoldem();
+  db.prepare(`UPDATE holdem_tournaments SET started_at = ?`).run(nowSec());
+  const n = HD.cancelRunningHoldemOnBoot();
+  ck('진행 중 토너먼트가 취소됐다', n === 1, String(n));
+  ck('취소 상태가 유지된다', HD.advanceHoldem().status === 'CANCELLED');
+}
+
+console.log('\n[8] 무작위 토너먼트 반복 (칩 보존 · 순위 · 상금)');
+{
+  function wipe(): void {
+    for (const t of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+      'holdem_tables', 'holdem_entries', 'holdem_tournaments']) {
+      db.prepare(`DELETE FROM ${t}`).run();
+    }
+  }
+  const rnd = (n: number) => Math.floor(Math.random() * n);
+  let runs = 0, finished = 0;
+  let chipBad = 0, placeBad = 0, prizeBad = 0, ledgerBad = 0, potBad = 0, stuck = 0;
+  let sidePotHands = 0, lateRegs = 0;
+
+  for (let iter = 0; iter < 150; iter++) {
+    wipe();
+    const n = 3 + rnd(7);           // 3~9명
+    const users: string[] = [];
+    for (let i = 0; i < n; i++) { const u = `f${iter}_${i}`; mkUser(u); users.push(u); }
+
+    HD.advanceHoldem();
+    db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
+      .run(nowSec() - 60, nowSec() + 600, nowSec() + 1800);
+    // 일부는 나중에 늦은 등록으로 들어온다
+    const upfront = Math.max(T.MIN_PLAYERS, n - rnd(3));
+    for (let i = 0; i < upfront; i++) HD.registerHoldem(users[i], users[i]);
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+    let s = HD.advanceHoldem();
+    if (s.status !== 'RUNNING') continue;
+    runs++;
+    const tb = HD.getTable(s.tournament.id)!;
+    let late = upfront;
+
+    let steps = 0;
+    while (steps++ < 4000) {
+      s = HD.advanceHoldem();
+      if (s.status === 'FINISHED') break;
+      const h = HD.getCurrentHand(tb.id);
+      if (!h) break;
+
+      if (h.ended_at != null) {
+        // 칩 총량 = 시작 스택 × (지금까지 등록한 사람 수)
+        const entries = HD.getEntries(s.tournament.id).length;
+        if (totalChips(tb.id) !== T.STARTING_STACK * entries) chipBad++;
+        const res = JSON.parse(h.result_json!);
+        const ps = (res.pots as { amount: number }[]).reduce((a, p) => a + p.amount, 0);
+        const aw = (res.awards as { amount: number }[]).reduce((a, x) => a + x.amount, 0);
+        if (ps !== aw) potBad++;
+        if ((res.pots as unknown[]).length > 1) sidePotHands++;
+        // 늦은 등록 시도
+        if (late < n && rnd(3) === 0) {
+          const r = HD.registerHoldem(users[late], users[late]);
+          if (r.ok) { lateRegs++; late++; }
+        }
+        db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ?`)
+          .run(T.LEVEL_DURATION_SEC);
+        expireNextHand();
+        continue;
+      }
+
+      if (h.to_act_seat == null) { expireAction(); continue; }
+      const seat = HD.getSeats(tb.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+      if (!seat) { expireAction(); continue; }
+      // 무작위 액션 — 폴드/체크/콜/올인을 섞어 사이드 팟이 겹치게 만든다
+      const pick = rnd(10);
+      const kind: G.ActionKind = pick < 2 ? 'fold' : pick < 5 ? 'check' : pick < 8 ? 'call' : 'allin';
+      const r = HD.holdemAction(seat.user_id, kind, 0);
+      if (!r.ok) {
+        const r2 = HD.holdemAction(seat.user_id, 'call', 0);
+        if (!r2.ok) {
+          const r3 = HD.holdemAction(seat.user_id, 'check', 0);
+          if (!r3.ok) expireAction();
+        }
+      }
+    }
+
+    const fin = HD.advanceHoldem();
+    if (fin.status !== 'FINISHED') { stuck++; continue; }
+    finished++;
+
+    const entries = HD.getEntries(fin.tournament.id);
+    const places = entries.map(e => e.finish_place).sort((a, b) => (a ?? 0) - (b ?? 0));
+    if (places.some(p => p == null)
+      || places.join() !== Array.from({ length: entries.length }, (_, i) => i + 1).join()) placeBad++;
+    const pool = T.prizePool(entries.length, fin.tournament.prize_multiplier);
+    if (entries.reduce((a, e) => a + e.prize, 0) !== pool) prizeBad++;
+    for (const e of entries) {
+      const bal = Q.getWebUser(e.user_id)!.balance;
+      const sum = (db.prepare(`SELECT COALESCE(SUM(delta),0) AS s FROM points_ledger WHERE user_id = ?`)
+        .get(e.user_id) as { s: number }).s;
+      if (bal !== sum) ledgerBad++;
+    }
+  }
+
+  console.log(`    토너먼트 ${runs}회 시작 · ${finished}회 종료 · 사이드 팟 발생 ${sidePotHands}판 · 늦은 등록 ${lateRegs}건`);
+  ck('전부 종료됐다 (멈춘 판 없음)', stuck === 0, `${stuck}회 멈춤`);
+  ck('칩 총량 = 10,000 × 등록자 수 (매 판)', chipBad === 0, `${chipBad}회 어긋남`);
+  ck('팟 합계 = 분배 합계 (매 판)', potBad === 0, `${potBad}회`);
+  ck('순위가 1..N 로 빠짐없이 채워졌다', placeBad === 0, `${placeBad}회`);
+  ck('지급 합계 = 상금 풀', prizeBad === 0, `${prizeBad}회`);
+  ck('잔액 = 원장 누적합', ledgerBad === 0, `${ledgerBad}건`);
+  ck('사이드 팟이 실제로 발생했다 (검증이 헛돌지 않았다)', sidePotHands > 0, String(sidePotHands));
+  ck('늦은 등록이 실제로 수락됐다', lateRegs > 0, String(lateRegs));
+}
+
+console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
+try { rmSync(process.env.DB_PATH!, { recursive: true, force: true }); } catch { /* OS가 정리 */ }
+process.exit(fail ? 1 : 0);

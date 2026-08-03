@@ -1,21 +1,24 @@
 import type { SQLInputValue } from 'node:sqlite';
 import { getDb } from './schema';
 
-function one<T>(sql: string, ...params: SQLInputValue[]): T | undefined {
+/* 이 네 헬퍼는 홀덤 모듈(db/holdem.ts)도 쓴다.
+   특히 tx는 반드시 하나만 있어야 한다 — 모듈마다 txDepth를 따로 두면
+   중첩 호출에서 BEGIN이 두 번 나가 "cannot start a transaction within a transaction"으로 터진다. */
+export function one<T>(sql: string, ...params: SQLInputValue[]): T | undefined {
   return getDb().prepare(sql).get(...params) as T | undefined;
 }
 
-function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
+export function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
   return getDb().prepare(sql).all(...params) as T[];
 }
 
-function run(sql: string, ...params: SQLInputValue[]): void {
+export function run(sql: string, ...params: SQLInputValue[]): void {
   getDb().prepare(sql).run(...params);
 }
 
 // 여러 UPDATE/INSERT를 하나의 트랜잭션으로 묶어 원자화 (중간 실패 시 전체 롤백)
 let txDepth = 0;
-function tx<T>(fn: () => T): T {
+export function tx<T>(fn: () => T): T {
   if (txDepth > 0) return fn();
   const d = getDb();
   d.exec('BEGIN');

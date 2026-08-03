@@ -74,9 +74,37 @@ export function bettingRoundClosed(seats: SeatView[]): boolean {
   const actors = seats.filter(canAct);
   if (actors.length === 0) return true;              // 전부 올인 — 더 낼 사람이 없다
   const hb = highBet(seats);
-  // 행동할 수 있는 사람이 딱 한 명이고 이미 최고 베팅을 맞춰놨다면 더 물어볼 게 없다
-  if (actors.length === 1 && actors[0].acted && actors[0].bet === hb) return true;
+  /* 더 낼 수 있는 사람이 나 하나뿐이면, 최고 베팅만 맞춰져 있으면 라운드는 끝이다.
+     상대가 전부 올인이라 내가 베팅해도 콜할 사람이 없다 — 실제 포커도 이때 바로
+     보드를 끝까지 깔고 쇼다운한다.
+     여기서 acted까지 요구했던 탓에, 다음 스트리트마다 그 한 명에게 다시 물어봤다.
+     그러면 콜되지도 않을 베팅을 하거나(초과분이 사라진다) 이미 큰 금액을 넣고도
+     폴드할 수 있게 되어(넣은 돈이 아무에게도 안 가고 사라진다) 칩이 새어나갔다. */
+  if (actors.length === 1) return actors[0].bet === hb;
   return actors.every(s => s.acted && s.bet === hb);
+}
+
+/**
+ * 콜되지 않은 초과 베팅을 돌려준다.
+ *
+ * 최고 투입액이 유일하면 2위와의 차액은 아무도 다투지 않은 돈이다 —
+ * 상대가 스택이 부족해 그만큼 콜할 수 없었다는 뜻이다. 실제 포커는 그 차액을
+ * 팟에 넣지 않고 즉시 베팅한 사람에게 되돌린다.
+ *
+ * 안 돌려주면 그 돈이 "자격자가 없는 팟 층"으로 남아 분배에서 통째로 사라진다.
+ * (무작위 검사에서 1,150칩이 증발하는 판이 잡혔다.)
+ */
+export function returnUncalled(seats: SeatView[]): { seat: number; amount: number } | null {
+  const withMoney = seats.filter(s => s.committed > 0);
+  if (!withMoney.length) return null;
+  const sorted = [...withMoney].sort((a, b) => b.committed - a.committed);
+  // 혼자만 냈다면(전원 폴드) 낸 돈 전부가 콜되지 않은 돈이다
+  const second = sorted.length > 1 ? sorted[1].committed : 0;
+  const excess = sorted[0].committed - second;
+  if (excess <= 0) return null;
+  sorted[0].committed -= excess;
+  sorted[0].stack += excess;
+  return { seat: sorted[0].seat, amount: excess };
 }
 
 /** 이 자리가 지금 할 수 있는 행동들. UI 버튼과 서버 검증이 같은 함수를 쓴다. */
