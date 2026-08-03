@@ -480,23 +480,37 @@ section('[13] 블라인드 구조');
 }
 
 /* ── 14. ITM 인원 ───────────────────────────────────────────────── */
-section('[14] ITM 인원');
+section('[14] ITM 인원 (30%)');
 {
-  ck('3명 → 1명', T.itmCount(3) === 1);
-  ck('4명 → 2명', T.itmCount(4) === 2);
-  ck('5명 → 2명', T.itmCount(5) === 2);
-  ck('6명 → 3명', T.itmCount(6) === 3);
-  ck('8명 → 3명', T.itmCount(8) === 3);
-  ck('9명 → ceil(9×0.4) = 4명', T.itmCount(9) === 4, String(T.itmCount(9)));
-  ck('12명 → ceil(4.8) = 5명', T.itmCount(12) === 5, String(T.itmCount(12)));
-  ck('20명 → 8명', T.itmCount(20) === 8, String(T.itmCount(20)));
-  ck('100명 → 40명', T.itmCount(100) === 40, String(T.itmCount(100)));
-  ck('ITM 비율이 40~45% 구간', [9, 12, 20, 50, 100].every(n => {
-    const r = T.itmCount(n) / n;
-    return r >= 0.40 && r <= 0.45;
-  }));
+  ck('비율 상수가 30%', T.ITM_RATIO === 0.3, String(T.ITM_RATIO));
+  ck('3명 → ceil(0.9) = 1명', T.itmCount(3) === 1);
+  ck('4명 → ceil(1.2) = 2명', T.itmCount(4) === 2);
+  ck('5명 → ceil(1.5) = 2명', T.itmCount(5) === 2);
+  ck('6명 → ceil(1.8) = 2명', T.itmCount(6) === 2, String(T.itmCount(6)));
+  ck('7명 → ceil(2.1) = 3명', T.itmCount(7) === 3, String(T.itmCount(7)));
+  ck('8명 → ceil(2.4) = 3명', T.itmCount(8) === 3);
+  ck('9명 → ceil(2.7) = 3명', T.itmCount(9) === 3, String(T.itmCount(9)));
+  ck('10명 → 3명', T.itmCount(10) === 3, String(T.itmCount(10)));
+  ck('11명 → ceil(3.3) = 4명', T.itmCount(11) === 4, String(T.itmCount(11)));
+  ck('20명 → 6명', T.itmCount(20) === 6, String(T.itmCount(20)));
+  ck('100명 → 30명', T.itmCount(100) === 30, String(T.itmCount(100)));
+  /* 실제 비율은 올림 때문에 30%를 넘을 수 있다. 넘는 폭의 상한은 1/n이다
+     (ceil이 최대 1명을 더 올리므로). 인원이 적을 때 43%까지 가는 건 정상이다 —
+     7명은 ceil(2.1)=3명이라 43%다. 그래서 고정 구간이 아니라 이 성질로 검증한다. */
+  ck('ITM 비율이 30% 이상, 30% + 1/n 이하',
+    Array.from({ length: 100 }, (_, i) => i + 4).every(n => {
+      const r = T.itmCount(n) / n;
+      return r >= 0.30 - 1e-9 && r <= 0.30 + 1 / n + 1e-9;
+    }),
+    [7, 10, 20, 50, 100].map(n => n + ':' + (T.itmCount(n) / n * 100).toFixed(0) + '%').join(' '));
+  ck('인원이 늘면 30%에 수렴 (100명 30% · 1000명 30%)',
+    T.itmCount(100) / 100 === 0.30 && T.itmCount(1000) / 1000 === 0.30,
+    `${T.itmCount(100)} / ${T.itmCount(1000)}`);
   ck('ITM은 참가자 수를 넘지 않는다',
     Array.from({ length: 60 }, (_, i) => i + 1).every(n => T.itmCount(n) <= n));
+  ck('항상 최소 1명은 받는다',
+    Array.from({ length: 60 }, (_, i) => i + 1).every(n => T.itmCount(n) >= 1));
+  ck('0명이면 0명', T.itmCount(0) === 0);
 }
 
 /* ── 15. 상금 비율 ──────────────────────────────────────────────── */
@@ -520,7 +534,7 @@ section('[15] 상금 비율');
 }
 
 /* ── 16. 상금 금액 ──────────────────────────────────────────────── */
-section('[16] 상금 금액 — 합이 정확히 상금 풀');
+section('[16] 상금 금액 — 합이 정확히 상금 풀 (최대잉여법)');
 {
   const cases: [number, number][] = [
     [3000, 3], [4000, 4], [5000, 5], [6000, 6], [9000, 9],
@@ -537,6 +551,19 @@ section('[16] 상금 금액 — 합이 정확히 상금 풀');
     }
   }
   ck('표 사례 전부 합 일치 · 단조 감소 · 정수', bad === 0, `${bad}건 실패`);
+
+  /* 최대잉여법이 실제로 의도한 비율에 맞는 숫자를 내는지.
+     1위부터 나머지를 얹던 예전 방식은 65/35 배분을 2,601/1,399로 만들었다. */
+  ck('4명 4,000P → 2,600 / 1,400 (예전엔 2,601 / 1,399)',
+    JSON.stringify(T.prizeAmounts(4000, 4)) === '[2600,1400]', JSON.stringify(T.prizeAmounts(4000, 4)));
+  ck('5명 5,000P → 3,250 / 1,750',
+    JSON.stringify(T.prizeAmounts(5000, 5)) === '[3250,1750]', JSON.stringify(T.prizeAmounts(5000, 5)));
+  ck('6명 6,000P → 3,900 / 2,100 (ITM 2명)',
+    JSON.stringify(T.prizeAmounts(6000, 6)) === '[3900,2100]', JSON.stringify(T.prizeAmounts(6000, 6)));
+  ck('9명 9,000P → 4,500 / 2,781 / 1,719 (ITM 3명)',
+    JSON.stringify(T.prizeAmounts(9000, 9)) === '[4500,2781,1719]', JSON.stringify(T.prizeAmounts(9000, 9)));
+  ck('주말 5명 10,000P → 6,500 / 3,500',
+    JSON.stringify(T.prizeAmounts(10000, 5)) === '[6500,3500]', JSON.stringify(T.prizeAmounts(10000, 5)));
 
   /* 무작위. 합이 상금 풀과 한 포인트라도 다르면 포인트가 새로 생기거나 사라진다 —
      내림만 하면 나머지가 사라지고, 올리면 없던 포인트가 발행된다. */

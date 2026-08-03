@@ -174,21 +174,24 @@ export function nextLevelIn(elapsedSec: number): number | null {
 }
 
 /* ── 상금 정책 ───────────────────────────────────────────────────────
-   ITM 인원은 참가자의 약 40%. 스펙 4항의 표를 그대로 쓴다.
-   비율은 "1위가 가장 크고 아래로 갈수록 감소"하는 등비 수열로 만든다.
+   ITM 인원은 참가자의 30%. 스펙 4항은 40%였는데, 상금을 위로 몰아 1위의
+   보상을 키우기로 정했다. 실제로 겪는 인원대(3~5명)에서는 두 값이 같아서
+   차이가 없고, 6명 이상에서만 지급 인원이 한 명씩 줄어든다.
 
+   비율은 "1위가 가장 크고 아래로 갈수록 감소"하는 등비 수열로 만든다.
    1위 목표 비중을 인원 수에 따라 다르게 잡는 게 중요하다.
    스펙은 40~45%라고 했지만 지급 인원이 1~3명일 때는 그 값이 성립하지 않는다:
    2명에게 40/60으로 주면 2위가 1위보다 많이 받는다. 그래서 소수 인원은
    실제 토너먼트의 관례값(1명 100% · 2명 65% · 3명 50%)을 쓰고,
    4명 이상부터 45%에서 시작해 인원이 늘수록 40%로 수렴시킨다. */
 
+/** 상금 지급 인원 비율 */
+export const ITM_RATIO = 0.3;
+
 export function itmCount(n: number): number {
-  if (n < MIN_PLAYERS) return n > 0 ? 1 : 0;
-  if (n === 3) return 1;
-  if (n <= 5) return 2;
-  if (n <= 8) return 3;
-  return Math.ceil(n * 0.4);
+  if (n <= 0) return 0;
+  // 최소 1명은 받는다 — 3명 판은 ceil(0.9)=1로 어차피 1명이지만 2인 이하에서도 0이 되면 안 된다
+  return Math.max(1, Math.min(n, Math.ceil(n * ITM_RATIO)));
 }
 
 function topShareTarget(k: number): number {
@@ -225,16 +228,28 @@ export function prizeShares(k: number): number[] {
 
 /**
  * 상금 풀을 순위별 정수 포인트로 나눈다.
- * 합이 정확히 pool이어야 한다 — 내림만 하면 나머지가 사라지고, 올리면 포인트가
- * 새로 생긴다. 각자 내림한 뒤 남은 나머지를 1위부터 1P씩 얹는다.
+ *
+ * 합이 정확히 pool이어야 한다 — 내림만 하면 나머지가 사라지고, 올리면 없던
+ * 포인트가 발행된다. 그래서 각자 내림한 뒤 남은 나머지를 나눠 줘야 하는데,
+ * 이때 "소수부가 큰 등수부터" 준다(최대잉여법).
+ *
+ * 나머지를 1위부터 순서대로 얹으면 65/35 배분이 2,601/1,399처럼 나온다 —
+ * 1위 몫이 2,600.3이고 2위가 1,399.7인데 남은 1P가 위로 딸려 올라가기 때문이다.
+ * 소수부 기준으로 주면 1,399.7이 받아 2,600/1,400이 된다.
+ *
+ * 순위가 뒤집힐 걱정은 없다: 정수부가 같다면 값이 큰 쪽이 소수부도 반드시 크다.
+ * 소수부가 같을 때만 상위 등수를 먼저 준다.
  */
 export function prizeAmounts(pool: number, players: number): number[] {
   const k = itmCount(players);
   if (k <= 0 || pool <= 0) return [];
-  const shares = prizeShares(k);
-  const out = shares.map(s => Math.floor(pool * s));
-  let rest = pool - out.reduce((a, b) => a + b, 0);
-  for (let i = 0; rest > 0; i = (i + 1) % k) { out[i]++; rest--; }
+  const exact = prizeShares(k).map(s => pool * s);
+  const out = exact.map(v => Math.floor(v));
+  const rest = pool - out.reduce((a, b) => a + b, 0);
+  const byFrac = exact
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => (b.frac - a.frac) || (a.i - b.i));
+  for (let n = 0; n < rest; n++) out[byFrac[n % k].i]++;
   return out;
 }
 
