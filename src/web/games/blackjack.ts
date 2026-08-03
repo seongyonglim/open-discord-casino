@@ -456,6 +456,9 @@ export function blackjackPage(user: WebUser): string {
             '<div class="bj-seat-top"><span class="bj-seat-name">'+esc(s.username)+'</span>' +
               '<span class="bj-seat-total" id="bjt-'+i+'"></span></div>' +
             '<div class="bj-hand small" id="bjh-'+i+'"></div>' +
+            // 21을 넘긴 순간 손패 위에 찍히는 도장 (딜러 쪽과 같은 규칙).
+            // 손패 div 안에 넣으면 syncCards가 관리하는 자식 순서와 섞이므로 형제로 둔다.
+            '<span class="bj-seat-bust" id="bjx-'+i+'" hidden>BUST</span>' +
             '<div class="bj-pile" id="bjp-'+i+'"></div>' +
             '<div class="bj-seat-foot">' +
               '<span class="bj-seat-bet" id="bjb-'+i+'"></span>' +
@@ -484,9 +487,30 @@ export function blackjackPage(user: WebUser): string {
           if (b) b.textContent = compact(s.bet);
           var g = document.getElementById('bjg-'+s.seat);
           if (g) g.textContent = s.outcome ? outcomeLabel(s.outcome) : statusLabel(s.status);
+          markSeatBust(s);
           syncPile(s, r.id);
         });
         return dealt;
+      }
+
+      /* 플레이어 버스트 연출.
+         딜러 쪽과 같은 도장을 자리에 찍고, 자리를 한 번 흔든다.
+         소리는 내 자리에서만 낸다 — 다섯 자리가 같은 판에서 함께 죽으면
+         "쿵"이 다섯 번 겹쳐 울려서 무슨 일이 났는지 알 수 없게 된다. */
+      var seatBust = {};
+      function markSeatBust(s){
+        var el = document.getElementById('bjx-'+s.seat);
+        if (!el) return;
+        var on = s.status === 'bust';
+        if (on === !!seatBust[s.seat]) { el.hidden = !on; return; }
+        seatBust[s.seat] = on;
+        el.hidden = !on;
+        if (!on) { el.classList.remove('pop'); return; }
+        if (firstState) return;   // 이미 끝난 판을 열었을 뿐이다 — 도장만 남기고 연출은 생략
+        replay(el, 'pop');
+        var seat = seatsEl.querySelector('.bj-seat[data-seat="'+s.seat+'"]');
+        if (seat) replay(seat, 'bustshake');
+        if (s.userId === MEID && window.casinoSfx && window.casinoSfx.bust) window.casinoSfx.bust();
       }
 
 
@@ -561,6 +585,7 @@ export function blackjackPage(user: WebUser): string {
           clearDealerReveal(); shownD = 0;
           dCardsEl.innerHTML = ''; seatsEl.dataset.sig = '';
           dTotalEl.textContent = '–';
+          seatBust = {};   // 지난 판의 버스트 도장 기록을 버린다
           if (!firstState && window.casinoSfx) window.casinoSfx.shuffle();
         }
 
