@@ -165,6 +165,33 @@ function ensureTournament(now: number): HtRow {
   return findTournament(s.dateStr)!;
 }
 
+/** 진행 중이던 판을 버려도 되는 시각. 이 시간을 넘기면 부팅 취소와 같은 취급을 한다. */
+export const ABANDON_SEC = 6 * 3600;
+
+/**
+ * 지금 다뤄야 할 토너먼트.
+ *
+ * 진행 중인 판이 있으면 날짜와 무관하게 그것을 계속 쓴다.
+ * 22:00에 시작한 판이 자정을 넘기면(레이트 레그가 붙거나 판이 길어지면 실제로 넘어간다)
+ * 날짜가 바뀌는 순간 "오늘 판"이 새로 생기고, 진행 중이던 테이블은 화면에서 사라진다 —
+ * 플레이 중에 로비로 튕긴다. 실제로 자정을 넘기며 이 일이 일어나는 것을 확인했다.
+ *
+ * 다만 아무도 없는 판이 영원히 다음 날을 막으면 안 되므로, 시작 후 6시간이 지난 판은
+ * 버려진 것으로 보고 취소한다(정상 토너먼트는 블라인드 11레벨 × 8분 ≈ 1시간 30분이면 끝난다).
+ */
+function activeTournament(now: number): HtRow {
+  const running = one<HtRow>(
+    `SELECT * FROM holdem_tournaments
+      WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
+      ORDER BY id DESC LIMIT 1`);
+  if (running) {
+    if (now - (running.started_at ?? now) < ABANDON_SEC) return running;
+    run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`,
+      now, running.id);
+  }
+  return ensureTournament(now);
+}
+
 function facts(t: HtRow): T.TournamentFacts {
   return { startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at };
 }
@@ -178,7 +205,7 @@ function facts(t: HtRow): T.TournamentFacts {
 export function advanceHoldem(): HoldemStatus {
   return tx(() => {
     const now = nowSec();
-    let t = ensureTournament(now);
+    let t = activeTournament(now);
     const s = scheduleOf(t);
     let regs = getEntries(t.id);
 
@@ -186,21 +213,21 @@ export function advanceHoldem(): HoldemStatus {
     if (t.started_at == null && t.cancelled_at == null && now >= s.scheduledStartAt
         && regs.length >= T.MIN_PLAYERS) {
       startTournament(t, regs, now);
-      t = findTournament(s.dateStr)!;
+      t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
     // 취소: 대기 시간까지 인원이 안 찼다
     if (t.started_at == null && t.cancelled_at == null && now >= s.graceEndsAt
         && regs.length < T.MIN_PLAYERS) {
       run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`, now, t.id);
-      t = findTournament(s.dateStr)!;
+      t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
     // 진행 중이면 테이블을 전진시킨다
     if (t.started_at != null && t.finished_at == null && t.cancelled_at == null) {
       const table = getTable(t.id);
       if (table) advanceTable(t, table, now);
-      t = findTournament(s.dateStr)!;
+      t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
     regs = getEntries(t.id);

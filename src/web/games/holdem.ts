@@ -138,7 +138,14 @@ function statePayload(st: HoldemStatus, userId: string) {
           userId: s.user_id,
           username: s.username,
           avatar: avatarOf(s.user_id),
-          stack: s.stack,
+          /* 스택은 두 곳에 있고 시점에 따라 옳은 쪽이 다르다.
+             · 핸드 진행 중: 핸드 안 스택(holdem_hand_seats). 좌석 스택은 핸드가 끝날 때만
+               갱신되므로 그걸 쓰면 베팅을 해도 내 스택이 줄지 않는다 — 칩은 앞에 쌓였는데
+               스택은 그대로라 내가 얼마 남았는지 알 수 없다.
+             · 핸드가 끝난 뒤: 좌석 스택. 딴 금액은 좌석 스택에만 더해지므로 핸드 안 스택을
+               계속 쓰면 방금 이긴 팟이 반영되지 않는다(칩 총합이 어긋난다).
+             핸드에 참여하지 않은 자리도 좌석 스택을 쓴다. */
+          stack: h && !ended ? h.stack : s.stack,
           presence: s.presence,
           inHand: h != null,
           bet: h?.bet ?? 0,
@@ -392,10 +399,25 @@ export function holdemPage(user: WebUser): string {
     function esc(s){ return String(s == null ? '' : s)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function num(n){ return Number(n||0).toLocaleString('ko-KR'); }
+    /* 두 가지 시간 표기를 쓴다.
+       mmss는 '똑딱거리는 시계'용이다 — 다음 블라인드(04:32)처럼 1시간 안쪽의 카운트다운.
+       dur은 사람이 읽는 길이용이다. 내일 21:00까지 남은 시간을 mmss로 찍으면
+       '1253:42'가 되어 무슨 뜻인지 알 수 없다. */
     function mmss(sec){
       if (sec == null) return '--:--';
       var s = Math.max(0, Math.floor(sec));
       return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+    }
+    function dur(sec){
+      if (sec == null) return '-';
+      var s = Math.max(0, Math.floor(sec));
+      var d = Math.floor(s/86400); s -= d*86400;
+      var h = Math.floor(s/3600); s -= h*3600;
+      var m = Math.floor(s/60), ss = s - m*60;
+      if (d) return d + '일 ' + h + '시간';
+      if (h) return h + '시간 ' + m + '분';
+      if (m) return m + '분 ' + ss + '초';
+      return ss + '초';
     }
     /* 스택 표기 — 칩 또는 BB. 숏스택일 때 3.4BB처럼 소수 한 자리가 의미 있다. */
     function stackText(chips){
@@ -421,24 +443,24 @@ export function holdemPage(user: WebUser): string {
       var badge = '', action = '', note = '';
       if (t.status === 'SCHEDULED') {
         badge = '<span class="ht-badge">예정</span>';
-        note = '등록은 ' + mmss(t.regOpenAt - now) + ' 후에 열립니다 (21:00)';
+        note = '등록은 ' + dur(t.regOpenAt - now) + ' 후에 열립니다 (KST 21:00)';
         action = '<button type="button" class="btn btn-gold" disabled>참가 신청</button>';
       } else if (t.status === 'REGISTRATION_OPEN') {
         badge = '<span class="ht-badge open">등록 중</span>';
-        note = '시작까지 ' + mmss(t.scheduledStartAt - now);
+        note = '시작까지 ' + dur(t.scheduledStartAt - now);
         action = t.iRegistered
           ? '<button type="button" class="btn" disabled>신청 완료</button>'
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'WAITING_MIN_PLAYERS') {
         badge = '<span class="ht-badge wait">최소 인원 대기</span>';
-        note = '최소 인원 대기 중 (' + mmss(t.graceEndsAt - now) + ')';
+        note = '최소 인원 대기 중 — ' + dur(t.graceEndsAt - now) + ' 남음';
         action = t.iRegistered
           ? '<button type="button" class="btn" disabled>신청 완료</button>'
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'RUNNING') {
         if (t.lateRegLeft != null) {
           badge = '<span class="ht-badge late">LATE REGIST</span>';
-          note = '늦은 등록 마감까지 ' + mmss(t.lateRegLeft);
+          note = '늦은 등록 마감까지 ' + dur(t.lateRegLeft);
           action = '<button type="button" class="btn btn-gold" id="htJoin">Late Reg 참가하기</button>' +
             ' <button type="button" class="btn" id="htSpectate">관전하기</button>';
         } else {
