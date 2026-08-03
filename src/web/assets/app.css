@@ -1024,7 +1024,10 @@
   .ht-sitout-btn{padding:5px 12px;font-size:12px;flex:none}
 
   /* 중앙 — POT · 보드 · 안내 */
-  .ht-center{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
+  /* 중앙 블록 위치. 팟 칩 더미가 들어오고 내 카드가 커지면서 44%로는 아래가 모자랐다 —
+     실측으로 6시 베팅 칩(위쪽 514px)이 블록 아래(518px)를 4px 밟았고, 조합 pill이
+     켜지면 더 밀렸다. 38%로 올려 칩까지 여유를 둔다. */
+  .ht-center{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
     display:flex;flex-direction:column;align-items:center;gap:9px;z-index:1}
   .ht-pot{display:flex;align-items:center;gap:8px;padding:4px 15px;border-radius:999px;
     background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);font-family:var(--mono)}
@@ -1032,6 +1035,26 @@
   .ht-pot span:last-child{font-size:15px;font-weight:800;color:#fff}
   .ht-board{display:flex;gap:5px;min-height:76px;align-items:center}
   .ht-board .pcard{width:52px;height:78px;border-radius:5px}
+  /* 중앙 팟 칩 더미 — 스트리트가 닫힐 때마다 여기로 칩이 모여 쌓인다.
+     크기를 고정해 두어야 더미가 커져도 중앙 블록 높이가 흔들리지 않는다. */
+  .ht-potpile{position:relative;width:170px;height:30px;flex:none;
+    transition:opacity .5s ease-out}
+  .ht-pchip{position:absolute;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:800;color:#2a2107;letter-spacing:-.2px;
+    text-shadow:0 1px 0 rgba(255,255,255,.35)}
+  .ht-pchip.c-coin{width:17px;height:17px;margin-left:-8.5px;border-radius:50%;font-size:7px;
+    background:radial-gradient(circle at 35% 30%,#f6dc84,#c69a24 70%);
+    box-shadow:0 2px 0 #8a6a1e,0 3px 4px rgba(0,0,0,.5)}
+  .ht-pchip.c-bar{width:32px;height:19px;margin-left:-16px;border-radius:3px;font-size:9px;
+    background:linear-gradient(160deg,#f7e79b,#d4af37 55%,#a9821f);
+    box-shadow:0 2px 0 #7a5c14,0 4px 5px rgba(0,0,0,.55)}
+  .ht-pchip.pending{opacity:0}
+  /* 승자에게 갈 때는 실제로 쌓여 있던 칩을 복제해 날린다 */
+  .ht-pchip.flyout{animation:htPileFly .7s cubic-bezier(.45,.02,.3,1) forwards}
+  @keyframes htPileFly{
+    0%{opacity:1;transform:translate(0,0) scale(1)}
+    100%{opacity:.1;transform:translate(var(--tx),var(--ty)) scale(.7)}
+  }
   .ht-msg{font-family:var(--mono);font-size:12px;color:#cfe0d5;text-align:center;min-height:16px;
     text-shadow:0 1px 3px rgba(0,0,0,.6)}
 
@@ -1056,7 +1079,9 @@
   .ht-seat.folded .ht-plate{border-color:rgba(255,255,255,.08);
     background:linear-gradient(180deg,rgba(18,18,18,.9),rgba(9,9,9,.9))}
   .ht-seat.folded .ht-nm,.ht-seat.folded .ht-stk{color:#8b8b8b}
-  .ht-seat.folded .ht-hole{transform:translateX(-50%) scale(.82)}
+  /* 버린 패는 작게 접어 둔다. 중심 기준으로 줄이면 카드가 커진 만큼 하단이 내려와
+     좌석판을 덮으므로(52×78이면 7px) 아래쪽을 축으로 줄인다. */
+  .ht-seat.folded .ht-hole{transform:translateX(-50%) scale(.82);transform-origin:bottom center}
   .pcard.mucked{filter:grayscale(1) brightness(.55);opacity:.5}
   .pcard.mucked:first-child{transform:rotate(-9deg)}
   .pcard.mucked:last-child{transform:rotate(7deg)}
@@ -1070,8 +1095,16 @@
     background:linear-gradient(180deg,#5fd39a,#2f9d6b)}
   .ht-hole{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:4px;
     display:flex;gap:2px;align-items:flex-end}
-  .pcard.sm{width:27px;height:40px;border-radius:3px}
-  .pcard.hero{width:40px;height:60px;border-radius:4px;
+  /* 12시 쪽 두 자리는 카드를 판 아래로 깐다 — 위로 자라면 둥근 펠트 경계를 뚫는다 */
+  .ht-seat.cards-below .ht-hole{bottom:auto;top:100%;margin:4px 0 0;align-items:flex-start}
+  .ht-seat.cards-below.folded .ht-hole{transform-origin:top center}
+  /* 홀 카드 크기. 카드는 좌석판 위로만 자라므로(.ht-hole bottom:100%) 위쪽 두 좌석
+     (top:16%)이 상한을 정한다. 실측으로 펠트가 950×498일 때:
+      · 내 카드(6시)는 테이블 중앙 아래라 걸리는 게 없어 보드와 같은 52×78까지 안전하다.
+      · 남의 카드는 전 좌석에 같은 크기가 붙으므로 위쪽 좌석이 펠트를 뚫지 않는
+        보드의 65%(34×51)가 상한이다. 그 이상은 카드가 레일 밖으로 나간다. */
+  .pcard.sm{width:34px;height:51px;border-radius:4px}
+  .pcard.hero{width:52px;height:78px;border-radius:5px;
     box-shadow:0 3px 10px rgba(0,0,0,.5)}
   .ht-seat.hero .ht-hole{gap:3px}
 
@@ -1153,6 +1186,12 @@
     border:1px solid rgba(0,0,0,.45);box-shadow:0 1px 2px rgba(0,0,0,.5)}
   .ht-spot-amt{font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;
     text-shadow:0 1px 3px rgba(0,0,0,.75)}
+  /* 칩이 있을 때의 행동 이름 — 칩 위에 층을 쌓으면 아래쪽 좌석에서 중앙 블록까지
+     밀고 올라가므로 같은 줄에 붙인다. 칩이 없을 때는 .ht-act가 단독으로 뜬다. */
+  .ht-spot-act{padding:1px 7px;border-radius:999px;flex:none;
+    background:rgba(8,12,10,.9);border:1px solid rgba(255,255,255,.22);
+    font-size:10px;font-weight:800;letter-spacing:.3px;color:#e6f2ea;
+    box-shadow:0 2px 6px rgba(0,0,0,.5)}
 
   /* 액션 컨트롤 */
   .ht-controls{margin-top:12px;background:var(--panel);border:1px solid rgba(255,255,255,.07);
@@ -1208,6 +1247,13 @@
   .ht-i .v i{font-style:normal;font-size:10.5px;color:var(--muted);font-weight:600}
   .ht-i.late .k{color:#ff8a8a}
   .ht-i.late .v{color:#ff8a8a}
+  /* 블라인드 업 카운트다운 — 패널에서 두 번째로 중요한 숫자다(블라인드 금액 다음).
+     등폭 폰트 + 고정 폭이라 매초 갱신돼도 줄이 흔들리지 않는다. */
+  .ht-nextlv{display:inline-block;min-width:52px;text-align:right;
+    font-family:var(--mono);font-size:15px;font-weight:800;color:#bcd9ff}
+  .ht-nextlv.soon{color:#ffb3b3;animation:htSoon 1s ease-in-out infinite}
+  .ht-nextlv.done{font-size:12.5px;color:var(--muted)}
+  @keyframes htSoon{0%,100%{opacity:1}50%{opacity:.45}}
   .ht-i .ht-unit{padding:2px 9px;border-radius:6px;cursor:pointer;font-family:var(--mono);
     font-size:11px;font-weight:700;color:#9fc0ad;
     background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16)}
@@ -1229,7 +1275,9 @@
   @media (max-width:1100px){
     .ht-cloth{height:430px}
     .ht-board .pcard{width:44px;height:66px}
-    .pcard.hero{width:34px;height:51px}
+    .pcard.hero{width:44px;height:66px}
+    /* 이 구간엔 sm 재정의가 없어서 위쪽 두 좌석 카드가 펠트를 5px 넘고 있었다 */
+    .pcard.sm{width:29px;height:43px}
     .ht-seat{width:104px}
     .ht-who{width:48px;min-width:48px}
     .ht-nm{max-width:44px}
@@ -1239,8 +1287,10 @@
     .ht-cloth{height:376px}
     .ht-track{inset:18px 30px}
     .ht-board .pcard{width:36px;height:54px}
+    /* 이 구간은 사이드 패널이 붙은 채 펠트가 500×376으로 눌려 여유가 없다.
+       남의 카드는 지금 값을 유지하고 내 카드만 보드 크기로 올린다. */
     .pcard.sm{width:22px;height:33px}
-    .pcard.hero{width:29px;height:43px}
+    .pcard.hero{width:36px;height:54px}
     .ht-plate{padding:3px 9px 3px 3px;gap:5px}
     .ht-av{width:24px;height:24px}
     .ht-seat{width:92px}
@@ -1257,8 +1307,8 @@
     .ht-cloth{height:330px}
     .ht-hole{min-height:30px}
     .pcard.sm{width:18px;height:27px}
-    .pcard.hero{width:25px;height:37px}
-    .ht-seat.hero .ht-hole{min-height:37px}
+    .pcard.hero{width:30px;height:45px}
+    .ht-seat.hero .ht-hole{min-height:45px}
     .ht-plate{padding:2px 7px 2px 2px}
     .ht-av{width:20px;height:20px}
     .ht-seat{width:78px}
@@ -1290,9 +1340,17 @@
     100%{opacity:.15;transform:translate(var(--tx),var(--ty)) scale(.8)}
   }
 
-  /* 실제로 깔리지 않은 카드는 흐리게 + 점선으로 구분한다 — 결과와 혼동하면 안 된다 */
-  .pcard.rabbit{opacity:.5;filter:saturate(.6);outline:1.5px dashed rgba(255,255,255,.45);
-    outline-offset:-2px}
+  /* 실제로 깔리지 않은 카드 — 결과와 혼동하면 안 되니 확실히 구분한다.
+     예전에는 opacity:.5로 흐리게 뒀는데, cardFlip이 opacity를 .25→1로 애니메이션하는
+     동안에는 애니메이션이 이 값을 이기므로 "밝게 열렸다가 끝나는 순간 툭 흐려지는" 게 됐다.
+     밝기는 건드리지 않고 테두리와 색으로만 구분한다. .pcard.shown의 금색과 겹치지 않게
+     차가운 파란색 점선을 쓴다. */
+  .pcard.rabbit{outline:2px dashed rgba(125,211,252,.85);outline-offset:-2px;
+    box-shadow:0 0 10px rgba(125,211,252,.3)}
+  /* 어느 카드가 래빗인지 글자로도 알려준다 — 색만으로는 못 읽는 사람이 있다 */
+  .ht-rnote{margin-top:6px;font-size:11.5px;font-weight:700;color:#7dd3fc;
+    font-family:var(--mono);letter-spacing:.3px}
+  .ht-rnote[hidden]{display:none}
   /* 본인이 굳이 깐 패 — 쇼다운 공개와 구분되게 금색 테두리를 준다 */
   .pcard.shown{outline:1.5px solid rgba(240,205,110,.8);outline-offset:-2px;
     box-shadow:0 0 8px rgba(240,205,110,.35)}
