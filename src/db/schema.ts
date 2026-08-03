@@ -214,7 +214,11 @@ function initSchema(): void {
       payout INTEGER,
       created_at INTEGER DEFAULT (unixepoch())
     );
-    -- 한 사람은 한 자리만, 한 자리에는 한 사람만
+    /* 한 사람은 한 자리만, 한 자리에는 한 사람만.
+       이 두 유니크 인덱스가 "한 사람 = 한 손패"를 보장한다 — 스플릿을 넣지 않기로 한
+       결정이 여기에 박혀 있다. 스플릿을 하려면 손패가 사람당 여러 개가 되어야 해서
+       이 인덱스부터 정산 루프·액션 API·자리 UI까지 전제가 전부 깨진다.
+       (기본 전략이 실제로 쪼개는 상황은 39판에 1번뿐이라 그 값어치가 없다고 판단했다) */
     CREATE UNIQUE INDEX IF NOT EXISTS idx_bj_hand_user ON blackjack_hands(round_id, user_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_bj_hand_seat ON blackjack_hands(round_id, seat);
   `);
