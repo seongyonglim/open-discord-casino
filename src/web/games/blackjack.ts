@@ -885,14 +885,9 @@ export function blackjackPage(user: WebUser): string {
         poll();
       });
       surBtn.addEventListener('click', async function(){
-        /* 되돌릴 수 없는 선택이라 한 번 묻는다. 딜러가 블랙잭이면 무효라는 것도 같이 알린다 —
-           버튼에는 "절반만 잃고 종료"라고만 적혀 있어 오해할 수 있다.
-
-           개행은 반드시 \\n으로 쓴다. 이 스크립트는 TS 템플릿 리터럴 안에 있어서 \n이라고 쓰면
-           TS가 그 자리에서 진짜 개행으로 바꿔 내보내고, 따옴표 문자열이 줄 끝에서 닫히지 않아
-           스크립트 전체가 파싱 실패한다 — 페이지의 모든 기능이 한꺼번에 죽는다(실제로 그랬다). */
-        if (!confirm('이 판을 포기할까요?\\n\\n베팅의 절반을 잃고 끝냅니다.\\n'
-          + '단 딜러가 블랙잭이면 서렌더가 무효가 되어 전액을 잃습니다.')) return;
+        /* 확인창 없이 바로 적용한다. 결정 시간이 15초뿐인데 브라우저 기본 대화상자가
+           그 위에 뜨면 흐름이 끊기고, 무엇보다 이 버튼은 첫 두 장에서만 나오므로
+           실수로 누를 자리가 아니다. 무효 규칙은 버튼 아래 설명과 규칙 도움말에 적혀 있다. */
         var res = await post('/api/games/blackjack/action', { action: 'surrender' });
         if (!res.ok && res.d && res.d.error) alert(res.d.error);
         poll();

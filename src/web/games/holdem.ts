@@ -24,6 +24,14 @@ import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import type { WebUser } from '../../db/queries';
 
+/* 대회가 끝난 뒤에도 테이블을 잠시 더 내려보내는 시간.
+   0으로 두면(예전 동작) 마지막 판이 끝나는 순간 status가 FINISHED가 되면서 table이
+   null이 되고, 화면이 그 자리에서 로비로 갈아치워진다 — 대회를 결정지은 그 판의
+   쇼다운을 아무도 못 본다. 우승자가 무엇으로 이겼는지도, 팟이 넘어가는 것도 못 본다.
+   그래서 마지막 판을 끝까지 보여주고 나서 축하로 넘어가게 이 창을 둔다.
+   (다른 포커 클라이언트도 결과를 10초 남짓 띄워 두고 테이블을 정리한다) */
+export const FINISH_LINGER_SEC = 12;
+
 /* ── 상태 응답 ────────────────────────────────────────────────────── */
 
 function statePayload(st: HoldemStatus, userId: string) {
@@ -76,7 +84,12 @@ function statePayload(st: HoldemStatus, userId: string) {
     table: null as unknown,
   };
 
-  if (!table || st.status !== 'RUNNING') return base;
+  /* 끝난 직후 잠깐은 테이블을 계속 내려보낸다 — 마지막 판의 쇼다운을 보여주기 위해서다.
+     이때 좌석은 전부 OUT이지만 shownSeats가 "끝난 판에 참여했던 자리"를 남기므로
+     (탈락자에게 자기 쇼다운을 보여주려고 이미 있는 장치다) 그대로 그려진다. */
+  const finishedAgo = t.finished_at != null ? now - t.finished_at : null;
+  const lingering = st.status === 'FINISHED' && finishedAgo != null && finishedAgo < FINISH_LINGER_SEC;
+  if (!table || (st.status !== 'RUNNING' && !lingering)) return base;
 
   const seats = getSeats(table.id);
   const living = seats.filter(s => s.presence !== 'OUT');
@@ -140,6 +153,14 @@ function statePayload(st: HoldemStatus, userId: string) {
         ? Math.max(0, hand.action_deadline - now) : null,
       actionSec: ACTION_SEC,
       pot: potTotal,
+      /* 팟의 층 구성. 올인이 섞이면 "메인 팟 + 사이드 팟"으로 갈라지는데, 합계만 보여주면
+         내가 실제로 다툴 수 있는 금액이 얼마인지 알 수 없다 — 스택이 작은 사람은
+         메인 팟만 가져갈 수 있다.
+         정산용 buildPots를 쓰면 안 된다. 그건 투입액이 다를 때마다 층을 자르므로
+         스몰·빅 블라인드만 낸 상태에서도 "사이드 팟"이 생긴다(실제로 그랬다).
+         potLayers는 올인이 실제로 뚜껑을 덮은 지점에서만 자른다.
+         eligible(자격 좌석)은 폴드 여부에서 나오는 값이라 히든 정보가 아니다. */
+      pots: G.potLayers(views).map(p => ({ amount: p.amount, eligible: p.eligible })),
       ended,
       result,
       nextHandIn: table.next_hand_at != null ? Math.max(0, table.next_hand_at - now) : null,
@@ -199,6 +220,11 @@ function statePayload(st: HoldemStatus, userId: string) {
       mySeat: mySeat?.seat ?? null,
       myPresence: mySeat?.presence ?? null,
       legal: myLegal,
+      /* 대회가 끝났고 지금은 마지막 판을 보여주는 중이라는 신호.
+         클라이언트는 이걸 보고 "다음 판 N초" 대신 종료를 알리고, 남은 시간이 다 되면
+         우승 축하로 넘어간다. 이게 없으면 테이블이 왜 멈춰 있는지 알 수 없다. */
+      tournamentOver: lingering,
+      finishLeft: lingering ? Math.max(0, FINISH_LINGER_SEC - finishedAgo!) : null,
     },
   };
 }
@@ -365,15 +391,31 @@ export function holdemPage(user: WebUser): string {
 
               <div class="ht-center">
                 <div class="ht-pot"><span class="ht-pot-k">POT</span><span id="htPot">0</span></div>
+                <!-- 올인이 섞여 팟이 갈라졌을 때만 나온다 (메인 / 사이드) -->
+                <div class="ht-pots" id="htPots" hidden></div>
                 <div class="ht-board" id="htBoard"></div>
                 <!-- 실제로 중앙에 쌓이는 팟 칩 더미. 숫자만 있으면 팟이 커지는 게 안 보이고,
                      끝나서 승자에게 갈 때도 "무엇이" 가는지가 없다. -->
                 <div class="ht-potpile" id="htPotPile"></div>
                 <div class="ht-msg" id="htMsg"></div>
+                <!-- 무엇으로 이겼나. 카드 강조(win5)와 짝을 이룬다 — 밝은 5장이 왜
+                     밝은지를 이 한 줄이 설명한다. 쇼다운이 있었던 판에만 나온다. -->
+                <div class="ht-outro" id="htOutro" hidden></div>
                 <div class="ht-read" id="htRead" hidden></div>
                 <!-- 래빗 카드가 몇 장인지 글자로도 알려준다 (색만으로는 부족하다) -->
                 <div class="ht-rnote" id="htRNote" hidden></div>
                 <!-- 래빗 헌트 · 패 공개 버튼은 아래 액션 버튼 줄에 있다 (ht-acts) -->
+              </div>
+
+              <!-- 블라인드 상승 알림 — 3초만 뜬다. 테이블 위에 겹쳐 띄워서 놓치지 않게 한다. -->
+              <div class="ht-lvup" id="htLvUp" hidden>
+                <div class="ht-lvup-t">LEVEL UP</div>
+                <div class="ht-lvup-n" id="htLvNo"></div>
+                <div class="ht-lvup-b">
+                  <span class="ht-lvup-from" id="htLvFrom"></span>
+                  <span class="ht-lvup-ar">→</span>
+                  <span class="ht-lvup-to" id="htLvTo"></span>
+                </div>
               </div>
 
               <!-- 자리 비움 배너 — 오른쪽 패널의 버튼만으로는 놓치기 쉽다.
@@ -475,18 +517,29 @@ export function holdemPage(user: WebUser): string {
     var rabbitBtn = document.getElementById('htRabbit');
     var showBtn = document.getElementById('htShow');
     var rnoteEl = document.getElementById('htRNote');
+    var outroEl = document.getElementById('htOutro');
+    var lvEl = document.getElementById('htLvUp');
+    var potsEl = document.getElementById('htPots');
     var pileEl = document.getElementById('htPotPile');
     var winEl = document.getElementById('htWin');
 
     /* ── 우승 축하 ───────────────────────────────────────────────────
-       한 대회에 한 번만 뜬다. 세션에 표시해 두므로 새로고침해도 다시 뜨지 않는다
-       (같은 결과 화면을 볼 때마다 팡파레가 울리면 축하가 아니라 잡음이다). */
+       마지막 판을 다 보여준 뒤에 뜬다(FINISH_LINGER_SEC). 그 전에 띄우면 대회를
+       결정지은 판의 쇼다운을 덮어버린다.
+
+       한 대회에 한 번만 뜨고, 닫으면 다시 뜨지 않는다. 다만 표시 기록의 열쇠에
+       종료 시각을 함께 넣는다 — 대회 id만 쓰면, 같은 대회를 다시 돌렸을 때(테스트 중
+       서버를 다시 띄우면 그날 대회가 같은 id로 초기화된다) 축하가 영구히 억제된다.
+       실제로 이 때문에 "우승 연출이 안 뜬다"는 제보가 나왔다. */
+    function celebrateKey(t){ return 'od_ht_win_' + t.id + ':' + (t.finishedAt || 0); }
     function celebrate(){
       var t = st.tournament;
       if (t.status !== 'FINISHED') return;
       var results = st.results || [];
       if (!results.length) return;
-      var key = 'od_ht_win_' + t.id;
+      // 마지막 판을 보여주는 중이면 아직이다 — 링거가 끝나고 나서 축하한다
+      if (st.table && st.table.tournamentOver) return;
+      var key = celebrateKey(t);
       try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); }
       catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }
 
@@ -688,8 +741,24 @@ export function holdemPage(user: WebUser): string {
       { plate: [75, 90], bet: [66, 70] },
     ];
 
+    /* 이 판의 SB·BB 자리. 딜링 순서를 정할 때 쓰는 sbSeatOf를 그대로 쓴다 —
+       규칙이 두 곳에 따로 적히면 배지와 실제 블라인드가 어긋난다. */
+    function blindSeatsOf(tb){
+      var inHand = (tb.seats || []).filter(function(s){ return s.inHand; });
+      if (inHand.length < 2) return { sb: null, bb: null };
+      var sb = sbSeatOf(inHand, tb.buttonSeat);
+      var nums = inHand.map(function(s){ return s.seat; });
+      var bb = null;
+      for (var i = 1; i <= 9; i++) {
+        var cand = (sb + i) % 9;
+        if (nums.indexOf(cand) >= 0) { bb = cand; break; }
+      }
+      return { sb: sb, bb: bb };
+    }
+
     function renderSeats(){
       var tb = st.table, seats = tb.seats || [];
+      var blindSeats = blindSeatsOf(tb);
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
@@ -713,15 +782,25 @@ export function holdemPage(user: WebUser): string {
             '<div class="ht-hole"></div>' +
             '<div class="ht-plate">' +
               avatarHtml(s.userId, s.avatar, s.username, 'ht-av') +
+              /* 남은 행동 시간 — 아바타를 두르는 고리 + 작은 숫자.
+                 좌석판 가운데에 두면 이름과 스택을 덮는다(실제로 그랬다). 아바타 둘레는
+                 비어 있는 자리이고, "누구의 시간인지"도 아바타에 붙어 있어야 분명하다. */
+              '<span class="ht-clock" hidden></span>' +
+              '<span class="ht-clock-n" hidden></span>' +
               '<span class="ht-who">' +
                 '<span class="ht-nm">Seat ' + (s.seat + 1) +
                   (s.userId === MEID ? ' (나)' : '') + '</span>' +
                 '<span class="ht-stk" id="htstk-' + s.seat + '"></span>' +
               '</span>' +
               '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼" hidden>D</span>' +
+              /* 블라인드 배지 — 딜러 버튼 반대쪽에 붙인다. 같은 쪽에 두면 D와 겹친다.
+                 포지션(누가 먼저 말하는지)이 보이지 않으면 초보는 프리플랍 순서를 못 읽는다. */
+              '<span class="ht-blind ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
               '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
               '<span class="ht-zzz" title="자리 비움" hidden>II</span>' +
             '</div>' +
+            /* 남은 행동 시간 — 좌석판을 두르는 고리. 숫자만으로는 "얼마 안 남았다"가
+               몸으로 안 느껴진다. 각도는 클라이언트가 매 프레임 보간한다(서버 해상도는 1초). */
           '</div>';
 
         /* 골격 서명은 "누가 어느 자리에 앉았나"만 본다.
@@ -783,6 +862,17 @@ export function holdemPage(user: WebUser): string {
         // 딜러 버튼·배지는 만들어 두고 감췄다 켠다 (요소를 새로 만들면 카드까지 딸려 다시 생긴다)
         var puck = seatEl.querySelector('.ht-puck');
         if (puck) puck.hidden = s.seat !== tb.buttonSeat;
+        /* SB / BB 배지. 판이 끝난 뒤에는 지운다 — 다음 판이면 자리가 바뀐다.
+           헤즈업에서는 버튼이 곧 SB라 D와 SB가 같은 자리에 나란히 붙는다(실제 규칙이다). */
+        var blind = seatEl.querySelector('.ht-blind');
+        if (blind) {
+          var role = !tb.ended && s.inHand
+            ? (s.seat === blindSeats.sb ? 'SB' : s.seat === blindSeats.bb ? 'BB' : '')
+            : '';
+          blind.hidden = !role;
+          blind.textContent = role;
+          blind.classList.toggle('bb', role === 'BB');
+        }
         var foldB = seatEl.querySelector('.ht-fold-b');
         if (foldB) foldB.hidden = s.state !== 'folded';
         var zzz = seatEl.querySelector('.ht-zzz');
@@ -790,6 +880,69 @@ export function holdemPage(user: WebUser): string {
         syncHole(seatEl.querySelector('.ht-hole'), s);
       });
     }
+
+    /* ── 행동 시간 고리 ───────────────────────────────────────────────
+       서버는 남은 초를 정수로만 준다(폴링도 1초 간격이다). 그걸 그대로 그리면 고리가
+       1초마다 뚝뚝 끊긴다. 그래서 폴링이 준 값을 기준점으로 잡고 그 뒤로는
+       실제 흐른 시간으로 보간해 매 프레임 그린다 — 다음 폴링이 오면 기준점만 새로 맞춘다.
+
+       마지막 5초에 색을 바꾸고 초당 한 번 짧게 울린다. 시간이 다 되면 서버가 자동으로
+       체크(불가하면 폴드)하므로, 이 경고는 "지금 안 누르면 자동으로 넘어간다"는 뜻이다. */
+    var clockBase = null;      // { seat, left, at, total }
+    var clockBeeped = null;    // 마지막으로 울린 남은 초 (같은 초에 두 번 울리지 않게)
+    function noteClock(tb){
+      if (!tb || tb.toActSeat == null || tb.actionLeft == null || tb.ended) {
+        clockBase = null; clockBeeped = null;
+        return;
+      }
+      // 같은 자리·같은 남은 초가 계속 오는 동안에는 기준점을 흔들지 않는다
+      if (clockBase && clockBase.seat === tb.toActSeat && clockBase.left === tb.actionLeft) return;
+      clockBase = {
+        seat: tb.toActSeat, left: tb.actionLeft, at: Date.now(),
+        total: tb.actionSec || 20,
+      };
+    }
+    function paintClock(){
+      var seats = seatsEl.querySelectorAll('.ht-seat');
+      if (!clockBase) {
+        // 고리와 숫자를 같이 감춘다 — 하나만 감추면 지난 판의 남은 초가 화면에 남는다
+        seats.forEach(function(el){
+          var c = el.querySelector('.ht-clock'); if (c) c.hidden = true;
+          var n = el.querySelector('.ht-clock-n'); if (n) n.hidden = true;
+        });
+        return;
+      }
+      var left = clockBase.left - (Date.now() - clockBase.at) / 1000;
+      if (left < 0) left = 0;
+      var frac = clockBase.total > 0 ? left / clockBase.total : 0;
+      if (frac > 1) frac = 1;
+      var warn = left <= 5;
+      seats.forEach(function(el){
+        var c = el.querySelector('.ht-clock');
+        if (!c) return;
+        var n = el.querySelector('.ht-clock-n');
+        var mine = Number(el.getAttribute('data-seat')) === clockBase.seat;
+        c.hidden = !mine;
+        if (n) n.hidden = !mine;
+        if (!mine) return;
+        c.style.setProperty('--frac', String(frac));
+        c.classList.toggle('warn', warn);
+        if (n) {
+          n.textContent = String(Math.ceil(left));
+          n.classList.toggle('warn', warn);
+        }
+      });
+      // 경고음은 내 차례일 때만. 남의 시계까지 울리면 시끄럽고 내 것과 구분도 안 된다.
+      if (warn && st.table && clockBase.seat === st.table.mySeat) {
+        var sec = Math.ceil(left);
+        if (sec > 0 && sec !== clockBeeped) {
+          clockBeeped = sec;
+          if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+        }
+      }
+    }
+    // 고리는 폴링과 무관하게 계속 돈다 — 폴링 사이 1초를 메우는 것이 목적이다
+    setInterval(function(){ if (st && st.table && !tableEl.hidden) paintClock(); }, 80);
 
     /* 홀 카드를 "바뀐 칸만" 갈아 끼운다.
        카드마다 cardFlip 애니메이션이 걸려 있어서, 같은 카드인데 요소를 새로 만들면
@@ -1378,6 +1531,7 @@ export function holdemPage(user: WebUser): string {
       var tb = st.table;
       syncBoard(tb);
       potEl.textContent = stackText(tb.pot) + (unit === 'chip' ? ' P' : '');
+      syncPots(tb);
       renderSeats();
       dealSequence(tb);
       renderSide();
@@ -1427,7 +1581,125 @@ export function holdemPage(user: WebUser): string {
         readEl.textContent = mh.text;
         readEl.className = 'ht-read' + (mh.category != null && mh.category >= 2 ? ' strong' : '');
       }
+      syncHighlight(tb, mh);
+      syncOutro(tb);
+      noteClock(tb);
+      paintClock();
+      syncLevelUp(tb);
       renderControls();
+    }
+
+    /* ── 메인 팟 / 사이드 팟 ──────────────────────────────────────────
+       층이 하나면 위의 POT 숫자로 충분하므로 아무것도 띄우지 않는다. 올인이 섞여 층이
+       갈라졌을 때만 나온다 — 이때는 합계만 보면 내가 다툴 수 있는 금액을 오해한다.
+       내가 자격이 있는 층은 표시해 준다("내가 이 층을 가져갈 수 있다"). */
+    function syncPots(tb){
+      var pots = tb.pots || [];
+      if (pots.length < 2) { potsEl.hidden = true; potsEl.textContent = ''; return; }
+      potsEl.hidden = false;
+      potsEl.innerHTML = pots.map(function(p, i){
+        var mine = tb.mySeat != null && (p.eligible || []).indexOf(tb.mySeat) >= 0;
+        return '<span class="ht-pl' + (mine ? ' mine' : '') + '">' +
+          '<span class="ht-pl-k">' + (i === 0 ? 'MAIN' : 'SIDE ' + i) + '</span>' +
+          '<span class="ht-pl-v">' + stackText(p.amount) + '</span></span>';
+      }).join('');
+    }
+
+    /* ── 블라인드 상승 알림 ───────────────────────────────────────────
+       예전에는 오른쪽 패널 숫자가 조용히 바뀌기만 했다. 토너먼트에서 블라인드가 오른 걸
+       모르면 스택을 BB로 환산하는 감각이 어긋나서 판단이 통째로 틀어진다.
+       레벨이 바뀐 것을 처음 본 순간 이전 값과 새 값을 함께 띄운다. */
+    var seenLevel = null, levelTimer = null;
+    function syncLevelUp(tb){
+      var lv = tb.level;
+      if (!lv) return;
+      if (seenLevel == null) { seenLevel = lv; return; }   // 들어온 순간은 알림 없이 기준만 잡는다
+      if (lv.level === seenLevel.level) return;
+      var prev = seenLevel;
+      seenLevel = lv;
+      document.getElementById('htLvFrom').textContent = num(prev.sb) + ' / ' + num(prev.bb);
+      document.getElementById('htLvTo').textContent = num(lv.sb) + ' / ' + num(lv.bb);
+      document.getElementById('htLvNo').textContent = 'LEVEL ' + lv.level;
+      lvEl.hidden = false;
+      if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+      clearTimeout(levelTimer);
+      levelTimer = setTimeout(function(){ lvEl.hidden = true; }, 3000);
+    }
+
+    /* ── 어느 카드가 지금 내 손을 만들고 있나 ─────────────────────────
+       카드 요소의 alt에 카드 코드가 들어 있다(cardImg가 넣는다). 한 판에 같은 카드는
+       한 장뿐이므로 코드로 찾으면 어디에 있든(내 손·보드) 정확히 그 한 장이 잡힌다.
+
+       클래스만 토글한다 — 요소를 다시 만들면 cardFlip이 재생되어 카드가 다시 뒤집힌다.
+       상태에서 매 폴링 다시 계산하므로, 스트리트가 넘어가면 저절로 맞춰진다. */
+    function markCards(codes, cls){
+      var want = {};
+      (codes || []).forEach(function(c){ if (c) want[c] = 1; });
+      tableEl.querySelectorAll('.pcard').forEach(function(el){
+        var code = el.getAttribute('alt');
+        el.classList.toggle(cls, !!(code && want[code]));
+      });
+    }
+
+    function syncHighlight(tb, mh){
+      /* 판이 끝나면 "이긴 5장"으로 넘어간다. 진행 중에는 "내 등급을 만든 카드"다 —
+         목적이 다르다. 진행 중에 5장을 다 밝히면 플랍에서는 전부가 밝아져 아무
+         신호가 되지 않고, 쇼다운에서 등급 카드만 밝히면 킥커로 갈린 판을 설명하지 못한다. */
+      var reveal = (tb.ended && boardRevealed && tb.result && tb.result.reveal) || [];
+      var awards = (tb.ended && boardRevealed && tb.result && tb.result.awards) || [];
+      if (reveal.length && awards.length) {
+        // 팟을 받은 자리 중 공개된 사람 = 이긴 손. 분할 팟이면 여럿일 수 있다.
+        var wonSeats = {};
+        awards.forEach(function(a){ if (a.amount > 0) wonSeats[a.seat] = 1; });
+        var five = [], winnerCards = [];
+        reveal.forEach(function(r){
+          if (!wonSeats[r.seat]) return;
+          five = five.concat(r.five || []);
+          winnerCards = winnerCards.concat(r.cards || []);
+        });
+        markCards(five, 'win5');
+        markCards([], 'made');
+        /* 이긴 손에 쓰이지 않은 카드는 물린다 — 승자의 홀 카드와 보드 중 5장에 안 든 것.
+           강조의 반대편이 있어야 "이 5장"이 읽힌다. 진 사람의 카드는 건드리지 않는다
+           (그 손은 전부가 진 것이지 "안 쓰인" 게 아니다). */
+        var inFive = {};
+        five.forEach(function(c){ inFive[c] = 1; });
+        var pool = winnerCards.concat((tb.board || []));
+        markCards(pool.filter(function(c){ return !inFive[c]; }), 'unused');
+        return;
+      }
+      markCards([], 'win5');
+      markCards([], 'unused');
+      markCards(mh ? mh.highlight : [], 'made');
+    }
+
+    /* ── 판·대회가 끝났다는 것을 말로 알려 준다 ───────────────────────
+       족보명이 없으면 무엇으로 이겼는지 카드를 직접 읽어야 안다. 실제로 다른 클라이언트도
+       이걸 안 보여줘서 "4초 안에 카드를 다 읽어야 한다"는 불만이 흔하다. */
+    function syncOutro(tb){
+      var reveal = (tb.ended && boardRevealed && tb.result && tb.result.reveal) || [];
+      var awards = (tb.ended && boardRevealed && tb.result && tb.result.awards) || [];
+      var text = '';
+      if (reveal.length && awards.length) {
+        var wonSeats = {};
+        awards.forEach(function(a){ if (a.amount > 0) wonSeats[a.seat] = 1; });
+        var parts = [];
+        reveal.forEach(function(r){
+          if (!wonSeats[r.seat] || !r.hand) return;
+          var s = (tb.seats||[]).filter(function(x){ return x.seat === r.seat; })[0];
+          parts.push((s ? s.username : 'Seat ' + (r.seat+1)) + ' — ' + r.hand);
+        });
+        text = parts.join('  ·  ');
+      }
+      outroEl.hidden = !text;
+      if (text) outroEl.textContent = text;
+
+      /* 대회 종료 — 마지막 판을 보여주는 동안은 테이블에 남아 있고, 시간이 다 되면
+         우승 축하로 넘어간다. 이 안내가 없으면 테이블이 왜 멈춰 있는지 알 수 없다. */
+      if (tb.tournamentOver) {
+        msgEl.textContent = '대회 종료'
+          + (tb.finishLeft != null && tb.finishLeft > 0 ? ' · 결과 ' + tb.finishLeft + '초' : '');
+      }
     }
 
     /* ── 베팅 컨트롤 ─────────────────────────────────────────────── */
@@ -1504,14 +1776,25 @@ export function holdemPage(user: WebUser): string {
     /* 남의 베팅은 폴링으로만 알 수 있다. 자리별 "이번 스트리트 베팅액"을 기억해 두고
        늘어난 자리가 있을 때 칩 소리를 낸다. 여러 명이 한꺼번에 늘어도 한 번만 울린다 —
        같은 소리가 겹치면 지저분해진다. 내 자리는 클릭 순간에 이미 울렸으니 뺀다. */
-    var lastBets = {}, betHandNo = null;
+    var lastBets = {}, betHandNo = null, betStreet = null, myClickAt = 0;
     function playBetSounds(){
       var tb = st.table;
       if (!tb) return;
-      if (tb.handNo !== betHandNo) { lastBets = {}; betHandNo = tb.handNo; }
+      /* 스트리트가 넘어가면 서버가 이 스트리트 베팅을 0으로 되돌린다. 기억을 판 단위로만
+         비우면, 새 스트리트의 첫 베팅이 지난 스트리트 금액보다 작을 때 "늘지 않았다"고
+         판정되어 소리가 삼켜진다 (프리플랍 200 콜 → 플랍 100 벳 = 무음).
+         한 번의 폴링 안에서 스트리트 전환과 새 베팅이 같이 오면 반드시 그렇게 된다. */
+      if (tb.handNo !== betHandNo || tb.street !== betStreet) {
+        lastBets = {}; betHandNo = tb.handNo; betStreet = tb.street;
+      }
       var any = false;
       (tb.seats || []).forEach(function(s){
-        if (s.bet > (lastBets[s.seat] || 0) && s.seat !== tb.mySeat) any = true;
+        /* 내 자리도 센다. 예전에는 "내 것은 클릭 순간에 울렸다"며 빼놨는데, 자리 비움
+           자동 콜이나 자동 콜 체크박스로 나간 칩은 클릭이 없어서 아무 소리도 안 났다.
+           단 내가 방금 직접 눌렀다면 그 소리는 이미 울렸으므로 겹쳐 울리지 않는다. */
+        var grew = s.bet > (lastBets[s.seat] || 0);
+        var mineJustClicked = s.seat === tb.mySeat && (Date.now() - myClickAt) < 2500;
+        if (grew && !mineJustClicked) any = true;
         lastBets[s.seat] = s.bet;
       });
       if (any && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
@@ -1520,8 +1803,10 @@ export function holdemPage(user: WebUser): string {
     function act(kind, amount){
       // 칩이 실제로 나가는 액션에만 소리를 낸다 (폴드·체크는 칩이 안 나간다).
       // 서버 응답을 기다리지 않고 클릭 순간에 울려야 손맛이 난다.
-      if (kind !== 'fold' && kind !== 'check'
-          && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+      if (kind !== 'fold' && kind !== 'check') {
+        myClickAt = Date.now();        // 폴링이 같은 칩 소리를 또 울리지 않게 표시해 둔다
+        if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+      }
       return post('/api/games/holdem/action', { action: kind, amount: amount || 0 })
         .then(function(r){
           if (!r.ok && r.d && r.d.error) msgEl.textContent = r.d.error;
@@ -1579,11 +1864,18 @@ export function holdemPage(user: WebUser): string {
 
     /* ── 렌더 / 폴링 ─────────────────────────────────────────────── */
     function render(){
+      /* 탈락한 뒤에도 대회가 끝날 때까지 테이블에 남긴다(자동 관전).
+         예전에는 내 자리가 사라지는 순간 로비로 튕겨서, 내가 어떻게 죽었는지 본 다음의
+         이야기 — 남은 사람들의 승부와 대회를 결정짓는 마지막 판 — 을 하나도 못 봤다.
+         참가했던 사람만 대상이다. 구경만 하러 온 사람은 로비에서 [관전하기]로 들어온다. */
+      if (st.table != null && st.table.mySeat == null && st.tournament.iRegistered) spectate = true;
       var showTable = st.table != null && (st.table.mySeat != null || spectate);
       lobbyEl.hidden = showTable;
       tableEl.hidden = !showTable;
       if (showTable) { renderTable(); updatePreLabels(); firstTablePaint = false; }
-      else { renderLobby(); celebrate(); }
+      else { renderLobby(); }
+      // 테이블에 있든 로비에 있든 축하는 뜬다 — 예전엔 로비 분기에만 있었다
+      celebrate();
     }
     function post(url, body){
       return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },

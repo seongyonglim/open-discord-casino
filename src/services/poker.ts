@@ -152,6 +152,120 @@ export function scoreCategory(score: number): number {
   return score >>> 20;
 }
 
+/* ── 최강 5장이 어느 카드인지 ─────────────────────────────────────────
+   evaluate7은 "점수"만 준다. 화면에서 승리 5장을 강조하려면 어느 카드가 쓰였는지가
+   필요한데, evaluate7은 카운트와 마스크로 바로 판정하므로 카드 자체를 알 수 없다.
+   그래서 5장 단위 평가를 따로 두고 조합을 전개해 최고를 고른다(7장이면 21가지뿐이다).
+
+   evaluate7과 로직이 갈라지면 "화면에 강조된 5장"과 "실제 승자"가 어긋난다 —
+   그래서 감사에서 7장 무작위 표본에 대해
+     max(evaluate5 over C(7,5)) === evaluate7
+   을 확인한다. 이 등식이 두 함수를 묶어 두는 유일한 장치다. */
+export function evaluate5(cards: number[]): number {
+  const rankCount = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  let rankMask = 0, suitMask = 0;
+  for (const c of cards) {
+    rankCount[c >> 2]++;
+    rankMask |= 1 << (c >> 2);
+    suitMask |= 1 << (c & 3);
+  }
+  // 5장이 모두 같은 무늬면 비트가 하나만 선다
+  const isFlush = suitMask === 1 || suitMask === 2 || suitMask === 4 || suitMask === 8;
+  const st = straightHigh(rankMask);
+
+  if (isFlush && st >= 0) return pack(CAT_STRAIGHT_FLUSH, st);
+
+  let quad = -1;
+  const trips: number[] = [], pairs: number[] = [];
+  for (let r = 12; r >= 0; r--) {
+    const n = rankCount[r];
+    if (n === 4) quad = r;
+    else if (n === 3) trips.push(r);
+    else if (n === 2) pairs.push(r);
+  }
+  if (quad >= 0) {
+    let kicker = 0;
+    for (let r = 12; r >= 0; r--) if (r !== quad && rankCount[r] > 0) { kicker = r; break; }
+    return pack(CAT_QUADS, quad, kicker);
+  }
+  if (trips.length === 1 && pairs.length === 1) return pack(CAT_FULL_HOUSE, trips[0], pairs[0]);
+  if (isFlush) {
+    const k = [0, 0, 0, 0, 0];
+    topRanks(rankMask, 5, k);
+    return pack(CAT_FLUSH, k[0], k[1], k[2], k[3], k[4]);
+  }
+  if (st >= 0) return pack(CAT_STRAIGHT, st);
+  if (trips.length === 1) {
+    const t = trips[0], k = [0, 0];
+    let n = 0;
+    for (let r = 12; r >= 0 && n < 2; r--) if (r !== t && rankCount[r] > 0) k[n++] = r;
+    return pack(CAT_TRIPS, t, k[0], k[1]);
+  }
+  if (pairs.length >= 2) {
+    const hi = pairs[0], lo = pairs[1];
+    let kicker = 0;
+    for (let r = 12; r >= 0; r--) if (r !== hi && r !== lo && rankCount[r] > 0) { kicker = r; break; }
+    return pack(CAT_TWO_PAIR, hi, lo, kicker);
+  }
+  if (pairs.length === 1) {
+    const p = pairs[0], k = [0, 0, 0];
+    let n = 0;
+    for (let r = 12; r >= 0 && n < 3; r--) if (r !== p && rankCount[r] > 0) k[n++] = r;
+    return pack(CAT_PAIR, p, k[0], k[1], k[2]);
+  }
+  const k = [0, 0, 0, 0, 0];
+  topRanks(rankMask, 5, k);
+  return pack(CAT_HIGH, k[0], k[1], k[2], k[3], k[4]);
+}
+
+export interface BestFive {
+  /** evaluate5와 같은 체계의 점수. 카드가 5장 미만이면 null */
+  score: number | null;
+  category: number | null;
+  /** 최강 5장 (카드가 5장 미만이면 받은 카드 그대로) */
+  five: number[];
+}
+
+/** 주어진 카드에서 최강 5장을 고른다. 5장 미만이면 그대로 돌려준다. */
+export function bestFive(cards: number[]): BestFive {
+  if (cards.length < 5) return { score: null, category: null, five: cards.slice() };
+  let best = -1, bestSet: number[] = [];
+  const n = cards.length, pick = [0, 0, 0, 0, 0];
+  for (let a = 0; a < n - 4; a++) {
+    pick[0] = cards[a];
+    for (let b = a + 1; b < n - 3; b++) {
+      pick[1] = cards[b];
+      for (let c = b + 1; c < n - 2; c++) {
+        pick[2] = cards[c];
+        for (let d = c + 1; d < n - 1; d++) {
+          pick[3] = cards[d];
+          for (let e = d + 1; e < n; e++) {
+            pick[4] = cards[e];
+            const s = evaluate5(pick);
+            if (s > best) { best = s; bestSet = pick.slice(); }
+          }
+        }
+      }
+    }
+  }
+  return { score: best, category: best >>> 20, five: bestSet };
+}
+
+/* 최강 5장 중 "등급을 만든 카드"만 골라낸다.
+   실시간 힌트에서 쓴다 — 플랍에서는 다섯 장이 곧 전부라 5장을 다 밝히면 아무 신호가
+   되지 않는다. 원페어면 그 두 장만, 플러시면 다섯 장 전부가 강조되어야 정보가 된다.
+   킥커는 등급을 만든 카드가 아니므로 제외한다. */
+export function coreOfFive(five: number[], category: number | null): number[] {
+  if (category == null) return [];
+  // 다섯 장이 한 덩어리로 등급을 이루는 것들
+  if (category === CAT_STRAIGHT || category === CAT_FLUSH
+      || category === CAT_STRAIGHT_FLUSH || category === CAT_FULL_HOUSE) return five.slice();
+  if (category === CAT_HIGH) return [];        // 아무것도 안 됐다 — 강조할 게 없다
+  const cnt = new Array<number>(13).fill(0);
+  for (const c of five) cnt[c >> 2]++;
+  return five.filter(c => cnt[c >> 2] >= 2);   // 페어·투페어·트리플·포카드
+}
+
 // ----- 프리플랍 확률 엔진 -----
 //
 // 홀카드 4장이 공개된 상태에서 남은 48장 중 보드 5장을 뽑는 모든 경우 C(48,5)=1,712,304가지를
