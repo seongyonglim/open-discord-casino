@@ -300,6 +300,41 @@ section('[5] 출석 · 개인회생 지원금');
   ck('거절 시 잔액 변화 없음', bal('r_u') === 0, String(bal('r_u')));
   ck('쿨다운 기준이 "받은 시각"',
     !c3.ok && c3.error === 'cooldown' && Math.abs(c3.nextAvailableAt - (nowSec() + 7200)) <= 2, JSON.stringify(c3));
+
+  /* 제보된 무한 지원금 수법을 그대로 재현한다.
+     전 재산을 지뢰찾기에 걸어 잔액을 0으로 만들고 → 지원금을 받고 → 칸을 하나도
+     열지 않은 채 캐시아웃하면 배당 1.00x로 전액 환불된다. 막히지 않으면
+     쿨다운마다 원금 그대로에 200P가 얹혀 무한히 불어난다. */
+  mkUser('r_ex', 1000);
+  const round = placeBet('r_ex', 'mines', 1000, { mineCount: 5, minePositions: [0, 1, 2, 3, 4], revealed: [] });
+  ck('전 재산을 걸어 잔액이 0이 됐다', round.ok && bal('r_ex') === 0, String(bal('r_ex')));
+  const ex = claimRelief('r_ex', 200, 7200);
+  ck('묶인 돈이 있으면 지원금 거절 (지뢰찾기 진행 중)',
+    !ex.ok && ex.error === 'has_stake', JSON.stringify(ex));
+  ck('거절됐으니 잔액은 그대로 0', bal('r_ex') === 0, String(bal('r_ex')));
+  ck('묶인 금액을 정확히 알려준다', !ex.ok && ex.error === 'has_stake' && ex.staked === 1000,
+    JSON.stringify(ex));
+  // 0칸 캐시아웃으로 전액 환불받으면 이제 잔액이 있으니 여전히 못 받는다
+  if (round.ok) settleGameRound(round.roundId, 'r_ex', 1000, 1, 'game:mines', false);
+  ck('전액 환불 뒤에는 잔액이 있어 여전히 거절', bal('r_ex') === 1000
+    && (() => { const z = claimRelief('r_ex', 200, 7200); return !z.ok && z.error === 'not_broke'; })(),
+    String(bal('r_ex')));
+  ck('결국 공짜 200P가 생기지 않았다 (원금 1,000P 그대로)', bal('r_ex') === 1000, String(bal('r_ex')));
+
+  /* 다른 게임도 같은 수법이 통하지 않는지 — 사다리로 확인한다(베팅 취소로 전액 환불된다) */
+  mkUser('r_ex2', 500);
+  // 베팅 창이 열린 라운드를 받을 때까지 진행시킨다 (앞 섹션이 라운드를 마감해 뒀다)
+  const mk = () => ({ startSide: 'L', endSide: 'L', rungs: [false] });
+  let lr = advanceLadderRound(mk, () => 3);
+  for (let i = 0; i < 20 && lr.phase !== 'betting'; i++) {
+    db.prepare(`UPDATE ladder_rounds SET resolved_at = ? WHERE id = ?`).run(nowSec() - 600, lr.id);
+    lr = advanceLadderRound(mk, () => 3);
+  }
+  const lbet = placeLadderBet('r_ex2', 'x', lr.id, 'L', null, 500);
+  ck('사다리에 전 재산을 걸어 잔액 0', lbet.ok && bal('r_ex2') === 0,
+    `${lr.phase} / ${JSON.stringify(lbet)} / ${bal('r_ex2')}`);
+  const ex2 = claimRelief('r_ex2', 200, 7200);
+  ck('사다리 베팅 중에도 지원금 거절', !ex2.ok && ex2.error === 'has_stake', JSON.stringify(ex2));
 }
 auditLedger('출석·지원금 후');
 noFractions('전체');
@@ -337,12 +372,16 @@ section('[7] 바카라');
 
   // 규칙 — 공표된 8덱 표준 확률과 맞는지 (드로우 표를 잘못 옮기면 여기서 어긋난다)
   const pr = baccaratProbabilities();
-  const REF = { banker: 0.458597, player: 0.446247, tie: 0.095156 };
+  /* 내부 친선 룰로 1덱으로 바꿨으므로 1덱 기준값을 쓴다.
+     8덱은 뱅커 45.86% · 플레이어 44.62% · 타이 9.52%였고, 1덱은 뱅커가 조금 오르고
+     타이가 조금 내려간다 — 덱이 적을수록 그렇게 되는 알려진 경향과 일치한다. */
+  const REF = { banker: 0.459624, player: 0.446760, tie: 0.093615 };
   ck('뱅커 승률 = 공표값', Math.abs(pr.banker - REF.banker) < 5e-6, pr.banker.toFixed(6));
   ck('플레이어 승률 = 공표값', Math.abs(pr.player - REF.player) < 5e-6, pr.player.toFixed(6));
   ck('타이 확률 = 공표값', Math.abs(pr.tie - REF.tie) < 5e-6, pr.tie.toFixed(6));
   ck('확률 합 = 1', Math.abs(pr.banker + pr.player + pr.tie - 1) < 1e-12);
-  ck('페어 확률 = 31/415', Math.abs(pr.pair - 31 / 415) < 1e-12, String(pr.pair));
+  // 1덱이면 랭크당 4장 → 두 번째 카드가 같은 랭크일 확률 3/51
+  ck('페어 확률 = 3/51', Math.abs(pr.pair - 3 / 51) < 1e-12, String(pr.pair));
 
   // 배당 — 모든 시장의 RTP가 하우스 엣지 1%에 맞는지
   const od = baccaratOdds();
@@ -476,7 +515,7 @@ section('[8] 블랙잭');
     const shoe = BJ.shuffleShoe(rnd);
     const cnt = new Map<number, number>();
     shoe.forEach(c => cnt.set(c, (cnt.get(c) ?? 0) + 1));
-    ck('슈 416장 · 52종 각 8장', shoe.length === 416 && cnt.size === 52 && [...cnt.values()].every(v => v === 8));
+    ck('1덱 52장 · 52종 각 1장', shoe.length === 52 && cnt.size === 52 && [...cnt.values()].every(v => v === 1));
   }
 
   // 실제 라운드 — 착석·중복·환불
@@ -515,6 +554,23 @@ section('[8] 블랙잭');
   expire('blackjack_rounds', round.id, 5);
   round = advanceBlackjackRound(H);
   ck('결정 단계 진입', round.phase === 'action', round.phase);
+  /* 더블다운 검사는 j1이 아직 결정할 수 있는 상태여야 성립한다.
+     실제 덱에서 나눠주므로 j1이 블랙잭을 받거나 딜러가 블랙잭이면 라운드가 끝나 있고,
+     그러면 제품이 아니라 운 때문에 실패한다(실제로 그렇게 실패한 적이 있다).
+     그래서 j1 손패를 5+6=11(더블에 가장 알맞은 패)로, 딜러를 블랙잭이 아닌 조합으로
+     못 박는다. 카드 인덱스는 rank = c >> 2 (0='2' … 12='A'). */
+  {
+    const c5 = 3 * 4 + 0;    // '5'
+    const c6 = 4 * 4 + 1;    // '6'
+    const c9 = 7 * 4 + 2;    // '9'
+    const c7 = 5 * 4 + 3;    // '7'
+    db.prepare(`UPDATE blackjack_hands SET cards_json = ?, status = 'playing'
+                WHERE round_id = ? AND user_id = 'j1'`)
+      .run(JSON.stringify([c5, c6]), round.id);
+    db.prepare(`UPDATE blackjack_rounds SET dealer_json = ? WHERE id = ?`)
+      .run(JSON.stringify([c9, c7]), round.id);
+    round = db.prepare(`SELECT * FROM blackjack_rounds WHERE id = ?`).get(round.id) as typeof round;
+  }
   {
     const before = bal('j1');
     const betBefore = getBlackjackHands(round.id).find(h => h.user_id === 'j1')!.bet;

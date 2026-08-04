@@ -7,7 +7,10 @@
 import { cardToString } from './poker';
 
 // 8덱 슈. 실제 카지노와 같은 구성이고, 덱 수가 늘수록 확률이 안정된다.
-export const DECKS = 8;
+/* 내부 친선 룰이라 1덱으로 둔다. 한 판이 끝나면 어차피 새 덱을 섞으므로(drawRound)
+   덱을 여러 벌 쓸 이유가 없고, 1덱이면 한 판에 같은 카드가 두 번 나올 수 없다.
+   아래 확률·배당 계산은 모두 이 값에서 유도되므로 여기만 바꾸면 전부 따라온다. */
+export const DECKS = 1;
 const CARDS_PER_DECK = 52;
 export const SHOE_SIZE = DECKS * CARDS_PER_DECK; // 416
 
@@ -104,10 +107,11 @@ export function playRound(drawn: number[]): Outcome {
 /* ── 확률 전수 계산 ──────────────────────────────────────────────────────
    승패는 카드의 무늬·랭크가 아니라 끗수(0~9)에만 좌우된다. 그래서 52장이 아니라
    끗수 10종만 놓고 세면 된다. 8덱 슈의 끗수 구성은
-     0끗: 128장 (10·J·Q·K 네 랭크 × 32장)   1~9끗: 각 32장
+     0끗: 랭크 네 개(10·J·Q·K) × 4장 × 덱 수   1~9끗: 각 4장 × 덱 수
+   (1덱이면 0끗 16장, 1~9끗 각 4장 = 52장)
    비복원 추출이므로 뽑을 때마다 남은 장수로 가중치를 준다.
    최대 6장까지 가지치기해도 10^6 조합이라 수십 ms면 끝난다.                */
-const VALUE_COUNTS = [128, 32, 32, 32, 32, 32, 32, 32, 32, 32];
+const VALUE_COUNTS = [16 * DECKS, ...Array.from({ length: 9 }, () => 4 * DECKS)];
 
 export interface BaccaratProbabilities {
   player: number;
@@ -172,7 +176,7 @@ export function baccaratProbabilities(): BaccaratProbabilities {
   const total = pWin + bWin + tie;
   // 페어는 승패와 무관한 사이드 마켓이라 따로 구한다.
   // 한 핸드의 두 번째 카드가 첫 카드와 같은 랭크일 확률 = (같은 랭크 남은 장수) / (남은 전체)
-  //   8덱에서 랭크당 32장 → 31 / 415
+  //   1덱이면 랭크당 4장 → 3 / 51
   const pair = (DECKS * 4 - 1) / (SHOE_SIZE - 1);
 
   cached = {
