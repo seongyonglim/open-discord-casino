@@ -1214,8 +1214,12 @@ export function holdemPage(user: WebUser): string {
        서버는 마지막 액션과 새 스트리트를 같은 응답에 담아 보낸다 — 그래서 이게 없으면
        "콜 300"이 뜨는 것과 플랍이 깔리는 것이 거의 동시에 일어나 마지막 액션을 볼 틈이 없다.
        실제 딜러도 액션이 끝나면 칩을 팟으로 모으고 나서 카드를 깐다. 칩이 팟으로
-       날아가는 연출(약 700ms)과 겹쳐, 칩이 도착할 즈음 첫 장이 나오게 맞췄다. */
-    var ACTION_HOLD_MS = 650;
+       날아가는 연출(약 700ms)과 겹쳐, 칩이 도착할 즈음 첫 장이 나오게 맞췄다.
+
+       650ms로 뒀더니 "체크가 뜨는 것과 카드가 열리는 것이 거의 동시"라는 말이 나왔다.
+       칩 연출이 끝나기를 기다리는 게 아니라, 사람이 마지막 액션을 읽을 시간이 기준이어야 한다.
+       1,100ms면 첫 장까지 1.44초(+BOARD_FIRST_MS)라서 라벨을 읽고 나서 카드가 열린다. */
+    var ACTION_HOLD_MS = 1100;
     var shownBoard = 0, boardTimers = [], boardHandNo = null;
     /* 보드를 다 깔았나. 올인으로 판이 즉시 끝나는 경우가 이 값의 존재 이유다 —
        서버는 액션이 끝나면 보드를 끝까지 깔고 정산까지 해버리므로, 클라이언트가
@@ -1530,8 +1534,15 @@ export function holdemPage(user: WebUser): string {
     function renderTable(){
       var tb = st.table;
       syncBoard(tb);
-      potEl.textContent = stackText(tb.pot) + (unit === 'chip' ? ' P' : '');
-      syncPots(tb);
+      /* 팟이 승자에게 넘어간 뒤에는 0으로 만든다.
+         서버의 pot은 "이 판에 들어간 돈의 합"이라 판이 끝나도 값이 남는데, 그때 이미
+         스택에는 딴 금액이 반영되어 있다. 그래서 팟을 계속 띄워 두면 같은 칩이 두 곳에
+         보이고, 스택을 더해 보는 사람은 총 칩이 늘어난 것처럼 읽는다
+         (실측: 스택합 40,000 + 팟 20,100 = 60,100).
+         칩 더미가 날아가기 전까지는 그대로 보여준다 — 얼마짜리 팟이었는지가 정보다. */
+      var potPaid = tb.ended && boardRevealed && paidHandNo === tb.handNo;
+      potEl.textContent = stackText(potPaid ? 0 : tb.pot) + (unit === 'chip' ? ' P' : '');
+      syncPots(tb, potPaid);
       renderSeats();
       dealSequence(tb);
       renderSide();
@@ -1593,9 +1604,10 @@ export function holdemPage(user: WebUser): string {
        층이 하나면 위의 POT 숫자로 충분하므로 아무것도 띄우지 않는다. 올인이 섞여 층이
        갈라졌을 때만 나온다 — 이때는 합계만 보면 내가 다툴 수 있는 금액을 오해한다.
        내가 자격이 있는 층은 표시해 준다("내가 이 층을 가져갈 수 있다"). */
-    function syncPots(tb){
+    function syncPots(tb, potPaid){
       var pots = tb.pots || [];
-      if (pots.length < 2) { potsEl.hidden = true; potsEl.textContent = ''; return; }
+      // 팟이 이미 승자에게 갔으면 층도 지운다 (같은 칩이 스택과 팟에 동시에 보이지 않게)
+      if (potPaid || pots.length < 2) { potsEl.hidden = true; potsEl.textContent = ''; return; }
       potsEl.hidden = false;
       potsEl.innerHTML = pots.map(function(p, i){
         var mine = tb.mySeat != null && (p.eligible || []).indexOf(tb.mySeat) >= 0;
@@ -1736,7 +1748,15 @@ export function holdemPage(user: WebUser): string {
       rangeEl.min = String(lo);
       rangeEl.max = String(la.maxRaiseTo);
       if (currentTarget() < lo || currentTarget() > la.maxRaiseTo) setAmount(lo);
-      document.getElementById('htFold').hidden = !la.canFold;
+      /* 체크할 수 있을 때는 폴드를 내린다.
+         낼 금액이 없는 상황에서 폴드는 공짜로 받을 수 있는 패를 버리는 것이라 어떤 패에서도
+         이득이 될 수 없다 — 이길 확률이 0이어도 체크가 같거나 낫다. 남는 건 오조작 위험뿐이다.
+         낼 금액이 생기면(canCheck=false) 그때 다시 나온다.
+
+         서버는 폴드를 계속 허용한다(canFold는 항상 true). 마감 초과 자동 처리가
+         "체크 가능하면 체크, 아니면 폴드"로 폴드를 쓰고, 클라이언트가 버튼을 감추는 것과
+         규칙이 허용하는 것은 별개다. 여기서 막는 건 손가락이 미끄러지는 경우다. */
+      document.getElementById('htFold').hidden = !la.canFold || la.canCheck;
       document.getElementById('htCheck').hidden = !la.canCheck;
       var call = document.getElementById('htCall');
       call.hidden = !la.canCall;
@@ -1777,6 +1797,8 @@ export function holdemPage(user: WebUser): string {
        늘어난 자리가 있을 때 칩 소리를 낸다. 여러 명이 한꺼번에 늘어도 한 번만 울린다 —
        같은 소리가 겹치면 지저분해진다. 내 자리는 클릭 순간에 이미 울렸으니 뺀다. */
     var lastBets = {}, betHandNo = null, betStreet = null, myClickAt = 0;
+    // 스트리트를 닫은 액션에 소리를 한 번만 내기 위한 기억
+    var lastCloseKey = null, endSoundHand = null;
     function playBetSounds(){
       var tb = st.table;
       if (!tb) return;
@@ -1784,9 +1806,15 @@ export function holdemPage(user: WebUser): string {
          비우면, 새 스트리트의 첫 베팅이 지난 스트리트 금액보다 작을 때 "늘지 않았다"고
          판정되어 소리가 삼켜진다 (프리플랍 200 콜 → 플랍 100 벳 = 무음).
          한 번의 폴링 안에서 스트리트 전환과 새 베팅이 같이 오면 반드시 그렇게 된다. */
+      var streetJustChanged = false;
       if (tb.handNo !== betHandNo || tb.street !== betStreet) {
+        // 판이 바뀐 것은 "스트리트가 닫혔다"가 아니다 — 새 판의 첫 폴링에서 울리면 안 된다
+        streetJustChanged = tb.handNo === betHandNo;
         lastBets = {}; betHandNo = tb.handNo; betStreet = tb.street;
       }
+      // 리버에서 콜로 판이 끝나면 street는 그대로 river이므로 위 조건에 걸리지 않는다
+      if (tb.ended && !endSoundHand) { endSoundHand = tb.handNo; streetJustChanged = true; }
+      if (!tb.ended && endSoundHand === tb.handNo) endSoundHand = null;
       var any = false;
       (tb.seats || []).forEach(function(s){
         /* 내 자리도 센다. 예전에는 "내 것은 클릭 순간에 울렸다"며 빼놨는데, 자리 비움
@@ -1797,6 +1825,23 @@ export function holdemPage(user: WebUser): string {
         if (grew && !mineJustClicked) any = true;
         lastBets[s.seat] = s.bet;
       });
+
+      /* 스트리트를 닫은 칩 액션은 위 방법으로 절대 잡히지 않는다.
+         그 액션이 라운드를 끝내면 서버가 같은 트랜잭션에서 이 스트리트 베팅을 0으로
+         되돌리므로, 폴링이 보는 것은 이미 0이다 — "늘었다"가 성립할 수 없다.
+         마지막 액션이 콜일 때 소리가 안 난다는 제보가 정확히 이 경로였다.
+         그래서 스트리트가 바뀐(또는 판이 끝난) 폴링에서는 hand에 남은 마지막 액션 기록을
+         근거로 울린다. 같은 액션에 두 번 울리지 않게 키로 기억해 둔다. */
+      var la = tb.lastActor;
+      if (streetJustChanged && la && la.seat != null) {
+        var chipAct = la.act === 'call' || la.act === 'bet' || la.act === 'raise' || la.act === 'allin';
+        var key = tb.handNo + ':' + la.seat + ':' + la.act + ':' + (la.amount || 0);
+        if (chipAct && key !== lastCloseKey) {
+          lastCloseKey = key;
+          var mineJust = la.seat === tb.mySeat && (Date.now() - myClickAt) < 2500;
+          if (!mineJust) any = true;
+        }
+      }
       if (any && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
     }
 

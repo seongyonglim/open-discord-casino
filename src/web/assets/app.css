@@ -1317,8 +1317,12 @@
     font-size:12px;font-weight:800;color:#dcece2;
     background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.14)}
   .ht-read[hidden]{display:none}
-  .ht-read.strong{color:#1c1608;background:linear-gradient(180deg,#e8c65a,#c8a52f);
-    border-color:rgba(255,235,160,.6)}
+  /* 투페어 이상은 힘을 준다. 색은 카드 강조(.pcard.made)와 같은 보라로 맞춘다 —
+     글자와 밝은 카드가 같은 신호라는 게 색으로 이어져야 읽힌다.
+     금색은 쓰지 않는다. 그건 판이 끝난 뒤 "이긴 5장"의 색이라, 진행 중에 같은 색을 쓰면
+     아직 안 끝난 판을 이긴 것처럼 보이게 한다. */
+  .ht-read.strong{color:#f3e6ff;background:linear-gradient(180deg,rgba(139,69,219,.92),rgba(94,38,158,.92));
+    border-color:rgba(200,150,255,.7);box-shadow:0 0 12px rgba(168,85,247,.45)}
 
   /* 무엇으로 이겼나 — 쇼다운이 있었던 판에만. 카드 강조(win5)와 짝이다.
      밝은 5장이 왜 밝은지를 이 한 줄이 설명한다. */
@@ -1339,8 +1343,11 @@
 
      밝기(filter)를 건드리지 않는다. .mucked가 grayscale/brightness를 쓰고 있어서
      같은 카드에 둘이 겹치면 어느 쪽이 이겼는지 알 수 없게 된다. */
-  .pcard.made{outline:2px solid rgba(120,220,170,.75);outline-offset:-2px;
-    box-shadow:0 0 0 1px rgba(120,220,170,.3),0 0 10px rgba(80,200,140,.35)}
+  /* 초록으로 뒀다가 펠트(초록)에 묻혔다. 남은 색을 골라야 하는데 테이블에 이미
+     금색(이긴 5장 · 자발적 공개) · 파란 점선(래빗) · 붉은색(올인)이 쓰여 있어서,
+     겹치지 않고 초록 배경과 가장 세게 부딪히는 보라를 쓴다. */
+  .pcard.made{outline:2.5px solid rgba(196,140,255,.95);outline-offset:-2px;
+    box-shadow:0 0 0 1px rgba(196,140,255,.45),0 0 14px rgba(168,85,247,.7)}
   .pcard.win5{outline:2.5px solid rgba(255,225,130,.95);outline-offset:-2px;
     box-shadow:0 0 0 2px rgba(212,175,55,.45),0 0 18px rgba(255,210,90,.6);
     animation:win5Pop .45s ease-out both;z-index:3}
