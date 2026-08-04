@@ -1502,3 +1502,10 @@
   .nt-nav{font-size:12.5px;color:var(--muted);text-decoration:none;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   .nt-nav:hover{color:var(--gold)}
+
+  /* 프리롤 참가 신청 상태 · 취소 버튼 (대회 시작 전에만 나온다) */
+  .ht-joined{display:inline-block;padding:9px 14px;border-radius:9px;
+    font-size:13px;font-weight:700;color:#b6efce;
+    background:rgba(130,220,165,.12);border:1px solid rgba(130,220,165,.34)}
+  .ht-leave{border-color:rgba(255,140,140,.35);color:#ffb3b3}
+  .ht-leave:hover{border-color:rgba(255,140,140,.65)}

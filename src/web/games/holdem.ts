@@ -10,7 +10,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
-  advanceHoldem, registerHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
+  advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards,
   ACTION_SEC, type HoldemStatus,
@@ -225,6 +225,19 @@ export async function handleRegister(
       : r.error === 'table_full' ? '테이블이 꽉 찼습니다'
       : r.error === 'already' ? '이미 등록하셨습니다'
       : '지금은 등록할 수 없습니다';
+    return sendJson(res, 400, { error: msg });
+  }
+  return sendJson(res, 200, { ok: true, registered: r.registered });
+}
+
+export async function handleUnregister(
+  _req: IncomingMessage, res: ServerResponse, userId: string
+): Promise<void> {
+  const r = unregisterHoldem(userId);
+  if (!r.ok) {
+    const msg = r.error === 'not_registered' ? '신청하지 않으셨습니다'
+      : r.error === 'already_started' ? '대회가 이미 시작되어 취소할 수 없습니다'
+      : '지금은 취소할 수 없습니다';
     return sendJson(res, 400, { error: msg });
   }
   return sendJson(res, 200, { ok: true, registered: r.registered });
@@ -562,14 +575,22 @@ export function holdemPage(user: WebUser): string {
       } else if (t.status === 'REGISTRATION_OPEN') {
         badge = '<span class="ht-badge open">등록 중</span>';
         note = '시작까지 ' + dur(t.scheduledStartAt - now);
+        /* 시작 전에는 신청을 되돌릴 수 있다. 좌석과 스택은 대회가 시작될 때
+           한꺼번에 만들어지므로, 이 시점의 취소는 등록 행 하나를 지우는 것뿐이다.
+           시작한 뒤에는 이미 칩을 들고 앉아 있어 취소가 성립하지 않는다. */
         action = t.iRegistered
-          ? '<button type="button" class="btn" disabled>신청 완료</button>'
+          ? '<span class="ht-joined">신청 완료</span>'
+            + ' <button type="button" class="btn ht-leave" id="htLeave">신청 취소</button>'
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'WAITING_MIN_PLAYERS') {
         badge = '<span class="ht-badge wait">최소 인원 대기</span>';
         note = '최소 인원 대기 중 — ' + dur(t.graceEndsAt - now) + ' 남음';
+        /* 시작 전에는 신청을 되돌릴 수 있다. 좌석과 스택은 대회가 시작될 때
+           한꺼번에 만들어지므로, 이 시점의 취소는 등록 행 하나를 지우는 것뿐이다.
+           시작한 뒤에는 이미 칩을 들고 앉아 있어 취소가 성립하지 않는다. */
         action = t.iRegistered
-          ? '<button type="button" class="btn" disabled>신청 완료</button>'
+          ? '<span class="ht-joined">신청 완료</span>'
+            + ' <button type="button" class="btn ht-leave" id="htLeave">신청 취소</button>'
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'RUNNING') {
         if (t.lateRegLeft != null) {
@@ -628,6 +649,16 @@ export function holdemPage(user: WebUser): string {
         });
       });
       var spec = document.getElementById('htSpectate');
+      var leave = document.getElementById('htLeave');
+      if (leave) leave.addEventListener('click', function(){
+        if (!confirm('참가 신청을 취소할까요?')) return;
+        leave.disabled = true;
+        post('/api/games/holdem/unregister', {}).then(function(r){
+          if (!r.ok) alert(r.d && r.d.error ? r.d.error : '취소할 수 없습니다');
+          leave.disabled = false;
+          poll();
+        });
+      });
       if (spec) spec.addEventListener('click', function(){ spectate = true; render(); });
     }
 
