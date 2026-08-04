@@ -16,7 +16,7 @@
     "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts",
     "sfx:mono": "node --experimental-sqlite --require tsx/cjs scripts/sfx-mono.ts",
     "audit:economy": "node --experimental-sqlite --require tsx/cjs scripts/audit-economy.ts",
-    "audit:cards": "tsx scripts/audit-cards.ts",
+    "audit:cards": "node --experimental-sqlite --require tsx/cjs scripts/audit-cards.ts",
     "audit:concurrency": "node --experimental-sqlite --require tsx/cjs scripts/audit-concurrency.ts",
     "audit:e2e": "node --experimental-sqlite --require tsx/cjs scripts/audit-e2e.ts",
     "audit:security": "node --experimental-sqlite --require tsx/cjs scripts/audit-security.ts",

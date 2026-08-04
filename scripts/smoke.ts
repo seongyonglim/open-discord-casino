@@ -175,7 +175,13 @@ async function main(): Promise<void> {
        미디어 쿼리 안의 재정의는 정상적인 반응형 패턴이므로 최상위 규칙만 본다. */
     console.log('\n[9] CSS 클래스 중복 정의');
     {
-      const css = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.css'), 'utf8');
+      const raw = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.css'), 'utf8');
+      /* 주석을 먼저 없앤다. 이게 없으면 아래 셀렉터 정규식의 [^{}@]+? 가 주석까지
+         함께 빨아들여, 주석 바로 뒤에 오는 규칙이 "주석+셀렉터"가 되어 단일 클래스
+         판정을 통과하지 못하고 조용히 건너뛰어진다. 이 코드베이스는 규칙 앞에 주석을
+         붙이는 게 지배적 스타일이라 실측으로 대상의 26%(69건)를 놓치고 있었고,
+         그 사이에 실제 중복 두 건(.bj-seats · .ht-who)이 숨어 있었다. */
+      const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
       // 미디어 쿼리 블록을 통째로 들어낸 뒤 남은 최상위 규칙만 센다
       const topLevel = css.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
       const seen = new Map<string, number>();

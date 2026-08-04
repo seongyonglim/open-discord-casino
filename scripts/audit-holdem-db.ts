@@ -142,6 +142,36 @@ console.log('\n[3] 자동 액션 (마감 초과)');
     hand.to_act_seat !== before || hand.ended_at != null, String(hand.to_act_seat));
 }
 
+/* ── 카드 무결성 (실제 서버 딜링) ─────────────────────────────────
+   홀덤은 52장 한 덱이라 같은 카드가 두 번 나오면 버그다. 감사가 인덱스 규칙을
+   다시 쓰면 자기 코드를 검증하는 셈이니, 서버가 실제로 남긴 hole_json·board_json·
+   deck_json·deck_pos를 그대로 대조한다. */
+console.log('\n[2b] 카드 무결성 — 배분된 카드가 덱과 어긋나지 않는다');
+{
+  const hs = HD.getHandSeats(hand.id);
+  const deck = JSON.parse(hand.deck_json) as number[];
+  const holes = hs.flatMap(h => JSON.parse(h.hole_json) as number[]);
+  const board = JSON.parse(hand.board_json) as number[];
+  const dealt = [...holes, ...board];
+
+  ck('덱이 0~51 서로 다른 52장이다',
+    deck.length === 52 && new Set(deck).size === 52
+    && Math.min(...deck) === 0 && Math.max(...deck) === 51);
+  ck('배분된 카드에 중복이 없다 (같은 카드가 두 번 나오지 않는다)',
+    new Set(dealt).size === dealt.length,
+    G.cardsToStrings(dealt).join(' '));
+  ck('배분된 카드가 전부 덱에 있는 카드다 (없는 카드를 만들지 않는다)',
+    dealt.every(c => deck.includes(c)));
+  /* 홀 카드는 덱 앞쪽에서 두 바퀴로 뽑는다 — 배분된 홀 카드가 덱의 앞 N장과
+     정확히 같은 집합인지 본다. 인덱스를 두 번 쓰면 여기서 어긋난다. */
+  ck('홀 카드가 덱 앞쪽 N장과 정확히 같은 집합이다',
+    new Set(holes).size === holes.length
+    && holes.every(c => deck.indexOf(c) < holes.length),
+    `홀 ${holes.length}장`);
+  ck('deck_pos가 배분한 만큼 밀려 있다 (되감기지 않는다)',
+    hand.deck_pos >= holes.length, `${hand.deck_pos} vs 홀 ${holes.length}`);
+}
+
 /* ── 스트리트를 닫은 마지막 행동 ──────────────────────────────────
    nextStreet가 좌석의 last_action을 같은 트랜잭션에서 지우기 때문에, 폴링 주기 1초로는
    스트리트를 닫은 행동이 클라이언트에 한 번도 도달하지 않았다("딜러가 체크했는데

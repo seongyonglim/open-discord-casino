@@ -253,6 +253,10 @@ export function crashPage(user: WebUser): string {
       var msg=document.getElementById('cMsg'), curve=document.getElementById('cCurve'), area=document.getElementById('cArea');
       var grid=document.getElementById('cGrid'), stage=document.querySelector('.crash-stage');
       var pbal=document.querySelector('.prof .pbal');
+      /* 캐시아웃 성공 연출이 쓰는 본문 카드. 선언이 빠져 있어서 캐시아웃할 때마다
+         ReferenceError가 나고 그 뒤의 잔액 bump·승리음·poll()이 통째로 건너뛰어졌다.
+         다른 다섯 게임은 모두 이 선언을 갖고 있다. */
+      var card=document.querySelector('.card');
 
       // 서버와 동일한 구간별 가속 상수를 주입해 표시 배율이 정산 배율과 절대 어긋나지 않게 한다
       var K1=${GROWTH_K1}, K2=${GROWTH_K2}, K3=${GROWTH_K3};

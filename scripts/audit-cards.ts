@@ -47,12 +47,15 @@ function maxDup(cards: number[]): number {
   for (const n of m.values()) if (n > max) max = n;
   return max;
 }
-/** 중복된 카드를 사람이 읽는 이름으로 */
+/** 중복된 카드를 사람이 읽는 이름으로.
+ *  cardsToStrings를 쓴다 — services/holdem은 cardToString을 재수출하지 않는다.
+ *  이 함수는 "중복을 찾았을 때만" 불리므로, 여기서 터지면 검사가 실패를 보고하는 대신
+ *  통째로 죽는다. 실패 경로일수록 안전해야 한다. */
 function dupNames(cards: number[], deckCount: number): string {
   const m = new Map<number, number>();
   for (const c of cards) m.set(c, (m.get(c) ?? 0) + 1);
   const over: string[] = [];
-  for (const [c, n] of m) if (n > deckCount) over.push(`${HD.cardToString(c)}×${n}`);
+  for (const [c, n] of m) if (n > deckCount) over.push(`${HD.cardsToStrings([c])[0]}×${n}`);
   return over.join(', ');
 }
 
@@ -92,23 +95,18 @@ console.log('\n[2] 52장 덱 게임 — 한 판에 같은 카드가 두 번 나�
   }
   ck('포커 플립 3,000판 — 공개 9장에 중복 0', flipDup === 0, `${flipDup}판 ${flipDetail}`);
 
-  /* 홀덤: 9인 기준으로 홀 18장 + 버닝 3장 + 보드 5장 = 26장을 실제 딜링 순서대로 뽑는다.
-     서버가 쓰는 인덱스 규칙(버닝 포함)을 그대로 재현해야 의미가 있다. */
-  let htDup = 0, htDetail = '';
+  /* 홀덤은 52장 한 덱이므로 "덱 안에 중복이 없다"만으로는 부족하다 —
+     딜링이 같은 인덱스를 두 번 쓰면 중복이 나온다. 그건 감사가 인덱스를 다시 쓰는
+     방식으로는 검증할 수 없다(자기 코드를 검증하는 셈이다).
+     그래서 실제 서버 딜링(startHand → advanceHoldem)이 남긴 값을 대조하는 것은
+     audit-holdem-db.ts에 맡기고, 여기서는 덱 자체의 무결성만 반복 확인한다. */
+  let deckBad = 0;
   for (let i = 0; i < 3000; i++) {
     const deck = HD.shuffleDeck(randomInt);
-    const used: number[] = [];
-    let pos = 0;
-    for (let pass2 = 0; pass2 < 2; pass2++) {
-      for (let s = 0; s < 9; s++) used.push(deck[pos++]);
-    }
-    pos++; for (let k = 0; k < 3; k++) used.push(deck[pos++]);   // 버닝 + 플랍
-    pos++; used.push(deck[pos++]);                               // 버닝 + 턴
-    pos++; used.push(deck[pos++]);                               // 버닝 + 리버
-    if (new Set(used).size !== used.length) { htDup++; htDetail = dupNames(used, 1); }
-    if (used.some(c => c === undefined)) { htDup++; htDetail = '덱이 모자랐다'; }
+    if (deck.length !== 52 || new Set(deck).size !== 52) deckBad++;
+    if (Math.min(...deck) !== 0 || Math.max(...deck) !== 51) deckBad++;
   }
-  ck('홀덤 3,000판 — 9인 홀 18장 + 보드 5장에 중복 0', htDup === 0, `${htDup}판 ${htDetail}`);
+  ck('홀덤 3,000회 셔플 — 항상 0~51 서로 다른 52장', deckBad === 0, `${deckBad}회`);
 }
 
 console.log('\n[3] 8덱 슈 게임 — 같은 카드는 최대 8장까지가 정상이다');
@@ -123,24 +121,21 @@ console.log('\n[3] 8덱 슈 게임 — 같은 카드는 최대 8장까지가 정
   ck('바카라 3,000판 — 항상 6장을 뽑는다', six === 0, `${six}판`);
   ck(`바카라 3,000판 — 같은 카드가 ${BC.DECKS}장을 넘지 않는다`, over === 0, `${over}판`);
 
-  /* 슈 커서 검사 — 같은 자리를 두 번 주면 카드가 복제된다.
-     416장을 연속으로 꺼내 "슈 원본과 정확히 같은 다중집합"인지 본다.
-     커서가 한 자리를 두 번 주면 어떤 카드는 늘고 어떤 카드는 사라진다. */
-  const shoe = BJ.shuffleShoe(randomInt);
-  const drawn: number[] = [];
-  let cursor = 0;
-  for (let i = 0; i < shoe.length; i++) {
-    const pos = cursor % shoe.length;
-    drawn.push(shoe[pos]);
-    cursor = pos + 1;
+  /* 부분 피셔-예이츠가 편향되지 않았는가.
+     drawRound는 슈 416장을 다 섞지 않고 앞 6장만 뽑는다(j를 i부터 고른다).
+     구현이 j를 0부터 고르면 앞자리가 편향되는데, 그건 분포로만 잡힌다. */
+    const firstCard = new Map<number, number>();
+  const N = 20000;
+  for (let i = 0; i < N; i++) {
+    const c = BC.drawRound(randomInt)[0];
+    firstCard.set(c, (firstCard.get(c) ?? 0) + 1);
   }
-  const cnt = (a: number[]) => {
-    const m = new Map<number, number>();
-    for (const c of a) m.set(c, (m.get(c) ?? 0) + 1);
-    return [...m.entries()].sort((x, y) => x[0] - y[0]).map(e => e.join(':')).join(',');
-  };
-  ck('슈 커서로 416장을 꺼내면 슈 원본과 완전히 같다 (자리를 두 번 주지 않는다)',
-    cnt(drawn) === cnt(shoe));
+  const expect = N / 52;
+  const devs = [...firstCard.values()].map(v => Math.abs(v - expect) / expect);
+  const worstDev = Math.max(...devs);
+  ck('바카라 부분 셔플이 편향되지 않았다 (첫 장 분포 20,000회)',
+    firstCard.size === 52 && worstDev < 0.25,
+    `${firstCard.size}종 · 최대 편차 ${(worstDev * 100).toFixed(1)}% (기대 ${expect}회)`);
 }
 
 console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드를 센다');
@@ -160,7 +155,10 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
 
   let rounds = 0, overDecks = 0, posReuse = 0, detail = '';
   let sawThreeSame = 0, maxSeen = 0;
-  for (let r = 0; r < 120; r++) {
+  /* 목표 라운드 수를 채울 때까지 돈다. 시도 횟수를 고정하면 라운드가 엉뚱한 단계에
+     있어 건너뛴 만큼 완주 수가 들쭉날쭉해진다(실측 33~120회). */
+  const WANT_ROUNDS = 60;
+  for (let r = 0; r < 600 && rounds < WANT_ROUNDS; r++) {
     /* 끝난 라운드는 공개 시간(BJ_REVEAL_SEC)이 지나야 다음 판이 열린다.
        감사는 기다리지 않으므로 그 시각을 과거로 밀어 바로 다음 판을 받는다. */
     let round = advanceBlackjackRound(H);
@@ -202,8 +200,19 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
         if (dup > maxSeen) maxSeen = dup;
         if (dup >= 3) sawThreeSame++;
         if (dup > BJ.DECKS) { overDecks++; detail = dupNames(all, BJ.DECKS); }
-        // 배분된 장수 = 커서가 민 만큼이어야 한다 (한 장을 두 번 주면 어긋난다)
+        /* 이게 이 감사의 핵심 단정문이다.
+           실제로 배분된 카드가 "슈의 앞 shoe_pos장"과 정확히 같은 다중집합인지 본다.
+           커서가 같은 자리를 두 번 주면 어떤 카드가 늘고 어떤 카드가 빠져서 어긋나고,
+           슈에 없는 카드를 만들어내도 어긋난다. 감사가 딜링을 다시 구현하지 않고
+           서버가 실제로 남긴 shoe_json·shoe_pos와 대조하므로 자기충족적이지 않다. */
+        const shoe = JSON.parse(cur.shoe_json) as number[];
+        const expected = shoe.slice(0, cur.shoe_pos);
+        const key = (a: number[]) => a.slice().sort((x, y) => x - y).join(',');
         if (all.length !== cur.shoe_pos) { posReuse++; detail = `배분 ${all.length}장 ≠ 커서 ${cur.shoe_pos}`; }
+        else if (key(all) !== key(expected)) {
+          posReuse++;
+          detail = `배분 카드가 슈 앞 ${cur.shoe_pos}장과 다르다`;
+        }
         break;
       }
       db.prepare(`UPDATE blackjack_rounds SET betting_ends_at = ? WHERE id = ?`)
@@ -212,7 +221,7 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
     }
   }
   console.log(`    ${rounds}라운드 완주 · 3명 동시 참여 · 한 판 최다 동일 카드 ${maxSeen}장`);
-  ck('라운드가 실제로 돌았다 (검증이 헛돌지 않았다)', rounds >= 50, `${rounds}라운드`);
+  ck(`라운드가 실제로 돌았다 (검증이 헛돌지 않았다)`, rounds >= WANT_ROUNDS, `${rounds}/${WANT_ROUNDS}라운드`);
   ck('배분 장수 = 슈 커서 위치 (같은 자리를 두 번 주지 않는다)', posReuse === 0, detail);
   ck(`한 판에 같은 카드가 ${BJ.DECKS}장을 넘지 않는다`, overDecks === 0, detail);
   /* 8덱이면 같은 카드가 3장 나오는 일은 드물지만 실재한다 — 신고가 버그가 아니었음을
@@ -261,9 +270,14 @@ console.log('\n[6] 셔플 품질 — 섞지 않은 덱을 그대로 쓰고 있�
     first.size >= 45 && worst < N / 52 * 4,
     `${first.size}종 · 최다 ${worst}회 (기대 ${Math.round(N / 52)}회)`);
 
-  const fixed = HD.shuffleDeck(() => 0);   // 항상 0을 고르는 rng
-  ck('rng가 고정돼도 덱 구성은 온전하다 (카드를 잃지 않는다)',
-    new Set(fixed).size === 52, String(new Set(fixed).size));
+  /* 셔플이 실제로 자리를 바꾸는가.
+     rng를 항상 0으로 고정하면 결정적인 순열이 나오는데, 그것이 원래 순서(0..51)와
+     달라야 한다. "카드를 잃지 않는다"만 보면 swap 기반이라 어떤 rng에서도 참이어서
+     아무것도 검증하지 못한다(대입으로 바뀌는 회귀만 잡힌다). */
+  const fixed = HD.shuffleDeck(() => 0);
+  const identity = Array.from({ length: 52 }, (_, i) => i).join(',');
+  ck('셔플이 실제로 순서를 바꾼다 (덱을 그대로 반환하지 않는다)',
+    new Set(fixed).size === 52 && fixed.join(',') !== identity);
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

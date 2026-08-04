@@ -93,7 +93,16 @@ function statePayload(st: HoldemStatus, userId: string) {
   const boardCards = hand ? JSON.parse(hand.board_json) as number[] : [];
   const handSeats = hand ? getHandSeats(hand.id) : [];
   const bySeat = new Map(handSeats.map(h => [h.seat, h]));
-  const mySeat = living.find(s => s.user_id === userId);
+  /* 탈락한 사람도 "자기가 죽은 그 판"의 쇼다운은 봐야 한다.
+     endHand는 결과를 쓴 뒤 같은 트랜잭션에서 presence를 OUT으로 바꾸므로,
+     living만 보면 ended=true와 mySeat=null이 같은 응답에 실려 온다 —
+     그러면 클라이언트가 테이블을 접어버려 자기가 어떻게 죽었는지 못 본다.
+     끝난 판에 참여했던 자리는 OUT이어도 화면에 남긴다. */
+  const endedNow = hand?.ended_at != null;
+  const inEndedHand = (s: { seat: number; user_id: string }) =>
+    endedNow && bySeat.get(s.seat)?.user_id === s.user_id;
+  const shownSeats = seats.filter(s => s.presence !== 'OUT' || inEndedHand(s));
+  const mySeat = shownSeats.find(s => s.user_id === userId);
   const myHand = mySeat ? bySeat.get(mySeat.seat) : undefined;
   const ended = hand?.ended_at != null;
   const result = ended && hand?.result_json ? JSON.parse(hand.result_json) : null;
@@ -144,9 +153,10 @@ function statePayload(st: HoldemStatus, userId: string) {
         : null,
       level,
       nextLevelIn: T.nextLevelIn(elapsed),
+      // 남은 인원·평균 스택은 실제로 살아 있는 사람만 센다 (표시용 좌석 목록과 다르다)
       remaining: living.length,
       avgStack: living.length ? Math.floor(totalChips / living.length) : 0,
-      seats: living.map(s => {
+      seats: shownSeats.map(s => {
         const h = bySeat.get(s.seat);
         return {
           seat: s.seat,
@@ -637,8 +647,11 @@ export function holdemPage(user: WebUser): string {
       { plate: [25, 90], bet: [34, 70] },
       { plate: [8,  68], bet: [20, 62] },
       { plate: [8,  41], bet: [20, 45] },
-      { plate: [25, 16], bet: [32, 30] },
-      { plate: [75, 16], bet: [68, 30] },
+      /* 이 두 자리는 카드를 판 아래(중앙 방향)로 깐다(cards-below). 그래서 칩도
+         카드보다 더 중앙 쪽으로 내려야 한다 — 위로 깔던 시절 좌표(30%)를 그대로 두면
+         내려온 카드 위에 칩이 얹힌다. */
+      { plate: [25, 16], bet: [33, 38] },
+      { plate: [75, 16], bet: [67, 38] },
       { plate: [92, 41], bet: [80, 45] },
       { plate: [92, 68], bet: [80, 62] },
       { plate: [75, 90], bet: [66, 70] },
@@ -697,7 +710,10 @@ export function holdemPage(user: WebUser): string {
         if (!act && holdActor && holdActor.seat === s.seat) {
           act = holdActor.act; amt = holdActor.amount;
         }
-        if (s.bet > 0) {
+        /* 판이 끝나면 좌석 앞 칩을 그리지 않는다. 서버는 판이 끝날 때 bet을 0으로
+           되돌리지 않는데(초기화는 스트리트 전환에만 있다), 그 사이 팟 더미는 이미
+           마지막 스트리트 베팅까지 중앙에 그려 놓는다 — 같은 칩이 두 곳에 보인다. */
+        if (s.bet > 0 && !tb.ended) {
           /* 칩이 있을 때 행동 이름은 칩 위에 층을 쌓지 않고 같은 줄에 붙인다.
              위로 쌓으면 아래 좌석에서 중앙 블록(보드·조합)까지 밀고 올라간다. */
           vol += '<div class="ht-spot" id="htspot-' + s.seat + '"' +
@@ -1178,7 +1194,14 @@ export function holdemPage(user: WebUser): string {
       /* 판이 끝나는 순간에는 마지막 스트리트 베팅이 아직 중앙으로 모이는 중이다
          (칩이 날아오고 더미에 나타나기까지 약 420ms). 그게 끝난 뒤에 밀어야
          "모아서 넘겨준다"로 읽힌다 — 실제 딜러도 걷어서 한 박자 쉬고 넘긴다. */
-      setTimeout(function(){ pushPotToWinners(tb); }, 550);
+      var forHand = tb.handNo;
+      setTimeout(function(){
+        /* 지연 콜백이 도는 사이에 새 판이 시작됐으면 아무것도 하지 않는다.
+           pushPotToWinners는 실시간 pileEl을 읽고 마지막에 비우므로, 그냥 두면
+           다음 판의 팟 더미를 지워 버린다. */
+        if (!st || !st.table || st.table.handNo !== forHand) return;
+        pushPotToWinners(tb);
+      }, 550);
     }
     function pushPotToWinners(tb){
       var awards = (tb.result.awards || []).filter(function(a){
@@ -1357,7 +1380,10 @@ export function holdemPage(user: WebUser): string {
          · 팟이 승자에게 밀려갈 때 — 한 판에 딱 한 번. 폴링이 같은 종료 상태를 계속
            보내오므로 핸드 번호로 이미 울렸는지 표시해 둔다. */
       playBetSounds();
-      if (tb.ended && paidHandNo !== tb.handNo) {
+      /* 보드를 다 깐 뒤에만 울린다. boardRevealed를 안 보면 올인 판에서 플랍이
+         깔리기도 전에 승리 칩 소리가 나서 결과를 미리 알려준다 — 결과 표시·팟 회수는
+         이미 이 가드를 지키는데 소리만 통과하고 있었다. */
+      if (tb.ended && boardRevealed && paidHandNo !== tb.handNo) {
         paidHandNo = tb.handNo;
         if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
       }

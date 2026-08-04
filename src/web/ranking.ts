@@ -10,11 +10,17 @@ import { getGameRanking, getMyGameRank } from '../db/queries';
 import { RANK_GAMES, clampLimit, winRatePct } from '../services/ranking';
 import { sendJson } from './http';
 
-/** 경로가 랭킹 요청이면 game_stats 키를 돌려준다. 아니면 null. */
+/** 경로가 랭킹 요청이면 game_stats 키를 돌려준다. 아니면 null.
+ *
+ * 반드시 hasOwnProperty로 확인한다. 그냥 RANK_GAMES[seg]로 읽으면 Object.prototype의
+ * 상속 키가 걸려 든다 — 정규식 [a-z]+를 통과하는 것이 셋 있다(constructor, toString,
+ * valueOf). 그러면 game 자리에 함수가 들어가 SQL 파라미터로 넘어가 500이 난다. */
 export function rankingGameOf(path: string): string | null {
   const m = /^\/api\/games\/([a-z]+)\/ranking$/.exec(path);
   if (!m) return null;
-  return RANK_GAMES[m[1]] ?? null;
+  if (!Object.prototype.hasOwnProperty.call(RANK_GAMES, m[1])) return null;
+  const g = RANK_GAMES[m[1]];
+  return typeof g === 'string' ? g : null;
 }
 
 export function handleRanking(
