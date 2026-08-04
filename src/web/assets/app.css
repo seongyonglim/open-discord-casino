@@ -104,8 +104,9 @@
   @keyframes mainIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
   main{max-width:1320px;margin:0 auto;padding:16px 16px 40px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;
-    box-shadow:inset 0 1px 0 rgba(212,175,55,.14)}
+  /* position:relative는 오른쪽 위에 붙는 규칙 도움말 버튼(.card > .helpbtn)의 기준이다 */
+  .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px;box-shadow:inset 0 1px 0 rgba(212,175,55,.14)}
   .card + .card{margin-top:16px}
   .card h2{margin:0 0 14px;font-family:var(--display);font-weight:400;font-size:17px;color:var(--gold);
     letter-spacing:.3px;display:flex;align-items:center;gap:8px}
@@ -943,6 +944,10 @@
     font-family:var(--mono);font-size:12px;font-weight:700;line-height:1;color:#9fc0ad;
     transition:border-color .12s,color .12s}
   .helpbtn:hover{border-color:var(--gold);color:var(--gold)}
+  /* 게임 카드의 오른쪽 위 구석. 블랙잭은 펠트 안에 따로 자리를 잡아 뒀고(.bj-table > .helpbtn),
+     나머지 게임은 카드 자체를 기준으로 붙인다 — 게임마다 판 모양이 달라서 공통으로 삼을
+     내부 요소가 없다. (기준이 되는 position:relative는 .card 기본 규칙에 있다) */
+  .card > .helpbtn{position:absolute;top:14px;right:14px;z-index:3}
   .helpdlg{max-width:440px;width:calc(100% - 32px);padding:0;color:var(--txt);
     background:var(--panel);border:1px solid var(--line);border-radius:14px;
     box-shadow:0 24px 60px rgba(0,0,0,.7)}

@@ -15,7 +15,7 @@ import {
   type CrashRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs } from '../views';
+import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
 const HOUSE_EDGE = 0.01;
@@ -168,12 +168,45 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
   return sendJson(res, 200, { ok: true, balance: result.balance, payout: result.payout, multiplier });
 }
 
+/* 규칙 도움말. 숫자는 코드 상수에서 온다 —
+   HOUSE_EDGE 0.01 · MAX_CRASH 10,000 · CRASH_BETTING_SEC 10. */
+const RULES_HTML = `
+  <h4>목표</h4>
+  <p>배율이 <b>1배부터 계속 오릅니다.</b> 터지기 전에 캐시아웃하면 그 배율만큼 받고,
+     못 하면 전액을 잃습니다.</p>
+
+  <h4>진행</h4>
+  <ul>
+    <li>베팅 <b>10초</b> → 배율 상승 → 터짐 → 다시 베팅</li>
+    <li>상승 중에는 언제든 <b>캐시아웃</b>할 수 있습니다. 누른 순간의 배율로 확정됩니다</li>
+    <li><b>자동 캐시아웃</b>에 배율을 적어 두면 그 배율에서 알아서 빠집니다 (1.01배 이상)</li>
+    <li>터지는 지점은 판이 시작되기 <b>전에</b> 이미 정해져 있습니다 — 오래 버틴다고 불리해지지 않습니다</li>
+  </ul>
+
+  <h4>배당</h4>
+  <table>
+    <tr><td>캐시아웃하면</td><td>그 순간 배율 × 베팅액</td></tr>
+    <tr><td>터질 때까지 못 누르면</td><td>0</td></tr>
+    <tr><td>최대 배율</td><td>10,000 배</td></tr>
+  </table>
+
+  <p class="tip"><b>꿀팁 —</b> 목표 배율을 정했다면 손으로 누르지 말고
+     <b>자동 캐시아웃에 적어 두는 쪽이 유리합니다.</b>
+     정확히 그 배율에서 터진 경우, 자동은 성공으로 처리되지만 손으로 누르면 이미 늦습니다.<br>
+     그 점만 빼면 2배에서 자주 빼든 100배를 노리든 되돌려받는 비율은 같습니다 —
+     차이는 <b>얼마나 자주 이기느냐</b>뿐입니다.</p>
+
+  <div class="warn"><b>주의 —</b> 배율은 <b>1.00배에서도</b> 터질 수 있습니다.
+  "조금만 더"가 이 게임에서 돈을 잃는 유일한 방법입니다.</div>
+`;
+
 export function crashPage(user: WebUser): string {
   const body = `
     ${gameSwitcher('graph')}
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
+          ${helpButton('cgHelp')}
           <div id="cHistory" class="hist-row"></div>
           <div class="crash-stage">
             <div class="crash-center">
@@ -638,6 +671,7 @@ export function crashPage(user: WebUser): string {
 
       // 우측 패널 랭킹 탭
       ${rankJs('c', 'crash')}
-    </script>`;
+    </script>
+    ${helpDialog("cgHelp", "그래프게임 규칙", RULES_HTML)}`;
   return layout('그래프게임', 'lobby', body);
 }

@@ -20,7 +20,7 @@ import {
   evaluate7, scoreCategory, categoryBucket, cardToString, CAT_NAMES, BUCKET_NAMES,
 } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, sidePanel, rankPane, rankJs } from '../views';
+import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 
@@ -216,12 +216,50 @@ export async function handleClear(_req: IncomingMessage, res: ServerResponse, us
   return sendJson(res, 200, { ok: true, balance: result.balance, refunded: result.refunded });
 }
 
+/* 규칙 도움말. 배당은 고정값이 아니라 매 판 계산되므로 숫자를 적지 않는다 —
+   여기에 예시 배당을 적으면 화면과 어긋난다. HOUSE_EDGE 0.01 · MAX_ODDS 3000.
+   단계 초는 POKER_BETTING_SEC 15 · TURN 2 · RIVER 4 · SETTLE 7. */
+const RULES_HTML = `
+  <h4>목표</h4>
+  <p>홀덤 두 손 <b>MASTER</b> 와 <b>SHARK</b> 가 겨룹니다. 카드를 직접 받지 않고
+     <b>어느 쪽이 이길지</b> 또는 <b>어떤 등급이 완성될지</b>에 칩을 겁니다.</p>
+
+  <h4>두 종류의 시장</h4>
+  <ul>
+    <li><b>승자</b> — MASTER / SHARK. 무승부면 <b>원금을 그대로 돌려받습니다</b></li>
+    <li><b>완성 등급</b> — 이긴 손의 최종 족보가 어느 묶음에 드는가</li>
+  </ul>
+
+  <h4>등급 묶음</h4>
+  <table>
+    <tr><td>하이카드 · 원페어</td><td>가장 흔함</td></tr>
+    <tr><td>투페어</td><td></td></tr>
+    <tr><td>트리플 · 스트레이트 · 플러시</td><td></td></tr>
+    <tr><td>풀하우스</td><td></td></tr>
+    <tr><td>포카드 이상</td><td>가장 드묾</td></tr>
+  </table>
+
+  <h4>배당은 매 판 새로 계산됩니다</h4>
+  <p>고정 배당표가 없습니다. 지금 공개된 카드로 <b>남은 덱을 전부 세어</b> 확률을 구하고,
+     그 확률에서 배당을 만듭니다. 그래서 카드가 한 장 열릴 때마다 배당이 움직입니다.</p>
+
+  <h4>진행</h4>
+  <ul>
+    <li>베팅 <b>15초</b> → 플롭 3장 → 턴 → 리버 → 정산</li>
+    <li>베팅은 <b>처음 15초에만</b> 받습니다. 카드가 열리기 시작하면 더 걸 수 없습니다</li>
+  </ul>
+
+  <p class="tip"><b>꿀팁 —</b> 배당이 높다는 건 그만큼 잘 안 나온다는 뜻입니다.
+     확률에서 만든 값이라 어느 쪽을 골라도 기대값은 같습니다.</p>
+`;
+
 export function pokerPage(user: WebUser): string {
   const body = `
     ${gameSwitcher('poker')}
     <div class="game-shell poker-shell">
       <div class="game-main">
         <div class="card">
+          ${helpButton('pfHelp')}
           <div class="poker-table">
             <div class="poker-seats">
               <div class="seat">
@@ -911,6 +949,7 @@ export function pokerPage(user: WebUser): string {
 
       // 우측 패널 랭킹 탭
       ${rankJs('p', 'poker')}
-    </script>`;
+    </script>
+    ${helpDialog("pfHelp", "포커 플립 규칙", RULES_HTML)}`;
   return layout('포커 플립', 'lobby', body);
 }

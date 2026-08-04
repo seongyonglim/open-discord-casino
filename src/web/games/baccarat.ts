@@ -18,7 +18,7 @@ import {
 import { baccaratProbabilities, drawRound, playRound, cardsToStrings, handTotal } from '../../services/baccarat';
 import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, sidePanel, rankPane, rankJs } from '../views';
+import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import { COIN_SIZES } from './poker';
@@ -180,6 +180,43 @@ export async function handleClear(_req: IncomingMessage, res: ServerResponse, us
 
 /* ── 화면 ────────────────────────────────────────────────────────────── */
 
+/* 규칙 도움말.
+   확률은 baccaratProbabilities()가 1덱 전수 계산으로 내는 값이고(플레이어 44.68 ·
+   뱅커 45.96 · 타이 9.36 · 페어 5.88%), 배당은 거기서 HOUSE_EDGE 1%로 만든다.
+   배당은 화면에서 실제 값을 보여주므로 여기에는 숫자를 박지 않는다 — 어긋날 수 있다. */
+const RULES_HTML = `
+  <h4>목표</h4>
+  <p><b>플레이어</b>와 <b>뱅커</b> 중 카드 합이 <b>9에 가까운 쪽</b>이 이깁니다.
+     나는 카드를 받지 않고 어느 쪽이 이길지에만 겁니다.</p>
+
+  <h4>끗수</h4>
+  <ul>
+    <li><b>A</b> 1 · <b>2~9</b> 숫자 그대로 · <b>10 · J · Q · K</b> 0</li>
+    <li>합이 두 자리면 <b>일의 자리만</b> 씁니다 (7 + 8 = 15 → <b>5</b>)</li>
+  </ul>
+
+  <h4>다섯 갈래에 걸 수 있습니다</h4>
+  <table>
+    <tr><td>플레이어 승</td><td>약 44.7%</td></tr>
+    <tr><td>뱅커 승</td><td>약 46.0%</td></tr>
+    <tr><td>타이 (무승부)</td><td>약 9.4%</td></tr>
+    <tr><td>플레이어 페어 · 뱅커 페어</td><td>각 약 5.9%</td></tr>
+  </table>
+  <p>배당은 이 확률에서 만들어 화면에 표시됩니다.
+     <b>플레이어·뱅커에 걸었는데 타이가 나오면 원금을 돌려받습니다.</b></p>
+
+  <h4>카드는 한 벌(52장)입니다</h4>
+  <p>매 판 <b>한 벌을 새로 섞어</b> 씁니다. 실제 카지노는 6~8벌을 쓰지만
+     여기는 내부 친선 룰로 한 벌만 씁니다.</p>
+
+  <h4>세 번째 카드</h4>
+  <p>두 장씩 받은 뒤 규칙에 따라 <b>자동으로</b> 한 장을 더 받습니다.
+     내가 고를 것은 없습니다 — 정해진 표대로 딜러가 처리합니다.</p>
+
+  <p class="tip"><b>꿀팁 —</b> 뱅커가 플레이어보다 조금 자주 이깁니다(46.0% vs 44.7%).
+     타이와 페어는 배당이 큰 만큼 드뭅니다.</p>
+`;
+
 export function baccaratPage(user: WebUser): string {
   const o = baccaratOdds();
   const p = baccaratProbabilities();
@@ -189,6 +226,7 @@ export function baccaratPage(user: WebUser): string {
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
+          ${helpButton('bcHelp')}
           <div class="bacc-bead-head">
             <span>최근 결과</span>
             <span class="bacc-bead-legend">
@@ -898,7 +936,8 @@ export function baccaratPage(user: WebUser): string {
 
       // 우측 패널 랭킹 탭
       ${rankJs('b', 'baccarat')}
-    </script>`;
+    </script>
+    ${helpDialog("bcHelp", "바카라 규칙", RULES_HTML)}`;
 
   return layout('바카라', 'lobby', body);
 }
