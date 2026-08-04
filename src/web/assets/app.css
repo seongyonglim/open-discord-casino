@@ -963,6 +963,10 @@
   .help-body b{color:var(--txt)}
   .help-body .warn{background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.32);
     border-radius:9px;padding:9px 11px;margin:10px 0 0;color:#f0b7b9;font-size:12.5px}
+  /* 규칙 설명 안의 실전 조언. 규칙(회색 본문)과 눈으로 구분되어야 읽고 싶어진다 —
+     설명을 길게 늘어놓는 대신 "언제 쓰는 수인지" 한 줄만 여기 담는다. */
+  .help-body .tip{background:rgba(212,175,55,.09);border-left:2px solid var(--gold);
+    border-radius:0 8px 8px 0;padding:8px 11px;margin:8px 0 0;color:#e3d9b6;font-size:12.5px}
   .help-body table{margin:4px 0 0;font-size:12.5px}
   .help-body td{padding:5px 8px;border-bottom:1px solid var(--line)}
   .help-body td:last-child{text-align:right;font-family:var(--mono);color:var(--gold)}

@@ -75,6 +75,60 @@ async function main(): Promise<void> {
   startWebServer();
   await sleep(600);
 
+  /* ── 페이지 인라인 스크립트가 문법적으로 성립하는가 ──────────────
+     각 게임 화면의 클라이언트 로직은 TS 템플릿 리터럴 안에 문자열로 들어 있다.
+     그래서 TS 컴파일러도, 린터도, 서버 감사도 그 안을 문법 검사하지 않는다 —
+     브라우저가 처음 파싱할 때 처음으로 드러난다.
+
+     실제로 서렌더 확인창에서 '…\n'을 쓰는 바람에(템플릿 리터럴 안이라 TS가 그 자리에서
+     진짜 개행으로 바꿔 내보냈다) 문자열이 줄 끝에서 닫히지 않아 블랙잭 페이지의
+     스크립트 전체가 파싱 실패했다. 폴링도, 베팅도, 버튼도 하나도 동작하지 않고
+     화면은 "테이블을 준비하는 중…"에서 멈춘 채 운영에 배포됐다.
+     서버 응답은 200이고 콘솔 에러도 안 잡히니 HTTP 감사로는 절대 안 걸린다.
+
+     그래서 여기서 실제로 파싱해 본다. new Function은 실행하지 않고 파싱만 한다. */
+  section('[0] 페이지 인라인 스크립트 문법');
+  {
+    const c = mkSession('e_syntax', 10_000);
+    /* 게임 화면은 전부 인라인 스크립트를 갖는다(needsJs). 로비·순위표·공지는 정적이라
+       스크립트가 없는 게 정상이므로, "스크립트가 있는가"는 게임 쪽에만 묻는다.
+       그래도 페이지는 다 받아본다 — 렌더 중 예외가 나면 여기서 잡힌다.
+       그래프 화면의 경로는 /games/graph다(API만 crash라는 옛 이름을 쓴다). */
+    const pages: Array<[string, boolean]> = [
+      ['/', false], ['/leaderboard', false], ['/notices', false],
+      ['/games/ladder', true], ['/games/graph', true], ['/games/poker', true],
+      ['/games/mines', true], ['/games/baccarat', true], ['/games/blackjack', true],
+      ['/games/holdem', true],
+    ];
+    for (const [p, needsJs] of pages) {
+      const r = await req('GET', p, c);
+      ck(`${p} → 200`, r.status === 200, `status=${r.status}`);
+      if (r.status !== 200) continue;
+
+      /* src가 없는 <script> 블록만 뽑는다(app.js는 별도 파일이라 이미 파싱된다).
+         type="application/json" 같은 데이터 블록은 JS가 아니므로 건너뛴다. */
+      const blocks = [...r.text.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)]
+        .filter(m => !/type\s*=\s*["'](?!text\/javascript|module)/i.test(m[1]))
+        .map(m => m[2]);
+      if (needsJs) ck(`${p} — 인라인 스크립트 존재`, blocks.length > 0, `${blocks.length}개`);
+
+      let bad = '';
+      blocks.forEach((b, i) => {
+        try { new Function(b); } catch (e) {
+          /* 어느 줄인지 같이 알려준다 — 31,000자 스크립트에서 메시지만 보면 못 찾는다.
+             문자열이 줄 안에서 닫히지 않은 줄이 범인일 확률이 높아 그것도 짚어 준다. */
+          const susp = b.split('\n')
+            .map((l, n) => ({ n: n + 1, l }))
+            .filter(x => ((x.l.match(/'/g) ?? []).length % 2 === 1))
+            .slice(0, 3)
+            .map(x => `${x.n}행: ${x.l.trim().slice(0, 60)}`);
+          bad += `블록#${i} ${(e as Error).message}` + (susp.length ? ` / 홑따옴표 안 닫힌 줄 → ${susp.join(' | ')}` : '');
+        }
+      });
+      ck(`${p} — 인라인 스크립트 파싱 성공`, bad === '', bad);
+    }
+  }
+
   /* ── 사다리 한 라운드 완주 ─────────────────────────────────── */
   section('[1] 사다리 — 베팅부터 정산까지 한 라운드 완주');
   {
