@@ -103,7 +103,7 @@ console.log(`원장 ${span.n}행 · ${d(span.a)} ~ ${d(span.b)}`);
 console.log('※ 원장 보존 기간(180일) 밖의 판은 복원할 수 없다.');
 console.log('');
 
-let wrote = 0, mismatch = 0;
+let wrote = 0, guarded = 0;
 if (!DRY) db.exec('BEGIN');
 try {
   for (const g of GAMES) {
@@ -128,6 +128,21 @@ try {
       }
       if (w.wins + w.losses + w.pushes !== w.rounds) {
         throw new Error(`${g}/${user_id}: 승패 합 ${w.wins + w.losses + w.pushes} ≠ 판수 ${w.rounds}`);
+      }
+
+      /* ★ 안전장치 — 이미 기록된 값을 줄이지 않는다.
+         game_stats는 프루닝하지 않는 누적표이고 실제 플레이가 매 판 더해 넣는다.
+         반면 원장은 180일이 지나면 잘려 나간다. 그래서 프루닝이 시작된 뒤에 이 도구를
+         다시 돌리면 "남아 있는 원장만큼"으로 덮어써 누적 기록이 사라진다.
+         실측으로 확인했다: 원장을 잘라낸 뒤 재실행하니 승군의 블랙잭 325판이 15판이 됐다.
+         복원한 판수가 이미 기록된 판수보다 적으면 그 행은 건드리지 않는다. */
+      const cur = one<{ rounds: number; profit: number }>(
+        `SELECT rounds, profit FROM game_stats WHERE user_id = ? AND game = ?`, user_id, g);
+      if (cur && w.rounds < cur.rounds && process.env.FORCE !== '1') {
+        console.log(`  건너뜀 — ${g}/${user_id}: 복원 ${w.rounds}판 < 기록된 ${cur.rounds}판`
+          + ' (원장이 잘려 나갔다. 덮어쓰면 누적 기록이 사라진다. 정말 필요하면 FORCE=1)');
+        guarded++;
+        continue;
       }
 
       const name = one<{ username: string }>(`SELECT username FROM users WHERE id = ?`, user_id);
@@ -165,8 +180,8 @@ try {
 }
 
 console.log('');
-console.log(`${DRY ? '들어갈 행' : '기록한 행'} ${wrote}개`);
-void mismatch;
+console.log(`${DRY ? '들어갈 행' : '기록한 행'} ${wrote}개`
+  + (guarded ? ` · 안전장치로 건너뜀 ${guarded}개` : ''));
 
 // 불변식 확인
 let bad = 0;
