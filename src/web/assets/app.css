@@ -1001,6 +1001,10 @@
   .bja.dbl{background:rgba(212,175,55,.12);border-color:var(--gold-dim);color:var(--gold-hi)}
   .bja.dbl:hover{background:rgba(212,175,55,.2);border-color:var(--gold)}
   .bja.dbl .bja-t i{color:rgba(240,214,122,.7)}
+  /* 서렌더 — 되돌릴 수 없는 포기라 붉은 계열로 다른 버튼과 구분한다 */
+  .bja.sur{background:rgba(255,140,140,.1);border-color:rgba(255,140,140,.36);color:#ffb3b3}
+  .bja.sur:hover{background:rgba(255,140,140,.18);border-color:rgba(255,140,140,.7)}
+  .bja.sur .bja-t i{color:rgba(255,179,179,.68)}
   /* 더블이 숨으면 두 칸만 남으니 가운데로 모은다 */
   .bj-actions:has(.dbl[hidden]){grid-template-columns:repeat(2,minmax(0,1fr));max-width:360px}
   @media (max-width:560px){
