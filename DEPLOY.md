@@ -118,6 +118,41 @@ flyctl secrets list -a open-discord-casino
 
 ## 4. 배포
 
+### 배포 전에 어디까지 감사할까
+
+전체 감사는 약 2분이다. 대부분이 실제 라운드 타이머를 기다리는 시간이라 줄일 수 없다.
+그래서 **고칠 때는 좁게, 배포 직전에는 전부** 돌린다.
+
+```bash
+npm run audit:quick
+```
+
+빠른 것만 묶어 **8초에 480건**이다 (smoke · pages · economy · security · discord · holdem).
+코드를 만질 때마다 이걸 돌린다.
+
+| 무엇을 만졌나 | 여기까지 |
+|---|---|
+| 화면·CSS·클라이언트 스크립트 | `audit:quick` |
+| 카드 덱·셔플·정산 배수 | `+ audit:cards` |
+| 포인트 이동·원장·잔액 | `+ audit:economy` (quick에 포함) |
+| 동시 요청·이중지급이 걸린 곳 | `+ audit:concurrency` |
+| 라운드 진행·phase 전이 | `+ audit:e2e` |
+| 홀덤 토너먼트 상태기계 | `+ audit:holdem-db` |
+
+느린 넷의 실측 시간: `e2e` 62s · `holdem-db` 26s · `concurrency` 13s · `cards` 11s.
+
+**배포 직전에는 예외 없이 전체를 돌린다.**
+
+```bash
+npm run audit
+```
+
+좁혀 돌리는 판단이 틀릴 수 있기 때문이다. 실제로 확인창 문자열 한 줄을 고친 커밋이
+블랙잭 페이지를 통째로 죽였다 — "문구만 바꿨으니 감사할 게 없다"가 가장 위험한 판단이다.
+그 구멍을 메운 게 `audit:pages`이고, 그래서 quick에 들어 있다.
+
+### 배포
+
 로컬 Docker 데몬이 꺼져 있어도 되도록 fly 빌더에서 빌드한다.
 
 ```bash
