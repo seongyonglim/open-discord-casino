@@ -160,7 +160,14 @@ export function rankJs(prefix: string, seg: string): string {
         function row(r){
           /* 승률을 모르는 줄(랭킹 도입 전 판을 원장에서 복원한 경우)도 '—'를 찍어
              열 모양을 맞춘다. 비워 두면 줄마다 폭이 달라 눈으로 훑기 어렵다. */
-          var sub = new Intl.NumberFormat('ko-KR').format(r.rounds) + '판 · ' +
+          /* 판수 · 승패 · 승률. 승률만 보여주면 "몇 판을 이겼나"가 안 보이므로
+             이긴 판과 진 판을 그대로 적는다. 본전만 돌아온 판(무)은 있을 때만 붙인다.
+             승률을 아직 모르는 줄은 '—'로 열 모양을 맞춘다. */
+          var nf = new Intl.NumberFormat('ko-KR');
+          var wl = (r.wins == null) ? ''
+            : ' · ' + nf.format(r.wins) + '승 ' + nf.format(r.losses) + '패'
+              + (r.pushes ? ' ' + nf.format(r.pushes) + '무' : '');
+          var sub = nf.format(r.rounds) + '판' + wl + ' · ' +
             (r.winPct == null ? '—' : r.winPct + '%');
           var cls = r.profit > 0 ? ' pos' : (r.profit < 0 ? ' neg' : '');
           return '<div class="sp-rw' + (r.me ? ' me' : '') + '">' +
