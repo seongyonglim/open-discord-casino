@@ -338,6 +338,14 @@ console.log('\n[5] 토너먼트를 끝까지 (실제 액션 — 전원 올인)')
   /* 전원 폴드만 하면 칩이 순환만 하고 아무도 안 죽는다(블라인드가 오르지 않으면 영원히).
      실제 액션을 넣어야 탈락·사이드 팟·순위 확정이 돌아간다. 가장 거친 전략인
      "차례가 오면 올인"으로 몰아붙인다 — 사이드 팟이 매 판 생긴다. */
+  /* 전원을 앉은 상태로 되돌려 시작한다. 앞 절들이 마감 초과를 여러 번 만들어서
+     네 명 모두 SIT_OUT으로 내려가 있는데, 자리 비움 좌석은 마감을 기다리지 않고 즉시
+     체크/폴드된다(의도된 동작이다). 그러면 이 절이 액션을 넣을 틈 없이 판이 자멸하고,
+     전원 폴드라 아무도 죽지 않아 6,000판을 돌아도 토너먼트가 끝나지 않는다.
+     이 절이 검증하려는 건 "앉아 있는 사람의 실제 액션"이므로 앉혀 놓고 시작한다. */
+  for (const s of HD.getSeats(table.id)) {
+    if (s.presence !== 'OUT') HD.holdemSitIn(s.user_id, table.id);
+  }
   let steps = 0, hands = 0, allins = 0, chipBreak = 0, levelUps = 0;
   let lastTotal = totalChips(table.id);
   let maxLevel = 1;
@@ -616,6 +624,118 @@ console.log('\n[8] 무작위 토너먼트 반복 (칩 보존 · 순위 · 상금
   ck('잔액 = 원장 누적합', ledgerBad === 0, `${ledgerBad}건`);
   ck('사이드 팟이 실제로 발생했다 (검증이 헛돌지 않았다)', sidePotHands > 0, String(sidePotHands));
   ck('늦은 등록이 실제로 수락됐다', lateRegs > 0, String(lateRegs));
+}
+
+/* ── 쇼다운 결과에 족보와 이긴 5장이 실린다 ────────────────────────
+   화면에서 "이 5장으로 이겼다"를 밝히는 근거다. 여기서 빠지면 강조가 조용히 사라진다. */
+console.log('\n[1d] 쇼다운 결과에 족보명 · 이긴 5장이 담긴다');
+{
+  const db3 = getDb();
+  const rows = db3.prepare(
+    `SELECT result_json FROM holdem_hands WHERE result_json IS NOT NULL`).all() as { result_json: string }[];
+  let withReveal = 0, missingHand = 0, missingFive = 0, notSubset = 0, badLen = 0;
+  for (const r of rows) {
+    const res = JSON.parse(r.result_json) as {
+      board: string[];
+      reveal: { seat: number; cards: string[]; hand?: string; five?: string[] }[];
+    };
+    for (const rv of res.reveal ?? []) {
+      withReveal++;
+      if (!rv.hand) missingHand++;
+      if (!rv.five) { missingFive++; continue; }
+      if (rv.five.length !== 5) badLen++;
+      const pool = new Set(rv.cards.concat(res.board));
+      if (rv.five.some(c => !pool.has(c))) notSubset++;
+    }
+  }
+  ck('쇼다운이 실제로 여러 번 있었다 (검사가 헛돌지 않았다)', withReveal > 0, String(withReveal));
+  ck('공개된 손마다 족보명이 있다', missingHand === 0, `${missingHand}건 누락`);
+  ck('공개된 손마다 이긴 5장이 있다', missingFive === 0, `${missingFive}건 누락`);
+  ck('이긴 5장은 정확히 5장', badLen === 0, `${badLen}건`);
+  ck('이긴 5장은 그 사람 홀 카드 + 보드 안에서만 나온다', notSubset === 0, `${notSubset}건`);
+}
+
+/* ── 자리 비움은 기다리지 않는다 ──────────────────────────────────
+   20초는 "지금 보고 있는 사람이 생각할 시간"이다. 자리를 비운 사람에게도 그 시간을 주면
+   남은 사람 전부가 그 사람 차례마다 20초씩 멈춰 선다 — 3인 판이면 한 바퀴에 40초가 빈다.
+   실제로 그렇게 동작하고 있었다. */
+console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
+{
+  const db2 = getDb();
+  for (const id of ['s0', 's1', 's2']) mkUser(id);
+  /* 깨끗한 판에서 시작한다. 앞 절이 대회를 끝까지 돌려 놓았으므로, 같은 날짜의 대회를
+     되살리기만 하면 좌석에 살아남은 사람이 하나뿐이라 advanceHoldem이 곧바로 종료 처리한다.
+     여섯 테이블을 모두 비운다 — holdem_tables는 AUTOINCREMENT가 아니라서 행을 다 지우면
+     id가 1부터 다시 붙고, 핸드를 남겨두면 새 테이블이 옛 핸드를 물려받는다. */
+  for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+    'holdem_tables', 'holdem_entries', 'holdem_tournaments']) {
+    db2.prepare(`DELETE FROM ${tb}`).run();
+  }
+  HD.advanceHoldem();
+  db2.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
+    started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
+    .run(nowSec() - 30, nowSec() + 600, nowSec() + 3600);
+  for (const id of ['s0', 's1', 's2']) HD.registerHoldem(id, id);
+  db2.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+
+  const stX = HD.advanceHoldem();
+  const tableX = HD.getTable(stX.tournament!.id);
+  ck('테스트용 대회가 시작됐다', stX.status === 'RUNNING' && tableX != null, stX.status);
+  if (tableX) {
+    let hand = HD.getCurrentHand(tableX.id)!;
+    const actor = hand.to_act_seat!;
+    ck('마감이 아직 남아 있다', (hand.action_deadline ?? 0) > nowSec());
+
+    // 자리 비움이 아니면 기다려야 한다
+    HD.advanceHoldem();
+    hand = HD.getCurrentHand(tableX.id)!;
+    ck('평소에는 마감까지 기다린다 (즉시 넘기지 않는다)', hand.to_act_seat === actor,
+      `to_act=${hand.to_act_seat}`);
+
+    // 자리 비움으로 바꾸면 마감 전에도 바로 처리한다
+    db2.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT' WHERE table_id = ? AND seat = ?`)
+      .run(tableX.id, actor);
+    HD.advanceHoldem();
+    hand = HD.getCurrentHand(tableX.id)!;
+    const moved = hand.ended_at != null || hand.to_act_seat !== actor;
+    ck('자리 비움이면 마감을 기다리지 않고 넘어간다', moved, `to_act=${hand.to_act_seat}`);
+    const acted = HD.getHandSeats(hand.id).find(s => s.seat === actor);
+    ck('넘어간 자리에 실제로 행동이 기록됐다 (체크 또는 폴드)',
+      acted != null && (acted.state === 'folded' || acted.last_action === 'check'),
+      `state=${acted?.state} act=${acted?.last_action}`);
+    ck('강제로 콜하지 않는다 (게임이 대신 칩을 걸지 않는다)',
+      acted != null && acted.last_action !== 'call', String(acted?.last_action));
+
+    /* 돌아온 사람이 버튼으로 다시 들어올 수 있어야 한다.
+       즉시 넘기기를 넣었을 때 holdemAction이 advanceHoldem을 먼저 부르는 탓에
+       내 차례가 사라진 뒤 요청이 도착해 영원히 'not_your_turn'이 됐다 —
+       자리 비움인 사람은 버튼을 눌러도 아무 일도 안 일어나고 계속 자동 폴드됐다. */
+    {
+      const h2 = HD.getCurrentHand(tableX.id)!;
+      const nextActor = h2.to_act_seat;
+      if (nextActor != null && h2.ended_at == null) {
+        db2.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT' WHERE table_id = ? AND seat = ?`)
+          .run(tableX.id, nextActor);
+        const who = HD.getSeats(tableX.id).find(s => s.seat === nextActor)!;
+        const res = HD.holdemAction(who.user_id, 'allin', 0);
+        ck('자리 비움이어도 직접 누른 액션은 수락된다 (복귀 경로)', res.ok, JSON.stringify(res));
+        const after = HD.getSeats(tableX.id).find(s => s.seat === nextActor)!;
+        ck('액션을 넣으면 다시 앉은 상태가 된다', after.presence === 'ACTIVE', after.presence);
+      } else {
+        ck('복귀 경로를 검사할 차례가 있었다', false, `to_act=${nextActor} ended=${h2.ended_at}`);
+      }
+    }
+
+    // 전원 자리 비움이어도 무한 루프에 빠지지 않고 판이 끝난다
+    db2.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT' WHERE table_id = ?`).run(tableX.id);
+    const t0 = Date.now();
+    HD.advanceHoldem();
+    const elapsed = Date.now() - t0;
+    hand = HD.getCurrentHand(tableX.id)!;
+    ck('전원 자리 비움이면 판이 스스로 끝난다', hand.ended_at != null,
+      `street=${hand.street} to_act=${hand.to_act_seat}`);
+    ck('무한 루프가 아니다 (1초 안에 끝난다)', elapsed < 1000, `${elapsed}ms`);
+  }
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

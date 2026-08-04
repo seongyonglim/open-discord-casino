@@ -602,5 +602,169 @@ section('[17] 상금 풀');
   ck('음수 방어', T.prizePool(-5, 1000) === 0);
 }
 
+/* ── 18b. 화면에 보여줄 팟 층 (potLayers) ────────────────────────
+   정산용 buildPots를 화면에 그대로 쓰면, 투입액이 다를 때마다 층을 자르기 때문에
+   스몰·빅 블라인드만 낸 상태에서도 "사이드 팟"이 생긴다 — 올인한 사람이 없는데도.
+   사이드 팟은 올인이 뚜껑을 덮었을 때만 존재한다. */
+section('[18b] 화면용 팟 층 — 사이드 팟은 올인이 있을 때만');
+{
+  const sum = (ps: H.Pot[]) => ps.reduce((a, p) => a + p.amount, 0);
+
+  // 블라인드만 낸 상태 — 층은 하나여야 한다
+  {
+    const s = [seat(0, 0, 10000, 0), seat(1, 25, 9975, 25), seat(2, 50, 9950, 50)];
+    const L = H.potLayers(s);
+    ck('블라인드만 있으면 층이 하나 (사이드 팟 없음)', L.length === 1, JSON.stringify(L));
+    ck('그래도 합계는 정산과 같다', sum(L) === sum(H.buildPots(s)), `${sum(L)} vs ${sum(H.buildPots(s))}`);
+    ck('buildPots는 이 상태에서 층을 나눈다 (이게 화면에 쓰면 안 되는 이유)',
+      H.buildPots(s).length === 2, JSON.stringify(H.buildPots(s)));
+  }
+  // 올인이 있지만 아무도 그 위로 더 내지 않았다 — 뚜껑 위가 비어 있으니 층은 하나
+  {
+    const s = [seat(0, 500, 0, 500, 'allin'), seat(1, 500, 9500, 500), seat(2, 500, 9500, 500)];
+    const L = H.potLayers(s);
+    ck('올인 금액을 아무도 넘지 않으면 층이 하나', L.length === 1 && L[0].amount === 1500,
+      JSON.stringify(L));
+    ck('자격은 세 명 모두', L[0].eligible.join() === '0,1,2', JSON.stringify(L[0].eligible));
+  }
+  // 올인 위로 돈이 쌓였다 — 여기서부터 사이드 팟이다
+  {
+    const s = [seat(0, 500, 0, 500, 'allin'), seat(1, 2000, 8000, 2000), seat(2, 2000, 8000, 2000)];
+    const L = H.potLayers(s);
+    ck('올인 위로 쌓인 돈이 사이드 팟이 된다', L.length === 2, JSON.stringify(L));
+    ck('메인 = 올인 금액 × 3 = 1500 · 자격 3인',
+      L[0].amount === 1500 && L[0].eligible.join() === '0,1,2', JSON.stringify(L[0]));
+    ck('사이드 = 나머지 3000 · 올인한 사람은 자격 없음',
+      L[1].amount === 3000 && L[1].eligible.join() === '1,2', JSON.stringify(L[1]));
+    ck('합계 = 정산 합계', sum(L) === sum(H.buildPots(s)));
+  }
+  // 올인 두 명 — 교과서 3층
+  {
+    const s = [seat(0, 100, 0, 100, 'allin'), seat(1, 500, 0, 500, 'allin'), seat(2, 1000, 9000, 1000)];
+    const L = H.potLayers(s);
+    ck('올인 두 명이면 3층', L.length === 3, JSON.stringify(L));
+    ck('층 금액 300 / 800 / 500',
+      L[0].amount === 300 && L[1].amount === 800 && L[2].amount === 500, JSON.stringify(L.map(p => p.amount)));
+    ck('합계 = 정산 합계', sum(L) === sum(H.buildPots(s)));
+  }
+  // 폴드한 사람의 돈도 층에 담기지만 자격은 없다
+  {
+    const s = [seat(0, 0, 9900, 100, 'folded'), seat(1, 200, 0, 200, 'allin'), seat(2, 200, 9800, 200)];
+    const L = H.potLayers(s);
+    ck('폴드한 돈도 팟에 포함 (100+200+200=500)', sum(L) === 500, JSON.stringify(L));
+    ck('폴드한 사람은 어느 층에도 자격이 없다',
+      L.every(p => !p.eligible.includes(0)), JSON.stringify(L));
+  }
+  ck('아무도 안 냈으면 층이 없다', H.potLayers([seat(0, 0, 100, 0)]).length === 0);
+
+  /* 무작위 검사 — 화면 합계와 정산 합계가 어긋나면 팟 숫자가 거짓말을 한다.
+     그리고 올인이 없는 판에서는 절대 층이 갈라져선 안 된다(이번 버그의 본질). */
+  let sumBad = 0, splitWithoutAllin = 0;
+  for (let i = 0; i < 20_000; i++) {
+    const n = 2 + randomInt(8);
+    const seats: H.SeatView[] = [];
+    for (let k = 0; k < n; k++) {
+      const committed = randomInt(3000);
+      const roll = randomInt(10);
+      const state: H.SeatState = roll < 3 ? 'folded' : roll < 6 ? 'allin' : 'active';
+      seats.push(seat(k, 0, randomInt(1000), committed, state, true));
+    }
+    const L = H.potLayers(seats);
+    if (sum(L) !== sum(H.buildPots(seats))) sumBad++;
+    const anyAllin = seats.some(s => s.state === 'allin');
+    if (!anyAllin && L.length > 1) splitWithoutAllin++;
+  }
+  ck('무작위 20,000판 — 화면 합계 = 정산 합계', sumBad === 0, `${sumBad}건`);
+  ck('올인이 없으면 절대 층이 갈라지지 않는다', splitWithoutAllin === 0, `${splitWithoutAllin}건`);
+}
+
+/* ── 18. 최강 5장 고르기 ─────────────────────────────────────────
+   화면에서 "이 5장으로 이겼다"를 밝히려면 어느 카드가 쓰였는지 알아야 하는데,
+   evaluate7은 점수만 준다. 그래서 5장 단위 평가(evaluate5)를 따로 두고 조합을 전개한다.
+
+   두 함수가 갈라지면 화면에 강조된 5장과 실제 승자가 어긋난다 — 그것도 조용히.
+   이 절의 첫 검사가 두 구현을 묶어 두는 유일한 장치다. */
+section('[18] 최강 5장 (evaluate5 · bestFive · coreOfFive)');
+{
+  const P = require('../src/services/poker') as typeof import('../src/services/poker');
+  let mismatch = 0, notSubset = 0, wrongLen = 0;
+  const catSeen = new Array(9).fill(0);
+  const N = 60_000;
+  for (let i = 0; i < N; i++) {
+    const deck = Array.from({ length: 52 }, (_, k) => k);
+    for (let j = 51; j > 0; j--) { const k = randomInt(j + 1); const t = deck[j]; deck[j] = deck[k]; deck[k] = t; }
+    const c = deck.slice(0, 7);
+    const e7 = P.evaluate7(c[0], c[1], c[2], c[3], c[4], c[5], c[6]);
+    const bf = P.bestFive(c);
+    catSeen[e7 >>> 20]++;
+    if (bf.score !== e7) mismatch++;
+    if (bf.five.length !== 5) wrongLen++;
+    else if (bf.five.some(x => !c.includes(x))) notSubset++;
+  }
+  ck(`7장 ${N.toLocaleString('ko-KR')}표본 — bestFive 점수 = evaluate7 점수`, mismatch === 0, `${mismatch}건 불일치`);
+  ck('고른 것이 항상 5장', wrongLen === 0, `${wrongLen}건`);
+  ck('고른 5장이 준 카드의 부분집합', notSubset === 0, `${notSubset}건`);
+  ck('표본에 전 등급이 나왔다 (검사가 실제로 전 구간을 지난다)',
+    catSeen.every(n => n > 0), catSeen.join(','));
+
+  // 카드 문자열 → 인덱스 (감사 안에서만 쓰는 역변환)
+  const s2c = (t: string) => '23456789TJQKA'.indexOf(t[0]) * 4 + ({ s: 0, h: 1, d: 2, c: 3 } as Record<string, number>)[t[1]];
+  const set = (...t: string[]) => t.map(s2c);
+
+  // coreOfFive — "등급을 만든 카드"만. 킥커는 빠진다.
+  const pair = P.bestFive(set('Qs', 'Qd', '9h', '7c', '2s'));
+  ck('원페어의 core는 2장 (킥커 제외)', P.coreOfFive(pair.five, pair.category).length === 2);
+  const two = P.bestFive(set('Qs', 'Qd', '7h', '7c', '2s'));
+  ck('투페어의 core는 4장', P.coreOfFive(two.five, two.category).length === 4);
+  const trips = P.bestFive(set('Qs', 'Qd', 'Qh', '7c', '2s'));
+  ck('트리플의 core는 3장', P.coreOfFive(trips.five, trips.category).length === 3);
+  const fh = P.bestFive(set('Qs', 'Qd', 'Qh', '7c', '7s'));
+  ck('풀하우스의 core는 5장', P.coreOfFive(fh.five, fh.category).length === 5);
+  const fl = P.bestFive(set('As', 'Ks', '9s', '7s', '2s'));
+  ck('플러시의 core는 5장', P.coreOfFive(fl.five, fl.category).length === 5);
+  const straight = P.bestFive(set('9s', '8d', '7h', '6c', '5s'));
+  ck('스트레이트의 core는 5장', P.coreOfFive(straight.five, straight.category).length === 5);
+  const high = P.bestFive(set('As', 'Jd', '9h', '7c', '2s'));
+  ck('하이카드의 core는 없다 (만든 게 없다)', P.coreOfFive(high.five, high.category).length === 0);
+
+  /* readHand(진행 중 힌트)와 bestFive(결과)의 등급이 어긋나면
+     "화면 글자는 플러시인데 강조는 스트레이트" 같은 모순이 나온다. */
+  let catDiff = 0;
+  for (let i = 0; i < 20_000; i++) {
+    const deck = Array.from({ length: 52 }, (_, k) => k);
+    for (let j = 51; j > 0; j--) { const k = randomInt(j + 1); const t = deck[j]; deck[j] = deck[k]; deck[k] = t; }
+    const hole = deck.slice(0, 2);
+    const boardLen = [3, 4, 5][randomInt(3)];
+    const board = deck.slice(2, 2 + boardLen);
+    const r = H.readHand(hole, board);
+    const bf = P.bestFive(hole.concat(board));
+    if (r.category !== bf.category) catDiff++;
+  }
+  ck('readHand 등급 = bestFive 등급 (플랍·턴·리버 20,000판)', catDiff === 0, `${catDiff}건`);
+
+  // 강조 카드는 언제나 내 카드 + 보드 안에서만 나온다 (없는 카드를 밝히지 않는다)
+  let outside = 0, tooMany = 0;
+  for (let i = 0; i < 20_000; i++) {
+    const deck = Array.from({ length: 52 }, (_, k) => k);
+    for (let j = 51; j > 0; j--) { const k = randomInt(j + 1); const t = deck[j]; deck[j] = deck[k]; deck[k] = t; }
+    const hole = deck.slice(0, 2);
+    const board = deck.slice(2, 2 + [0, 3, 4, 5][randomInt(4)]);
+    const mine = new Set(H.cardsToStrings(hole.concat(board)));
+    const r = H.readHand(hole, board);
+    if (r.highlight.some(c => !mine.has(c))) outside++;
+    if (r.highlight.length > 5) tooMany++;
+  }
+  ck('강조 카드가 내 카드 + 보드 밖으로 나가지 않는다', outside === 0, `${outside}건`);
+  ck('강조는 최대 5장', tooMany === 0, `${tooMany}건`);
+
+  // 쇼다운 표기
+  const sd = H.showdownHand(set('As', 'Ks'), set('Qs', 'Js', 'Ts', '2h', '4d'));
+  ck('로열 플러시를 이름으로 구분한다', sd.name === '로열 플러시', sd.name);
+  ck('쇼다운은 최강 5장을 그대로 준다', sd.five.length === 5, JSON.stringify(sd.five));
+  const sdShort = H.showdownHand(set('As', 'Ks'), []);
+  ck('보드가 없으면 쇼다운 표기가 비어 있다 (5장을 만들 수 없다)',
+    sdShort.name === '' && sdShort.five.length === 0);
+}
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);

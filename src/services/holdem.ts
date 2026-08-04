@@ -10,7 +10,7 @@
  * 그래서 7장 평가기(evaluate7)를 그대로 쓴다 — 홀덤 엔진에서 가장 어려운 조각이 이미 있다.
  */
 import {
-  evaluate7, cardToString, straightHigh,
+  evaluate7, cardToString, straightHigh, bestFive, coreOfFive, CAT_NAMES,
   CAT_HIGH, CAT_PAIR, CAT_TWO_PAIR, CAT_TRIPS, CAT_STRAIGHT,
   CAT_FLUSH, CAT_FULL_HOUSE, CAT_QUADS, CAT_STRAIGHT_FLUSH,
 } from './poker';
@@ -398,11 +398,30 @@ export interface HandRead {
   category: number | null;
   /** 화면에 그대로 쓰는 한 줄 — 예: "원페어 (Q)", "A 하이", "플러시" */
   text: string;
+  /* 지금 등급을 만들고 있는 카드들 (카드 코드). 화면에서 이 카드만 은은하게 밝힌다.
+     최강 5장이 아니라 "등급을 만든 카드"다 — 플랍에서는 다섯 장이 곧 전부라
+     5장을 다 밝히면 아무 신호가 되지 않는다. 하이카드는 빈 배열이다(만든 게 없다).
+     프리플랍(보드 0장)에는 페어일 때만 내 두 장을 밝힌다. */
+  highlight: string[];
+}
+
+/* 내 카드로만 계산하므로 남의 패를 유추할 정보가 섞이지 않는다.
+   (보드는 어차피 공개된 것이다) */
+function highlightOf(hole: number[], board: number[]): string[] {
+  const cards = hole.concat(board);
+  if (cards.length >= 5) {
+    const bf = bestFive(cards);
+    return cardsToStrings(coreOfFive(bf.five, bf.category));
+  }
+  // 프리플랍 — 5장이 안 되니 조합을 고를 수 없다. 포켓 페어만 짚어 준다.
+  if (hole.length === 2 && (hole[0] >> 2) === (hole[1] >> 2)) return cardsToStrings(hole);
+  return [];
 }
 
 export function readHand(hole: number[], board: number[]): HandRead {
   const cards = hole.concat(board);
-  if (!hole.length) return { category: null, text: '' };
+  if (!hole.length) return { category: null, text: '', highlight: [] };
+  const highlight = highlightOf(hole, board);
 
   const rankCount = new Array<number>(13).fill(0);
   const suitCount = new Array<number>(4).fill(0);
@@ -432,19 +451,23 @@ export function readHand(hole: number[], board: number[]): HandRead {
   const L = (r: number) => RANK_LABEL[r];
 
   if (sfHigh >= 0) {
-    return { category: CAT_STRAIGHT_FLUSH, text: sfHigh === 12 ? '로열 플러시' : '스트레이트 플러시' };
+    return {
+      category: CAT_STRAIGHT_FLUSH,
+      text: sfHigh === 12 ? '로열 플러시' : '스트레이트 플러시',
+      highlight,
+    };
   }
-  if (top.n === 4) return { category: CAT_QUADS, text: `포카드 (${L(top.r)})` };
+  if (top.n === 4) return { category: CAT_QUADS, text: `포카드 (${L(top.r)})`, highlight };
   if (trips.length && (pairs.length || trips.length > 1)) {
-    return { category: CAT_FULL_HOUSE, text: `풀하우스 (${L(trips[0].r)})` };
+    return { category: CAT_FULL_HOUSE, text: `풀하우스 (${L(trips[0].r)})`, highlight };
   }
-  if (flushSuit >= 0) return { category: CAT_FLUSH, text: '플러시' };
-  if (straight >= 0) return { category: CAT_STRAIGHT, text: `스트레이트 (${L(straight)} 하이)` };
-  if (top.n === 3) return { category: CAT_TRIPS, text: `트리플 (${L(top.r)})` };
+  if (flushSuit >= 0) return { category: CAT_FLUSH, text: '플러시', highlight };
+  if (straight >= 0) return { category: CAT_STRAIGHT, text: `스트레이트 (${L(straight)} 하이)`, highlight };
+  if (top.n === 3) return { category: CAT_TRIPS, text: `트리플 (${L(top.r)})`, highlight };
   if (pairs.length >= 2) {
-    return { category: CAT_TWO_PAIR, text: `투페어 (${L(pairs[0].r)}·${L(pairs[1].r)})` };
+    return { category: CAT_TWO_PAIR, text: `투페어 (${L(pairs[0].r)}·${L(pairs[1].r)})`, highlight };
   }
-  if (pairs.length === 1) return { category: CAT_PAIR, text: `원페어 (${L(pairs[0].r)})` };
+  if (pairs.length === 1) return { category: CAT_PAIR, text: `원페어 (${L(pairs[0].r)})`, highlight };
 
   /* 아무것도 안 됐을 때.
      보드가 아직 안 깔린 프리플랍은 "무엇이 완성됐나"를 말할 수 없으므로
@@ -456,10 +479,90 @@ export function readHand(hole: number[], board: number[]): HandRead {
     return {
       category: null,
       text: `${L(hi)}${L(lo)} ${suited ? '수티드' : '오프수트'}`,
+      highlight,
     };
   }
   const best = Math.max(...cards.map(c => c >> 2));
-  return { category: CAT_HIGH, text: `${L(best)} 하이` };
+  return { category: CAT_HIGH, text: `${L(best)} 하이`, highlight };
+}
+
+/* ── 화면에 보여줄 팟 층 ─────────────────────────────────────────────
+   buildPots는 정산용이다. 판이 끝난 시점에는 "투입액이 다르다 = 누군가 스택이 모자랐다"가
+   성립하므로 서로 다른 투입액마다 층을 자르는 게 맞다.
+
+   그런데 진행 중에는 그 전제가 성립하지 않는다. 투입액이 다른 건 아직 안 낸 사람이 있다는
+   뜻일 뿐이다. 그래서 buildPots를 그대로 화면에 쓰면 스몰·빅 블라인드만 낸 상태에서도
+   층이 두 개로 갈려 "사이드 팟 25"가 생긴다 — 올인한 사람이 아무도 없는데도.
+
+   사이드 팟이 실제로 존재하는 조건은 하나다: 올인한 사람이 있어서 그 사람이 다툴 수 있는
+   금액에 뚜껑이 덮였을 때. 그래서 층의 경계를 "올인한 사람의 투입액"에서만 자르고,
+   그 위에 쌓인 돈은 지금 다투고 있는 한 덩어리로 둔다. 실제 카지노가 말하는
+   메인 팟 + 사이드 팟이 이것이다.
+
+   정산은 여기 손대지 않는다 — buildPots가 폴드한 사람의 돈까지 층에 담는 규칙을 지키고
+   있고 그게 칩 보존의 근거다. 이 함수는 보여주기 전용이며, 합계는 둘이 같아야 한다. */
+export function potLayers(seats: SeatView[]): Pot[] {
+  const live = contenders(seats);
+  const total = seats.reduce((a, s) => a + s.committed, 0);
+  if (total <= 0) return [];
+
+  // 뚜껑이 되는 지점 = 올인한 사람들의 투입액
+  const caps = [...new Set(live.filter(s => s.state === 'allin').map(s => s.committed))]
+    .sort((a, b) => a - b);
+  if (!caps.length) return [{ amount: total, eligible: live.map(s => s.seat) }];
+
+  const layers: Pot[] = [];
+  let prev = 0;
+  for (const cap of caps) {
+    const slice = cap - prev;
+    if (slice <= 0) continue;
+    let amount = 0;
+    for (const s of seats) amount += Math.min(Math.max(s.committed - prev, 0), slice);
+    if (amount > 0) layers.push({ amount, eligible: live.filter(s => s.committed >= cap).map(s => s.seat) });
+    prev = cap;
+  }
+  /* 가장 높은 뚜껑 위에 쌓인 돈. 올인한 사람은 다툴 수 없고, 아직 스택이 남은 사람들끼리
+     겨루는 중인 층이다. 콜이 들어오면 이 층이 커지고, 아무도 안 받으면 되돌아간다. */
+  let rest = 0;
+  for (const s of seats) rest += Math.max(s.committed - prev, 0);
+  if (rest > 0) {
+    layers.push({ amount: rest, eligible: live.filter(s => s.committed > prev).map(s => s.seat) });
+  }
+
+  // 자격자가 같은 인접 층은 합친다 (같은 사람들이 다투는 돈을 나눠 보여줄 이유가 없다)
+  const merged: Pot[] = [];
+  for (const p of layers) {
+    const last = merged[merged.length - 1];
+    if (last && last.eligible.length === p.eligible.length
+        && last.eligible.every((e, i) => e === p.eligible[i])) last.amount += p.amount;
+    else merged.push(p);
+  }
+  return merged;
+}
+
+/* ── 쇼다운 표기 ─────────────────────────────────────────────────────
+   판이 끝난 뒤 "무엇으로 이겼나"를 보여주기 위한 것이다. readHand와 달리 여기서는
+   최강 5장을 그대로 준다 — 쇼다운에서는 킥커까지가 승패를 가른 카드이고,
+   실제 포커 클라이언트도 쓰인 5장을 밝히고 남은 2장을 흐린다.
+
+   readHand(진행 중 힌트)와 이 함수(종료 후 결과)는 목적이 달라 강조 범위가 다르다.
+   진행 중에는 "등급을 만든 카드"만, 끝난 뒤에는 "이긴 5장"이다. */
+export interface ShowdownHand {
+  /** 등급 이름 — 예: "풀하우스", "플러시" (킥커 없이 등급만) */
+  name: string;
+  /** 이 손을 만든 5장 */
+  five: string[];
+}
+
+export function showdownHand(hole: number[], board: number[]): ShowdownHand {
+  const bf = bestFive(hole.concat(board));
+  if (bf.category == null) return { name: '', five: [] };
+  const royal = bf.category === CAT_STRAIGHT_FLUSH
+    && straightHigh(bf.five.reduce((m, c) => m | (1 << (c >> 2)), 0)) === 12;
+  return {
+    name: royal ? '로열 플러시' : CAT_NAMES[bf.category],
+    five: cardsToStrings(bf.five),
+  };
 }
 
 /** 52장 덱을 섞는다. 홀덤은 매 핸드 새 덱이다(슈를 쓰지 않는다). */

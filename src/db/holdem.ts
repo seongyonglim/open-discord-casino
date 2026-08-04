@@ -404,8 +404,18 @@ function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
     // 아직 라운드가 안 끝났다 — 행동할 사람이 있어야 한다
     if (hand.to_act_seat == null) { setToAct(hand, views, hand.button_seat, now); continue; }
 
+    /* 자리 비움인 사람은 기다리지 않고 바로 넘긴다.
+       20초는 "지금 보고 있는 사람이 생각할 시간"이다. 이미 자리를 비운 사람에게 그 시간을
+       주면 남은 사람 전부가 매 차례 20초씩 멈춰 서 있게 된다 — 3인 판이면 한 바퀴에 40초가
+       빈다. SIT_OUT은 한 번 시간을 초과해서 붙는 표시이므로(아래) 유예는 이미 한 번 줬다.
+
+       DISCONNECTED는 여기 넣지 않는다. 잠깐 끊긴 것일 수 있어서 20초는 돌아올 기회로 둔다 —
+       돌아오지 못하면 그 한 번의 초과로 SIT_OUT이 되고, 그 뒤부터는 바로 넘어간다. */
+    const awaySeat = hand.to_act_seat != null && one<{ presence: string }>(
+      `SELECT presence FROM holdem_seats WHERE table_id = ? AND seat = ?`,
+      table.id, hand.to_act_seat)?.presence === 'SIT_OUT';
     const deadline = hand.action_deadline ?? now;
-    if (now < deadline) return;             // 아직 기다리는 중 — 여기서 끝낸다
+    if (!awaySeat && now < deadline) return;   // 아직 기다리는 중 — 여기서 끝낸다
 
     /* 마감 초과 → 자동 액션. 체크할 수 있으면 체크, 없으면 폴드.
        강제로 콜하지 않는 게 중요하다. 게임이 플레이어 대신 칩을 걸어선 안 된다.
@@ -600,12 +610,17 @@ function endHand(
     board: G.cardsToStrings(board),
     pots: pots.map(p => ({ amount: p.amount, eligible: p.eligible })),
     awards,
-    // 쇼다운이면 남은 사람의 홀 카드를 공개한다 (폴드로 끝났으면 공개하지 않는다)
+    /* 쇼다운이면 남은 사람의 홀 카드를 공개한다 (폴드로 끝났으면 공개하지 않는다).
+       무엇으로 이겼는지(hand)와 이긴 5장(five)도 같이 적어 둔다 — 화면에서 그 5장만
+       밝히고 나머지를 흐리게 하려면 어느 카드가 쓰였는지 알아야 한다.
+       여기서 한 번 계산해 result_json에 박아 두면 폴링마다 다시 계산할 일이 없고,
+       나중에 판정이 바뀌어도 그때 본 결과가 그대로 남는다. */
     reveal: showdown && live.length > 1
-      ? live.map(v => ({
-        seat: v.seat,
-        cards: G.cardsToStrings(JSON.parse(rows.find(r => r.seat === v.seat)!.hole_json) as number[]),
-      }))
+      ? live.map(v => {
+        const hole = JSON.parse(rows.find(r => r.seat === v.seat)!.hole_json) as number[];
+        const sd = G.showdownHand(hole, board);
+        return { seat: v.seat, cards: G.cardsToStrings(hole), hand: sd.name, five: sd.five };
+      })
       : [],
   };
   run(`UPDATE holdem_hands SET ended_at = ?, result_json = ?, to_act_seat = NULL, action_deadline = NULL
@@ -796,6 +811,17 @@ export function holdemAction(
   userId: string, kind: G.ActionKind, amount: number
 ): { ok: true } | { ok: false; error: ActionError; detail?: string } {
   return tx(() => {
+    /* 자리 비움 상태에서 직접 버튼을 눌렀다면 전진시키기 전에 먼저 앉은 것으로 되돌린다.
+       advanceHoldem이 자리 비움 좌석을 기다리지 않고 즉시 넘기기 때문에, 순서가 반대면
+       내 차례가 사라진 뒤에 요청이 도착해 'not_your_turn'이 된다 — 돌아온 사람이
+       버튼을 눌러도 아무 일도 일어나지 않고 계속 자동 폴드된다.
+       (아래 "직접 행동했으니 앉아 있는 상태로 되돌린다"는 이미 있던 규칙이다.
+        즉시 넘기기를 넣으면서 그 규칙이 닿기 전에 차례가 사라지게 됐다.) */
+    run(`UPDATE holdem_seats SET presence = 'ACTIVE', last_seen_at = ?
+         WHERE user_id = ? AND presence = 'SIT_OUT' AND table_id IN (
+           SELECT tb.id FROM holdem_tables tb
+             JOIN holdem_tournaments t ON t.id = tb.tournament_id
+            WHERE t.finished_at IS NULL AND t.cancelled_at IS NULL)`, nowSec(), userId);
     const st = advanceHoldem();
     if (st.status !== 'RUNNING') return { ok: false, error: 'no_tournament' };
     const table = getTable(st.tournament.id);

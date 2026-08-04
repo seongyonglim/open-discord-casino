@@ -1184,8 +1184,10 @@
     padding:4px 12px 4px 4px;border-radius:10px;
     background:linear-gradient(180deg,rgba(22,28,25,.94),rgba(10,14,12,.94));
     border:1px solid rgba(255,255,255,.14);box-shadow:0 3px 10px rgba(0,0,0,.4)}
+  /* 지금 행동할 차례 — 테두리만 바꾸는 것으로는 9인 테이블에서 눈에 안 들어온다.
+     맥박을 줘서 시선을 끈다. box-shadow는 아래 @keyframes가 이어받는다. */
   .ht-seat.turn .ht-plate{border-color:var(--gold);
-    box-shadow:0 0 0 2px rgba(212,175,55,.32),0 0 16px rgba(212,175,55,.3)}
+    animation:turnPulse 1.4s ease-in-out infinite}
   .ht-seat.sitout .ht-plate{border-color:rgba(255,180,60,.55)}
   .ht-seat.disc .ht-plate{border-style:dashed}
   /* 내 좌석판은 밝게 뒤집어 한눈에 구분되게 한다 (참고 디자인의 HERO 처리) */
@@ -1216,11 +1218,99 @@
     color:#141414;font-size:11.5px;font-weight:900;
     display:flex;align-items:center;justify-content:center;
     border:2px solid rgba(0,0,0,.3);
-    box-shadow:0 2px 7px rgba(0,0,0,.6),0 0 0 3px rgba(255,255,255,.13)}
+    box-shadow:0 2px 7px rgba(0,0,0,.6),0 0 0 3px rgba(255,255,255,.13);
+    /* 펠트 위에 놓인 물건으로 읽히게 — 글자에 얇은 하이라이트를 준다 */
+    letter-spacing:0;text-shadow:0 1px 0 rgba(255,255,255,.7)}
   /* display:flex가 있으면 hidden 속성이 무시된다 — 명시적으로 막아야 한다 */
   .ht-puck[hidden],.ht-fold-b[hidden],.ht-zzz[hidden]{display:none}
   .ht-puck.r{left:100%;transform:translate(6px,-50%)}
   .ht-puck.l{right:100%;transform:translate(-6px,-50%)}
+  /* SB · BB 배지 — 딜러 버튼 반대쪽. 포지션이 보이지 않으면 프리플랍 행동 순서를 못 읽는다.
+     D(흰 원)와 형태를 다르게(각진 알약) 해서 한눈에 구분된다. */
+  .ht-blind{position:absolute;top:50%;z-index:4;
+    padding:1px 5px;border-radius:4px;
+    font-family:var(--mono);font-size:9.5px;font-weight:900;letter-spacing:.5px;
+    background:rgba(20,26,22,.92);color:#9fd8bb;
+    border:1px solid rgba(120,200,160,.55);
+    box-shadow:0 1px 5px rgba(0,0,0,.5)}
+  .ht-blind[hidden]{display:none}
+  .ht-blind.bb{color:#ffd08a;border-color:rgba(230,170,70,.6)}
+  .ht-blind.r{left:100%;transform:translate(6px,-50%)}
+  .ht-blind.l{right:100%;transform:translate(-6px,-50%)}
+
+  /* ── 현재 차례 ────────────────────────────────────────────────────*/
+  @keyframes turnPulse{
+    0%,100%{box-shadow:0 0 0 2px rgba(212,175,55,.34),0 0 14px rgba(212,175,55,.28)}
+    50%    {box-shadow:0 0 0 3px rgba(212,175,55,.6),0 0 26px rgba(255,205,80,.62)}
+  }
+  /* 내 차례는 초록으로 — 금색은 테이블에 이미 많아서 "내 차례"라는 신호가 묻힌다 */
+  .ht-seat.turn.hero .ht-plate{animation:turnPulseMe 1.1s ease-in-out infinite}
+  @keyframes turnPulseMe{
+    0%,100%{box-shadow:0 0 0 2px rgba(80,220,150,.4),0 0 16px rgba(60,210,140,.35)}
+    50%    {box-shadow:0 0 0 4px rgba(80,220,150,.75),0 0 30px rgba(90,240,160,.7)}
+  }
+
+  /* ── 행동 시간 고리 ───────────────────────────────────────────────
+     conic-gradient를 --frac(1→0)으로 깎아 남은 시간을 부채꼴로 보여주고, 가운데를
+     mask로 파내 도넛으로 만든다. 아바타를 두르는 자리에 놓는다 — 좌석판 가운데에
+     띄웠더니 이름과 스택을 통째로 덮었다. 아바타에 붙어 있어야 "누구의 시간"인지도 분명하다.
+     (아바타 30px + 좌석판 왼쪽 패딩 4px → 중심이 왼쪽에서 19px)
+
+     각도는 클라이언트가 매 프레임 보간한다(서버는 1초 단위라 그대로 쓰면 뚝뚝 끊긴다). */
+  .ht-clock{position:absolute;left:19px;top:50%;transform:translate(-50%,-50%);
+    width:42px;height:42px;border-radius:50%;z-index:5;pointer-events:none;
+    background:conic-gradient(from -90deg,
+      rgba(120,225,170,.95) calc(var(--frac,1) * 360deg),
+      rgba(255,255,255,.14) 0);
+    -webkit-mask:radial-gradient(circle,transparent 0 16px,#000 17px);
+    mask:radial-gradient(circle,transparent 0 16px,#000 17px)}
+  .ht-clock[hidden]{display:none}
+  .ht-clock.warn{background:conic-gradient(from -90deg,
+      rgba(255,90,80,.98) calc(var(--frac,1) * 360deg),
+      rgba(255,255,255,.14) 0);
+    animation:clockWarn .5s ease-in-out infinite alternate}
+  @keyframes clockWarn{from{filter:none}to{filter:brightness(1.5)}}
+  /* 남은 초 — 아바타 오른쪽 아래에 작은 배지. 고리 안에 넣을 수 없다(mask가 자식을
+     같이 지운다). 왼쪽 위는 자리 비움 배지(.ht-zzz)가 쓰고 있어 오른쪽 아래로 둔다. */
+  .ht-clock-n{position:absolute;left:31px;top:calc(50% + 9px);z-index:6;pointer-events:none;
+    min-width:16px;height:16px;padding:0 2px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(8,14,10,.94);border:1px solid rgba(120,225,170,.6);
+    font-family:var(--mono);font-size:9.5px;font-weight:900;color:#c9f2dc}
+  .ht-clock-n[hidden]{display:none}
+  .ht-clock-n.warn{color:#ffb3ad;border-color:rgba(255,120,110,.8)}
+
+  /* ── 블라인드 상승 알림 ───────────────────────────────────────────*/
+  .ht-lvup{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
+    z-index:60;text-align:center;padding:16px 26px;border-radius:16px;
+    background:linear-gradient(180deg,rgba(28,34,30,.97),rgba(14,18,16,.97));
+    border:1px solid rgba(212,175,55,.6);
+    box-shadow:0 10px 40px rgba(0,0,0,.7),0 0 30px rgba(212,175,55,.28);
+    animation:lvUp .35s ease-out both}
+  .ht-lvup[hidden]{display:none}
+  @keyframes lvUp{from{opacity:0;transform:translate(-50%,-50%) scale(.9)}
+    to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+  .ht-lvup-t{font-family:var(--mono);font-size:12px;font-weight:900;letter-spacing:4px;
+    color:var(--gold)}
+  .ht-lvup-n{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+  .ht-lvup-b{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;
+    font-family:var(--mono);font-size:17px;font-weight:800}
+  .ht-lvup-from{color:var(--muted);text-decoration:line-through}
+  .ht-lvup-ar{color:var(--gold)}
+  .ht-lvup-to{color:#fff}
+
+  /* ── 메인 / 사이드 팟 ─────────────────────────────────────────────
+     층이 하나뿐이면 아예 안 나온다(POT 숫자로 충분하다). 올인이 섞여 갈라졌을 때만. */
+  .ht-pots{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:3px}
+  .ht-pots[hidden]{display:none}
+  .ht-pl{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:5px;
+    background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12)}
+  .ht-pl-k{font-family:var(--mono);font-size:8.5px;font-weight:900;letter-spacing:.6px;
+    color:var(--muted)}
+  .ht-pl-v{font-family:var(--mono);font-size:10.5px;font-weight:800;color:#dcece2}
+  /* 내가 다툴 수 있는 층 — 스택이 작으면 메인 팟만 가져갈 수 있다 */
+  .ht-pl.mine{border-color:rgba(212,175,55,.6);background:rgba(212,175,55,.14)}
+  .ht-pl.mine .ht-pl-v{color:var(--gold-hi)}
 
   /* 내 조합 — 보드 아래 한 줄. 투페어 이상이면 금색으로 힘을 준다. */
   .ht-read{padding:3px 12px;border-radius:999px;font-family:var(--mono);
@@ -1229,6 +1319,41 @@
   .ht-read[hidden]{display:none}
   .ht-read.strong{color:#1c1608;background:linear-gradient(180deg,#e8c65a,#c8a52f);
     border-color:rgba(255,235,160,.6)}
+
+  /* 무엇으로 이겼나 — 쇼다운이 있었던 판에만. 카드 강조(win5)와 짝이다.
+     밝은 5장이 왜 밝은지를 이 한 줄이 설명한다. */
+  .ht-outro{padding:3px 12px;border-radius:999px;font-family:var(--mono);
+    font-size:12px;font-weight:800;color:#1c1608;
+    background:linear-gradient(180deg,#f4e08a,#d9b544);
+    border:1px solid rgba(255,240,180,.75);
+    box-shadow:0 2px 10px rgba(212,175,55,.4)}
+  .ht-outro[hidden]{display:none}
+
+  /* ── 카드 강조 ────────────────────────────────────────────────────
+     두 단계로 쓴다. 목적이 다르므로 세기도 다르다.
+
+     .made  진행 중 "지금 내 등급을 만들고 있는 카드". 은은해야 한다 — 내 차례에
+            판단을 돕는 힌트이고, 여기서 눈을 빼앗기면 오히려 방해가 된다.
+     .win5  판이 끝난 뒤 "이 5장으로 이겼다". 확실해야 한다 — 살짝 들어올리고
+            금색으로 두른다. 실제 포커 클라이언트가 쓰는 방식이다.
+
+     밝기(filter)를 건드리지 않는다. .mucked가 grayscale/brightness를 쓰고 있어서
+     같은 카드에 둘이 겹치면 어느 쪽이 이겼는지 알 수 없게 된다. */
+  .pcard.made{outline:2px solid rgba(120,220,170,.75);outline-offset:-2px;
+    box-shadow:0 0 0 1px rgba(120,220,170,.3),0 0 10px rgba(80,200,140,.35)}
+  .pcard.win5{outline:2.5px solid rgba(255,225,130,.95);outline-offset:-2px;
+    box-shadow:0 0 0 2px rgba(212,175,55,.45),0 0 18px rgba(255,210,90,.6);
+    animation:win5Pop .45s ease-out both;z-index:3}
+  /* 이긴 5장은 살짝 들어올린다. translateY를 애니메이션 끝값으로 남겨 둬야
+     연출이 끝난 뒤에도 들린 상태가 유지된다(both). */
+  @keyframes win5Pop{
+    0%{transform:translateY(0) scale(1)}
+    55%{transform:translateY(-9px) scale(1.06)}
+    100%{transform:translateY(-5px) scale(1.03)}
+  }
+  /* 이긴 손에서 쓰이지 않은 두 장은 뒤로 물린다 — 강조의 반대편이 있어야
+     "이 5장"이 읽힌다. mucked만큼 죽이지는 않는다(그건 버린 패의 표시다). */
+  .pcard.unused{opacity:.62}
   /* 올인 — 스택이 0이라 숫자 자리가 죽는다. 그 자리를 ALL IN으로 바꿔 쓰고
      좌석판에 붉은 맥박을 준다. 작은 알약을 아래에 달아두는 것보다 훨씬 눈에 띈다. */
   .ht-allin{display:inline-block;padding:1px 7px;border-radius:4px;white-space:nowrap;
@@ -1370,6 +1495,11 @@
     .pcard.hero{width:36px;height:54px}
     .ht-plate{padding:3px 9px 3px 3px;gap:5px}
     .ht-av{width:24px;height:24px}
+    /* 고리는 아바타 중심에 맞춘다 — 아바타 24px + 왼쪽 패딩 3px → 중심 15px */
+    .ht-clock{left:15px;width:34px;height:34px;
+      -webkit-mask:radial-gradient(circle,transparent 0 13px,#000 14px);
+      mask:radial-gradient(circle,transparent 0 13px,#000 14px)}
+    .ht-clock-n{left:25px;top:calc(50% + 7px);min-width:14px;height:14px;font-size:8.5px}
     .ht-seat{width:92px}
     .ht-who{width:40px;min-width:40px}
     .ht-seat{width:92px}
@@ -1388,6 +1518,12 @@
     .ht-seat.hero .ht-hole{min-height:45px}
     .ht-plate{padding:2px 7px 2px 2px}
     .ht-av{width:20px;height:20px}
+    /* 아바타 20px + 왼쪽 패딩 2px → 중심 12px. 이 폭에서는 숫자 배지를 접는다 —
+       고리로 충분하고, 남은 초는 중앙 메시지("내 차례 · 12초")에도 이미 있다. */
+    .ht-clock{left:12px;width:28px;height:28px;
+      -webkit-mask:radial-gradient(circle,transparent 0 10.5px,#000 11.5px);
+      mask:radial-gradient(circle,transparent 0 10.5px,#000 11.5px)}
+    .ht-clock-n{display:none}
     .ht-seat{width:78px}
     .ht-who{width:34px;min-width:34px}
     .ht-seat{width:78px}
