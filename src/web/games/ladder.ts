@@ -12,7 +12,7 @@ import {
   type LadderRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, ROSTER_JS } from '../views';
+import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs } from '../views';
 import { gameSwitcher } from '../pages';
 
 const TOTAL_ROWS = 8;
@@ -192,13 +192,13 @@ export function ladderPage(user: WebUser): string {
           <p id="lMsg" class="game-msg"></p>
         </div>
       </div>
-      <div class="card game-side">
+      ${sidePanel('l', `
         <div class="side-head">
           <span id="lBetCount">참가자 0명</span>
           <span id="lPot" class="num">0P</span>
         </div>
         <div id="lFeed" class="roster"><div class="empty" style="padding:16px 0">아직 베팅이 없습니다</div></div>
-      </div>
+      `, rankPane('l'))}
     </div>
     <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)}; window.__SFX_NEED__ = ['fanfare'];</script>
     <script>
@@ -603,6 +603,9 @@ export function ladderPage(user: WebUser): string {
       });
       startPolling();
     })();
+
+      // 우측 패널 랭킹 탭
+      ${rankJs('l', 'ladder')}
     </script>`;
   return layout('사다리게임', 'lobby', body);
 }

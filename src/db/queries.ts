@@ -235,6 +235,82 @@ export function placeBet(userId: string, gameType: string, betAmount: number, in
   });
 }
 
+/* ----- 게임별 누적 성적 (랭킹 탭) -----------------------------------
+ *
+ * 한 판이 끝날 때 정확히 한 번 부른다. 단위는 "라운드 × 유저"다.
+ *
+ * 바카라·포커는 정산 루프가 시장(market)마다 도니, 루프 안에서 부르면 판수가
+ * 시장 수만큼 부풀어 오른다(5개 시장에 걸면 5판). 반드시 유저별로 합산한 뒤
+ * 루프 밖에서 불러야 한다.
+ *
+ * 승패는 게임별 규칙이 아니라 그 판의 유저 단위 순손익 하나로 판정한다.
+ * 이 한 줄이 여섯 게임의 서로 다른 승패 개념을 전부 옳게 접는다 —
+ * 바카라 타이 환불, 블랙잭 푸시, 그래프 1.00x 캐시아웃이 모두
+ * returned == staked 로 모인다.
+ *
+ * 반드시 "유저가 존재하는지 확인하는 continue" 뒤, 원장 INSERT와 같은 블록에
+ * 두어야 한다. 앞에 두면 탈퇴한 유저의 고아 행이 생긴다(외래키가 없다).
+ */
+export function bumpGameStats(
+  userId: string, game: string, staked: number, returned: number
+): void {
+  const win = returned > staked ? 1 : 0;
+  const push = returned === staked ? 1 : 0;
+  run(
+    `INSERT INTO game_stats (user_id, game, rounds, wins, pushes, staked, returned, profit, updated_at)
+     VALUES (?, ?, 1, ?, ?, ?, ?, ?, unixepoch())
+     ON CONFLICT(user_id, game) DO UPDATE SET
+       rounds   = rounds + 1,
+       wins     = wins + excluded.wins,
+       pushes   = pushes + excluded.pushes,
+       staked   = staked + excluded.staked,
+       returned = returned + excluded.returned,
+       profit   = profit + excluded.profit,
+       updated_at = excluded.updated_at`,
+    userId, game, win, push, staked, returned, returned - staked
+  );
+}
+
+export interface GameRankRow {
+  user_id: string; username: string;
+  rounds: number; wins: number; pushes: number; profit: number;
+}
+
+/* 랭킹은 수익액 내림차순.
+   동점 정렬을 결정론적으로 고정한다 — 신규 유저가 다 0P라 tiebreak가 없으면
+   재조회마다 줄이 뒤바뀐다(getLeaderboard의 balance DESC, id ASC와 같은 이유).
+   닉네임은 users에서 조인해 현재 이름을 쓴다. 베팅 테이블의 username 스냅샷을
+   쓰면 이름을 바꾼 사람이 옛 이름으로 남는다. */
+export function getGameRanking(game: string, limit = 100): GameRankRow[] {
+  return all<GameRankRow>(
+    `SELECT s.user_id, u.username, s.rounds, s.wins, s.pushes, s.profit
+       FROM game_stats s JOIN users u ON u.id = s.user_id
+      WHERE s.game = ? AND s.rounds > 0
+      ORDER BY s.profit DESC, s.rounds DESC, s.user_id ASC
+      LIMIT ?`, game, limit
+  );
+}
+
+/* 상위 목록에 내가 없을 때 내 줄만 따로 가져온다.
+   순위는 "나보다 수익이 많은 사람 수 + 1"로 센다 — 위 ORDER BY와 같은 기준이다. */
+export function getMyGameRank(
+  game: string, userId: string
+): (GameRankRow & { rank: number }) | undefined {
+  const mine = one<GameRankRow>(
+    `SELECT s.user_id, u.username, s.rounds, s.wins, s.pushes, s.profit
+       FROM game_stats s JOIN users u ON u.id = s.user_id
+      WHERE s.game = ? AND s.user_id = ? AND s.rounds > 0`, game, userId);
+  if (!mine) return undefined;
+  const ahead = one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM game_stats s JOIN users u ON u.id = s.user_id
+      WHERE s.game = ? AND s.rounds > 0
+        AND (s.profit > ?
+          OR (s.profit = ? AND s.rounds > ?)
+          OR (s.profit = ? AND s.rounds = ? AND s.user_id < ?))`,
+    game, mine.profit, mine.profit, mine.rounds, mine.profit, mine.rounds, userId)!.n;
+  return { ...mine, rank: ahead + 1 };
+}
+
 // ----- 게임 라운드 (지뢰찾기/사다리/그래프/바카라/블랙잭 공용) -----
 
 export interface GameRound {
@@ -273,9 +349,17 @@ export function updateRoundState(id: number, state: unknown): void {
 
 // 라운드 정산(캐시아웃/버스트)과 포인트 지급을 한 트랜잭션으로 묶어 정산 중 크래시로 인한 이중지급/미지급을 방지.
 // status='active'인 라운드만 정산되도록 조건부 UPDATE로 잠근다 → 같은 라운드가 두 번 정산돼 이중 지급되는 것을 원천 차단(멱등).
-export function settleGameRound(id: number, userId: string, payout: number, multiplier: number, reason: string): number {
+export function settleGameRound(
+  id: number, userId: string, payout: number, multiplier: number, reason: string,
+  /* 판수에 넣을지. 지뢰찾기에서 칸을 하나도 열지 않고 캐시아웃하면 배율이 정확히 1이라
+     베팅액 전액 환불과 같다(사실상 취소이고, 무료로 무한히 반복할 수 있다).
+     그걸 판으로 세면 "8,602판" 같은 표시를 마음대로 부풀릴 수 있다. */
+  countAsRound = true
+): number {
   payout = Math.floor(payout);
   return tx(() => {
+    const before = one<{ game_type: string; bet_amount: number }>(
+      `SELECT game_type, bet_amount FROM game_rounds WHERE id = ?`, id);
     run(
       `UPDATE game_rounds SET status = 'settled', payout = ?, multiplier = ?, settled_at = unixepoch()
        WHERE id = ? AND status = 'active'`,
@@ -291,6 +375,8 @@ export function settleGameRound(id: number, userId: string, payout: number, mult
     }
     const row = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`, userId, payout, reason, row.balance);
+    // 조건부 UPDATE가 통과한 경로에서만 집계한다 — 이중 정산은 위에서 이미 걸러진다
+    if (countAsRound && before) bumpGameStats(userId, before.game_type, before.bet_amount, payout);
     return row.balance;
   });
 }
@@ -353,6 +439,7 @@ function settleLadderBets(roundId: number, startSide: string, endSide: string): 
     if (payout > 0) run(`UPDATE users SET balance = balance + ? WHERE id = ?`, payout, b.user_id);
     const bal = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, b.user_id)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`, b.user_id, payout, 'game:ladder', bal.balance);
+    bumpGameStats(b.user_id, 'ladder', b.amount, payout);
   }
 }
 
@@ -563,20 +650,26 @@ function settleCrashAutoCashouts(roundId: number, uptoMultiplier: number): void 
     const bal = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, b.user_id)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       b.user_id, payout, 'game:graph', bal.balance);
+    bumpGameStats(b.user_id, 'graph', b.amount, payout);
   }
 }
 
 // 크래시 시점에 아직 캐시아웃하지 않은 베팅은 전부 손실 처리(payout 0)
 function settleCrashLosers(roundId: number): void {
-  const losers = all<{ id: number; user_id: string }>(
-    `SELECT id, user_id FROM crash_bets WHERE round_id = ? AND cashout_multiplier IS NULL`, roundId
+  const losers = all<{ id: number; user_id: string; amount: number }>(
+    `SELECT id, user_id, amount FROM crash_bets WHERE round_id = ? AND cashout_multiplier IS NULL`, roundId
   );
   for (const b of losers) {
-    run(`UPDATE crash_bets SET payout = 0 WHERE id = ?`, b.id);
+    /* 조건부 UPDATE로 한 번만 처리되게 못 박는다. 예전에는 라운드 phase 가드에만
+       의존했는데, 그러면 같은 라운드 정산이 겹칠 때 원장과 성적 집계가 두 번 더해질
+       여지가 있다 (settleCrashAutoCashouts는 처음부터 이 방식이다). */
+    run(`UPDATE crash_bets SET payout = 0 WHERE id = ? AND payout IS NULL`, b.id);
+    if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) continue;
     const bal = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, b.user_id);
     if (!bal) continue;   // 유저가 사라진 베팅 — 원장만 못 남기고 넘어간다 (라운드는 정상 마감)
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       b.user_id, 0, 'game:graph', bal.balance);
+    bumpGameStats(b.user_id, 'graph', b.amount, 0);
   }
 }
 
@@ -692,6 +785,7 @@ export function cashoutCrashBet(userId: string, roundId: number, multiplier: num
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       userId, payout, 'game:graph', after.balance);
+    bumpGameStats(userId, 'graph', bet.amount, payout);
     return { ok: true, balance: after.balance, payout };
   });
 }
@@ -783,6 +877,9 @@ function settlePokerBets(roundId: number, outcome: { winner: 'master' | 'shark' 
   const bets = all<{ id: number; user_id: string; market: string; amount: number; odds: number }>(
     `SELECT id, user_id, market, amount, odds FROM poker_bets WHERE round_id = ?`, roundId
   );
+  /* 성적 집계는 루프 안에서 하지 않는다. 이 루프는 시장(market)마다 도니까,
+     한 사람이 세 시장에 걸면 3판으로 세어진다. 유저별로 모아 루프 밖에서 한 번만 센다. */
+  const perUser = new Map<string, { staked: number; returned: number }>();
   for (const b of bets) {
     let payout = 0, won = 0;
     if (b.market === 'master' || b.market === 'shark') {
@@ -805,7 +902,11 @@ function settlePokerBets(roundId: number, outcome: { winner: 'master' | 'shark' 
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, b.user_id)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       b.user_id, payout, 'game:poker', after.balance);
+    const acc = perUser.get(b.user_id) ?? { staked: 0, returned: 0 };
+    acc.staked += b.amount; acc.returned += payout;
+    perUser.set(b.user_id, acc);
   }
+  for (const [uid, a] of perUser) bumpGameStats(uid, 'poker', a.staked, a.returned);
 }
 
 // 요청 시점에 라운드를 진행시킨다 (백그라운드 타이머 없음 → scale-to-zero 호환).
@@ -998,6 +1099,11 @@ function settleBaccaratBets(roundId: number, o: BaccOutcome): void {
   const bets = all<{ id: number; user_id: string; market: string; amount: number; odds: number }>(
     `SELECT id, user_id, market, amount, odds FROM baccarat_bets WHERE round_id = ?`, roundId
   );
+  /* 성적 집계는 루프 밖에서. 이 루프는 시장마다 도니까 한 사람이 플레이어·뱅커·타이·
+     페어에 동시에 걸면 최대 5판으로 세어진다. 유저별로 모아 한 번만 센다.
+     한 시장은 맞고 다른 시장은 틀려 순손익이 정확히 0이 되는 경우도 이렇게 하면
+     자연히 푸시로 접힌다. */
+  const perUser = new Map<string, { staked: number; returned: number }>();
   for (const b of bets) {
     let payout = 0, won = 0;
     if (b.market === 'player' || b.market === 'banker') {
@@ -1019,7 +1125,11 @@ function settleBaccaratBets(roundId: number, o: BaccOutcome): void {
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, b.user_id)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       b.user_id, payout, 'game:baccarat', after.balance);
+    const acc = perUser.get(b.user_id) ?? { staked: 0, returned: 0 };
+    acc.staked += b.amount; acc.returned += payout;
+    perUser.set(b.user_id, acc);
   }
+  for (const [uid, a] of perUser) bumpGameStats(uid, 'baccarat', a.staked, a.returned);
 }
 
 function pruneBaccaratRounds(): void {
@@ -1283,6 +1393,10 @@ function settleBlackjack(round: BjRoundRow, h: BjHelpers): void {
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, hand.user_id)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       hand.user_id, payout, 'game:blackjack', after.balance);
+    /* 스테이크는 정산 시점의 hand.bet이다. 더블다운이 이 값을 두 배로 갱신하므로
+       착석 시점 베팅액을 쓰면 틀린다. 푸시(양쪽 블랙잭·동점)는 배율이 1이라
+       payout == bet 이 되고 bumpGameStats가 이를 푸시로 판정한다. */
+    bumpGameStats(hand.user_id, 'blackjack', hand.bet, payout);
   }
 }
 

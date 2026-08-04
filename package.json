@@ -16,13 +16,14 @@
     "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts",
     "sfx:mono": "node --experimental-sqlite --require tsx/cjs scripts/sfx-mono.ts",
     "audit:economy": "node --experimental-sqlite --require tsx/cjs scripts/audit-economy.ts",
+    "audit:cards": "tsx scripts/audit-cards.ts",
     "audit:concurrency": "node --experimental-sqlite --require tsx/cjs scripts/audit-concurrency.ts",
     "audit:e2e": "node --experimental-sqlite --require tsx/cjs scripts/audit-e2e.ts",
     "audit:security": "node --experimental-sqlite --require tsx/cjs scripts/audit-security.ts",
     "audit:discord": "node --experimental-sqlite --require tsx/cjs scripts/audit-discord.ts",
     "audit:holdem": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem.ts",
     "audit:holdem-db": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem-db.ts",
-    "audit": "npm run smoke && npm run audit:economy && npm run audit:concurrency && npm run audit:e2e && npm run audit:security && npm run audit:discord && npm run audit:holdem && npm run audit:holdem-db"
+    "audit": "npm run smoke && npm run audit:economy && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:security && npm run audit:discord && npm run audit:holdem && npm run audit:holdem-db"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
