@@ -285,7 +285,7 @@ export function blackjackPage(user: WebUser): string {
             </button>
             <button type="button" class="bja sur" id="bjSurrender">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v16"/><path d="M5 5h11l-2 4 2 4H5"/></svg>
-              <span class="bja-t"><b>서렌더</b><i>절반만 잃고 종료</i></span>
+              <span class="bja-t"><b>서렌더</b><i>절반 손실</i></span>
             </button>
           </div>
         </div>
