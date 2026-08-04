@@ -174,7 +174,15 @@ export function rankJs(prefix: string, seg: string): string {
           var all = (d.rows || []).concat(d.mine ? [d.mine] : []);
           var html = all.length ? all.map(row).join('')
             : '<div class="sp-empty">아직 기록이 없습니다</div>';
-          if (rankSig !== html) { rankSig = html; listEl.innerHTML = html; }
+          if (rankSig === html) return;
+          rankSig = html;
+          /* listEl이 곧 스크롤 컨테이너다(.sp-rank). innerHTML로 자식을 전부 날리면
+             scrollTop이 0으로 클램프돼, 40위쯤 보고 있던 사람이 30초마다 맨 위로 튄다.
+             값이 한 명만 바뀌어도 서명이 달라지므로 실제로 자주 일어난다.
+             교체 전후로 스크롤 위치를 되돌려 준다. */
+          var keep = listEl.scrollTop;
+          listEl.innerHTML = html;
+          if (keep) listEl.scrollTop = keep;
         }
         function load(){
           lastAt = Date.now();
@@ -187,15 +195,26 @@ export function rankJs(prefix: string, seg: string): string {
           var p = document.getElementById('${prefix}-rank');
           return p && p.classList.contains('on');
         }
-        /* 탭이 열려 있을 때만, 그리고 창이 보일 때만 갱신한다.
-           랭킹은 초 단위로 바뀌는 값이 아니라 30초로 충분하다. */
+        /* 탭이 열려 있을 때만, 창이 보일 때만, 그리고 최근에 조작이 있었을 때만 갱신한다.
+           랭킹은 초 단위로 바뀌는 값이 아니라 30초로 충분하다.
+           무조작 3분이면 멈추는 것은 이 프로젝트의 다른 폴링과 같은 규약이다 —
+           서버에 타이머를 두지 않고 fly.io 머신이 유휴 시 잠들게 하는 설계 때문이다. */
+        var IDLE_MS = 3 * 60 * 1000, lastAct = Date.now();
+        function markAct(){ lastAct = Date.now(); }
+        ['click', 'keydown', 'touchstart'].forEach(function(ev){
+          document.addEventListener(ev, markAct, { passive: true });
+        });
+        document.addEventListener('visibilitychange', function(){
+          if (!document.hidden) markAct();
+        });
         function tick(){
           if (!isOpen() || document.hidden) return;
+          if (Date.now() - lastAct > IDLE_MS) return;      // 손 뗀 지 오래됐다 — 쉬게 둔다
           if (Date.now() - lastAt >= 30000) load();
         }
         timer = setInterval(tick, 5000);
         void timer;
-        window.__spRankOpen = function(){ if (Date.now() - lastAt >= 3000) load(); };
+        window.__spRankOpen = function(){ markAct(); if (Date.now() - lastAt >= 3000) load(); };
         if (isOpen()) load();          // 지뢰찾기처럼 처음부터 열려 있는 경우
       })();`;
 }
