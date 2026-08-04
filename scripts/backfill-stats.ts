@@ -1,32 +1,37 @@
 /**
- * 게임별 성적(game_stats)을 원장에서 백필한다.
+ * 게임별 성적(game_stats)을 원장에서 복원한다.
  *
- * 랭킹을 도입한 시점 이전의 판은 game_stats에 없어서 랭킹이 비어 있다.
- * 원장(points_ledger)에서 무엇을 정확히 복원할 수 있고 무엇을 못 하는지가 이 도구의 핵심이다.
+ * 랭킹 도입 전의 판은 game_stats에 없어 목록이 비어 있었다. 원장(points_ledger)만으로
+ * 어디까지 복원되는지가 이 도구의 핵심이고, 결론은 "판수·승패·수익액 전부"다.
  *
- * 복원 가능 (정확)
- *   · 수익액 — 그 게임의 모든 원장 행 합(SUM(delta)). 베팅은 음수, 지급은 양수,
- *     환불도 원장에 남으므로 합이 곧 순손익이다.
- *   · 스테이크 — ':bet' 행의 합에 음수를 취한 값. 바카라·블랙잭은 칩 회수도 ':bet'에
- *     양수로 들어가므로, 합을 취하면 환불이 자동으로 상쇄된 "실제로 건 금액"이 된다.
- *   · 지급액 — 정산 행('game:X')의 합.
- *   · 판수 — 정산 행의 개수. 단 바카라·포커는 정산 행이 시장(market)마다 하나씩
- *     생기므로 개수를 그대로 세면 부풀려진다. 한 라운드의 정산은 한 트랜잭션에서
- *     일어나 created_at(초)이 같고, 한 유저가 한 라운드에 두 번 참여할 수 없으므로
- *     (유저, created_at) 조합의 개수가 곧 판수다. 실측으로 포커 정산행 124개가
- *     61판으로 접혔고, 다른 게임은 행 수와 조합 수가 정확히 같았다.
+ * ── 복원 방법: 원장을 순서대로 걸어간다 ──────────────────────────────
+ * 유저·게임별로 원장을 id 순서대로 읽으면 한 판이 이렇게 생긴다.
  *
- * 복원 불가
- *   · 승·패·푸시 — 그 판의 스테이크와 지급을 짝지어야 알 수 있는데 원장 행에
- *     round_id가 없다. 무승부(푸시)는 지급액이 스테이크와 같은 경우인데 둘을
- *     연결할 수 없다. 그래서 백필한 판은 rated 에 넣지 않고, 승률은 rated 기준으로만
- *     계산한다 — 억지로 0승으로 채우면 승률이 거짓이 된다.
+ *   [베팅 행 하나 이상] → [정산 행 하나 이상(같은 초)]
  *
- * 원장 보존 기간(LEDGER_KEEP_DAYS=180) 밖의 판은 복원할 수 없다. 그 사실을 출력한다.
+ * 정산 행을 만나면 그때까지 쌓인 베팅이 그 판의 스테이크이고, 정산 행 합이 지급액이다.
+ * 둘의 차가 그 판의 순손익이므로 승(>0)·패(<0)·무(=0)를 정확히 가릴 수 있다.
+ *
+ * 이 방법이 옳은 이유
+ *   · 한 유저는 한 라운드에 한 번만 참여한다(각 게임의 already_bet 가드). 그래서
+ *     베팅과 정산이 서로 엇갈리지 않는다.
+ *   · 바카라·포커는 정산 행이 시장(market)마다 생기지만 한 라운드 정산은 한
+ *     트랜잭션이라 created_at(초)이 같다. 같은 초의 정산 행들을 한 판으로 묶는다.
+ *   · 취소로 끝난 판(베팅했다가 환불)은 정산 행이 없어 다음 판의 스테이크에 섞이지만,
+ *     베팅과 환불이 서로 상쇄돼 합이 0이라 결과에 영향이 없다. 바카라·블랙잭은
+ *     환불도 ':bet'에 양수로 들어가므로 여기서 자동으로 처리된다.
+ *
+ * 처음에는 판수를 "서로 다른 created_at 개수"로 셌는데 그게 틀렸다. 지뢰찾기처럼
+ * 빠르게 치는 게임은 한 초에 두 판이 끝나기도 해서 판수가 줄어 세어졌다
+ * (실측: 임성용 지뢰 1,107판이 1,098판으로 집계됐다. 정산 행 1,107개 · 베팅 행 1,107개로
+ * 1판 = 1정산행이 확인된다). 걸어가는 방식은 이 경우도 정확하다.
+ *
+ * ── 복원할 수 없는 것 ────────────────────────────────────────────────
+ * 원장 보존 기간(LEDGER_KEEP_DAYS=180) 밖의 판. 지워진 뒤에는 근거가 없다.
  *
  * 사용법:
- *   node --experimental-sqlite --require tsx/cjs scripts/backfill-stats.ts
- *   DRY_RUN=1 을 주면 무엇이 들어갈지만 출력한다.
+ *   DB_PATH=/data node --experimental-sqlite --require tsx/cjs scripts/backfill-stats.ts
+ *   DRY_RUN=1 을 주면 무엇이 들어갈지만 출력한다. 여러 번 실행해도 결과가 같다.
  */
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
@@ -35,12 +40,60 @@ const DB_DIR = process.env.DB_PATH ?? '/data';
 const DB_FILE = path.join(DB_DIR, 'data.db');
 const DRY = process.env.DRY_RUN === '1';
 
-/** 원장 reason 접두어 → game_stats.game 키 (그래프게임은 reason도 graph다) */
+/** 원장 reason 접두어 = game_stats.game 키 (그래프게임은 reason도 graph다) */
 const GAMES = ['mines', 'ladder', 'graph', 'poker', 'baccarat', 'blackjack'];
 
 const db = new DatabaseSync(DB_FILE);
 const one = <T>(sql: string, ...p: unknown[]) => db.prepare(sql).get(...p as never[]) as T | undefined;
 const all = <T>(sql: string, ...p: unknown[]) => db.prepare(sql).all(...p as never[]) as T[];
+
+interface Walked {
+  rounds: number; wins: number; losses: number; pushes: number;
+  staked: number; returned: number;
+  /** 정산되지 않은 채 남은 스테이크 (아직 진행 중인 판). 판수에 넣지 않는다. */
+  dangling: number;
+}
+
+/** 원장을 걸어가며 한 판씩 복원한다 (위 주석의 방법). */
+function walk(userId: string, game: string): Walked {
+  const rows = all<{ delta: number; reason: string; created_at: number }>(
+    `SELECT delta, reason, created_at FROM points_ledger
+      WHERE user_id = ? AND (reason = ? OR reason LIKE ?) ORDER BY id`,
+    userId, `game:${game}`, `game:${game}:%`);
+  const settleReason = `game:${game}`;
+
+  const out: Walked = { rounds: 0, wins: 0, losses: 0, pushes: 0, staked: 0, returned: 0, dangling: 0 };
+  let stake = 0, ret = 0, sec: number | null = null;
+
+  const close = (): void => {
+    if (sec === null) return;
+    out.rounds++;
+    out.staked += stake;
+    out.returned += ret;
+    const p = ret - stake;
+    if (p > 0) out.wins++; else if (p < 0) out.losses++; else out.pushes++;
+    stake = 0; ret = 0; sec = null;
+  };
+
+  for (const r of rows) {
+    if (r.reason === settleReason) {
+      // 같은 초의 정산 행들은 한 판이다 (바카라·포커의 시장별 행)
+      if (sec !== null && r.created_at !== sec) close();
+      sec = r.created_at;
+      ret += r.delta;
+    } else {
+      // 정산 뒤에 다시 베팅이 나오면 그 판은 끝났고 새 판이 시작된 것이다
+      if (sec !== null) close();
+      stake += -r.delta;   // 베팅은 음수 → 양수로. 환불(양수)은 그대로 상쇄된다
+    }
+  }
+  close();
+  /* 정산 행 없이 남은 베팅 = 아직 끝나지 않은 판(지뢰찾기의 진행 중 라운드 등).
+     완료된 판이 아니므로 판수·승패에 넣지 않는다. 다만 원장에는 차감이 남아 있으므로
+     아래 대조식에서 이 금액을 따로 셈해야 한다. */
+  if (sec === null && stake !== 0) out.dangling = stake;
+  return out;
+}
 
 console.log(`DB ${DB_FILE}${DRY ? '  (DRY RUN — 쓰지 않는다)' : ''}`);
 const span = one<{ a: number; b: number; n: number }>(
@@ -48,76 +101,59 @@ const span = one<{ a: number; b: number; n: number }>(
 const d = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
 console.log(`원장 ${span.n}행 · ${d(span.a)} ~ ${d(span.b)}`);
 console.log('※ 원장 보존 기간(180일) 밖의 판은 복원할 수 없다.');
-console.log('※ 승·패·푸시는 원장으로 판정할 수 없어 백필분은 승률 계산에서 제외된다(rated=0).');
 console.log('');
 
-let wrote = 0, skipped = 0;
+let wrote = 0, mismatch = 0;
 if (!DRY) db.exec('BEGIN');
 try {
   for (const g of GAMES) {
-    const settleReason = `game:${g}`;
-    const betLike = `game:${g}:%`;
-
-    // 이 게임을 한 번이라도 정산받은 유저
     const users = all<{ user_id: string }>(
-      `SELECT DISTINCT user_id FROM points_ledger WHERE reason = ?`, settleReason);
+      `SELECT DISTINCT user_id FROM points_ledger WHERE reason = ?`, `game:${g}`);
 
     for (const { user_id } of users) {
-      /* 이미 집계가 있어도 건너뛰지 않는다.
-         원장은 과거분과 도입 이후분을 모두 담은 완전한 기록이므로, 판수·스테이크·
-         지급·수익액은 원장에서 계산한 값으로 "맞춰 넣으면" 된다(더하지 않는다).
-         반대로 승·패·푸시와 rated는 원장으로 판정할 수 없으니 기존 값을 그대로 둔다 —
-         그게 도입 이후 실제로 관측한 결과다.
-         이렇게 하면 여러 번 실행해도 결과가 같고(멱등), 이미 새 판을 몇 개 친 사람의
-         과거 이력이 빠지는 일도 없다. 실제로 그 문제가 났다(310판이 5판으로 보였다). */
-      const existing = one<{ rated: number; wins: number; pushes: number }>(
-        `SELECT rated, wins, pushes FROM game_stats WHERE user_id = ? AND game = ?`, user_id, g);
+      const w = walk(user_id, g);
+      if (w.rounds === 0) continue;
+      const profit = w.returned - w.staked;
 
-      // 판수 — 정산 행의 (유저, created_at) 조합 개수 (바카라·포커의 시장별 행을 접는다)
-      const rounds = one<{ n: number }>(
-        `SELECT COUNT(DISTINCT created_at) n FROM points_ledger
-          WHERE user_id = ? AND reason = ?`, user_id, settleReason)!.n;
-      if (rounds === 0) continue;
-
-      // 지급액 — 정산 행 합
-      const returned = one<{ s: number }>(
-        `SELECT COALESCE(SUM(delta),0) s FROM points_ledger
-          WHERE user_id = ? AND reason = ?`, user_id, settleReason)!.s;
-      // 스테이크 — ':bet' 등 부수 행의 합에 음수를 취한 값 (환불이 자동 상쇄된다)
-      const staked = -one<{ s: number }>(
-        `SELECT COALESCE(SUM(delta),0) s FROM points_ledger
-          WHERE user_id = ? AND reason LIKE ?`, user_id, betLike)!.s;
-      const profit = returned - staked;
-
-      // 원장 전체 합과 일치하는지 그 자리에서 확인 (불변식)
+      /* 복원 결과가 원장 전체 합과 맞는지 그 자리에서 확인한다.
+         걸어가는 방식이 어딘가에서 판을 놓치면 여기서 드러난다. */
       const total = one<{ s: number }>(
         `SELECT COALESCE(SUM(delta),0) s FROM points_ledger
           WHERE user_id = ? AND (reason = ? OR reason LIKE ?)`,
-        user_id, settleReason, betLike)!.s;
-      if (total !== profit) {
-        throw new Error(`${g}/${user_id}: 수익액 ${profit} ≠ 원장 합 ${total}`);
+        user_id, `game:${g}`, `game:${g}:%`)!.s;
+      /* 원장 합 = 완료된 판의 순손익 − 아직 정산되지 않은 베팅.
+         진행 중인 판이 있으면 그만큼 원장이 더 마이너스다. */
+      if (total !== profit - w.dangling) {
+        throw new Error(`${g}/${user_id}: 복원 ${profit} − 미정산 ${w.dangling} ≠ 원장 ${total}`);
+      }
+      if (w.wins + w.losses + w.pushes !== w.rounds) {
+        throw new Error(`${g}/${user_id}: 승패 합 ${w.wins + w.losses + w.pushes} ≠ 판수 ${w.rounds}`);
       }
 
       const name = one<{ username: string }>(`SELECT username FROM users WHERE id = ?`, user_id);
-      const keep = existing ?? { rated: 0, wins: 0, pushes: 0 };
-      console.log(`  ${g.padEnd(10)} ${(name?.username ?? user_id).padEnd(10)} `
-        + `${String(rounds).padStart(5)}판  ${profit >= 0 ? '+' : ''}${profit}P`
-        + (existing ? `  (기존 승패 ${keep.wins}승/${keep.rated}판 유지)` : ''));
+      const pct = Math.round(w.wins * 100 / w.rounds);
+      console.log(`  ${g.padEnd(10)} ${(name?.username ?? user_id).padEnd(9)}`
+        + `${String(w.rounds).padStart(5)}판  ${String(w.wins).padStart(4)}승 ${String(w.losses).padStart(4)}패 `
+        + `${String(w.pushes).padStart(3)}무  승률 ${String(pct).padStart(3)}%  `
+        + `${profit >= 0 ? '+' : ''}${profit}P`);
       if (DRY) { wrote++; continue; }
 
-      /* 판수·금액은 원장 기준으로 덮어쓰고, 승패 관련 값은 그대로 남긴다.
-         rated 가 rounds 보다 커질 수는 없다 — rounds 는 원장 전체이고 rated 는
-         그 부분집합(도입 이후 관측분)이다. 혹시 어긋나면 아래 불변식 검사가 잡는다. */
+      /* 전부 원장에서 복원한 값으로 맞춰 넣는다(더하지 않는다).
+         원장은 과거분과 도입 이후분을 모두 담은 완전한 기록이므로, 여러 번 실행해도
+         결과가 같다. rated는 승패를 판정한 판수이고 여기서는 곧 전체 판수다. */
       db.prepare(
         `INSERT INTO game_stats (user_id, game, rounds, rated, wins, pushes, staked, returned, profit, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
          ON CONFLICT(user_id, game) DO UPDATE SET
            rounds   = excluded.rounds,
+           rated    = excluded.rated,
+           wins     = excluded.wins,
+           pushes   = excluded.pushes,
            staked   = excluded.staked,
            returned = excluded.returned,
            profit   = excluded.profit,
            updated_at = excluded.updated_at`
-      ).run(user_id, g, rounds, keep.rated, keep.wins, keep.pushes, staked, returned, profit);
+      ).run(user_id, g, w.rounds, w.rounds, w.wins, w.pushes, w.staked, w.returned, profit);
       wrote++;
     }
   }
@@ -130,7 +166,7 @@ try {
 
 console.log('');
 console.log(`${DRY ? '들어갈 행' : '기록한 행'} ${wrote}개`);
-void skipped;
+void mismatch;
 
 // 불변식 확인
 let bad = 0;

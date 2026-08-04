@@ -30,14 +30,19 @@ export function handleRanking(
   const limit = clampLimit(q.searchParams.get('limit') ?? undefined);
   const rows = getGameRanking(game, limit);
 
-  /* 내려보내는 것은 화면에 쓰는 것만이다. wins·pushes·staked·returned는 빼고,
-     balance는 절대 넣지 않는다 — 랭킹은 전체 유저를 대상으로 하므로
-     그 라운드 참가자만 보여주는 참가인원 목록과 성격이 다르다. */
+  /* 내려보내는 것은 화면에 쓰는 것만이다. staked·returned는 빼고, balance는 절대
+     넣지 않는다 — 랭킹은 전체 유저를 대상으로 하므로 그 라운드 참가자만 보여주는
+     참가인원 목록과 성격이 다르다.
+     승·패·무는 화면에 그대로 찍으므로 내려보낸다. 진 판수는 rated에서 승·무를 뺀
+     값이고, 서버에서 계산해 보내 클라이언트가 각자 유도하지 않게 한다. */
   const view = rows.map((r, i) => ({
     rank: i + 1,
     userId: r.user_id,
     username: r.username,
     rounds: r.rounds,
+    wins: r.wins,
+    losses: Math.max(0, r.rated - r.wins - r.pushes),
+    pushes: r.pushes,
     winPct: winRatePct(r.wins, r.rated),
     profit: r.profit,
     me: r.user_id === userId,
@@ -51,6 +56,7 @@ export function handleRanking(
     if (m) {
       mine = {
         rank: m.rank, userId: m.user_id, username: m.username, rounds: m.rounds,
+        wins: m.wins, losses: Math.max(0, m.rated - m.wins - m.pushes), pushes: m.pushes,
         winPct: winRatePct(m.wins, m.rated), profit: m.profit, me: true,
       };
     }
