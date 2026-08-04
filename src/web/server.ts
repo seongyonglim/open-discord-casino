@@ -30,6 +30,7 @@ import {
   holdemPage, handleState as htState, handleRegister as htRegister,
   handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
 } from './games/holdem';
+import { rankingGameOf, handleRanking } from './ranking';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
@@ -162,6 +163,16 @@ export function startWebServer(): void {
 
       if (path === '/' || path === '/lobby') return send(res, 200, lobbyPage(me));
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
+
+      /* 게임별 랭킹 — 여섯 게임이 같은 모양이라 한 곳에서 받는다.
+         홀덤은 RANK_GAMES에 없으므로 여기서 걸리지 않고 404가 된다(의도한 것이다). */
+      {
+        const rankGame = rankingGameOf(path);
+        if (rankGame && req.method === 'GET') {
+          if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+          return handleRanking(req, res, rankGame, me.id);
+        }
+      }
 
       if (path === '/games/mines') {
         if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }

@@ -285,8 +285,11 @@
   .game-shell{display:flex;gap:16px;align-items:flex-start}
   .game-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
   .game-side{width:290px;flex:none;padding:0;overflow:hidden}
-  /* 사이드 패널이 없는 1인 게임(지뢰찾기)은 가운데 정렬로 폭을 제한해 허전해 보이지 않게 한다 */
-  .game-shell.solo{max-width:620px;margin:0 auto}
+  /* 지뢰찾기는 혼자 하는 게임이라 참가자 목록이 없지만 랭킹 패널은 붙는다.
+     보드가 290px 고정이므로 본문만 620px로 묶고 그 옆에 패널을 둔다.
+     926 = 620(본문) + 16(간격) + 290(패널) */
+  .mines-shell{max-width:926px;margin:0 auto}
+  .mines-shell .game-main{max-width:620px}
   /* 참가자 패널은 되도록 오른쪽에 붙여 둔다 — 아래로 내려가면 보드를 보면서 남의 베팅을
      같이 볼 수 없어서 "다 같이 한 판" 하는 느낌이 사라진다.
      좁은 창(에디터에 붙은 미리보기 창 등)에서는 패널만 줄이고 배치는 유지하다가,
@@ -299,6 +302,9 @@
   @media (max-width:700px){
     .game-shell{flex-direction:column;align-items:stretch}
     .game-side{width:100%}
+    /* 세로로 쌓이면 본문 폭 제한을 풀어야 화면 폭을 넘지 않는다 */
+    .mines-shell .game-main{max-width:none}
+    .sp-rank{max-height:360px}
   }
   /* 포커도 다른 게임과 같은 기준(700px)으로 쌓는다.
      다만 카드가 가로로 9장 들어가야 해서 좁은 구간에서는 카드를 줄여야 하는데,
@@ -380,6 +386,38 @@
   .side-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;
     border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
   .side-head .num{font-family:var(--mono);color:var(--gold)}
+
+  /* 우측 패널 탭 — 참가인원 / 랭킹.
+     이름을 sp- 로 통일한다. side-* 는 사다리 노드용으로 이미 붐빈다. */
+  .sp-tabs{display:flex;border-bottom:1px solid var(--line)}
+  .sp-tab{flex:1;padding:12px 8px;background:none;border:none;
+    border-bottom:2px solid transparent;font:inherit;font-size:13px;font-weight:700;
+    color:var(--muted);cursor:pointer;transition:color .12s,border-color .12s}
+  .sp-tab:hover{color:var(--txt)}
+  .sp-tab.on{color:var(--gold);border-bottom-color:var(--gold)}
+  /* hidden 속성이 아니라 .on 으로 전환한다 — display:flex가 필요해서다 */
+  .sp-pane{display:none}
+  .sp-pane.on{display:flex;flex-direction:column}
+  /* 탭바에 이미 이름이 있으니 pane 안쪽 제목 줄의 구분선은 지운다(선이 두 겹 된다) */
+  .sp-pane .side-head{border-bottom:none}
+  /* 스크롤은 반드시 이 안쪽이 갖는다. .game-side가 overflow:hidden이라
+     바깥에 걸면 탭바까지 함께 밀려 사라진다. max-height를 .roster와 같은 값으로
+     맞춰야 탭을 눌러도 패널 높이가 튀지 않는다. */
+  .sp-rank{display:flex;flex-direction:column;gap:2px;padding:6px 8px 10px;
+    max-height:520px;overflow-y:auto}
+  .sp-rw{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
+  .sp-rw.me{background:rgba(212,175,55,.1)}
+  /* 순위는 1 → 10 → 100에서 자릿수가 늘어난다. 폭을 고정하지 않으면 닉네임 열이 밀린다. */
+  .sp-no{width:22px;flex:none;text-align:right;font-family:var(--mono);font-size:11px;
+    font-weight:700;color:var(--muted)}
+  .sp-no.top1{color:var(--gold)}
+  .sp-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .sp-nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .sp-sub{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .sp-p{flex:none;font-family:var(--mono);font-size:12px;font-weight:700;min-width:84px;
+    text-align:right}
+  .sp-empty{padding:16px 8px;text-align:center;color:var(--muted);font-size:12px}
   .cash-out{color:var(--win);font-weight:700}
   .cash-pending{color:var(--muted)}
   .cash-bust{color:var(--lose)}

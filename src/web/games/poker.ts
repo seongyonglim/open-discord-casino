@@ -20,7 +20,7 @@ import {
   evaluate7, scoreCategory, categoryBucket, cardToString, CAT_NAMES, BUCKET_NAMES,
 } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript } from '../views';
+import { layout, jsonForScript, sidePanel, rankPane, rankJs } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 
@@ -251,10 +251,10 @@ export function pokerPage(user: WebUser): string {
           <button id="pClear" class="btn" type="button">Clear Screen</button>
         </div>
       </div>
-      <div class="card game-side" id="pSide">
+      ${sidePanel('p', `
         <div class="side-head"><span>참가자</span><span id="pPot" class="num">0P</span></div>
         <div id="pRoster" class="roster"><div class="empty" style="padding:16px 0">아직 참가자가 없습니다</div></div>
-      </div>
+      `, rankPane('p'))}
     </div>
     <script>window.__ME__ = ${jsonForScript(user.username)}; window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];</script>
     <script>
@@ -908,6 +908,9 @@ export function pokerPage(user: WebUser): string {
       document.addEventListener('visibilitychange', function(){ if (document.hidden) stopPolling(); else activity(); });
       startPolling();
     })();
+
+      // 우측 패널 랭킹 탭
+      ${rankJs('p', 'poker')}
     </script>`;
   return layout('포커 플립', 'lobby', body);
 }

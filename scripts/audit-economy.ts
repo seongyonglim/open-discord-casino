@@ -66,6 +66,44 @@ function noFractions(label: string): void {
          AS n`)[0];
   ck(`${label} — 소수점 포인트 없음 (내림 규칙)`, bad.n === 0, `${bad.n}건`);
 }
+/* 게임별 누적 성적(game_stats)의 불변식.
+   랭킹의 유일한 근거이므로 파생 컬럼이 어긋나거나 범위를 벗어나면 곧바로 거짓 지표가 된다. */
+function auditStats(label: string): void {
+  const bad = q<{ n: number }>(`
+    SELECT (SELECT COUNT(*) FROM game_stats WHERE profit != returned - staked)
+         + (SELECT COUNT(*) FROM game_stats WHERE wins + pushes > rounds)
+         + (SELECT COUNT(*) FROM game_stats WHERE rounds < 0 OR wins < 0 OR pushes < 0)
+         + (SELECT COUNT(*) FROM game_stats WHERE staked < 0 OR returned < 0)
+         + (SELECT COUNT(*) FROM game_stats
+              WHERE rounds != CAST(rounds AS INTEGER) OR staked != CAST(staked AS INTEGER)
+                 OR returned != CAST(returned AS INTEGER) OR profit != CAST(profit AS INTEGER))
+         AS n`)[0];
+  ck(`${label} — game_stats 불변식 (profit = returned - staked, 범위, 정수)`, bad.n === 0, `${bad.n}건`);
+
+  /* 게임별 순손익이 원장 합과 같은가.
+     감사 DB는 일회용이라 180일 프루닝이 걸리지 않으므로 이 등식이 성립한다.
+     운영 DB에는 쓸 수 없다 — 181일째에 원장이 잘려 나가면서 반드시 깨진다.
+     지뢰찾기는 제외한다: 0칸 캐시아웃을 판수에서 뺐으므로(전액 환불과 같다)
+     그 판의 스테이크·회수가 집계에 안 들어가고, 원장에는 남는다. */
+  const games = ['ladder', 'graph', 'poker', 'baccarat', 'blackjack'];
+  let mismatch = 0, detail = '';
+  for (const g of games) {
+    const rows = q<{ user_id: string; profit: number }>(
+      `SELECT user_id, profit FROM game_stats WHERE game = ?`, g);
+    for (const r of rows) {
+      const led = q<{ s: number }>(
+        `SELECT COALESCE(SUM(delta),0) AS s FROM points_ledger
+          WHERE user_id = ? AND (reason = ? OR reason LIKE ?)`,
+        r.user_id, `game:${g}`, `game:${g}:%`)[0].s;
+      if (led !== r.profit) {
+        mismatch++;
+        detail = `${g}/${r.user_id}: 집계 ${r.profit} ≠ 원장 ${led}`;
+      }
+    }
+  }
+  ck(`${label} — 게임별 순손익 = 원장 합 (지뢰 제외)`, mismatch === 0, detail);
+}
+
 function negativeBalances(label: string): void {
   const n = q<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE balance < 0`)[0].n;
   ck(`${label} — 음수 잔액 없음`, n === 0, `${n}명`);
@@ -118,6 +156,7 @@ section('[1] 사다리게임');
   ck('마감 거절 후 차감 없음', bal('l_late') === 500, String(bal('l_late')));
 }
 auditLedger('사다리 후');
+auditStats('사다리 후');
 
 /* ── 2. 그래프(크래시) ───────────────────────────────────────── */
 section('[2] 그래프게임(크래시)');
@@ -168,6 +207,7 @@ section('[2] 그래프게임(크래시)');
   ck('크래시보다 높은 목표는 미체결 → 900', bal('c_autohigh') === 900, String(bal('c_autohigh')));
 }
 auditLedger('그래프 후');
+auditStats('그래프 후');
 
 /* ── 3. 포커 플립 ────────────────────────────────────────────── */
 section('[3] 포커 플립');
@@ -224,6 +264,7 @@ section('[3] 포커 플립');
     /무승부 → 원금 환불/.test(require('fs').readFileSync('src/db/queries.ts', 'utf8')));
 }
 auditLedger('포커 후');
+auditStats('포커 후');
 
 /* ── 4. 지뢰찾기 ─────────────────────────────────────────────── */
 section('[4] 지뢰찾기');
@@ -239,6 +280,7 @@ section('[4] 지뢰찾기');
   ck('초과 거절 후 차감 없음', bal('m_u') === 1450, String(bal('m_u')));
 }
 auditLedger('지뢰찾기 후');
+auditStats('지뢰찾기 후');
 
 /* ── 5. 출석 · 지원금 ────────────────────────────────────────── */
 section('[5] 출석 · 개인회생 지원금');
@@ -386,6 +428,7 @@ section('[7] 바카라');
   ck('마감 거절 후 차감 없음', bal('b_late') === 5000, String(bal('b_late')));
 }
 auditLedger('바카라 후');
+auditStats('바카라 후');
 
 
 /* ── 8. 블랙잭 ───────────────────────────────────────────────── */
@@ -571,6 +614,7 @@ section('[8] 블랙잭');
   }
 }
 auditLedger('블랙잭 후');
+auditStats('블랙잭 후');
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);

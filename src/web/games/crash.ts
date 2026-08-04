@@ -15,7 +15,7 @@ import {
   type CrashRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, ROSTER_JS } from '../views';
+import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs } from '../views';
 import { gameSwitcher } from '../pages';
 
 const HOUSE_EDGE = 0.01;
@@ -229,13 +229,13 @@ export function crashPage(user: WebUser): string {
           <p id="cMsg" class="game-msg"></p>
         </div>
       </div>
-      <div class="card game-side">
+      ${sidePanel('c', `
         <div class="side-head">
           <span id="cCashCount">0/0 캐시아웃</span>
           <span id="cPot" class="num">0P</span>
         </div>
         <div id="cFeed" class="roster"><div class="empty" style="padding:16px 0">아직 베팅이 없습니다</div></div>
-      </div>
+      `, rankPane('c'))}
     </div>
     <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)}; window.__SFX_NEED__ = ['fanfare'];</script>
     <script>
@@ -631,6 +631,9 @@ export function crashPage(user: WebUser): string {
       document.addEventListener('visibilitychange', function(){ if (document.hidden) { stopPolling(); stopTick(); } else activity(); });
       startPolling();
     })();
+
+      // 우측 패널 랭킹 탭
+      ${rankJs('c', 'crash')}
     </script>`;
   return layout('그래프게임', 'lobby', body);
 }

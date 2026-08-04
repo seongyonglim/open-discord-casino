@@ -356,6 +356,31 @@ function initSchema(): void {
       created_at INTEGER DEFAULT (unixepoch())
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hhs_seat ON holdem_hand_seats(hand_id, seat);
+
+    /* 게임별 누적 성적. 랭킹 탭의 유일한 근거다.
+       원장(points_ledger)에서 뽑지 않는다. 셋 다 원리적으로 불가능하다.
+         1) 원장은 180일치만 남으므로(LEDGER_KEEP_DAYS) 통산 랭킹이 조용히
+            슬라이딩 윈도우가 된다 — "8,602판"이 시간이 지나며 줄어든다.
+         2) 바카라·포커의 정산 원장 행은 시장(market)당 하나이고 원장에 round_id가
+            없어서 라운드 수를 셀 수 없다. 한 라운드에 5개 시장에 걸면 5판이 된다.
+         3) 원장 행에는 그 판의 스테이크가 없어 푸시(순손익 0)를 승과 구분할 수 없다.
+            게다가 바카라·블랙잭의 칩 회수는 베팅과 같은 reason에 양수 delta를 쓴다.
+       시간이 아니라 유저 수 × 게임 수에만 비례하므로 pruneStaleData 대상이 아니다. */
+    CREATE TABLE IF NOT EXISTS game_stats (
+      user_id  TEXT NOT NULL,
+      game     TEXT NOT NULL,                 -- mines|ladder|graph|poker|baccarat|blackjack
+      rounds   INTEGER NOT NULL DEFAULT 0,     -- 판수 (푸시 포함)
+      wins     INTEGER NOT NULL DEFAULT 0,     -- 순손익이 양수인 판
+      pushes   INTEGER NOT NULL DEFAULT 0,     -- 순손익이 0인 판 (승률 분모에서 뺀다)
+      staked   INTEGER NOT NULL DEFAULT 0,
+      returned INTEGER NOT NULL DEFAULT 0,
+      /* returned - staked. 정렬 키라서 파생값이어도 컬럼으로 둔다.
+         감사가 profit == returned - staked 를 항상 검사한다. */
+      profit   INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (user_id, game)
+    );
+    CREATE INDEX IF NOT EXISTS idx_gstats_rank ON game_stats(game, profit DESC);
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)

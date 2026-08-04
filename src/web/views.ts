@@ -103,6 +103,103 @@ export function helpDialog(dialogId: string, title: string, bodyHtml: string): s
   </dialog>`;
 }
 
+/* ── 우측 패널 탭 (참가인원 / 랭킹) ────────────────────────────────────
+   게임마다 우측에 참가자 목록이 있었는데, 여기에 게임별 랭킹을 나란히 둔다.
+   지뢰찾기는 참가자라는 개념이 없어 liveHtml이 빈 문자열로 오고, 그때는
+   탭바 없이 제목 줄로 그린다 — 누를 게 하나뿐인 탭바는 탭으로 읽히지 않는다.
+
+   전환은 hidden 속성이 아니라 .on 클래스로 한다. pane에 display:flex가
+   필요한데, display를 명시하면 hidden 속성이 밀린다(이 프로젝트에서 세 번 겪었다).
+
+   동작은 app.js의 document 위임이 맡는다 — app.js는 <head>에서 실행돼
+   DOM이 아직 없으므로 요소에 직접 붙일 수 없다. */
+export function sidePanel(prefix: string, liveHtml: string, rankHtml: string): string {
+  const rank = `<div class="sp-pane${liveHtml ? '' : ' on'}" id="${esc(prefix)}-rank" role="tabpanel">${rankHtml}</div>`;
+  if (!liveHtml) {
+    return `<div class="card game-side">
+      <div class="side-head"><span>랭킹</span></div>
+      ${rank}
+    </div>`;
+  }
+  return `<div class="card game-side">
+    <div class="sp-tabs" role="tablist">
+      <button class="sp-tab on" type="button" role="tab" aria-selected="true"
+        data-sptab="${esc(prefix)}-live">참가인원</button>
+      <button class="sp-tab" type="button" role="tab" aria-selected="false"
+        data-sptab="${esc(prefix)}-rank">랭킹</button>
+    </div>
+    <div class="sp-pane on" id="${esc(prefix)}-live" role="tabpanel">${liveHtml}</div>
+    ${rank}
+  </div>`;
+}
+
+/** 랭킹 pane의 껍데기. 안쪽 줄은 클라이언트가 그린다. */
+export function rankPane(prefix: string): string {
+  return `<div class="sp-rank" id="${esc(prefix)}RankList">
+    <div class="sp-empty">불러오는 중…</div>
+  </div>`;
+}
+
+/* 랭킹 목록을 그리고 30초마다 갱신하는 공용 클라이언트 코드.
+   게임마다 붙여 쓴다. seg는 API 경로 세그먼트(그래프게임은 crash),
+   prefix는 sidePanel에 넘긴 것과 같아야 한다.
+
+   sig 캐시를 로스터와 공유하면 두 목록이 서로의 캐시를 무효화해 매 폴링마다
+   DOM을 갈아엎고 잔액·칩 애니메이션이 끊긴다 — 그래서 지역 변수를 따로 둔다. */
+export function rankJs(prefix: string, seg: string): string {
+  return `
+      (function(){
+        var listEl = document.getElementById('${prefix}RankList');
+        if (!listEl) return;
+        var rankSig = null, lastAt = 0, timer = null;
+        function fmtSigned(n){
+          var s = new Intl.NumberFormat('ko-KR').format(Math.abs(n));
+          return (n > 0 ? '+' : n < 0 ? '-' : '') + s + 'P';
+        }
+        function row(r){
+          var sub = new Intl.NumberFormat('ko-KR').format(r.rounds) + '판' +
+            (r.winPct == null ? '' : ' · ' + r.winPct + '%');
+          var cls = r.profit > 0 ? ' pos' : (r.profit < 0 ? ' neg' : '');
+          return '<div class="sp-rw' + (r.me ? ' me' : '') + '">' +
+            '<span class="sp-no' + (r.rank === 1 ? ' top1' : '') + '">' + r.rank + '</span>' +
+            '<span class="sp-mid"><span class="sp-nm">' + escHtml(r.username) + '</span>' +
+            '<span class="sp-sub num">' + sub + '</span></span>' +
+            '<span class="sp-p delta num' + cls + '">' + fmtSigned(r.profit) + '</span></div>';
+        }
+        function escHtml(s){
+          return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
+        function paint(d){
+          var all = (d.rows || []).concat(d.mine ? [d.mine] : []);
+          var html = all.length ? all.map(row).join('')
+            : '<div class="sp-empty">아직 기록이 없습니다</div>';
+          if (rankSig !== html) { rankSig = html; listEl.innerHTML = html; }
+        }
+        function load(){
+          lastAt = Date.now();
+          fetch('/api/games/${seg}/ranking')
+            .then(function(r){ return r.ok ? r.json() : null; })
+            .then(function(d){ if (d) paint(d); })
+            .catch(function(){ /* 랭킹은 게임 진행과 무관하니 조용히 넘어간다 */ });
+        }
+        function isOpen(){
+          var p = document.getElementById('${prefix}-rank');
+          return p && p.classList.contains('on');
+        }
+        /* 탭이 열려 있을 때만, 그리고 창이 보일 때만 갱신한다.
+           랭킹은 초 단위로 바뀌는 값이 아니라 30초로 충분하다. */
+        function tick(){
+          if (!isOpen() || document.hidden) return;
+          if (Date.now() - lastAt >= 30000) load();
+        }
+        timer = setInterval(tick, 5000);
+        void timer;
+        window.__spRankOpen = function(){ if (Date.now() - lastAt >= 3000) load(); };
+        if (isOpen()) load();          // 지뢰찾기처럼 처음부터 열려 있는 경우
+      })();`;
+}
+
 export function pts(n: number): string {
   return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P';
 }

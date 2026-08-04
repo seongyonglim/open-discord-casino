@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import { placeBet, getActiveRound, updateRoundState, settleGameRound, type GameRound } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout } from '../views';
+import { layout, sidePanel, rankPane, rankJs } from '../views';
 import { gameSwitcher } from '../pages';
 import { bombIcon, coinIcon, mysteryMark } from '../icons';
 import type { WebUser } from '../../db/queries';
@@ -130,7 +130,9 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
   // (칸을 열지 않았다면 유저가 얻은 정보가 없으므로 환불해도 악용 여지가 없다 — 별도 취소 버튼이 필요 없는 이유)
   const multiplier = calcMultiplier(state.mineCount, state.revealed.length);
   const payout = Math.floor(round.bet_amount * multiplier);
-  const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`);
+  // 0칸 캐시아웃은 전액 환불과 같으므로 랭킹의 판수에 넣지 않는다 (위 주석 참조)
+  const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`,
+    state.revealed.length > 0);
   const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
   return sendJson(res, 200, { ok: true, balance, round: publicRound(settled, state, true) });
 }
@@ -140,7 +142,7 @@ export function minesPage(user: WebUser): string {
   const active = activeRoundPayload(user.id);
   const body = `
     ${gameSwitcher('mines')}
-    <div class="game-shell solo">
+    <div class="game-shell mines-shell">
       <div class="game-main">
         <div class="card">
           <div class="board-stage">
@@ -183,6 +185,8 @@ export function minesPage(user: WebUser): string {
           <p id="mMsg" class="game-msg"></p>
         </div>
       </div>
+      <!-- 지뢰찾기는 혼자 하는 게임이라 참가자 목록이 없다 — 랭킹만 둔다 -->
+      ${sidePanel('m', '', rankPane('m'))}
     </div>
     <script>window.__MINES_ACTIVE__ = ${active ? JSON.stringify(active) : 'null'};
       window.__SFX_NEED__ = ['minecoin','explode','gain'];
@@ -364,6 +368,9 @@ export function minesPage(user: WebUser): string {
         buildGrid([]);
       }
     })();
+
+      // 우측 패널 랭킹 탭
+      ${rankJs('m', 'mines')}
     </script>`;
   return layout('지뢰찾기', 'lobby', body);
 }

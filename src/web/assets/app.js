@@ -404,6 +404,31 @@
   window.casinoMark('app.js 실행 완료');
 })();
 
+/* ── 우측 패널 탭 (참가인원 / 랭킹) ──────────────────────────────────
+   hidden 속성이 아니라 .on 클래스로 전환한다 — pane에 display:flex가 필요한데
+   display를 명시하면 hidden 속성이 밀린다(이 프로젝트에서 세 번 겪은 함정이다).
+   이 파일은 <head>에서 실행돼 DOM이 아직 없으므로 document에 위임한다. */
+(function(){
+  document.addEventListener('click', function(e){
+    if (!e.target.closest) return;
+    var t = e.target.closest('[data-sptab]');
+    if (!t) return;
+    var box = t.closest('.game-side');
+    if (!box) return;
+    var id = t.getAttribute('data-sptab');
+    box.querySelectorAll('.sp-tab').forEach(function(b){
+      var on = (b === t);
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    box.querySelectorAll('.sp-pane').forEach(function(p){
+      p.classList.toggle('on', p.id === id);
+    });
+    // 랭킹 탭을 열면 그 즉시 한 번 당겨온다 (30초 주기를 기다리지 않는다)
+    if (id.slice(-5) === '-rank' && window.__spRankOpen) window.__spRankOpen();
+  });
+})();
+
 /* ── 규칙 도움말 창 ──────────────────────────────────────────────────
    네이티브 <dialog>라 Esc 닫기·포커스 가둠·배경 처리는 브라우저가 해준다.
    여기서는 열고 닫는 것과 "배경을 눌러 닫기"만 붙인다.

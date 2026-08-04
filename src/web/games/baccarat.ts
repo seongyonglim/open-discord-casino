@@ -18,7 +18,7 @@ import {
 import { baccaratProbabilities, drawRound, playRound, cardsToStrings, handTotal } from '../../services/baccarat';
 import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript } from '../views';
+import { layout, jsonForScript, sidePanel, rankPane, rankJs } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import { COIN_SIZES } from './poker';
@@ -225,10 +225,10 @@ export function baccaratPage(user: WebUser): string {
         </div>
       </div>
 
-      <div class="card game-side">
+      ${sidePanel('b', `
         <div class="side-head"><span>참가자</span><span id="bPot" class="num">0P</span></div>
         <div id="bRoster" class="roster"><div class="empty" style="padding:16px 0">아직 참가자가 없습니다</div></div>
-      </div>
+      `, rankPane('b'))}
     </div>
     <script>
       window.__ME__ = ${jsonForScript(user.username)};
@@ -895,6 +895,9 @@ export function baccaratPage(user: WebUser): string {
       poll();
       setInterval(poll, 1000);
     })();
+
+      // 우측 패널 랭킹 탭
+      ${rankJs('b', 'baccarat')}
     </script>`;
 
   return layout('바카라', 'lobby', body);

@@ -23,7 +23,7 @@ import {
   shuffleShoe, isBlackjack, dealerShouldHit, handTotal, settleHand, cardsToStrings,
 } from '../../services/blackjack';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, helpButton, helpDialog } from '../views';
+import { layout, jsonForScript, helpButton, helpDialog, sidePanel, rankPane, rankJs } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import { COIN_SIZES } from './poker';
@@ -274,10 +274,10 @@ export function blackjackPage(user: WebUser): string {
         </div>
       </div>
 
-      <div class="card game-side">
+      ${sidePanel('bj', `
         <div class="side-head"><span>참가자</span><span id="bjPot" class="num">0P</span></div>
         <div id="bjRoster" class="roster"><div class="empty" style="padding:16px 0">아직 참가자가 없습니다</div></div>
-      </div>
+      `, rankPane('bj'))}
     </div>
     ${helpDialog('bjHelp', '블랙잭 규칙', RULES_HTML)}
     <script>
@@ -875,6 +875,9 @@ export function blackjackPage(user: WebUser): string {
       poll();
       setInterval(poll, 1000);
     })();
+
+      // 우측 패널 랭킹 탭
+      ${rankJs('bj', 'blackjack')}
     </script>`;
 
   return layout('블랙잭', 'lobby', body);
