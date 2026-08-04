@@ -1,6 +1,7 @@
 import { layout, esc, pts, LOGO_SVG } from './views';
 import { bombIcon, ladderIcon, chartIcon, cardsIcon, discordIcon } from './icons';
 import type { LeaderboardRow, WebUser } from '../db/queries';
+import { NOTICES, type Notice } from './notices';
 
 const GAMES: { key: string; name: string; desc: string; icon: string; ready: boolean }[] = [
   { key: 'mines', name: '지뢰찾기', desc: '지뢰 개수를 고르고 안전한 칸을 열수록 배당이 오릅니다. 원할 때 캐시아웃!', icon: bombIcon, ready: true },
@@ -91,3 +92,66 @@ export function leaderboardPage(rows: LeaderboardRow[], meId: string | null): st
     </div>`);
 }
 
+
+/* ── 공지사항 ─────────────────────────────────────────────────────────
+   게임사 공지 형식을 따른다: 분류 태그 · 제목 · 날짜, 본문은 소제목으로 끊는다.
+   글은 코드(web/notices.ts)에 있고 여기서는 그리기만 한다. */
+
+function noticeBody(n: Notice): string {
+  return n.sections.map(s => {
+    const paras = (s.paras ?? []).map(p => `<p>${p}</p>`).join('');
+    const bullets = s.bullets?.length
+      ? `<ul>${s.bullets.map(b => `<li>${b}</li>`).join('')}</ul>` : '';
+    const table = s.table
+      ? `<div class="nt-tw"><table class="nt-table">
+           <thead><tr>${s.table.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+           <tbody>${s.table.rows.map(r =>
+             `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+         </table></div>`
+      : '';
+    return `<section class="nt-sec"><h3>${esc(s.heading)}</h3>${paras}${bullets}${table}</section>`;
+  }).join('');
+}
+
+export function noticeListPage(): string {
+  const rows = NOTICES.map(n => `
+    <a class="nt-row" href="/notices/${esc(n.id)}">
+      <span class="nt-kind k-${esc(n.kind)}">${esc(n.kind)}</span>
+      <span class="nt-mid">
+        <span class="nt-title">${esc(n.title)}</span>
+        <span class="nt-sum">${esc(n.summary)}</span>
+      </span>
+      <span class="nt-date num">${esc(n.date)}</span>
+    </a>`).join('');
+
+  return layout('공지사항', 'notices', `
+    <div class="card">
+      <h2>공지사항</h2>
+      <p class="nt-lead">업데이트 · 밸런스 조정 · 오류 수정 내역을 안내합니다.</p>
+      <div class="nt-list">${rows || `<p class="empty">등록된 공지가 없습니다</p>`}</div>
+    </div>`);
+}
+
+export function noticeDetailPage(n: Notice): string {
+  const idx = NOTICES.findIndex(x => x.id === n.id);
+  const prev = idx >= 0 && idx + 1 < NOTICES.length ? NOTICES[idx + 1] : null;   // 더 과거 글
+  const next = idx > 0 ? NOTICES[idx - 1] : null;                                 // 더 최신 글
+  const nav = [
+    next ? `<a class="nt-nav" href="/notices/${esc(next.id)}">← 다음 글 · ${esc(next.title)}</a>` : '',
+    prev ? `<a class="nt-nav" href="/notices/${esc(prev.id)}">이전 글 · ${esc(prev.title)} →</a>` : '',
+  ].filter(Boolean).join('');
+
+  return layout(n.title, 'notices', `
+    <div class="card nt-doc">
+      <div class="nt-head">
+        <span class="nt-kind k-${esc(n.kind)}">${esc(n.kind)}</span>
+        <h2>${esc(n.title)}</h2>
+        <span class="nt-date num">${esc(n.date)}</span>
+      </div>
+      ${noticeBody(n)}
+      <div class="nt-foot">
+        <a class="btn nt-back" href="/notices">목록으로</a>
+        ${nav}
+      </div>
+    </div>`);
+}

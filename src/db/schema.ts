@@ -371,6 +371,11 @@ function initSchema(): void {
       game     TEXT NOT NULL,                 -- mines|ladder|graph|poker|baccarat|blackjack
       rounds   INTEGER NOT NULL DEFAULT 0,     -- 판수 (푸시 포함)
       wins     INTEGER NOT NULL DEFAULT 0,     -- 순손익이 양수인 판
+      /* 승패를 아는 판수. 원장에서 백필한 과거 판은 스테이크와 지급을 짝지을 수 없어
+         승·패·푸시를 판정할 수 없다(원장 행에 round_id가 없다). 그런 판은 rounds에는
+         들어가지만 rated에는 안 들어가고, 승률은 rated 기준으로만 계산한다 —
+         그래야 과거 판이 전부 패배로 잡혀 승률이 거짓이 되는 일이 없다. */
+      rated    INTEGER NOT NULL DEFAULT 0,
       pushes   INTEGER NOT NULL DEFAULT 0,     -- 순손익이 0인 판 (승률 분모에서 뺀다)
       staked   INTEGER NOT NULL DEFAULT 0,
       returned INTEGER NOT NULL DEFAULT 0,
@@ -394,6 +399,8 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 홀덤: 판이 끝난 뒤 자발적 패 공개
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN shown INTEGER NOT NULL DEFAULT 0`); } catch {}
+  // 랭킹: 승률을 계산할 수 있는 판수 (백필한 과거 판은 여기 들어가지 않는다)
+  try { d.exec(`ALTER TABLE game_stats ADD COLUMN rated INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 홀덤: 스트리트를 닫은 마지막 행동 (스트리트 초기화가 지우지 못하는 자리)
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_seat INTEGER`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_action TEXT`); } catch {}

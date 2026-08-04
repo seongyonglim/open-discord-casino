@@ -38,7 +38,7 @@ export function handleRanking(
     userId: r.user_id,
     username: r.username,
     rounds: r.rounds,
-    winPct: winRatePct(r.wins, r.rounds - r.pushes),
+    winPct: winRatePct(r.wins, r.rated),
     profit: r.profit,
     me: r.user_id === userId,
   }));
@@ -51,7 +51,7 @@ export function handleRanking(
     if (m) {
       mine = {
         rank: m.rank, userId: m.user_id, username: m.username, rounds: m.rounds,
-        winPct: winRatePct(m.wins, m.rounds - m.pushes), profit: m.profit, me: true,
+        winPct: winRatePct(m.wins, m.rated), profit: m.profit, me: true,
       };
     }
   }

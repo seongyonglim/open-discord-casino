@@ -1447,3 +1447,53 @@
   .ht-win-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ht-win-row span:last-child{font-family:var(--mono);font-weight:700;color:#cbd8cf}
   .ht-win-close{width:100%}
+
+  /* ── 공지사항 ────────────────────────────────────────────────────────
+     게임사 공지 형식: 분류 태그 · 제목 · 날짜, 본문은 소제목으로 끊는다.
+     클래스는 nt- 접두어로 통일한다(smoke [9]는 최상위 단일 클래스 중복을 잡는다). */
+  .nt-lead{color:var(--muted);font-size:13px;margin:-4px 0 16px}
+  .nt-list{display:flex;flex-direction:column}
+  .nt-row{display:flex;align-items:center;gap:14px;padding:15px 4px;
+    border-top:1px solid var(--line);text-decoration:none;color:inherit;
+    transition:background .12s}
+  .nt-row:first-child{border-top:none}
+  .nt-row:hover{background:rgba(255,255,255,.03)}
+  .nt-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .nt-title{font-size:14px;font-weight:700;color:#e8efe9}
+  .nt-sum{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .nt-date{flex:none;font-size:12px;color:var(--muted)}
+  /* 분류 태그 — 폭을 고정해 제목 열이 들쭉날쭉하지 않게 한다 */
+  .nt-kind{flex:none;width:64px;text-align:center;padding:4px 0;border-radius:6px;
+    font-size:11px;font-weight:800;letter-spacing:.3px;
+    background:rgba(255,255,255,.07);color:#cfe0d5;border:1px solid rgba(255,255,255,.14)}
+  .nt-kind.k-신규{background:rgba(212,175,55,.14);color:var(--gold);
+    border-color:rgba(212,175,55,.45)}
+  .nt-kind.k-밸런스{background:rgba(150,195,255,.12);color:#bcd9ff;
+    border-color:rgba(150,195,255,.4)}
+  .nt-kind.k-버그\ 수정{background:rgba(255,140,140,.12);color:#ffb3b3;
+    border-color:rgba(255,140,140,.4)}
+
+  /* 개별 글 */
+  .nt-doc{max-width:760px}
+  .nt-head{padding-bottom:16px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+  .nt-head h2{margin:10px 0 6px;font-size:19px;line-height:1.4}
+  .nt-sec{margin:22px 0}
+  .nt-sec h3{margin:0 0 9px;font-size:14.5px;font-weight:800;color:var(--gold)}
+  .nt-sec p{margin:0 0 9px;font-size:13.5px;line-height:1.75;color:#d6e2d9}
+  .nt-sec ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:7px}
+  .nt-sec li{font-size:13.5px;line-height:1.7;color:#d6e2d9}
+  .nt-sec b{color:#fff}
+  /* 표는 좁은 화면에서 페이지를 밀지 않도록 자기 안에서 스크롤한다 */
+  .nt-tw{overflow-x:auto;margin-top:10px}
+  .nt-table{width:100%;border-collapse:collapse;font-size:13px}
+  .nt-table th,.nt-table td{padding:9px 12px;border:1px solid var(--line);text-align:left}
+  .nt-table th{background:rgba(255,255,255,.05);font-weight:700;color:#cfe0d5;
+    white-space:nowrap}
+  .nt-table td{color:#d6e2d9}
+  .nt-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}
+  .nt-back{flex:none}
+  .nt-nav{font-size:12.5px;color:var(--muted);text-decoration:none;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  .nt-nav:hover{color:var(--gold)}

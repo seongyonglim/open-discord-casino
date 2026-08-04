@@ -3,7 +3,8 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { lobbyPage, leaderboardPage } from './pages';
+import { lobbyPage, leaderboardPage, noticeListPage, noticeDetailPage } from './pages';
+import { findNotice } from './notices';
 import { setRequestUser, LOGO_SVG } from './views';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -163,6 +164,14 @@ export function startWebServer(): void {
 
       if (path === '/' || path === '/lobby') return send(res, 200, lobbyPage(me));
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
+
+      /* 공지사항 — 글은 코드(web/notices.ts)에 있다. 목록과 개별 글. */
+      if (path === '/notices') return send(res, 200, noticeListPage());
+      if (path.startsWith('/notices/')) {
+        const found = findNotice(decodeURIComponent(path.slice('/notices/'.length)));
+        if (!found) { notFound(res); return; }
+        return send(res, 200, noticeDetailPage(found));
+      }
 
       /* 게임별 랭킹 — 여섯 게임이 같은 모양이라 한 곳에서 받는다.
          홀덤은 RANK_GAMES에 없으므로 여기서 걸리지 않고 404가 된다(의도한 것이다). */
