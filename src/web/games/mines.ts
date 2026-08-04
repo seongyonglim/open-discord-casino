@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import { placeBet, getActiveRound, updateRoundState, settleGameRound, type GameRound } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, sidePanel, rankPane, rankJs } from '../views';
+import { layout, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 import { bombIcon, coinIcon, mysteryMark } from '../icons';
 import type { WebUser } from '../../db/queries';
@@ -138,6 +138,38 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
 }
 
 
+/* 규칙 도움말. 숫자는 코드에서 온다 —
+   TILE_COUNT 25 · ALLOWED_MINE_COUNTS [1,3,5,10,24] · HOUSE_EDGE 0.01.
+   배수 표의 값은 calcMultiplier로 직접 계산해 넣었다(어림수가 아니다). */
+const RULES_HTML = `
+  <h4>목표</h4>
+  <p><b>25칸</b> 중 지뢰를 피해 칸을 엽니다. 안전한 칸을 열 때마다 배수가 오르고,
+     <b>원할 때 캐시아웃</b>하면 그 배수로 받습니다.</p>
+
+  <h4>진행</h4>
+  <ul>
+    <li>지뢰 개수를 <b>1 · 3 · 5 · 10 · 24</b> 중에서 고르고 베팅합니다</li>
+    <li>칸을 하나씩 엽니다. 지뢰를 열면 그 순간 전액 손실</li>
+    <li>한 번에 한 판만 진행할 수 있습니다</li>
+  </ul>
+
+  <h4>지뢰가 많을수록 크게 오릅니다</h4>
+  <table>
+    <tr><td>지뢰 1개</td><td>한 칸 1.03배 · 전부 열면 24.75배</td></tr>
+    <tr><td>지뢰 3개</td><td>한 칸 1.13배 · 전부 열면 2,277배</td></tr>
+    <tr><td>지뢰 5개</td><td>한 칸 1.24배 · 전부 열면 52,598배</td></tr>
+    <tr><td>지뢰 10개</td><td>한 칸 1.65배</td></tr>
+    <tr><td>지뢰 24개</td><td>한 칸에 24.75배 <span class="dim">(한 방)</span></td></tr>
+  </table>
+
+  <p class="tip"><b>꿀팁 —</b> 어디서 멈추든 기대값은 같습니다. 지뢰 수와 여는 칸 수는
+     <b>"자주 조금" 과 "드물게 크게" 중 무엇을 고를지</b>일 뿐입니다.
+     목표 배수를 미리 정하고 거기서 빠지는 게 가장 단순합니다.</p>
+
+  <div class="warn"><b>주의 —</b> 지뢰를 밟으면 그때까지 쌓인 배수는 <b>전부 사라집니다.</b>
+  캐시아웃을 눌러야 내 것이 됩니다.</div>
+`;
+
 export function minesPage(user: WebUser): string {
   const active = activeRoundPayload(user.id);
   const body = `
@@ -145,6 +177,7 @@ export function minesPage(user: WebUser): string {
     <div class="game-shell mines-shell">
       <div class="game-main">
         <div class="card">
+          ${helpButton('mnHelp')}
           <div class="board-stage">
             <div id="mGrid" class="mines-grid"></div>
           </div>
@@ -371,6 +404,7 @@ export function minesPage(user: WebUser): string {
 
       // 우측 패널 랭킹 탭
       ${rankJs('m', 'mines')}
-    </script>`;
+    </script>
+    ${helpDialog("mnHelp", "지뢰찾기 규칙", RULES_HTML)}`;
   return layout('지뢰찾기', 'lobby', body);
 }

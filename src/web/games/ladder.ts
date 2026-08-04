@@ -12,7 +12,7 @@ import {
   type LadderRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs } from '../views';
+import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
 const TOTAL_ROWS = 8;
@@ -141,12 +141,49 @@ export async function handleCancel(_req: IncomingMessage, res: ServerResponse, u
   return sendJson(res, 200, { ok: true, balance: result.balance });
 }
 
+/* 규칙 도움말.
+   숫자는 전부 코드 상수에서 온다 — LADDER_MULTIPLIER 1.95 · LADDER_DOUBLE_MULTIPLIER 3.95 ·
+   LADDER_BETTING_SEC 10. 여기와 코드가 어긋나면 설명이 거짓말을 하므로, 상수를 바꾸면
+   이 글도 같이 고쳐야 한다. */
+const RULES_HTML = `
+  <h4>목표</h4>
+  <p>사다리를 타고 내려온 공이 <b>어디서 출발했는지</b>와 <b>어디로 도착했는지</b>를 맞힙니다.</p>
+
+  <h4>두 갈래에 겁니다</h4>
+  <ul>
+    <li><b>출발</b> — 좌 / 우</li>
+    <li><b>도착</b> — 홀 / 짝 <span class="dim">(왼쪽 도착 = 홀, 오른쪽 도착 = 짝)</span></li>
+  </ul>
+
+  <h4>배당</h4>
+  <table>
+    <tr><td>하나만 골라서 맞히면</td><td>1.95 배</td></tr>
+    <tr><td>둘 다 골라서 <b>모두</b> 맞히면</td><td>3.95 배</td></tr>
+  </table>
+
+  <h4>진행</h4>
+  <ul>
+    <li>베팅 <b>10초</b> → 공이 내려옴 → 결과</li>
+    <li>사다리는 매 판 새로 만들어집니다 (가로줄 위치도 매번 다릅니다)</li>
+  </ul>
+
+  <p class="tip"><b>꿀팁 —</b> 길게 보면 <b>더블이 유리합니다.</b>
+     단일은 50% × 1.95 = 0.975, 더블은 25% × 3.95 = 0.9875 —
+     되돌려받는 비율이 더블 쪽이 높습니다.<br>
+     그리고 <b>20의 배수로 걸면</b> 내림으로 버려지는 돈이 없습니다
+     (1.95 · 3.95는 20으로 나누어떨어집니다). 어중간한 금액은 최대 0.95P가 사라집니다.</p>
+
+  <div class="warn"><b>주의 —</b> 둘 다 골랐으면 <b>둘 다</b> 맞아야 이깁니다.
+  하나만 맞으면 못 맞힌 것과 같습니다 — 부분 지급은 없습니다.</div>
+`;
+
 export function ladderPage(user: WebUser): string {
   const body = `
     ${gameSwitcher('ladder')}
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
+          ${helpButton('ldHelp')}
           <div id="lHistory" class="bead"></div>
           <div class="board-stage">
             <div id="lBoard" class="ladder-board"></div>
@@ -606,6 +643,7 @@ export function ladderPage(user: WebUser): string {
 
       // 우측 패널 랭킹 탭
       ${rankJs('l', 'ladder')}
-    </script>`;
+    </script>
+    ${helpDialog('ldHelp', '사다리게임 규칙', RULES_HTML)}`;
   return layout('사다리게임', 'lobby', body);
 }
