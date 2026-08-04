@@ -978,7 +978,14 @@ export function holdemPage(user: WebUser): string {
        폴드로 일찍 끝난 판에서 "그대로 갔으면 뭐가 깔렸을까"를 확인한다.
        서버는 핸드가 끝난 뒤에만 이 카드를 내려보낸다(rabbitBoard가 직접 막는다).
        버튼을 누른 판만 보여주고, 새 판이 시작되면 저절로 닫힌다. */
-    var rabbitShownHand = null;
+    /* 래빗을 펼쳐 둔 판 번호. 페이지가 살아 있는 동안 유지되므로 대회가 바뀌면 반드시
+       지워야 한다 — 판 번호는 대회마다 1부터 다시 시작해서, 안 지우면 새 대회의 같은
+       번호 판에서 지난 대회의 열림 상태를 물려받는다. */
+    var rabbitShownHand = null, rabbitTid = null;
+    function noteRabbitScope(){
+      var tid = st && st.tournament ? st.tournament.id : null;
+      if (tid !== rabbitTid) { rabbitTid = tid; rabbitShownHand = null; }
+    }
     function syncRabbit(tb){
       var rest = tb.rabbit || [];
       var can = tb.ended && rest.length > 0;
@@ -1261,8 +1268,18 @@ export function holdemPage(user: WebUser): string {
     }
     function syncBoard(tb){
       var cards = tb.board || [];
-      // 래빗을 펼쳐 둔 판이면 그쪽이 보드를 그린다
-      if (rabbitShownHand === tb.handNo) { syncRabbit(tb); return; }
+      /* 래빗을 펼쳐 둔 판이면 그쪽이 보드를 그린다.
+
+         조건에 "래빗이 실제로 열릴 수 있는 상태인가"까지 넣는다. 판 번호만 비교하면
+         위험한 구멍이 하나 생긴다 — rabbitShownHand는 페이지가 살아 있는 동안 유지되는
+         값이고 판 번호는 대회마다 1부터 다시 시작한다. 새 대회의 1판이 열렸을 때
+         우연히 번호가 같으면 syncRabbit으로 넘어가는데, 진행 중인 판은 서버가 rabbit을
+         빈 배열로 주므로 syncRabbit이 아무것도 그리지 않고 빠져나온다 —
+         그러면 그 판은 보드가 영원히 비어 있게 된다.
+         (진짜로 열려 있을 때만 위임하면 그 경로가 아예 생기지 않는다) */
+      if (rabbitShownHand === tb.handNo && tb.ended && (tb.rabbit || []).length > 0) {
+        syncRabbit(tb); return;
+      }
       if (tb.handNo !== boardHandNo) {
         boardHandNo = tb.handNo;
         clearBoardReveal();
@@ -1533,6 +1550,7 @@ export function holdemPage(user: WebUser): string {
 
     function renderTable(){
       var tb = st.table;
+      noteRabbitScope();      // 대회가 바뀌면 래빗 열림 상태를 버린다
       syncBoard(tb);
       /* 팟이 승자에게 넘어간 뒤에는 0으로 만든다.
          서버의 pot은 "이 판에 들어간 돈의 합"이라 판이 끝나도 값이 남는데, 그때 이미
