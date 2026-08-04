@@ -1347,7 +1347,7 @@ export const BJ_REVEAL_SEC = 3;   // 정산 후 다음 라운드까지
 export const BJ_KEEP_ROUNDS = 30;
 
 export type BjPhase = 'waiting' | 'betting' | 'deal' | 'action' | 'dealer' | 'done';
-export type BjHandStatus = 'playing' | 'stand' | 'bust' | 'blackjack';
+export type BjHandStatus = 'playing' | 'stand' | 'bust' | 'blackjack' | 'surrender';
 
 export interface BjRoundRow {
   id: number;
@@ -1381,6 +1381,11 @@ export interface BjHelpers {
   dealerShouldHit: (cards: number[]) => boolean;
   handTotal: (cards: number[]) => { total: number; bust: boolean };
   settle: (player: number[], dealer: number[]) => { outcome: string; multiplier: number };
+  /* 서렌더 — 첫 두 장에서만 가능하고, 딜러가 블랙잭이면 무효(전액 손실)다.
+     정산을 settle과 분리한 이유: 서렌더는 플레이어 카드를 비교하지 않고
+     딜러의 블랙잭 여부만으로 결과가 정해진다. */
+  canSurrender: (cards: number[]) => boolean;
+  settleSurrender: (dealer: number[]) => { outcome: string; multiplier: number };
 }
 
 /* 라운드의 각 구간이 언제 끝나는지. betting_ends_at 하나에서 전부 파생되므로
@@ -1452,7 +1457,11 @@ function settleBlackjack(round: BjRoundRow, h: BjHelpers): void {
   const dealer = JSON.parse(round.dealer_json) as number[];
   for (const hand of bjHands(round.id)) {
     const cards = JSON.parse(hand.cards_json) as number[];
-    const { outcome, multiplier } = h.settle(cards, dealer);
+    /* 서렌더한 손패는 플레이어 카드를 비교하지 않는다 — 딜러의 블랙잭 여부만 본다.
+       무효면 전액 손실, 아니면 절반 반환이다(내림 규칙을 그대로 따른다). */
+    const { outcome, multiplier } = hand.status === 'surrender'
+      ? h.settleSurrender(dealer)
+      : h.settle(cards, dealer);
     const payout = Math.floor(hand.bet * multiplier);
     run(`UPDATE blackjack_hands SET outcome = ?, payout = ? WHERE id = ?`, outcome, payout, hand.id);
     // 유저가 사라진 손패는 건너뛴다 — 여기서 예외가 나면 트랜잭션이 롤백돼
@@ -1665,9 +1674,10 @@ export function clearBlackjackBet(userId: string, roundId: number):
    더블다운은 처음 두 장을 본 시점에만 쓸 수 있고, 베팅을 두 배로 올린 뒤 딱 한 장만 받고 선다.
    추가로 걸리는 돈은 원래 베팅액과 같으므로 그만큼 잔액에서 다시 차감한다.               */
 export function blackjackAction(
-  userId: string, roundId: number, action: 'hit' | 'stand' | 'double', h: BjHelpers
+  userId: string, roundId: number, action: 'hit' | 'stand' | 'double' | 'surrender', h: BjHelpers
 ): { ok: true; cards: number[]; status: BjHandStatus; bet: number; balance: number }
-  | { ok: false; error: 'closed' | 'no_hand' | 'done' | 'cannot_double' | 'insufficient_balance' } {
+  | { ok: false; error: 'closed' | 'no_hand' | 'done' | 'cannot_double' | 'cannot_surrender'
+      | 'insufficient_balance' } {
   return tx(() => {
     const round = one<BjRoundRow>(`SELECT * FROM blackjack_rounds WHERE id = ?`, roundId);
     if (!round || round.phase !== 'action') return { ok: false, error: 'closed' };
@@ -1683,6 +1693,12 @@ export function blackjackAction(
 
     if (action === 'stand') {
       status = 'stand';
+    } else if (action === 'surrender') {
+      /* 첫 두 장에서만, 블랙잭이 아닐 때만. 카드를 더 받지 않고 그 자리에서 끝낸다.
+         반환액(절반)은 정산 때 계산한다 — 딜러가 블랙잭인지는 그때 알 수 있고,
+         블랙잭이면 서렌더가 무효가 되어 전액을 잃는다. */
+      if (!h.canSurrender(cards)) return { ok: false, error: 'cannot_surrender' };
+      status = 'surrender';
     } else if (action === 'double') {
       // 카드를 이미 받았으면 더블은 못 한다 (처음 두 장에서만)
       if (cards.length !== 2) return { ok: false, error: 'cannot_double' };

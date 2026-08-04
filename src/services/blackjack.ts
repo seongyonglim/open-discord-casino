@@ -60,7 +60,34 @@ export function dealerShouldHit(cards: number[]): boolean {
   return handTotal(cards).total < 17;
 }
 
-export type HandOutcome = 'blackjack' | 'win' | 'push' | 'lose' | 'bust';
+export type HandOutcome = 'blackjack' | 'win' | 'push' | 'lose' | 'bust' | 'surrender';
+
+/**
+ * 서렌더 정산 — 첫 두 장을 보고 판을 포기한다.
+ *
+ * 우리 딜러는 블랙잭을 미리 확인하지 않는다(no-peek). 그래서 서렌더를 고른 뒤에
+ * 딜러가 블랙잭으로 밝혀지는 일이 생기는데, 그때 절반만 돌려주면 딜러 블랙잭까지
+ * 절반으로 막아주는 "얼리 서렌더"가 되어 플레이어 쪽으로 0.6%p나 기운다.
+ * 실제 카지노가 얼리 서렌더를 없앤 이유가 그것이다.
+ *
+ * 그래서 딜러가 블랙잭이면 서렌더를 무효로 하고 전액을 잃는다. 정보 면에서는
+ * 표준 레이트 서렌더와 같다 — peek 게임에서도 딜러가 블랙잭이면 그 판은 이미
+ * 끝나 있어서, 어차피 결정할 때 보이는 건 오픈카드 하나뿐이다.
+ *
+ * 1덱에서 서렌더가 무효가 되는 비율(오픈카드를 본 뒤):
+ *   딜러 A → 16/51 = 31.4% · 딜러 10값 → 4/51 = 7.8% · 2~9 → 0%
+ * 그래서 딜러 A 상대 서렌더는 "절반"이 아니라 평균 약 66% 손실이다.
+ */
+export function settleSurrender(dealer: number[]): { outcome: HandOutcome; multiplier: number } {
+  return isBlackjack(dealer)
+    ? { outcome: 'lose', multiplier: 0 }          // 무효 — 전액 손실
+    : { outcome: 'surrender', multiplier: 0.5 };  // 절반 반환
+}
+
+/** 서렌더를 고를 수 있는 상태인가 — 첫 결정에서만, 블랙잭은 제외 */
+export function canSurrender(cards: number[]): boolean {
+  return cards.length === 2 && !isBlackjack(cards);
+}
 
 /* 정산. 돌려주는 값은 "배수"다 — 실제 지급액은 베팅액 × 이 값(내림).
      블랙잭 2.5 (3:2 배당 + 원금)   승 2   무승부 1 (원금 환불)   패 0            */

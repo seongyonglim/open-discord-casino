@@ -487,6 +487,7 @@ section('[8] 블랙잭');
     dealerShouldHit: BJ.dealerShouldHit,
     handTotal: (c: number[]) => { const t = BJ.handTotal(c); return { total: t.total, bust: t.bust }; },
     settle: BJ.settleHand,
+    canSurrender: BJ.canSurrender, settleSurrender: BJ.settleSurrender,
   };
   // 카드 인덱스: rank*4+suit (rank 0='2' … 8='T' 9='J' 10='Q' 11='K' 12='A')
   const C = (r: number, s = 0) => r * 4 + s;
@@ -671,6 +672,38 @@ section('[8] 블랙잭');
       dealt.phase + ' / ' + dealt.dealer_json);
   }
 }
+
+/* ── 서렌더 (판 포기) ───────────────────────────────────────────────
+   우리 딜러는 뒷장을 미리 확인하지 않으므로(no-peek), 서렌더를 고른 뒤 딜러가
+   블랙잭으로 밝혀지면 무효가 되어 전액을 잃는다. 절반만 잃게 두면 "얼리 서렌더"가
+   되어 플레이어 쪽으로 0.6%p나 기운다 — 실제 카지노가 그것을 없앤 이유다. */
+section('[8b] 블랙잭 서렌더');
+{
+  const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
+  const T10 = 8 * 4 + 0, T5 = 3 * 4 + 1, TA = 12 * 4 + 2, T9 = 7 * 4 + 3, T7 = 5 * 4 + 0;
+  ck('첫 두 장에서는 서렌더 가능', BJ.canSurrender([T10, T5]));
+  ck('세 장이면 불가', !BJ.canSurrender([T10, T5, T7]));
+  ck('내가 블랙잭이면 불가 (이미 확정 승)', !BJ.canSurrender([TA, T10]));
+
+  const notBJ = BJ.settleSurrender([T9, T7]);      // 딜러 16 — 블랙잭 아님
+  ck('딜러가 블랙잭이 아니면 절반 반환',
+    notBJ.multiplier === 0.5 && notBJ.outcome === 'surrender', JSON.stringify(notBJ));
+  const isBJ = BJ.settleSurrender([TA, T10]);      // 딜러 블랙잭
+  ck('딜러가 블랙잭이면 무효 — 전액 손실',
+    isBJ.multiplier === 0 && isBJ.outcome === 'lose', JSON.stringify(isBJ));
+
+  // 금액 — 내림 규칙을 따른다
+  ck('100P 서렌더 → 50P 반환', Math.floor(100 * 0.5) === 50);
+  ck('25P 서렌더 → 12P 반환 (내림)', Math.floor(25 * 0.5) === 12);
+  ck('1P 서렌더 → 0P 반환 (내림)', Math.floor(1 * 0.5) === 0);
+
+  /* 얼리 서렌더가 아님을 못 박는다 — 딜러 블랙잭에서 절반이 돌아오면 그건 ES다.
+     이 단정이 깨지면 하우스 엣지가 조용히 0.6%p 빠진다. */
+  ck('얼리 서렌더가 아니다 (딜러 블랙잭에 절반을 주지 않는다)',
+    BJ.settleSurrender([TA, T10]).multiplier === 0);
+}
+auditStats('서렌더 후');
+
 auditLedger('블랙잭 후');
 auditStats('블랙잭 후');
 

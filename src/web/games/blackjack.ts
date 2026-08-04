@@ -21,6 +21,7 @@ import {
 } from '../../db/queries';
 import {
   shuffleShoe, isBlackjack, dealerShouldHit, handTotal, settleHand, cardsToStrings,
+  canSurrender, settleSurrender,
 } from '../../services/blackjack';
 import { readJson, sendJson } from '../http';
 import { layout, jsonForScript, helpButton, helpDialog, sidePanel, rankPane, rankJs } from '../views';
@@ -34,6 +35,8 @@ const helpers: BjHelpers = {
   dealerShouldHit,
   handTotal: (c: number[]) => { const t = handTotal(c); return { total: t.total, bust: t.bust }; },
   settle: settleHand,
+  canSurrender,
+  settleSurrender,
 };
 
 function advance(): BjRoundRow {
@@ -113,6 +116,8 @@ function statePayload(round: BjRoundRow, userId: string) {
         seat: h.seat, bet: h.bet, status: h.status, canAct: acting,
         // 더블은 처음 두 장에서만, 그리고 같은 금액을 한 번 더 걸 수 있을 때만
         canDouble: acting && cards.length === 2 && bal >= h.bet,
+        // 서렌더도 처음 두 장에서만. 내가 블랙잭이면 이미 확정 승이라 뜨지 않는다
+        canSurrender: acting && canSurrender(cards),
         total: cards.length ? handTotal(cards).total : null,
       };
     })(),
@@ -166,7 +171,8 @@ export async function handleAction(req: IncomingMessage, res: ServerResponse, us
   const data = await readJson(req);
   const action = data?.action === 'hit' ? 'hit'
     : data?.action === 'stand' ? 'stand'
-    : data?.action === 'double' ? 'double' : null;
+    : data?.action === 'double' ? 'double'
+    : data?.action === 'surrender' ? 'surrender' : null;
   if (!action) return sendJson(res, 400, { error: '알 수 없는 동작입니다' });
 
   const round = advance();
@@ -175,6 +181,7 @@ export async function handleAction(req: IncomingMessage, res: ServerResponse, us
     const msg = r.error === 'closed' ? '결정 시간이 지났습니다'
       : r.error === 'no_hand' ? '이번 라운드에 참여하지 않았습니다'
       : r.error === 'cannot_double' ? '더블다운은 처음 두 장에서만 할 수 있습니다'
+      : r.error === 'cannot_surrender' ? '서렌더는 처음 두 장에서만 할 수 있습니다'
       : r.error === 'insufficient_balance' ? '잔액이 부족합니다'
       : '이미 결정을 마쳤습니다';
     return sendJson(res, 400, { error: msg });
@@ -217,6 +224,31 @@ const RULES_HTML = `
     <li>10판에 1번쯤 기회가 오고, 잘 쓰면 하우스 엣지가 <b>2.35% → 1.12%</b>로 절반이 됩니다 (실측)</li>
     <li>한 장 받고 21을 넘기면 그대로 두 배로 잃습니다. 12 이상에서는 쓰지 마세요</li>
   </ul>
+
+  <h4>서렌더 (판 포기)</h4>
+  <p>처음 두 장을 받은 직후에만 쓸 수 있습니다.
+     <b>베팅의 절반을 잃고 그 자리에서 판을 끝냅니다.</b>
+     이길 가능성이 너무 낮은 패에서 손실을 절반으로 줄이는 수입니다.</p>
+  <ul>
+    <li><b>딜러가 블랙잭이면 서렌더가 무효가 되어 전액을 잃습니다.</b>
+        우리 딜러는 뒷장을 미리 확인하지 않기 때문입니다 —
+        딜러 블랙잭까지 절반으로 막아주면 플레이어에게 지나치게 유리해집니다</li>
+    <li>그래서 딜러 <b>A</b> 상대 서렌더는 실제로 절반이 아니라 평균 <b>약 66%</b> 손실입니다
+        (1덱에서 딜러 A가 블랙잭일 확률 16/51 = 31.4%).
+        딜러 <b>10·J·Q·K</b> 상대는 4/51 = 7.8%라 평균 약 54% 손실입니다</li>
+    <li>힛을 한 번이라도 하면 쓸 수 없고, 내가 블랙잭이면 나오지 않습니다 (이미 확정 승)</li>
+    <li>절반이 홀수면 내림합니다 (예: 25P 베팅 → 12P 반환)</li>
+  </ul>
+  <p><b>우리 룰(1덱)에서 서렌더가 이득인 패</b> — 남의 표를 옮기지 않고 이 게임의 규칙으로
+     직접 계산한 결과입니다.</p>
+  <ul>
+    <li><b>하드 15</b> — 딜러 10·J·Q·K 상대</li>
+    <li><b>하드 16</b> — 딜러 10·J·Q·K 상대 (딜러 A 상대는 거의 반반이라 어느 쪽이든 큰 차이 없습니다)</li>
+    <li>그 밖에는 서렌더가 손해입니다. 특히 <b>하드 17 이상</b>과 <b>하드 14 이하</b>에서는 쓰지 마세요</li>
+  </ul>
+  <p>원리는 하나입니다 — <b>이길 확률이 25%를 밑돌 때</b>만 이득입니다.
+     확실히 절반을 잃는 게, 그보다 더 나쁜 기댓값보다 낫기 때문입니다.
+     버튼은 어떤 패에서도 누를 수 있으니 위 경우가 아니면 그냥 플레이하는 게 낫습니다.</p>
 
   <h4>배당</h4>
   <table>
@@ -269,6 +301,10 @@ export function blackjackPage(user: WebUser): string {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg>
               <span class="bja-t"><b>더블다운</b><i id="bjDblCost">두 배로</i></span>
             </button>
+            <button type="button" class="bja sur" id="bjSurrender">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v16"/><path d="M5 5h11l-2 4 2 4H5"/></svg>
+              <span class="bja-t"><b>서렌더</b><i>절반만 잃고 종료</i></span>
+            </button>
           </div>
         </div>
 
@@ -308,6 +344,7 @@ export function blackjackPage(user: WebUser): string {
       var actionsEl=document.getElementById('bjActions');
       var hitBtn=document.getElementById('bjHit'), standBtn=document.getElementById('bjStand');
       var dblBtn=document.getElementById('bjDouble');
+      var surBtn=document.getElementById('bjSurrender');
       var coinsEl=document.getElementById('bjCoins'), clearBtn=document.getElementById('bjClear');
       var rosterEl=document.getElementById('bjRoster'), potEl=document.getElementById('bjPot');
       var pbal=document.querySelector('.prof .pbal');
@@ -434,10 +471,12 @@ export function blackjackPage(user: WebUser): string {
       }
 
       function statusLabel(s){
-        return s==='blackjack' ? '블랙잭' : s==='bust' ? '버스트' : s==='stand' ? '스탠드' : '';
+        return s==='blackjack' ? '블랙잭' : s==='bust' ? '버스트'
+          : s==='surrender' ? '서렌더' : s==='stand' ? '스탠드' : '';
       }
       function outcomeLabel(o){
-        return o==='blackjack' ? '블랙잭!' : o==='win' ? '승' : o==='push' ? '무승부' : o==='bust' ? '버스트' : '패';
+        return o==='blackjack' ? '블랙잭!' : o==='win' ? '승' : o==='push' ? '무승부'
+          : o==='bust' ? '버스트' : o==='surrender' ? '서렌더' : '패';
       }
 
       /* ── 자리 ──────────────────────────────────────────────────────
@@ -632,6 +671,8 @@ export function blackjackPage(user: WebUser): string {
         hitBtn.disabled = !can; standBtn.disabled = !can;
         // 더블은 처음 두 장에서만 뜬다. 못 쓸 때 회색으로 남겨두면 왜 안 되는지 알 수 없어 아예 숨긴다.
         dblBtn.hidden = !(st.myHand && st.myHand.canDouble);
+        // 서렌더도 처음 두 장에서만 — 쓸 수 없을 때는 아예 숨긴다(더블과 같은 규칙)
+        surBtn.hidden = !(st.myHand && st.myHand.canSurrender);
         // 얼마가 더 나가는지 버튼에 적어 둔다 — '두 배'라는 말만으로는 액수가 안 잡힌다
         var costEl = document.getElementById('bjDblCost');
         if (costEl && st.myHand) costEl.textContent = '+' + compact(st.myHand.bet) + 'P';
@@ -859,6 +900,15 @@ export function blackjackPage(user: WebUser): string {
       });
       standBtn.addEventListener('click', async function(){
         await post('/api/games/blackjack/action', { action: 'stand' });
+        poll();
+      });
+      surBtn.addEventListener('click', async function(){
+        /* 되돌릴 수 없는 선택이라 한 번 묻는다. 딜러가 블랙잭이면 무효라는 것도 같이 알린다 —
+           버튼에는 "절반만 잃고 종료"라고만 적혀 있어 오해할 수 있다. */
+        if (!confirm('이 판을 포기할까요?\n\n베팅의 절반을 잃고 끝냅니다.\n'
+          + '단 딜러가 블랙잭이면 서렌더가 무효가 되어 전액을 잃습니다.')) return;
+        var res = await post('/api/games/blackjack/action', { action: 'surrender' });
+        if (!res.ok && res.d && res.d.error) alert(res.d.error);
         poll();
       });
       clearBtn.addEventListener('click', async function(){

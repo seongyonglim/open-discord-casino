@@ -152,6 +152,7 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
     dealerShouldHit: BJ.dealerShouldHit,
     handTotal: (c: number[]) => { const t = BJ.handTotal(c); return { total: t.total, bust: t.bust }; },
     settle: BJ.settleHand,
+    canSurrender: BJ.canSurrender, settleSurrender: BJ.settleSurrender,
   };
   const nowSec = () => Math.floor(Date.now() / 1000);
   const PLAYERS = [
@@ -273,6 +274,7 @@ console.log('\n[4b] 덱이 소진되는 판 — 그래도 같은 카드가 두 �
     dealerShouldHit: BJ.dealerShouldHit,
     handTotal: (c: number[]) => { const t = BJ.handTotal(c); return { total: t.total, bust: t.bust }; },
     settle: BJ.settleHand,
+    canSurrender: BJ.canSurrender, settleSurrender: BJ.settleSurrender,
   };
   const nowSec = () => Math.floor(Date.now() / 1000);
   const P = [{ id: 'x_a', seat: 0 }, { id: 'x_b', seat: 1 }, { id: 'x_c', seat: 2 },
