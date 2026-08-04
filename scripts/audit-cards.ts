@@ -1,16 +1,21 @@
-/* 카드 무결성 감사 — 한 게임에서 카드가 정당한 개수를 넘겨 나오지 않는지 실측한다.
+/* 카드 무결성 감사 — 한 판에 같은 카드가 두 번 나오지 않는지 실측한다.
  *
- * 배경: "블랙잭 한 판에 스페이드 K가 3장 나왔다"는 신고가 있었다. 블랙잭과 바카라는
- * 실제 카지노처럼 8덱 슈를 쓰므로 같은 카드가 최대 8장까지 나오는 것이 정상이다.
- * 반면 포커 플립과 홀덤은 52장 한 덱이라 같은 카드가 두 번 나오면 그건 버그다.
- * 이 감사는 그 경계를 숫자로 못 박는다 — 다시 의심할 필요가 없게.
+ * 배경: "블랙잭 한 판에 스페이드 K가 3장 나왔다"는 제보가 있었다. 당시 블랙잭·바카라는
+ * 실제 카지노처럼 8덱 슈(416장)를 써서 같은 카드가 최대 8장까지 나오는 것이 정상이었다.
+ * 내부 친선 룰이니 어렵게 가지 말자는 결정에 따라 네 게임 모두 1덱으로 통일했다.
+ * 이제 어느 게임이든 한 판에 같은 카드가 두 번 나오면 그건 버그다.
+ *
+ * 1덱으로 바꾸면서 새로 생긴 위험이 하나 있다: 블랙잭은 5석 + 딜러가 저가 카드를
+ * 계속 받으면 52장을 소진할 수 있다. 커서를 되감으면 그 순간부터 같은 카드가 다시
+ * 나오므로, drawCard가 "이미 꺼낸 카드를 뺀 나머지"로 새로 섞어 잇는다.
+ * 그 경로도 여기서 검증한다.
  *
  * 검사하는 것
- *   1. 각 게임이 쓰는 덱 수 (상수와 실제 생성물이 일치하는가)
- *   2. 셔플 결과가 "각 카드가 정확히 덱 수만큼" 들어 있는가 (카드를 잃거나 만들지 않는가)
- *   3. 한 판에 실제로 배분된 카드가 덱 수를 넘지 않는가 (슈 커서가 같은 자리를 두 번 주지 않는가)
- *   4. 52장 덱 게임(포커 플립·홀덤)은 한 판에 같은 카드가 절대 두 번 나오지 않는가
- *   5. 셔플이 한쪽으로 치우치지 않는가 (섞지 않은 덱을 그대로 쓰고 있지 않은가)
+ *   1. 네 게임 모두 1덱이고, 셔플 결과에 52종이 정확히 한 장씩 들어 있는가
+ *   2. 포커 플립·홀덤·바카라는 한 판에 중복이 없는가 (반복 시행)
+ *   3. 실제 블랙잭 라운드에서 배분된 카드가 덱과 정확히 일치하는가 (서버 기록과 대조)
+ *   4. 덱이 소진되는 판에서도 같은 카드가 두 번 나오지 않는가
+ *   5. 셔플이 실제로 섞이고 한쪽으로 치우치지 않는가
  */
 if (!process.env.DB_PATH) {
   const os = require('node:os'), path = require('node:path'), fsx = require('node:fs');
@@ -61,19 +66,20 @@ function dupNames(cards: number[], deckCount: number): string {
 
 console.log('[1] 덱 구성 — 상수와 실제 생성물이 일치하는가');
 {
-  ck('블랙잭은 8덱 슈다 (실제 카지노와 같다)', BJ.DECKS === 8, String(BJ.DECKS));
-  ck('블랙잭 슈 크기 = 8 × 52 = 416', BJ.SHOE_SIZE === 416, String(BJ.SHOE_SIZE));
-  ck('바카라는 8덱 슈다', BC.DECKS === 8, String(BC.DECKS));
-  ck('바카라 슈 크기 = 416', BC.SHOE_SIZE === 416, String(BC.SHOE_SIZE));
+  /* 내부 친선 룰이라 네 게임 모두 1덱이다 — 한 판에 같은 카드가 두 번 나오지 않는다. */
+  ck('블랙잭은 1덱이다', BJ.DECKS === 1, String(BJ.DECKS));
+  ck('블랙잭 덱 크기 = 52', BJ.SHOE_SIZE === 52, String(BJ.SHOE_SIZE));
+  ck('바카라는 1덱이다', BC.DECKS === 1, String(BC.DECKS));
+  ck('바카라 덱 크기 = 52', BC.SHOE_SIZE === 52, String(BC.SHOE_SIZE));
 
   const shoe = BJ.shuffleShoe(randomInt);
-  ck('블랙잭 슈가 416장이다', shoe.length === 416, String(shoe.length));
+  ck('블랙잭 덱이 52장이다', shoe.length === 52, String(shoe.length));
   const counts = new Map<number, number>();
   for (const c of shoe) counts.set(c, (counts.get(c) ?? 0) + 1);
-  ck('블랙잭 슈에 52종이 전부 있다', counts.size === 52, String(counts.size));
-  ck('블랙잭 슈의 모든 카드가 정확히 8장이다 (잃거나 만들지 않는다)',
-    [...counts.values()].every(n => n === 8),
-    [...counts.values()].filter(n => n !== 8).join(','));
+  ck('블랙잭 덱에 52종이 전부 있다', counts.size === 52, String(counts.size));
+  ck('블랙잭 덱의 모든 카드가 정확히 1장이다 (잃거나 만들지 않는다)',
+    [...counts.values()].every(n => n === BJ.DECKS),
+    [...counts.values()].filter(n => n !== BJ.DECKS).join(','));
 
   const deck = HD.shuffleDeck(randomInt);
   ck('홀덤은 52장 한 덱이다', deck.length === 52, String(deck.length));
@@ -84,7 +90,7 @@ console.log('[1] 덱 구성 — 상수와 실제 생성물이 일치하는가');
   ck('포커 플립 덱에 중복이 없다', new Set(flip.deck).size === 52, String(new Set(flip.deck).size));
 }
 
-console.log('\n[2] 52장 덱 게임 — 한 판에 같은 카드가 두 번 나오면 버그다');
+console.log('\n[2] 포커 플립 · 홀덤 — 한 판에 같은 카드가 두 번 나오면 버그다');
 {
   // 포커 플립: 공개되는 카드는 마스터 2 + 샤크 2 + 보드 5 = 9장
   let flipDup = 0, flipDetail = '';
@@ -109,7 +115,7 @@ console.log('\n[2] 52장 덱 게임 — 한 판에 같은 카드가 두 번 나�
   ck('홀덤 3,000회 셔플 — 항상 0~51 서로 다른 52장', deckBad === 0, `${deckBad}회`);
 }
 
-console.log('\n[3] 8덱 슈 게임 — 같은 카드는 최대 8장까지가 정상이다');
+console.log('\n[3] 바카라 — 한 판 6장에 중복이 없다');
 {
   // 바카라: 한 판에 최대 6장
   let over = 0, six = 0;
@@ -119,10 +125,10 @@ console.log('\n[3] 8덱 슈 게임 — 같은 카드는 최대 8장까지가 정
     if (maxDup(cards) > BC.DECKS) { over++; }
   }
   ck('바카라 3,000판 — 항상 6장을 뽑는다', six === 0, `${six}판`);
-  ck(`바카라 3,000판 — 같은 카드가 ${BC.DECKS}장을 넘지 않는다`, over === 0, `${over}판`);
+  ck('바카라 3,000판 — 한 판에 같은 카드가 두 번 나오지 않는다', over === 0, `${over}판`);
 
   /* 부분 피셔-예이츠가 편향되지 않았는가.
-     drawRound는 슈 416장을 다 섞지 않고 앞 6장만 뽑는다(j를 i부터 고른다).
+     drawRound는 덱 52장을 다 섞지 않고 앞 6장만 뽑는다(j를 i부터 고른다).
      구현이 j를 0부터 고르면 앞자리가 편향되는데, 그건 분포로만 잡힌다. */
     const firstCard = new Map<number, number>();
   const N = 20000;
@@ -223,7 +229,7 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
   console.log(`    ${rounds}라운드 완주 · 3명 동시 참여 · 한 판 최다 동일 카드 ${maxSeen}장`);
   ck(`라운드가 실제로 돌았다 (검증이 헛돌지 않았다)`, rounds >= WANT_ROUNDS, `${rounds}/${WANT_ROUNDS}라운드`);
   ck('배분 장수 = 슈 커서 위치 (같은 자리를 두 번 주지 않는다)', posReuse === 0, detail);
-  ck(`한 판에 같은 카드가 ${BJ.DECKS}장을 넘지 않는다`, overDecks === 0, detail);
+  ck('한 판에 같은 카드가 두 번 나오지 않는다', overDecks === 0, detail);
   /* 8덱이면 같은 카드가 3장 나오는 일은 드물지만 실재한다 — 신고가 버그가 아니었음을
      숫자로 남겨 둔다. 이 판정이 0이면 "그런 일이 없다"가 아니라 표본이 작다는 뜻이다. */
   console.log(`    같은 카드가 3장 이상 나온 판: ${sawThreeSame}/${rounds}`);
@@ -252,7 +258,82 @@ console.log('\n[5] 실제 바카라 라운드 — DB를 거쳐 배분된 카드�
     if (maxDup(cards) > BC.DECKS) { over++; detail = dupNames(cards, BC.DECKS); }
   }
   ck('바카라 라운드가 실제로 돌았다', rounds >= 50, `${rounds}라운드`);
-  ck(`바카라 한 판에 같은 카드가 ${BC.DECKS}장을 넘지 않는다`, over === 0, detail);
+  ck('바카라 한 판에 같은 카드가 두 번 나오지 않는다', over === 0, detail);
+}
+
+/* ── 덱 소진 ───────────────────────────────────────────────────────
+   1덱으로 바꾸면서 새로 열린 경로다. 커서를 그냥 되감으면(예전 방식) 소진되는 순간부터
+   같은 카드가 다시 나온다. drawCard가 "테이블에 나와 있는 카드를 뺀 나머지"로 새로
+   섞어 잇는지 확인한다. 커서를 52 근처로 밀어 억지로 소진 상황을 만든다. */
+console.log('\n[4b] 덱이 소진되는 판 — 그래도 같은 카드가 두 번 나오지 않는다');
+{
+  const H: BjHelpers = {
+    shuffle: () => BJ.shuffleShoe(randomInt),
+    isBlackjack: BJ.isBlackjack,
+    dealerShouldHit: BJ.dealerShouldHit,
+    handTotal: (c: number[]) => { const t = BJ.handTotal(c); return { total: t.total, bust: t.bust }; },
+    settle: BJ.settleHand,
+  };
+  const nowSec = () => Math.floor(Date.now() / 1000);
+  const P = [{ id: 'x_a', seat: 0 }, { id: 'x_b', seat: 1 }, { id: 'x_c', seat: 2 },
+             { id: 'x_d', seat: 3 }, { id: 'x_e', seat: 4 }];
+  for (const p of P) { upsertUser(p.id, p.id, null); adjustBalance(p.id, 1_000_000, 'test:seed'); }
+
+  let tried = 0, exhausted = 0, dup = 0, grew = 0, detail = '';
+  for (let r = 0; r < 400 && exhausted < 8; r++) {
+    let round = advanceBlackjackRound(H);
+    for (let g = 0; g < 5 && round.phase === 'done'; g++) {
+      db.prepare(`UPDATE blackjack_rounds SET resolved_at = ? WHERE id = ?`).run(nowSec() - 600, round.id);
+      round = advanceBlackjackRound(H);
+    }
+    if (round.phase !== 'waiting' && round.phase !== 'betting') continue;
+    let seated = 0;
+    for (const p of P) if (seatBlackjackBet(p.id, p.id, round.id, p.seat, 100).ok) seated++;
+    if (seated === 0) continue;
+    db.prepare(`UPDATE blackjack_rounds SET betting_ends_at = ? WHERE id = ?`).run(nowSec() - 1, round.id);
+    round = advanceBlackjackRound(H);
+    /* 소진을 억지로 만든다. 커서를 미는 대신 덱을 짧게 자른다 —
+       커서를 밀면 "꺼낸 적 없는데 꺼낸 것으로 취급되는" 카드가 생겨 실제와 다른
+       상황이 되고, 그러면 검사가 제품이 아니라 검사 자신을 시험하게 된다.
+       덱을 자르면 "실제로 나눠준 장수 = 소진 지점"이 유지된 채 소진이 일어난다. */
+    var keep = 52;
+    {
+      const cur = db.prepare(`SELECT shoe_json, shoe_pos FROM blackjack_rounds WHERE id = ?`)
+        .get(round.id) as { shoe_json: string; shoe_pos: number };
+      const full = JSON.parse(cur.shoe_json) as number[];
+      keep = Math.min(full.length, cur.shoe_pos + 2);   // 두 장만 남긴다
+      db.prepare(`UPDATE blackjack_rounds SET shoe_json = ? WHERE id = ?`)
+        .run(JSON.stringify(full.slice(0, keep)), round.id);
+    }
+    tried++;
+    for (let step = 0; step < 40; step++) {
+      const hands = getBlackjackHands(round.id);
+      const playing = hands.filter(h => h.status === 'playing');
+      if (!playing.length) break;
+      for (const h of playing) {
+        const cards = JSON.parse(h.cards_json) as number[];
+        if (BJ.handTotal(cards).total < 17) blackjackAction(h.user_id, round.id, 'hit', H);
+        else blackjackAction(h.user_id, round.id, 'stand', H);
+      }
+    }
+    for (let step = 0; step < 20; step++) {
+      const cur = db.prepare(`SELECT phase, dealer_json, shoe_json, shoe_pos FROM blackjack_rounds WHERE id = ?`)
+        .get(round.id) as { phase: string; dealer_json: string; shoe_json: string; shoe_pos: number };
+      if (cur.phase === 'done') {
+        const shoe = JSON.parse(cur.shoe_json) as number[];
+        if (shoe.length > keep) { exhausted++; grew++; }   // 잘라둔 길이보다 늘었다 = 새로 이어붙였다
+        const all = [...(JSON.parse(cur.dealer_json) as number[])];
+        for (const h of getBlackjackHands(round.id)) all.push(...(JSON.parse(h.cards_json) as number[]));
+        if (maxDup(all) > 1) { dup++; detail = dupNames(all, 1); }
+        break;
+      }
+      db.prepare(`UPDATE blackjack_rounds SET betting_ends_at = ? WHERE id = ?`).run(nowSec() - 60, round.id);
+      advanceBlackjackRound(H);
+    }
+  }
+  console.log(`    ${tried}판 시도 · 덱을 새로 이어붙인 판 ${grew}판`);
+  ck('소진 경로를 실제로 밟았다 (검증이 헛돌지 않았다)', exhausted > 0, `${exhausted}판`);
+  ck('덱이 소진돼도 같은 카드가 두 번 나오지 않는다', dup === 0, `${dup}판 ${detail}`);
 }
 
 console.log('\n[6] 셔플 품질 — 섞지 않은 덱을 그대로 쓰고 있지 않은가');

@@ -1,4 +1,5 @@
 import type { SQLInputValue } from 'node:sqlite';
+import { randomInt } from 'node:crypto';
 import { getDb } from './schema';
 
 /* 이 네 헬퍼는 홀덤 모듈(db/holdem.ts)도 쓴다.
@@ -169,10 +170,35 @@ export function clearBoard(kind: BoardKind): void {
    조건 검사와 지급을 한 트랜잭션 안의 조건부 UPDATE로 묶어야 한다 — 버튼을 연타하거나
    탭을 여러 개 열어두면 같은 조건을 통과한 요청이 동시에 들어와 두 번 지급될 수 있다.
    (베팅 차감에서 쓴 것과 같은 방식: WHERE로 조건을 걸고 changes()로 실제 반영 여부를 본다) */
+/* 아직 정산되지 않은 베팅에 묶여 있는 포인트.
+ *
+ * 이게 0이 아니면 파산이 아니다. 잔액만 보고 지원금을 주면 이렇게 악용된다:
+ * 전 재산을 지뢰찾기에 걸어 잔액을 0으로 만들고 → 지원금 200P를 받고 →
+ * 칸을 하나도 열지 않은 채 캐시아웃해 배당 1.00x로 전액 환불받는다.
+ * 결과는 "원금 그대로 + 200P"이고, 쿨다운마다 무한히 반복할 수 있다.
+ *
+ * 지뢰찾기만의 문제가 아니다. 사다리·그래프는 베팅 취소, 포커·바카라·블랙잭은
+ * 칩 회수로 전액 돌려받을 수 있으므로 여섯 게임 모두 같은 수법이 통한다.
+ * 그래서 특정 게임을 막는 게 아니라 "묶인 돈이 한 푼도 없을 때만"으로 조건을 세운다.
+ * 취소하지 않고 결과를 기다리는 경우도 아직 딸 가능성이 있어 파산이 아니다.
+ */
+export function lockedStake(userId: string): number {
+  return one<{ s: number }>(`
+    SELECT (SELECT COALESCE(SUM(bet_amount),0) FROM game_rounds     WHERE user_id = ? AND status = 'active')
+         + (SELECT COALESCE(SUM(amount),0)     FROM ladder_bets     WHERE user_id = ? AND payout IS NULL)
+         + (SELECT COALESCE(SUM(amount),0)     FROM crash_bets      WHERE user_id = ? AND payout IS NULL)
+         + (SELECT COALESCE(SUM(amount),0)     FROM poker_bets      WHERE user_id = ? AND payout IS NULL)
+         + (SELECT COALESCE(SUM(amount),0)     FROM baccarat_bets   WHERE user_id = ? AND payout IS NULL)
+         + (SELECT COALESCE(SUM(bet),0)        FROM blackjack_hands WHERE user_id = ? AND payout IS NULL)
+         AS s`,
+    userId, userId, userId, userId, userId, userId)!.s;
+}
+
 export function claimRelief(
   userId: string, amount: number, cooldownSec: number
 ): { ok: true; balance: number; nextAvailableAt: number }
   | { ok: false; error: 'cooldown'; nextAvailableAt: number }
+  | { ok: false; error: 'has_stake'; staked: number }
   | { ok: false; error: 'not_broke' | 'no_user' } {
   return tx(() => {
     const before = one<{ balance: number; last_relief_at: number | null }>(
@@ -181,15 +207,26 @@ export function claimRelief(
     if (!before) return { ok: false, error: 'no_user' } as const;
 
     const now = Math.floor(Date.now() / 1000);
-    // 조건을 SQL에 그대로 넣어, 위에서 읽은 뒤 여기까지 오는 사이에 값이 바뀌어도 이중 지급되지 않는다
+    /* 조건을 SQL에 그대로 넣어, 위에서 읽은 뒤 여기까지 오는 사이에 값이 바뀌어도
+       이중 지급되지 않는다. "묶인 돈 없음"도 반드시 여기 함께 들어가야 한다 —
+       밖에서 미리 확인만 하면 확인과 지급 사이에 베팅을 걸어 빠져나갈 수 있다. */
     run(
       `UPDATE users SET balance = balance + ?, last_relief_at = ?
-       WHERE id = ? AND balance = 0 AND (last_relief_at IS NULL OR last_relief_at <= ?)`,
-      amount, now, userId, now - cooldownSec
+       WHERE id = ? AND balance = 0 AND (last_relief_at IS NULL OR last_relief_at <= ?)
+         AND NOT EXISTS (SELECT 1 FROM game_rounds     WHERE user_id = ? AND status = 'active')
+         AND NOT EXISTS (SELECT 1 FROM ladder_bets     WHERE user_id = ? AND payout IS NULL)
+         AND NOT EXISTS (SELECT 1 FROM crash_bets      WHERE user_id = ? AND payout IS NULL)
+         AND NOT EXISTS (SELECT 1 FROM poker_bets      WHERE user_id = ? AND payout IS NULL)
+         AND NOT EXISTS (SELECT 1 FROM baccarat_bets   WHERE user_id = ? AND payout IS NULL)
+         AND NOT EXISTS (SELECT 1 FROM blackjack_hands WHERE user_id = ? AND payout IS NULL)`,
+      amount, now, userId, now - cooldownSec,
+      userId, userId, userId, userId, userId, userId
     );
     if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 0) {
       // 어떤 조건에서 막혔는지 구분해 안내 문구를 정확히 낸다
       if (before.balance !== 0) return { ok: false, error: 'not_broke' } as const;
+      const staked = lockedStake(userId);
+      if (staked > 0) return { ok: false, error: 'has_stake', staked } as const;
       // 쿨다운이면 언제 다시 받을 수 있는지까지 알려 준다 (안내 문구에 그대로 쓴다)
       return {
         ok: false, error: 'cooldown',
@@ -1360,11 +1397,37 @@ function bjHands(roundId: number): BjHandRow[] {
   return all<BjHandRow>(`SELECT * FROM blackjack_hands WHERE round_id = ? ORDER BY seat ASC`, roundId);
 }
 
-// 슈에서 한 장 꺼내고 커서를 민다. 커서가 슈 끝에 닿는 일은 사실상 없지만(416장),
-// 닿으면 처음으로 되돌려 게임이 멈추지 않게 한다.
+/* 슈에서 한 장 꺼내고 커서를 민다.
+ *
+ * 1덱(52장)이라 한 판에 소진될 수 있다 — 5석 + 딜러가 저가 카드를 계속 받으면
+ * 52장을 넘긴다. 예전에는 커서를 되감았는데(shoe_pos % length), 그러면 그 순간부터
+ * 같은 카드가 다시 나온다. 1덱으로 둔 이유가 "한 판에 같은 카드가 두 번 나오지 않는 것"
+ * 이므로 되감으면 안 된다.
+ *
+ * 그래서 소진되면 새로 섞어 이어 붙인다. 이때 "지금 테이블에 나와 있는 카드"는 빼야
+ * 한다 — 그러지 않으면 이미 보이는 카드가 또 나온다. 딜러 카드와 모든 손패를 읽어
+ * 제외하고, 남은 것만 섞어 슈 뒤에 잇는다.
+ */
 function drawCard(round: BjRoundRow): number {
-  const shoe = JSON.parse(round.shoe_json) as number[];
-  const pos = round.shoe_pos % shoe.length;
+  let shoe = JSON.parse(round.shoe_json) as number[];
+  if (round.shoe_pos >= shoe.length) {
+    /* 제외 기준은 "이미 슈에서 꺼낸 카드"다. 손패·딜러 카드를 읽어 판단하면 안 된다 —
+       딜러가 연달아 뽑는 도중에는 방금 뽑은 카드가 아직 dealer_json에 기록되지 않아
+       제외 목록에서 빠지고, 그 카드가 다시 나온다(실측으로 Ad가 두 번 나왔다).
+       슈 배열과 커서는 항상 최신이므로 이쪽이 유일하게 믿을 수 있는 근거다. */
+    const used = new Set<number>(shoe.slice(0, round.shoe_pos));
+    const fresh: number[] = [];
+    for (let c = 0; c < 52; c++) if (!used.has(c)) fresh.push(c);
+    // 피셔-예이츠 (Math.random 금지 — 암호학적 randomInt만 쓴다)
+    for (let i = fresh.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      const t = fresh[i]; fresh[i] = fresh[j]; fresh[j] = t;
+    }
+    shoe = shoe.concat(fresh);
+    run(`UPDATE blackjack_rounds SET shoe_json = ? WHERE id = ?`, JSON.stringify(shoe), round.id);
+    round.shoe_json = JSON.stringify(shoe);
+  }
+  const pos = round.shoe_pos;
   run(`UPDATE blackjack_rounds SET shoe_pos = ? WHERE id = ?`, pos + 1, round.id);
   round.shoe_pos = pos + 1;
   return shoe[pos];

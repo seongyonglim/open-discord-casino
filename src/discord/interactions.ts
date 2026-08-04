@@ -262,6 +262,12 @@ async function handleReliefClaim(interaction: any, res: ServerResponse): Promise
     if (r.error === 'not_broke') {
       return ephemeral(res, `아직 포인트가 남아 있습니다. 보유 포인트가 **정확히 0P**일 때만 신청할 수 있어요.`);
     }
+    if (r.error === 'has_stake') {
+      // 판에 올려둔 돈은 아직 내 돈이다 — 그걸 파산으로 보면 지원금을 무한히 받을 수 있다
+      return ephemeral(res,
+        `진행 중인 베팅에 ${pts(r.staked)}가 걸려 있습니다.\n`
+        + `그 판이 끝나거나 베팅을 취소한 뒤에 신청해 주세요.`);
+    }
     if (r.error === 'cooldown') {
       // 다음 신청 가능 시각을 디스코드 상대 타임스탬프로 보여준다 (각자의 시간대로 표시된다)
       return ephemeral(res, `이미 지원금을 받았습니다. <t:${r.nextAvailableAt}:R>에 다시 신청할 수 있어요.`);

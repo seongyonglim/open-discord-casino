@@ -406,10 +406,15 @@ console.log('\n[6b] 자정을 넘겨도 진행 중인 판이 유지된다');
 
   // 날짜만 옛날로 돌린다 = 자정을 넘긴 상황
   db.prepare(`UPDATE holdem_tournaments SET date_str = '2000-01-01' WHERE id = ?`).run(runningId);
-  // 오늘 판 행이 생기되, 등록은 아직 열리지 않은 상태로 둔다
+  /* 오늘 판 행이 생기되, 등록은 아직 열리지 않은 상태로 둔다.
+     이 setup 호출 자체가 "오늘 등록이 열렸다"고 판단해 어제 판을 취소해 버릴 수 있다 —
+     실제 시각이 이미 21시를 넘겼으면 오늘 판의 reg_open_at이 과거이기 때문이다.
+     그래서 행을 만든 뒤 창을 미래로 밀고, setup이 남긴 취소도 되돌린다.
+     이걸 안 하면 검사가 실행 시각에 따라 통과·실패가 갈린다(실제로 21시 이후 실패했다). */
   const after = HD.advanceHoldem();
   db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
     .run(nowSec() + 3600, runningId);
+  db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL WHERE id = ?`).run(runningId);
   const kept = HD.advanceHoldem();
   ck('날짜가 바뀌어도 같은 판을 계속 본다',
     kept.tournament.id === runningId && kept.status === 'RUNNING',
