@@ -19,11 +19,12 @@ let _reqUser: HeaderUser | null = null;
 export function setRequestUser(u: HeaderUser | null): void { _reqUser = u; }
 
 // 게임 선택은 로비에서 하므로 별도 '게임' 탭은 두지 않는다. 게임 플레이 화면은 로비 탭을 활성으로 표시.
-export type Tab = 'lobby' | 'leaderboard';
+export type Tab = 'lobby' | 'leaderboard' | 'notices';
 
 const TABS: { key: Tab; label: string; href: string }[] = [
   { key: 'lobby', label: '로비', href: '/' },
   { key: 'leaderboard', label: '랭킹', href: '/leaderboard' },
+  { key: 'notices', label: '공지사항', href: '/notices' },
 ];
 
 export function esc(s: unknown): string {
@@ -157,8 +158,10 @@ export function rankJs(prefix: string, seg: string): string {
           return (n > 0 ? '+' : n < 0 ? '-' : '') + s + 'P';
         }
         function row(r){
-          var sub = new Intl.NumberFormat('ko-KR').format(r.rounds) + '판' +
-            (r.winPct == null ? '' : ' · ' + r.winPct + '%');
+          /* 승률을 모르는 줄(랭킹 도입 전 판을 원장에서 복원한 경우)도 '—'를 찍어
+             열 모양을 맞춘다. 비워 두면 줄마다 폭이 달라 눈으로 훑기 어렵다. */
+          var sub = new Intl.NumberFormat('ko-KR').format(r.rounds) + '판 · ' +
+            (r.winPct == null ? '—' : r.winPct + '%');
           var cls = r.profit > 0 ? ' pos' : (r.profit < 0 ? ' neg' : '');
           return '<div class="sp-rw' + (r.me ? ' me' : '') + '">' +
             '<span class="sp-no' + (r.rank === 1 ? ' top1' : '') + '">' + r.rank + '</span>' +
@@ -232,6 +235,7 @@ const REASON_LABEL: Record<string, string> = {
   weekly_streak_bonus: '주간 개근 보너스',
   monthly_streak_bonus: '월간 개근 보너스',
   disaster_relief: '개인회생 지원금',
+  bug_report_bounty: '버그 제보 보상',
 };
 
 // game_type 내부 식별자(영문) → 화면에 보여줄 한글 게임명. 새 게임 추가할 때마다 여기에 등록.

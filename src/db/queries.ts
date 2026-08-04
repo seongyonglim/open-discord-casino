@@ -291,13 +291,16 @@ export function placeBet(userId: string, gameType: string, betAmount: number, in
 export function bumpGameStats(
   userId: string, game: string, staked: number, returned: number
 ): void {
+  /* 승은 "돈을 번 판"이다 — 순손익이 양수인 판. 얼마를 벌었는지는 보지 않는다.
+     본전만 돌아온 판(푸시)은 승이 아니고, 분모에서 빼지도 않는다. */
   const win = returned > staked ? 1 : 0;
   const push = returned === staked ? 1 : 0;
   run(
-    `INSERT INTO game_stats (user_id, game, rounds, wins, pushes, staked, returned, profit, updated_at)
-     VALUES (?, ?, 1, ?, ?, ?, ?, ?, unixepoch())
+    `INSERT INTO game_stats (user_id, game, rounds, rated, wins, pushes, staked, returned, profit, updated_at)
+     VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, unixepoch())
      ON CONFLICT(user_id, game) DO UPDATE SET
        rounds   = rounds + 1,
+       rated    = rated + 1,
        wins     = wins + excluded.wins,
        pushes   = pushes + excluded.pushes,
        staked   = staked + excluded.staked,
@@ -310,7 +313,10 @@ export function bumpGameStats(
 
 export interface GameRankRow {
   user_id: string; username: string;
-  rounds: number; wins: number; pushes: number; profit: number;
+  /* rounds 는 전체 판수(백필한 과거 판 포함), rated 는 승패를 아는 판수다.
+     승률은 반드시 rated 로 계산한다 — rounds 로 나누면 백필한 판이 전부 패배로
+     잡혀 승률이 실제보다 낮게 나온다. */
+  rounds: number; rated: number; wins: number; pushes: number; profit: number;
 }
 
 /* 랭킹은 수익액 내림차순.
@@ -320,7 +326,7 @@ export interface GameRankRow {
    쓰면 이름을 바꾼 사람이 옛 이름으로 남는다. */
 export function getGameRanking(game: string, limit = 100): GameRankRow[] {
   return all<GameRankRow>(
-    `SELECT s.user_id, u.username, s.rounds, s.wins, s.pushes, s.profit
+    `SELECT s.user_id, u.username, s.rounds, s.rated, s.wins, s.pushes, s.profit
        FROM game_stats s JOIN users u ON u.id = s.user_id
       WHERE s.game = ? AND s.rounds > 0
       ORDER BY s.profit DESC, s.rounds DESC, s.user_id ASC
@@ -334,7 +340,7 @@ export function getMyGameRank(
   game: string, userId: string
 ): (GameRankRow & { rank: number }) | undefined {
   const mine = one<GameRankRow>(
-    `SELECT s.user_id, u.username, s.rounds, s.wins, s.pushes, s.profit
+    `SELECT s.user_id, u.username, s.rounds, s.rated, s.wins, s.pushes, s.profit
        FROM game_stats s JOIN users u ON u.id = s.user_id
       WHERE s.game = ? AND s.user_id = ? AND s.rounds > 0`, game, userId);
   if (!mine) return undefined;

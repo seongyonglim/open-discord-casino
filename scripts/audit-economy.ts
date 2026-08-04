@@ -71,14 +71,16 @@ function noFractions(label: string): void {
 function auditStats(label: string): void {
   const bad = q<{ n: number }>(`
     SELECT (SELECT COUNT(*) FROM game_stats WHERE profit != returned - staked)
-         + (SELECT COUNT(*) FROM game_stats WHERE wins + pushes > rounds)
-         + (SELECT COUNT(*) FROM game_stats WHERE rounds < 0 OR wins < 0 OR pushes < 0)
+         + (SELECT COUNT(*) FROM game_stats WHERE rated > rounds)
+         + (SELECT COUNT(*) FROM game_stats WHERE wins + pushes > rated)
+         + (SELECT COUNT(*) FROM game_stats WHERE rounds < 0 OR rated < 0 OR wins < 0 OR pushes < 0)
          + (SELECT COUNT(*) FROM game_stats WHERE staked < 0 OR returned < 0)
          + (SELECT COUNT(*) FROM game_stats
               WHERE rounds != CAST(rounds AS INTEGER) OR staked != CAST(staked AS INTEGER)
                  OR returned != CAST(returned AS INTEGER) OR profit != CAST(profit AS INTEGER))
          AS n`)[0];
-  ck(`${label} — game_stats 불변식 (profit = returned - staked, 범위, 정수)`, bad.n === 0, `${bad.n}건`);
+  ck(`${label} — game_stats 불변식 (profit = returned - staked, rated <= rounds, 범위, 정수)`,
+    bad.n === 0, `${bad.n}건`);
 
   /* 게임별 순손익이 원장 합과 같은가.
      감사 DB는 일회용이라 180일 프루닝이 걸리지 않으므로 이 등식이 성립한다.
