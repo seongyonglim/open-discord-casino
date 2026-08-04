@@ -101,11 +101,77 @@ st = HD.advanceHoldem();
 ck('3명 이상이면 RUNNING', st.status === 'RUNNING', st.status);
 ck('시작 시각이 기록됨', st.tournament.started_at != null);
 
-const table = HD.getTable(st.tournament.id)!;
+let table = HD.getTable(st.tournament.id)!;
 ck('테이블이 생성됨', table != null);
 ck(`${N}명이 앉음`, HD.getSeats(table.id).length === N, String(HD.getSeats(table.id).length));
 ck('시작 칩 총량 = 10,000 × 인원', totalChips(table.id) === T.STARTING_STACK * N,
   String(totalChips(table.id)));
+
+/* ── 참가 신청 취소 ────────────────────────────────────────────────
+   시작 전에만 되어야 한다. 시작한 뒤에 취소되면 이미 칩을 들고 앉은 사람의 등록이
+   사라져 상금 구조(ITM 인원·금액)까지 어긋난다. */
+console.log('\n[1b] 참가 신청 취소는 시작 전에만 된다');
+{
+  // 지금은 이미 시작된 상태다([1]에서 시작시켰다) — 취소가 거부되어야 한다
+  const started = HD.getEntries(st.tournament.id);
+  const someone = started[0]!;
+  const no = HD.unregisterHoldem(someone.user_id);
+  ck('시작한 뒤에는 취소 거부', !no.ok && no.error === 'already_started', JSON.stringify(no));
+  ck('거부됐으니 등록자 수 그대로',
+    HD.getEntries(st.tournament.id).length === started.length,
+    `${HD.getEntries(st.tournament.id).length} vs ${started.length}`);
+
+  // 시작 전 상태를 따로 만들어 취소가 되는지 본다
+  /* 여섯 테이블을 모두 비운다. holdem_hands를 남기면 사고가 난다 —
+     holdem_tables는 AUTOINCREMENT가 아니라 행을 다 지우면 id가 1부터 다시 붙고,
+     그러면 새 테이블이 옛 테이블의 핸드를 물려받아 카드가 어긋난다(실제로 그랬다). */
+  for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+    'holdem_tables', 'holdem_entries', 'holdem_tournaments']) {
+    db.prepare(`DELETE FROM ${tb}`).run();
+  }
+  HD.advanceHoldem();
+  setWindow(-60, 600, 1800);                       // 등록 열림 · 시작은 아직
+  mkUser('c1'); mkUser('c2');
+  HD.registerHoldem('c1', 'c1'); HD.registerHoldem('c2', 'c2');
+  const before = HD.advanceHoldem();
+  ck('시작 전 상태다', before.tournament.started_at == null, String(before.status));
+  ck('등록 2명', HD.getEntries(before.tournament.id).length === 2);
+
+  const yes = HD.unregisterHoldem('c1');
+  ck('시작 전에는 취소 성공', yes.ok, JSON.stringify(yes));
+  ck('등록자가 1명으로 줄었다', HD.getEntries(before.tournament.id).length === 1,
+    String(HD.getEntries(before.tournament.id).length));
+  ck('취소한 사람의 등록만 사라졌다',
+    HD.getEntries(before.tournament.id)[0]!.user_id === 'c2');
+  const again = HD.unregisterHoldem('c1');
+  ck('두 번 취소하면 거부 (신청 안 한 상태)',
+    !again.ok && again.error === 'not_registered', JSON.stringify(again));
+  ck('취소 후 다시 신청할 수 있다', HD.registerHoldem('c1', 'c1').ok);
+  ck('다시 2명', HD.getEntries(before.tournament.id).length === 2);
+
+  // 상태를 [2] 이후가 쓸 수 있게 되돌린다 (3명으로 시작시킨다)
+  /* 여섯 테이블을 모두 비운다. holdem_hands를 남기면 사고가 난다 —
+     holdem_tables는 AUTOINCREMENT가 아니라 행을 다 지우면 id가 1부터 다시 붙고,
+     그러면 새 테이블이 옛 테이블의 핸드를 물려받아 카드가 어긋난다(실제로 그랬다). */
+  for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+    'holdem_tables', 'holdem_entries', 'holdem_tournaments']) {
+    db.prepare(`DELETE FROM ${tb}`).run();
+  }
+  HD.advanceHoldem();
+  /* 시작 시각이 이미 지난 상태로 등록하면 안 된다. registerHoldem이 내부에서
+     advanceHoldem을 부르므로, 세 번째 등록에서 대회가 시작돼 버리고 네 번째는
+     늦은 등록이 되어 첫 핸드에 안 들어간다(그래서 "전원 홀 카드 2장"이 깨졌다).
+     [1]과 같은 순서로 간다 — 시작을 미래로 두고 전원 등록한 뒤 시작 시각을 당긴다. */
+  setWindow(-60, 600, 1800);
+  // [1]에서 만든 유저를 그대로 쓴다 — 없는 유저로 등록하면 좌석은 생기지만 카드가 안 돌아간다
+  for (let i = 0; i < N; i++) HD.registerHoldem('p' + i, 'p' + i);
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  st = HD.advanceHoldem();
+  table = HD.getTable(st.tournament.id)!;
+  ck('[2]로 넘기기 전에 판을 다시 시작했다',
+    st.status === 'RUNNING' && table != null && HD.getSeats(table.id).length === N,
+    `${st.status} · 좌석 ${table ? HD.getSeats(table.id).length : 0}`);
+}
 
 console.log('\n[2] 첫 핸드');
 let hand = HD.getCurrentHand(table.id)!;

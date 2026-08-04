@@ -710,6 +710,44 @@ function payPrizes(t: HtRow, now: number): void {
 /* ── 유저 동작 ───────────────────────────────────────────────────── */
 
 export type RegisterError = 'not_open' | 'late_reg_closed' | 'table_full' | 'closed' | 'already';
+export type UnregisterError = 'not_registered' | 'already_started' | 'closed';
+
+/**
+ * 참가 신청 취소 — 대회가 시작되기 전에만 된다.
+ *
+ * 시작 전에는 등록이 holdem_entries 행 하나일 뿐이라 그 행만 지우면 깨끗하다
+ * (좌석과 스택은 시작할 때 한꺼번에 만들어진다). 반대로 시작한 뒤에는 이미 칩을
+ * 들고 앉아 있으므로 취소가 성립하지 않는다 — 그건 기권이지 취소가 아니고,
+ * 남은 사람의 상금 구조까지 흔든다.
+ *
+ * 조건을 DELETE의 WHERE에 함께 넣는다. 밖에서 미리 확인만 하면 확인과 삭제 사이에
+ * 대회가 시작돼(다른 요청의 advanceHoldem이 시작시킬 수 있다) 이미 앉은 사람의
+ * 등록이 지워질 수 있다.
+ */
+export function unregisterHoldem(userId: string):
+  { ok: true; registered: number } | { ok: false; error: UnregisterError } {
+  return tx(() => {
+    const st = advanceHoldem();
+    const t = st.tournament;
+    if (t.finished_at != null || t.cancelled_at != null) return { ok: false, error: 'closed' };
+
+    run(`DELETE FROM holdem_entries
+          WHERE user_id = ? AND tournament_id = (
+            SELECT id FROM holdem_tournaments
+             WHERE id = ? AND started_at IS NULL
+               AND finished_at IS NULL AND cancelled_at IS NULL)`,
+      userId, t.id);
+    if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 0) {
+      // 왜 안 됐는지 갈라서 안내 문구를 정확히 낸다
+      const mine = one<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+        t.id, userId)!.n;
+      if (mine === 0) return { ok: false, error: 'not_registered' };
+      return { ok: false, error: 'already_started' };
+    }
+    return { ok: true, registered: getEntries(t.id).length };
+  });
+}
 
 export function registerHoldem(userId: string, username: string):
   { ok: true; registered: number } | { ok: false; error: RegisterError } {

@@ -30,6 +30,7 @@ import {
 import {
   holdemPage, handleState as htState, handleRegister as htRegister,
   handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
+  handleUnregister as htUnregister,
 } from './games/holdem';
 import { rankingGameOf, handleRanking } from './ranking';
 
@@ -304,6 +305,10 @@ export function startWebServer(): void {
       if (path === '/api/games/holdem/register' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await htRegister(req, res, me.id, me.username);
+      }
+      if (path === '/api/games/holdem/unregister' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htUnregister(req, res, me.id);
       }
       if (path === '/api/games/holdem/action' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
