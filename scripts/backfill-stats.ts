@@ -63,11 +63,15 @@ try {
       `SELECT DISTINCT user_id FROM points_ledger WHERE reason = ?`, settleReason);
 
     for (const { user_id } of users) {
-      /* 이미 집계가 있으면 건드리지 않는다. 백필은 "비어 있는 것을 채우는" 일이고,
-         이미 새 판이 쌓인 행에 과거분을 더하면 두 번 세어질 위험이 있다. */
-      const existing = one<{ rounds: number }>(
-        `SELECT rounds FROM game_stats WHERE user_id = ? AND game = ?`, user_id, g);
-      if (existing) { skipped++; continue; }
+      /* 이미 집계가 있어도 건너뛰지 않는다.
+         원장은 과거분과 도입 이후분을 모두 담은 완전한 기록이므로, 판수·스테이크·
+         지급·수익액은 원장에서 계산한 값으로 "맞춰 넣으면" 된다(더하지 않는다).
+         반대로 승·패·푸시와 rated는 원장으로 판정할 수 없으니 기존 값을 그대로 둔다 —
+         그게 도입 이후 실제로 관측한 결과다.
+         이렇게 하면 여러 번 실행해도 결과가 같고(멱등), 이미 새 판을 몇 개 친 사람의
+         과거 이력이 빠지는 일도 없다. 실제로 그 문제가 났다(310판이 5판으로 보였다). */
+      const existing = one<{ rated: number; wins: number; pushes: number }>(
+        `SELECT rated, wins, pushes FROM game_stats WHERE user_id = ? AND game = ?`, user_id, g);
 
       // 판수 — 정산 행의 (유저, created_at) 조합 개수 (바카라·포커의 시장별 행을 접는다)
       const rounds = one<{ n: number }>(
@@ -95,14 +99,25 @@ try {
       }
 
       const name = one<{ username: string }>(`SELECT username FROM users WHERE id = ?`, user_id);
+      const keep = existing ?? { rated: 0, wins: 0, pushes: 0 };
       console.log(`  ${g.padEnd(10)} ${(name?.username ?? user_id).padEnd(10)} `
-        + `${String(rounds).padStart(5)}판  ${profit >= 0 ? '+' : ''}${profit}P`);
+        + `${String(rounds).padStart(5)}판  ${profit >= 0 ? '+' : ''}${profit}P`
+        + (existing ? `  (기존 승패 ${keep.wins}승/${keep.rated}판 유지)` : ''));
       if (DRY) { wrote++; continue; }
 
+      /* 판수·금액은 원장 기준으로 덮어쓰고, 승패 관련 값은 그대로 남긴다.
+         rated 가 rounds 보다 커질 수는 없다 — rounds 는 원장 전체이고 rated 는
+         그 부분집합(도입 이후 관측분)이다. 혹시 어긋나면 아래 불변식 검사가 잡는다. */
       db.prepare(
         `INSERT INTO game_stats (user_id, game, rounds, rated, wins, pushes, staked, returned, profit, updated_at)
-         VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, unixepoch())`
-      ).run(user_id, g, rounds, staked, returned, profit);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+         ON CONFLICT(user_id, game) DO UPDATE SET
+           rounds   = excluded.rounds,
+           staked   = excluded.staked,
+           returned = excluded.returned,
+           profit   = excluded.profit,
+           updated_at = excluded.updated_at`
+      ).run(user_id, g, rounds, keep.rated, keep.wins, keep.pushes, staked, returned, profit);
       wrote++;
     }
   }
@@ -114,7 +129,8 @@ try {
 }
 
 console.log('');
-console.log(`${DRY ? '들어갈 행' : '기록한 행'} ${wrote}개 · 이미 있어서 건너뜀 ${skipped}개`);
+console.log(`${DRY ? '들어갈 행' : '기록한 행'} ${wrote}개`);
+void skipped;
 
 // 불변식 확인
 let bad = 0;
