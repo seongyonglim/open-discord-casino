@@ -176,6 +176,11 @@ function botMove(userId: string, handId: number, seat: number): void {
 const ME_GRACE_SEC = 6;
 let mePlayedFor = 0;
 
+/* 래빗·패공개를 눌러볼 수 있게 다음 판을 미뤄 두는 시간.
+   처음 3600초로 뒀더니 화면에 "다음 판 3594초"가 그대로 찍혔다 — 실제로 멈추는 시간과
+   같은 값을 써야 카운트다운이 말이 된다. 아래 sleep과 반드시 같이 움직인다. */
+const PAUSE_SEC = 30;
+
 function maybePlayForMe(): void {
   const hand = HD.getCurrentHand(TABLE.id);
   if (!hand || hand.ended_at != null || hand.to_act_seat == null) return;
@@ -310,10 +315,10 @@ async function main(): Promise<void> {
        래빗 버튼은 "판이 끝났고 보드가 5장 미만"인 동안만 뜨는데, 그 창이 FOLD_END_SEC(5초)뿐이고
        1초 폴링과 보드 오픈 연출이 그 안에서 시간을 먹는다. 실제로 눌러볼 시간이 거의 없다.
        advanceTable은 now < next_hand_at 이면 그냥 빠져나오므로(지연 진행 구조) 이 한 줄로 멈춘다. */
-    db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() + 3600, TABLE.id);
+    db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() + PAUSE_SEC, TABLE.id);
     note('다음 판을 멈춰 뒀습니다 — [래빗] 버튼을 눌러 보세요 (25초 뒤 자동으로 진행합니다)');
   }
-  await sleep(25_000);        // 래빗 버튼을 눌러볼 시간
+  await sleep(PAUSE_SEC * 1000 - 4000);   // 래빗 버튼을 눌러볼 시간 (고정 시간과 맞춘다)
   db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() - 1, TABLE.id);
 
   /* ── ACT 3 ── 자발적 패 공개 */
@@ -328,7 +333,7 @@ async function main(): Promise<void> {
   await waitHandEnd();
   await sleep(2500);
   // 여기도 창이 짧아서 멈춰 둔다 — 남이 깐 카드와 내 [패 공개] 버튼을 볼 시간이 필요하다
-  db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() + 3600, TABLE.id);
+  db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() + PAUSE_SEC, TABLE.id);
   {
     /* 이 판에 참여했고 아직 안 까인 봇 하나가 자발적으로 공개한다 */
     const h = HD.getCurrentHand(TABLE.id)!;

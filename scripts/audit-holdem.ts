@@ -678,6 +678,124 @@ section('[18b] 화면용 팟 층 — 사이드 팟은 올인이 있을 때만');
   ck('올인이 없으면 절대 층이 갈라지지 않는다', splitWithoutAllin === 0, `${splitWithoutAllin}건`);
 }
 
+/* ── 18c. 극단 스택 차이의 사이드 팟 (500 / 1,500 / 8,000 / 20,000) ──
+   스택이 40배까지 벌어진 전원 올인. 층이 넷으로 갈리고 맨 위층은 아무도 콜하지 않아
+   되돌려줘야 한다. 손으로 짜면 거의 항상 틀리는 자리라 강함 순서 24가지를 전수로 돈다.
+
+   단정은 두 가지다:
+     (a) 아무도 자기가 딸 수 있는 최대치보다 많이 받지 않는다
+         — A는 자기 투입액만큼만 남에게서 딸 수 있으므로 상한이 정해진다
+     (b) 나간 칩의 합 = 받은 칩의 합 (반환액 포함) */
+section('[18c] 극단 사이드 팟 — 500 / 1,500 / 8,000 / 20,000');
+{
+  const S = [500, 1500, 8000, 20_000];
+  const NM = 'ABCD';
+  const TOTAL = S.reduce((a, b) => a + b, 0);
+  const mk = () => S.map((c, i): H.SeatView =>
+    ({ seat: i, bet: c, stack: 0, committed: c, state: 'allin', acted: true }));
+
+  // 화면 표시용 층 (반환 전) — 넷으로 갈려야 한다
+  {
+    const L = H.potLayers(mk());
+    ck('화면 층이 4개 (올인이 셋의 뚜껑을 만든다)', L.length === 4, JSON.stringify(L.map(p => p.amount)));
+    ck('메인 2,000 · 자격 4인',
+      L[0].amount === 2000 && L[0].eligible.length === 4, JSON.stringify(L[0]));
+    ck('SIDE1 3,000 · 자격 B,C,D',
+      L[1].amount === 3000 && L[1].eligible.join() === '1,2,3', JSON.stringify(L[1]));
+    ck('SIDE2 13,000 · 자격 C,D',
+      L[2].amount === 13_000 && L[2].eligible.join() === '2,3', JSON.stringify(L[2]));
+    ck('SIDE3 12,000 · 자격 D만 (아무도 콜하지 않은 층)',
+      L[3].amount === 12_000 && L[3].eligible.join() === '3', JSON.stringify(L[3]));
+    ck('층 합계 = 총 투입 30,000', L.reduce((a, p) => a + p.amount, 0) === TOTAL);
+  }
+
+  // 정산 — 초과분을 먼저 되돌리고 층을 만든다
+  {
+    const v = mk();
+    const unc = H.returnUncalled(v);
+    ck('D의 초과 12,000이 반환된다', unc != null && unc.seat === 3 && unc.amount === 12_000,
+      JSON.stringify(unc));
+    const pots = H.buildPots(v);
+    ck('반환 후에는 팟이 3개', pots.length === 3, JSON.stringify(pots.map(p => p.amount)));
+    ck('팟 합계 18,000 + 반환 12,000 = 30,000',
+      pots.reduce((a, p) => a + p.amount, 0) + (unc?.amount ?? 0) === TOTAL);
+  }
+
+  /* 강함 순서 24가지 전수. 각자 딸 수 있는 최대치:
+       A = 자기 500 × 4 = 2,000
+       B = 메인 2,000 + SIDE1 3,000 = 5,000
+       C = + SIDE2 13,000 = 18,000
+       D = 전부 + 반환 = 30,000 */
+  const CAP = [2000, 5000, 18_000, 30_000];
+  const perms = (a: number[]): number[][] => a.length <= 1 ? [a]
+    : a.flatMap((x, i) => perms(a.slice(0, i).concat(a.slice(i + 1))).map(p => [x, ...p]));
+  let sumBad = 0, capBad = 0, orders = 0;
+  for (const order of perms([0, 1, 2, 3])) {
+    orders++;
+    const v = mk();
+    const unc = H.returnUncalled(v);
+    const pots = H.buildPots(v);
+    const scores = new Map<number, number>();
+    order.forEach((seatNo, rank) => scores.set(seatNo, 100 - rank * 25));
+    const got = [0, 0, 0, 0];
+    for (const a of H.awardPots(pots, scores, 0, 9)) got[a.seat] += a.amount;
+    if (unc) got[unc.seat] += unc.amount;
+    if (got.reduce((a, b) => a + b, 0) !== TOTAL) sumBad++;
+    for (let i = 0; i < 4; i++) if (got[i] > CAP[i]) capBad++;
+  }
+  ck(`강함 순서 ${orders}가지 전수 — 칩 보존`, sumBad === 0, `${sumBad}가지 어긋남`);
+  ck('아무도 자기 상한보다 많이 받지 않는다 (A≤2,000 B≤5,000 C≤18,000 D≤30,000)',
+    capBad === 0, `${capBad}건`);
+
+  // 동점 — 같은 층을 나눠 가져도 칩이 보존되어야 한다
+  {
+    const cases: Array<[string, number[]]> = [
+      ['A와 D가 동점', [100, 50, 50, 100]],
+      ['C와 D가 동점(위 두 층을 나눈다)', [10, 20, 100, 100]],
+      ['전원 동점', [50, 50, 50, 50]],
+      ['B와 C가 동점', [10, 100, 100, 20]],
+    ];
+    for (const [name, sc] of cases) {
+      const v = mk();
+      const unc = H.returnUncalled(v);
+      const pots = H.buildPots(v);
+      const got = [0, 0, 0, 0];
+      for (const a of H.awardPots(pots, new Map(sc.map((s, i) => [i, s])), 0, 9)) got[a.seat] += a.amount;
+      if (unc) got[unc.seat] += unc.amount;
+      const tot = got.reduce((a, b) => a + b, 0);
+      ck(`${name} — 칩 보존 (${tot})`, tot === TOTAL, `${tot} vs ${TOTAL}`);
+      ck(`${name} — 상한 준수`, got.every((g, i) => g <= CAP[i]), JSON.stringify(got));
+    }
+  }
+
+  /* 무작위 극단 스택 — 위 한 조합만 맞고 다른 조합에서 틀리는 걸 막는다.
+     스택 차이를 일부러 크게 벌린다(1 ~ 50,000). */
+  let rSum = 0, rCap = 0;
+  for (let i = 0; i < 20_000; i++) {
+    const n = 2 + randomInt(8);
+    const committed: number[] = [];
+    for (let k = 0; k < n; k++) committed.push(1 + randomInt(50_000));
+    const v = committed.map((c, k): H.SeatView =>
+      ({ seat: k, bet: c, stack: 0, committed: c, state: 'allin', acted: true }));
+    const total = committed.reduce((a, b) => a + b, 0);
+    const unc = H.returnUncalled(v);
+    const pots = H.buildPots(v);
+    const scores = new Map<number, number>(v.map(s => [s.seat, randomInt(100)]));
+    const got = new Array<number>(n).fill(0);
+    for (const a of H.awardPots(pots, scores, 0, 9)) got[a.seat] += a.amount;
+    if (unc) got[unc.seat] += unc.amount;
+    if (got.reduce((a, b) => a + b, 0) !== total) rSum++;
+    /* 한 사람이 딸 수 있는 최대 = 자기 투입액 이하로 낸 사람들의 전액 +
+       자기보다 많이 낸 사람들에게서 자기 투입액만큼 */
+    for (let k = 0; k < n; k++) {
+      const cap = committed.reduce((a, c) => a + Math.min(c, committed[k]), 0);
+      if (got[k] > cap) rCap++;
+    }
+  }
+  ck('무작위 극단 스택 20,000판 — 칩 보존', rSum === 0, `${rSum}건`);
+  ck('무작위 극단 스택 20,000판 — 상한 준수', rCap === 0, `${rCap}건`);
+}
+
 /* ── 18. 최강 5장 고르기 ─────────────────────────────────────────
    화면에서 "이 5장으로 이겼다"를 밝히려면 어느 카드가 쓰였는지 알아야 하는데,
    evaluate7은 점수만 준다. 그래서 5장 단위 평가(evaluate5)를 따로 두고 조합을 전개한다.
