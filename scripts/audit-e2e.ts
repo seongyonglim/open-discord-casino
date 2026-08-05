@@ -13,6 +13,8 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { getDb } from '../src/db/schema';
 import { upsertUser, adjustBalance, getWebUser, createSession } from '../src/db/queries';
+// 최소 액션 간격을 "지난 것으로" 만들 때 쓴다 (아래 openNow)
+import { ACTION_SEC } from '../src/db/holdem';
 
 const PORT = Number(process.env.AUDIT_PORT ?? 8213);
 let pass = 0, fail = 0;
@@ -366,7 +368,16 @@ async function main(): Promise<void> {
       ck('알 수 없는 액션 거절', nonsense.status === 400);
     }
 
-    // 실제로 한 판을 끝까지 (차례인 사람이 콜 또는 체크)
+    /* 실제로 한 판을 끝까지 (차례인 사람이 콜 또는 체크).
+       차례에는 최소 액션 간격이 붙는다(ACT_GAP_SEC · 스트리트 시작은 STREET_OPEN_SEC).
+       실시간으로 기다리면 감사가 몇 분씩 늘어지므로, 마감을 now + ACTION_SEC로 맞춰
+       "간격은 지났고 제한 시간은 온전히 남았다"로 만든다 — 시간이 흘렀다고 치는 것이다.
+       이걸 안 하면 모든 액션이 too_soon으로 거절돼 acted가 0이 된다. */
+    const openNow = (): void => {
+      db.prepare(`UPDATE holdem_hands SET action_deadline = ?
+                  WHERE ended_at IS NULL AND action_deadline IS NOT NULL`)
+        .run(nowSec() + ACTION_SEC);
+    };
     {
       let steps = 0, acted = 0;
       while (steps++ < 60) {
@@ -377,6 +388,7 @@ async function main(): Promise<void> {
         const who = cur.table.seats.filter((x: any) => x.seat === seatNo)[0];
         const s = sessions.find(x => x.id === who?.userId);
         if (!s) break;
+        openNow();
         const la = (await state(s.c)).body.table.legal;
         const kind = la?.canCheck ? 'check' : la?.canCall ? 'call' : 'fold';
         const r = await req('POST', '/api/games/holdem/action', s.c, { action: kind });

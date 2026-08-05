@@ -13,7 +13,7 @@ import {
   advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords,
-  ACTION_SEC, type HoldemStatus,
+  ACTION_SEC, actOpenAt, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -149,9 +149,16 @@ function statePayload(st: HoldemStatus, userId: string) {
       board: G.cardsToStrings(boardCards),
       buttonSeat: hand?.button_seat ?? table.button_seat,
       toActSeat: ended ? null : hand?.to_act_seat ?? null,
+      /* 남은 제한 시간. 차례가 아직 열리지 않은 구간에서는 마감이 ACTION_SEC보다 멀리
+         있으므로(최소 간격만큼 뒤로 밀려 있다) 그대로 쓰면 "23초"가 찍힌다.
+         제한 시간은 열린 뒤부터라 상한을 씌운다 — 열릴 때까지는 20에 멈춰 있다. */
       actionLeft: !ended && hand?.action_deadline != null
-        ? Math.max(0, hand.action_deadline - now) : null,
+        ? Math.min(ACTION_SEC, Math.max(0, hand.action_deadline - now)) : null,
       actionSec: ACTION_SEC,
+      /* 이 차례가 열리기까지 남은 초. 0보다 크면 아직 아무도 행동할 수 없다 —
+         커뮤니티 카드가 열리는 중이거나 앞 사람 액션 직후의 최소 간격이다. */
+      actOpenIn: !ended && hand != null
+        ? Math.max(0, (actOpenAt(hand) ?? now) - now) : 0,
       pot: potTotal,
       /* 팟의 층 구성. 올인이 섞이면 "메인 팟 + 사이드 팟"으로 갈라지는데, 합계만 보여주면
          내가 실제로 다툴 수 있는 금액이 얼마인지 알 수 없다 — 스택이 작은 사람은
@@ -997,8 +1004,12 @@ export function holdemPage(user: WebUser): string {
         }
         var foldB = seatEl.querySelector('.ht-fold-b');
         if (foldB) foldB.hidden = s.state !== 'folded';
+        /* 자리 비움은 행동이 아니라 상태다 — 복귀할 때까지 계속 보여야 한다.
+           예전에는 폴드하지 않은 사람에게만 띄웠다. 그런데 자리 비움이 되는 계기가
+           "시간 초과로 자동 폴드"라서, 붙는 순간 폴드도 함께 붙어 표시가 곧바로 사라졌다.
+           잠깐 떴다 사라지는 것으로 보인 이유가 이것이다. */
         var outTag = seatEl.querySelector('.ht-out-tag');
-        if (outTag) outTag.hidden = !(s.state !== 'folded' && s.presence === 'SIT_OUT');
+        if (outTag) outTag.hidden = s.presence !== 'SIT_OUT';
         syncHole(seatEl.querySelector('.ht-hole'), s);
       });
       syncActBadges(tb, actNow);
@@ -1062,12 +1073,18 @@ export function holdemPage(user: WebUser): string {
        같은 자리가 콜 → 레이즈 → 콜을 할 수 있어서, 행동 이름만으로는 새 행동인지
        구분되지 않기 때문이다(액션 음성과 같은 규칙이다). */
     var ACT_BADGE_MS = 1700;
-    var badgeKey = {}, badgeHand = null;
+    /* 한 폴링에 두 사람의 행동이 함께 도착하면 시차를 두고 띄운다.
+       서버는 액션 사이에 최소 1초를 두는데(ACT_GAP_SEC) 폴링도 1초 간격이라,
+       두 액션이 같은 응답에 담기는 경우가 생긴다. 그때 배지를 동시에 띄우면
+       "누가 무엇을 했는지" 순서가 사라진다 — 액션 음성이 줄을 서는 것과 같은 이유다. */
+    var BADGE_STAGGER_MS = 520;
+    var badgeKey = {}, badgeHand = null, badgeAt = 0;
     function syncActBadges(tb, list){
       if (tb.handNo !== badgeHand) {
-        badgeHand = tb.handNo; badgeKey = {};
+        badgeHand = tb.handNo; badgeKey = {}; badgeAt = 0;
         // 새 판 — 지난 판의 배지(계속 남는 올인, 승자 표시)를 걷어낸다
         seatsEl.querySelectorAll('.ht-abadge').forEach(function(el){
+          clearTimeout(el.__s); clearTimeout(el.__t);
           el.hidden = true; el.style.animation = 'none';
         });
         clearWinBadges();
@@ -1080,27 +1097,42 @@ export function holdemPage(user: WebUser): string {
           if (badgeKey[x.seat] != null) { badgeKey[x.seat] = null; el.hidden = true; }
           return;
         }
-        var key = tb.street + ':' + x.act + ':' + (x.amount || 0);
+        /* 폴드는 스트리트를 열쇠에 넣지 않는다.
+           서버는 폴드를 스트리트가 바뀌어도 지우지 않는다(계속 유효한 사실이므로). 그래서
+           열쇠에 스트리트가 들어 있으면 플랍에서 접은 사람이 턴·리버마다 다시 "폴드"를
+           띄웠다 — 이미 판에서 빠진 사람이 계속 행동하는 것처럼 보였다.
+           한 판에 폴드는 한 번뿐이니 열쇠도 하나면 된다. */
+        var key = x.act === 'fold' ? 'fold' : tb.street + ':' + x.act + ':' + (x.amount || 0);
         if (badgeKey[x.seat] === key) return;              // 같은 행동을 다시 띄우지 않는다
         badgeKey[x.seat] = key;
-        el.textContent = actLabel(x.act, x.amount);
-        /* 색은 행동의 성격으로 가른다: 돈을 더 넣는 것(베팅·레이즈)은 붉게,
-           맞춰 가는 것(콜)은 파랗게, 안 넣는 것(체크)은 초록, 접는 것은 회색.
-           올인은 나머지와 다른 등급이라 따로 둔다. */
-        el.className = 'ht-abadge a-' + x.act + (x.act === 'allin' ? ' keep' : '');
-        el.hidden = false;
-        // 애니메이션을 다시 재생시킨다 — 클래스만 바꾸면 브라우저가 이어서 틀지 않는다
-        el.style.animation = 'none';
-        void el.offsetWidth;
-        el.style.animation = x.act === 'allin' ? '' : 'actBadge ' + ACT_BADGE_MS + 'ms ease-out forwards';
-        /* 다 사라진 뒤에는 실제로 감춘다. 투명해진 요소를 그냥 두면 눈에는 안 보이지만
-           같은 자리를 쓰는 WIN 배지와 DOM에서 겹쳐 있어 나중에 헷갈릴 여지가 남는다. */
-        if (x.act !== 'allin') {
+
+        /* 앞 배지가 뜬 지 얼마 안 됐으면 그만큼 미뤄서 띄운다.
+           badgeAt은 "다음 배지를 띄워도 되는 시각"이다 — 새 행동이 여러 개 몰려 오면
+           차례차례 밀린다. 올인은 계속 남는 표시라 미루지 않는다(늦게 뜨면 그만큼 늦게 알린다). */
+        var now = Date.now();
+        var wait = x.act === 'allin' ? 0 : Math.max(0, badgeAt - now);
+        badgeAt = now + wait + BADGE_STAGGER_MS;
+        var act = x.act, amount = x.amount;
+        var show = function(){
+          el.textContent = actLabel(act, amount);
+          /* 색은 행동의 성격으로 가른다: 돈을 더 넣는 것(베팅·레이즈)은 붉게,
+             맞춰 가는 것(콜)은 파랗게, 안 넣는 것(체크)은 초록, 접는 것은 회색.
+             올인은 나머지와 다른 등급이라 따로 둔다. */
+          el.className = 'ht-abadge a-' + act + (act === 'allin' ? ' keep' : '');
+          el.hidden = false;
+          // 애니메이션을 다시 재생시킨다 — 클래스만 바꾸면 브라우저가 이어서 틀지 않는다
+          el.style.animation = 'none';
+          void el.offsetWidth;
+          el.style.animation = act === 'allin' ? '' : 'actBadge ' + ACT_BADGE_MS + 'ms ease-out forwards';
+          /* 다 사라진 뒤에는 실제로 감춘다. 투명해진 요소를 그냥 두면 눈에는 안 보이지만
+             같은 자리를 쓰는 WIN 배지와 DOM에서 겹쳐 있어 나중에 헷갈릴 여지가 남는다. */
           clearTimeout(el.__t);
-          el.__t = setTimeout(function(){ el.hidden = true; }, ACT_BADGE_MS + 60);
-        } else {
-          clearTimeout(el.__t);
-        }
+          if (act !== 'allin') {
+            el.__t = setTimeout(function(){ el.hidden = true; }, ACT_BADGE_MS + 60);
+          }
+        };
+        clearTimeout(el.__s);
+        if (wait > 0) el.__s = setTimeout(show, wait); else show();
       });
     }
 
@@ -2120,7 +2152,12 @@ export function holdemPage(user: WebUser): string {
 
       function fire(seat, act, amount, committed){
         if (!act) return;
-        var key = tb.street + ':' + seat + ':' + act + ':' + (amount || 0);
+        /* 폴드는 스트리트를 열쇠에 넣지 않는다 — 배지와 같은 이유다.
+           서버가 폴드 표시를 스트리트 전환에도 남겨 두므로, 스트리트가 들어 있으면
+           플랍에서 접은 사람의 폴드 소리가 턴·리버마다 다시 울렸다. */
+        var key = act === 'fold'
+          ? 'fold:' + seat
+          : tb.street + ':' + seat + ':' + act + ':' + (amount || 0);
         if (voiceSeen[key]) return;
         voiceSeen[key] = 1;
 
@@ -2279,21 +2316,13 @@ export function holdemPage(user: WebUser): string {
     function currentTarget(){ return Math.floor(Number(rangeEl.value) || 0); }
 
     function renderControls(){
-      /* 커뮤니티 카드가 다 열리기 전에는 액션 버튼을 켜지 않는다.
-         실제 게임에서는 카드가 다 깔린 다음에 상황을 보고 고른다. 예전에는 플랍이
-         한 장씩 날아오는 중에 이미 버튼이 떠서, 판을 보기 전에 누를 수 있었다.
-
-         서버의 제한 시간은 그대로 흐른다. 플랍이 다 깔리는 데 약 1초(ACTION_HOLD 1.1초
-         포함하면 2초)라 20초 중에서 문제가 되지 않는다.
-
-         boardRevealed가 어떤 이유로 true가 되지 않아도 버튼이 영원히 안 나오면 안 된다.
-         그건 "내 차례인데 아무것도 못 누른다"라서 연출이 어긋나는 것보다 훨씬 나쁘다.
-         그래서 남은 시간이 충분히 줄어들면(마지막 12초) 연출과 무관하게 켠다. */
+      /* 차례가 아직 열리지 않았으면 버튼을 켜지 않는다.
+         "열렸는가"는 서버가 정한다(actOpenIn) — 커뮤니티 카드가 열리는 중이거나
+         앞 사람 액션 직후의 최소 간격이다. 예전에는 클라이언트의 boardRevealed만 봤는데,
+         그건 내 화면의 애니메이션일 뿐이어서 봇은 그대로 즉시 눌렀다.
+         규칙이 서버에 있으니 여기서는 그 값을 그대로 따른다. */
       var la = st.table.legal;
-      if (la && !boardRevealed) {
-        var left = st.table.actionLeft;
-        if (left == null || left > 12) la = null;
-      }
+      if (la && st.table.actOpenIn > 0) la = null;
       /* 판이 끝난 뒤의 두 버튼도 이 패널 안(ht-acts)에 있다. 그래서 내 차례가 아니라고
          패널 전체를 접으면 그 버튼이 뜨고 싶어도 보이지 않는다 — 실제로 그렇게 됐다.
          버튼이 하나라도 뜰 상황이면 패널은 열어두고, 베팅 금액 줄과 미리 지정 줄만 접는다. */
@@ -2459,6 +2488,10 @@ export function holdemPage(user: WebUser): string {
     function runPreAction(){
       var la = st.table.legal;
       if (!la) return;
+      /* 차례가 아직 열리지 않았으면 보내지 않는다. 서버가 too_soon으로 거절하는데
+         아래 코드는 보내기 전에 체크박스를 먼저 끄므로, 거절당하면 미리 지정한 액션이
+         사라진 채로 제한 시간까지 흘러 자동 폴드된다. 다음 폴링에서 다시 본다. */
+      if (st.table.actOpenIn > 0) return;
       if (preCF.checked) { preCF.checked = false; act(la.canCheck ? 'check' : 'fold'); return; }
       if (preC.checked) {
         if (la.canCheck) { act('check'); return; }
