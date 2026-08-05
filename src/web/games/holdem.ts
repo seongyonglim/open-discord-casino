@@ -432,9 +432,10 @@ export function holdemPage(user: WebUser): string {
                      이름표(MAIN / SIDE 1…)도 각 더미가 직접 달고 있다. -->
                 <div class="ht-piles" id="htPotPile"></div>
                 <div class="ht-msg" id="htMsg"></div>
-                <!-- 무엇으로 이겼나. 카드 강조(win5)와 짝을 이룬다 — 밝은 5장이 왜
-                     밝은지를 이 한 줄이 설명한다. 쇼다운이 있었던 판에만 나온다. -->
-                <div class="ht-outro" id="htOutro" hidden></div>
+                <!-- 승자 족보를 알리던 노란 캡슐(.ht-outro)은 없앴다. 펠트 한가운데에
+                     글자 줄이 뜨면 그것이 커뮤니티 카드보다 먼저 눈에 들어온다.
+                     족보는 이제 이긴 사람의 좌석 위(.ht-win-h)에 붙는다 — 누가 무엇으로
+                     이겼는지가 한 점에서 읽힌다. -->
                 <div class="ht-read" id="htRead" hidden></div>
                 <!-- 래빗 카드가 몇 장인지 글자로도 알려준다 (색만으로는 부족하다) -->
                 <div class="ht-rnote" id="htRNote" hidden></div>
@@ -510,6 +511,9 @@ export function holdemPage(user: WebUser): string {
         <div class="ht-side-head">
           <span id="htSideTitle">데일리 프리롤</span>
         </div>
+        <!-- 대회 종료 안내. 테이블 펠트가 아니라 여기다 — 바닥에 시스템 문구를
+             인쇄하면 마지막 판의 쇼다운 위로 글자가 겹친다. -->
+        <div class="ht-side-note" id="htSideNote" hidden></div>
         <div class="ht-info" id="htInfo"></div>
         <div class="ht-tabs">
           <button type="button" class="ht-tab active" data-htab="live">칩 순위</button>
@@ -563,7 +567,7 @@ export function holdemPage(user: WebUser): string {
     var rabbitBtn = document.getElementById('htRabbit');
     var showBtn = document.getElementById('htShow');
     var rnoteEl = document.getElementById('htRNote');
-    var outroEl = document.getElementById('htOutro');
+    var sideNote = document.getElementById('htSideNote');
     var lvEl = document.getElementById('htLvUp');
     var pileEl = document.getElementById('htPotPile');
     var winEl = document.getElementById('htWin');
@@ -1048,6 +1052,9 @@ export function holdemPage(user: WebUser): string {
             '<span class="ht-blind ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
             /* 이 판(또는 이 팟 층)을 가져간 사람 — 칩이 움직이기 전에 먼저 뜬다 */
             '<span class="ht-win-b" hidden>WIN</span>' +
+            /* 무엇으로 이겼나. 예전에는 펠트 한가운데 노란 캡슐이었는데,
+               "누가"와 "무엇으로"가 화면의 서로 다른 곳에 있어 눈이 두 번 움직였다. */
+            '<span class="ht-win-h" hidden></span>' +
             /* 쇼다운 승률. 테이블 바깥쪽(딜러 버튼 반대편)에 붙인다 */
             '<span class="ht-eq ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
           '</div>';
@@ -1682,6 +1689,16 @@ export function holdemPage(user: WebUser): string {
     function renderSide(){
       var t = st.tournament, tb = st.table;
       sideTitle.textContent = t.title;
+      /* 대회 종료 안내는 오른쪽 패널 머리에 붙인다. 예전에는 펠트 한가운데에
+         "대회 종료 · 결과 8초"라고 찍었는데, 테이블 바닥에 시스템 문구가 인쇄된 꼴이라
+         마지막 판의 쇼다운 위로 글자가 겹쳤다. 테이블은 게임만 그리는 자리다. */
+      if (tb.tournamentOver) {
+        sideNote.hidden = false;
+        sideNote.textContent = '대회 종료'
+          + (tb.finishLeft != null && tb.finishLeft > 0 ? ' · 결과 ' + tb.finishLeft + '초' : '');
+      } else {
+        sideNote.hidden = true;
+      }
       var infoHtml =
         '<div class="ht-i"><span class="k">블라인드</span><span class="v gold">' +
           num(tb.level.sb) + ' / ' + num(tb.level.bb) +
@@ -2062,43 +2079,42 @@ export function holdemPage(user: WebUser): string {
     function showWinBadges(tb, pa){
       var win = {};
       pa.winners.forEach(function(w){ win[w.seat] = 1; });
+      /* 족보는 층 정보(pa.hand)가 있으면 그걸, 없으면 공개된 패에서 찾는다.
+         폴드로 끝난 판은 둘 다 없다 — 보여줄 족보가 실제로 없는 것이다. */
+      var reveal = (tb.result && tb.result.reveal) || [];
       (tb.seats || []).forEach(function(s){
-        var el = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"] .ht-win-b');
+        var seatSel = '.ht-seat[data-seat="' + s.seat + '"] ';
+        var el = seatsEl.querySelector(seatSel + '.ht-win-b');
+        var hEl = seatsEl.querySelector(seatSel + '.ht-win-h');
         if (!el) return;
-        if (!win[s.seat]) { el.hidden = true; return; }
+        if (!win[s.seat]) {
+          el.hidden = true;
+          if (hEl) hEl.hidden = true;
+          return;
+        }
         el.hidden = false;
         el.style.animation = 'none';
         void el.offsetWidth;
         el.style.animation = '';
+        if (hEl) {
+          var r = reveal.filter(function(x){ return x.seat === s.seat; })[0];
+          var name = pa.hand || (r && r.hand) || '';
+          hEl.textContent = name;
+          hEl.hidden = !name;
+        }
       });
     }
     function clearWinBadges(){
-      seatsEl.querySelectorAll('.ht-win-b').forEach(function(el){ el.hidden = true; });
+      seatsEl.querySelectorAll('.ht-win-b,.ht-win-h').forEach(function(el){ el.hidden = true; });
     }
 
-    /* 이 층이 무엇이고 누가 어떤 족보로 가져가는지 한 줄로 알린다.
-       층이 하나뿐이면 이름표를 붙이지 않는다 — 붙일 이유가 없다. */
-    function showPotLabel(tb, pa, layerCount){
-      if (layerCount < 2) return;
-      /* 이 줄은 syncOutro도 쓴다(판 전체의 승리 족보). 층을 넘기는 동안은 이쪽이 주인이라고
-         표시해 둔다 — 안 그러면 1초 폴링이 층 이름표를 곧바로 덮어써서 한 번도 안 보인다. */
-      potLabelUntil = Date.now() + POT_STEP_MS - 150;
-      var names = pa.winners.map(function(w){
-        var s = (tb.seats || []).filter(function(x){ return x.seat === w.seat; })[0];
-        return s ? s.username : 'Seat ' + (w.seat + 1);
-      }).join(' · ');
-      /* 합쳐진 층은 무엇이 합쳐졌는지 이름에 적는다 — "MAIN + SIDE 1"처럼.
-         합계만 보여주면 사이드 팟이 있었다는 사실 자체가 사라진다. */
-      var first = pa.index, span = pa.__span || 1;
-      var names2 = [];
-      for (var k = 0; k < span; k++) {
-        names2.push(first + k === 0 ? 'MAIN' : 'SIDE ' + (first + k));
-      }
-      var label = names2.join(' + ') + ' POT  ' + stackText(pa.amount);
-      outroEl.hidden = false;
-      outroEl.innerHTML = '<b>' + esc(label) + '</b> — ' + esc(names)
-        + (pa.hand ? ' · ' + esc(pa.hand) : '');
-    }
+    /* 층 이름표를 펠트에 띄우던 함수는 없앴다.
+       "MAIN + SIDE 1 POT 89,550 — 정폴드 · 플러시"를 중앙에 한 줄로 적었는데,
+       그 정보는 이미 세 곳에 흩어져 있지 않고 제자리에 다 있다:
+         어느 팟이 얼마인가 → 더미마다 붙은 MAIN/SIDE 이름표와 금액
+         누가 가져가는가   → 그 사람 좌석 위의 WIN 배지
+         무엇으로 이겼나   → 그 아래 족보 라벨
+       한가운데에 요약을 한 번 더 적으면 눈이 카드에서 글자로 끌려간다. */
 
     /* 한 층의 칩을 승자에게 보낸다.
        "그 층의 더미"에서만 꺼낸다 — 층마다 더미가 따로 서 있으므로 어느 팟이 누구에게
@@ -2533,36 +2549,28 @@ export function holdemPage(user: WebUser): string {
       markCards(mh ? mh.highlight : [], 'made');
     }
 
-    /* ── 판·대회가 끝났다는 것을 말로 알려 준다 ───────────────────────
-       족보명이 없으면 무엇으로 이겼는지 카드를 직접 읽어야 안다. 실제로 다른 클라이언트도
-       이걸 안 보여줘서 "4초 안에 카드를 다 읽어야 한다"는 불만이 흔하다. */
+    /* ── 무엇으로 이겼나를 승자 좌석에 붙인다 ─────────────────────────
+       족보명이 없으면 무엇으로 이겼는지 카드를 직접 읽어야 한다. 실제로 다른 클라이언트도
+       이걸 안 보여줘서 "4초 안에 카드를 다 읽어야 한다"는 불만이 흔하다.
+
+       한때는 펠트 한가운데 노란 캡슐 한 줄이었다. 정보는 맞았지만 자리가 틀렸다 —
+       "누가"는 좌석에, "무엇으로"는 중앙에 있어서 눈이 두 번 움직였고, 무엇보다
+       커뮤니티 카드를 보는 자리에 글자가 떴다. 이제 이긴 사람 위에 직접 붙인다. */
     function syncOutro(tb){
-      /* 사이드 팟을 층별로 넘기는 동안에는 이 줄의 주인이 showPotLabel이다.
-         여기서 덮어쓰면 1초 폴링이 층 이름표를 지워 한 번도 못 보게 된다. */
-      if (Date.now() < potLabelUntil) return;
       var reveal = (tb.ended && boardRevealed && tb.result && tb.result.reveal) || [];
       var awards = (tb.ended && boardRevealed && tb.result && tb.result.awards) || [];
-      var text = '';
-      if (reveal.length && awards.length) {
-        var wonSeats = {};
-        awards.forEach(function(a){ if (a.amount > 0) wonSeats[a.seat] = 1; });
-        var parts = [];
-        reveal.forEach(function(r){
-          if (!wonSeats[r.seat] || !r.hand) return;
-          var s = (tb.seats||[]).filter(function(x){ return x.seat === r.seat; })[0];
-          parts.push((s ? s.username : 'Seat ' + (r.seat+1)) + ' — ' + r.hand);
-        });
-        text = parts.join('  ·  ');
-      }
-      outroEl.hidden = !text;
-      if (text) outroEl.textContent = text;
-
-      /* 대회 종료 — 마지막 판을 보여주는 동안은 테이블에 남아 있고, 시간이 다 되면
-         우승 축하로 넘어간다. 이 안내가 없으면 테이블이 왜 멈춰 있는지 알 수 없다. */
-      if (tb.tournamentOver) {
-        msgEl.textContent = '대회 종료'
-          + (tb.finishLeft != null && tb.finishLeft > 0 ? ' · 결과 ' + tb.finishLeft + '초' : '');
-      }
+      /* 정산이 시작되면 showWinBadges가 층마다 주인이 된다 — 여기서 덮어쓰면
+         층별 족보가 1초 폴링에 지워진다. */
+      if (potPaidHand === tb.handNo) return;
+      var wonSeats = {};
+      awards.forEach(function(a){ if (a.amount > 0) wonSeats[a.seat] = 1; });
+      (tb.seats || []).forEach(function(s){
+        var hEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"] .ht-win-h');
+        if (!hEl) return;
+        var r = wonSeats[s.seat] ? reveal.filter(function(x){ return x.seat === s.seat; })[0] : null;
+        hEl.textContent = r ? r.hand : '';
+        hEl.hidden = !r;
+      });
     }
 
     /* ── 베팅 컨트롤 ─────────────────────────────────────────────── */
