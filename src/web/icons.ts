@@ -33,6 +33,43 @@ export const cardsIcon = wrap(
   '<rect x="8.5" y="4.5" width="11" height="15" rx="2"/>'
 );
 
+/* ── 카드게임 네 가지를 구분하는 아이콘 ────────────────────────────────
+   포커 플립·바카라·블랙잭·홀덤이 전부 cardsIcon 하나를 쓰고 있었다. 목록에서
+   네 개가 같은 그림이라 "카드게임 묶음"으로만 읽히고 서로 구분이 안 됐다.
+   각 게임에서 실제로 뜻이 통하는 상징을 하나씩 준다 — 다른 아이콘 세 개
+   (폭탄·사다리·차트)와 같은 선 굵기·같은 24 격자를 쓴다. */
+
+// 포커 플립 — 두 핸드가 맞붙는 게임. 뒤집히는 카드 한 장을 화살표로 나타낸다.
+export const flipIcon = wrap(
+  '<rect x="3" y="4.5" width="8" height="15" rx="1.8"/>' +
+  '<rect x="13" y="4.5" width="8" height="15" rx="1.8" stroke-dasharray="2.4 2.2"/>' +
+  '<path d="M11.4 12 L12.6 12"/>'
+);
+
+// 바카라 — 플레이어와 뱅커 두 쪽이 겨루고 9에 가까운 쪽이 이긴다
+export const baccaratIcon = wrap(
+  '<path d="M4.5 6.5h5.2v11H4.5z"/>' +
+  '<path d="M14.3 6.5h5.2v11h-5.2z"/>' +
+  '<path d="M12 9.2v5.6"/>'
+);
+
+// 블랙잭 — 21. 숫자를 그대로 쓰는 게 가장 빠르게 읽힌다
+export const blackjackIcon =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+  'stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="3" y="3.5" width="18" height="17" rx="2.6"/>' +
+  '<text x="12" y="15.4" text-anchor="middle" font-size="9.5" font-weight="700" ' +
+  'fill="currentColor" stroke="none" font-family="ui-monospace,monospace">21</text>' +
+  '</svg>';
+
+// 홀덤 프리롤 — 대회다. 다른 게임과 성격이 달라서 트로피로 구분한다
+export const trophyIcon = wrap(
+  '<path d="M7 4h10v5a5 5 0 0 1-10 0z"/>' +
+  '<path d="M7 5.5H4.6a2.6 2.6 0 0 0 2.6 3.4"/>' +
+  '<path d="M17 5.5h2.4a2.6 2.6 0 0 1-2.6 3.4"/>' +
+  '<path d="M12 14v3.5"/><path d="M8.6 20.5h6.8"/><path d="M10 17.5h4v3h-4z"/>'
+);
+
 // 미확인 타일에 은은하게 표시할 마크 (빈 칸이 아니라 "뒤집을 수 있는 카드"처럼 보이도록)
 export const mysteryMark = wrap('<path d="M9 9a3 3 0 1 1 4 2.8c-.8.5-1 1-1 2.2" stroke-width="2"/><circle cx="12" cy="17.3" r=".4" fill="currentColor" stroke="none"/>');
 
