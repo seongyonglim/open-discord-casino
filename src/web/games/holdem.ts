@@ -1096,8 +1096,12 @@ export function holdemPage(user: WebUser): string {
             /* 무엇으로 이겼나. 예전에는 펠트 한가운데 노란 캡슐이었는데,
                "누가"와 "무엇으로"가 화면의 서로 다른 곳에 있어 눈이 두 번 움직였다. */
             '<span class="ht-win-h" hidden></span>' +
-            /* 쇼다운 승률. 테이블 바깥쪽(딜러 버튼 반대편)에 붙인다 */
-            '<span class="ht-eq ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
+            /* 쇼다운 승률 말풍선 — 테이블 안쪽(가운데 쪽)을 향해 붙인다.
+               예전에는 바깥쪽이었다. 좌석이 펠트 안에 있던 시절에는 그게 맞았지만,
+               지금은 좌석이 경계 밖에 서 있어서 바깥쪽이 곧 화면 밖이다 —
+               9시 자리의 말풍선이 통째로 잘려 나갔다(실측).
+               좌석이 나가면서 펠트 안쪽은 오히려 비었으므로 그쪽이 제자리다. */
+            '<span class="ht-eq ' + (p.plate[0] < 50 ? 'r' : 'l') + '" hidden></span>' +
           '</div>';
 
         /* 골격 서명은 "누가 어느 자리에 앉았나"만 본다.
@@ -1217,6 +1221,11 @@ export function holdemPage(user: WebUser): string {
        카드를 보기 전에 결과를 알려주는 것이 된다.
 
        팟 정산이 시작되면(WIN 배지) 내린다. 그때부터는 확률이 아니라 사실이 나온다. */
+    /* 카드 번호 → 랭크·무늬. 서버(services/poker.ts cardToString)와 같은 규칙이다:
+       카드 = 랭크*4 + 무늬, 무늬 순서는 스페이드·하트·다이아·클럽.
+       순서를 틀리면 아웃츠 미니 카드의 무늬가 통째로 어긋난다. */
+    var RANK_CH = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+    var SUIT_CH = ['\\u2660', '\\u2665', '\\u2666', '\\u2663'];
     function syncEquity(tb){
       var stages = (tb.ended && tb.result && tb.result.equity) || [];
       var stage = null;
@@ -1231,26 +1240,53 @@ export function holdemPage(user: WebUser): string {
         stage.seats.forEach(function(x){ byS[x.seat] = x; });
         (stage.outs || []).forEach(function(o){ outs[o.seat] = o; });
       }
+      /* 지금 앞선 사람이 누구인지 — 말풍선의 색을 가르는 기준이다.
+         승률이 가장 높은 사람(들)이 초록, 나머지는 붉은 쪽이다. */
+      var top = 0;
+      Object.keys(byS).forEach(function(k){ if (byS[k].equity > top) top = byS[k].equity; });
+
       (tb.seats || []).forEach(function(s){
         var el = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"] .ht-eq');
         if (!el) return;
         var e = byS[s.seat];
         if (!e) { el.hidden = true; return; }
         var pct = Math.round(e.equity * 1000) / 10;
+        var lead = e.equity >= top - 1e-9;
         var o = outs[s.seat];
-        /* 아웃츠는 남은 카드가 한 장일 때만 뜻이 있다(서버가 그때만 채운다).
-           랭크는 네 개까지 적는다 — 여덟 개를 늘어놓으면 읽지 않는다. */
-        var outTxt = '';
-        if (o) {
-          var rs = o.ranks.slice(0, 4).join(' ');
-          outTxt = '<b class="ht-eq-o">아웃 ' + o.count + '장</b>'
-            + '<span class="ht-eq-r">' + esc(rs) + (o.ranks.length > 4 ? '…' : '') + '</span>';
+        var body = '';
+        if (lead) {
+          // 앞선 쪽 — 숫자 하나면 된다. 이 사람에게 남은 관심사는 "얼마나 안전한가"뿐이다
+          body = '<span class="ht-eq-p">' + pct.toFixed(1) + '%</span>';
+        } else if (pct <= 0) {
+          /* 역전할 카드가 한 장도 없다. 0.0%를 적는 것보다 이름을 붙이는 것이 낫다 —
+             포커에서 이 상태에는 이미 이름이 있다. */
+          body = '<span class="ht-eq-dead">DRAWING DEAD</span>';
+        } else {
+          /* 쫓는 쪽 — 숫자보다 "무엇이 나와야 하나"가 먼저다. 실제 카드를 그린다.
+             글자로 "아웃 8장 · A K"라고 적던 것을 없앴다. 카드 게임인데 카드를 글자로
+             옮겨 적으면 한 번 더 번역해서 읽어야 한다.
+             한 무늬가 통째로 아웃이면(플러시 드로우) 무늬 하나로 줄인다. */
+          var mini = '';
+          (o && o.bySuit || []).forEach(function(su){
+            mini += '<i class="ht-oc suit s' + su + '">' + SUIT_CH[su] + '</i>';
+          });
+          var cards = (o && o.cards) || [];
+          var room = 6 - ((o && o.bySuit) || []).length * 2;
+          cards.slice(0, Math.max(0, room)).forEach(function(c){
+            var su = c & 3;
+            mini += '<i class="ht-oc s' + su + '">' + RANK_CH[c >> 2] +
+              '<b>' + SUIT_CH[su] + '<\b></i>';
+          });
+          if (cards.length > room && room > 0) mini += '<i class="ht-oc more">+' + (cards.length - room) + '</i>';
+          body = '<span class="ht-eq-outs">' + mini + '</span>'
+            + '<span class="ht-eq-p">' + pct.toFixed(1) + '%</span>';
         }
         el.hidden = false;
-        // 좌우 위치 클래스는 골격이 정해 준 것이니 건드리지 않고 강조만 토글한다
-        el.classList.toggle('hi', pct >= 50);
-        el.title = o ? '이 카드가 나오면 이깁니다: ' + o.ranks.join(', ') : '';
-        el.innerHTML = '<span class="ht-eq-p">' + pct.toFixed(1) + '%</span>' + outTxt;
+        // 좌우 위치 클래스는 골격이 정해 준 것이니 건드리지 않고 상태만 토글한다
+        el.classList.toggle('lead', lead);
+        el.classList.toggle('chase', !lead);
+        el.title = o ? '이 카드가 나오면 이깁니다 (' + o.count + '장): ' + o.ranks.join(', ') : '';
+        el.innerHTML = body;
       });
     }
 
@@ -1651,16 +1687,17 @@ export function holdemPage(user: WebUser): string {
         }
         potPile.sig = sig;
         paintPotPile(tb);
-        /* 각자 앞의 칩이 중앙으로 날아오는 연출(flyChip 'topot')이 약 700ms다.
-           그것이 도착할 즈음 더미에 나타나게 해야 "모여서 쌓였다"로 읽힌다.
-           새로 들어온 만큼만 뒤에서부터 늦게 켠다. */
+        /* 각자 앞의 칩 기둥이 중앙으로 미끄러지는 연출(flyStack)이 620ms다.
+           그것이 도착하는 바로 그 순간 더미에 나타나야 "모여서 쌓였다"로 읽힌다 —
+           일찍 켜면 칩이 두 벌 보이고, 늦게 켜면 사라졌다가 다시 생긴 것처럼 보인다.
+           새로 들어온 만큼만 뒤에서부터 순서대로 켠다. */
         if (!firstTablePaint) {
           var all = pileEl.querySelectorAll('.ht-pchip');
           var from = Math.max(0, all.length - denoms.length);
           for (var j = from; j < all.length; j++) {
             (function(el, k){
               el.classList.add('pending');
-              setTimeout(function(){ el.classList.remove('pending'); }, 420 + k * 40);
+              setTimeout(function(){ el.classList.remove('pending'); }, STACK_FLY_MS - 60 + k * 40);
             })(all[j], j - from);
           }
         }
@@ -1937,14 +1974,35 @@ export function holdemPage(user: WebUser): string {
     }
     function flyChip(fromRect, toRect, delay, cls){
       var c = document.createElement('i');
-      c.className = 'ht-chip fly' + (cls ? ' ' + cls : '');
+      c.className = 'ht-chip top pkchip fly' + (cls ? ' ' + cls : '');
       c.style.cssText = 'position:fixed;left:' + fromRect.left + 'px;top:' + fromRect.top + 'px;' +
-        'width:18px;height:11px;';
+        'width:20px;height:10px;';
       c.style.setProperty('--tx', Math.round((toRect.left + toRect.width/2) - fromRect.left) + 'px');
       c.style.setProperty('--ty', Math.round((toRect.top + toRect.height/2) - fromRect.top) + 'px');
       c.style.animationDelay = delay + 'ms';
       getFx().appendChild(c);
       setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 700 + delay);
+    }
+    /* 좌석 앞의 칩 기둥을 통째로 복제해 중앙까지 미끄러뜨린다.
+       익명의 칩 하나를 날리는 것과 다른 점: 출발한 것과 도착한 것이 같은 물건이다.
+       실제로 그 사람이 낸 액면 조합 그대로 움직이므로 "저 칩이 팟으로 갔다"가 된다. */
+    var STACK_FLY_MS = 620;
+    function flyStack(snap, toRect, delay){
+      if (!snap || !snap.rect.width) return;
+      var r = snap.rect;
+      var w = document.createElement('div');
+      w.className = 'ht-fly-stack';
+      w.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;' +
+        'width:' + r.width + 'px;height:' + r.height + 'px;';
+      w.innerHTML = snap.html;
+      w.style.setProperty('--tx',
+        Math.round((toRect.left + toRect.width / 2) - (r.left + r.width / 2)) + 'px');
+      w.style.setProperty('--ty',
+        Math.round((toRect.top + toRect.height / 2) - (r.top + r.height / 2)) + 'px');
+      w.style.animationDelay = delay + 'ms';
+      getFx().appendChild(w);
+      setTimeout(function(){ if (w.parentNode) w.parentNode.removeChild(w); },
+        STACK_FLY_MS + delay + 80);
     }
 
     /* 스트리트가 끝나면 각자 앞의 칩이 중앙 팟으로 밀려간다.
@@ -1956,10 +2014,17 @@ export function holdemPage(user: WebUser): string {
       var next = {};
       (tb.seats||[]).forEach(function(s){
         var el = document.getElementById('htspot-' + s.seat);
-        if (el && s.bet > 0) {
-          var r = el.getBoundingClientRect();
-          next[s.seat] = { left: r.left, top: r.top, width: r.width, height: r.height };
-        }
+        if (!el || !(s.bet > 0)) return;
+        var chips = el.querySelector('.ht-spot-chips');
+        if (!chips) return;
+        var r = chips.getBoundingClientRect();
+        /* 좌표만이 아니라 칩 기둥의 생김새까지 통째로 기억한다.
+           날릴 시점에는 이미 서버가 베팅을 0으로 되돌려 원본이 화면에서 사라진 뒤라,
+           그때 가서 복제하려 하면 복제할 것이 없다. */
+        next[s.seat] = {
+          rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+          html: chips.innerHTML,
+        };
       });
       /* 스트리트가 넘어갈 때, 그리고 판이 끝날 때 각자 앞의 칩이 중앙으로 간다.
          판이 끝나는 경우를 빼먹으면 마지막 스트리트 베팅이 그 자리에서 그냥 사라진다. */
@@ -1967,10 +2032,14 @@ export function holdemPage(user: WebUser): string {
       var handEnded = tb.ended && sweptEndHand !== tb.handNo;
       if (streetChanged || handEnded) {
         if (handEnded) sweptEndHand = tb.handNo;
-        var pot = potEl.getBoundingClientRect();
+        var pot = pileEl.getBoundingClientRect();
+        /* 목표는 팟 금액표가 아니라 칩 더미다. 칩이 숫자 알약으로 빨려 들어가면
+           "칩이 어디로 갔나"가 어긋난다 — 칩은 칩 더미로 가야 한다.
+           더미가 아직 비어 있으면(첫 스트리트) 그 자리라도 팟 알약보다는 낫다. */
+        if (!pot.width) pot = potEl.getBoundingClientRect();
         var n = 0;
         Object.keys(prevSpots).forEach(function(k){
-          flyChip(prevSpots[k], pot, n * 60, 'topot');
+          flyStack(prevSpots[k], pot, n * 55);
           n++;
         });
       }
@@ -2373,10 +2442,15 @@ export function holdemPage(user: WebUser): string {
 
       // 다 놓인 뒤 한꺼번에 중앙으로. 칩이 도착할 즈음 더미가 그 금액을 받아 그린다
       dealTimers.push(setTimeout(function(){
-        var pot = potEl.getBoundingClientRect();
+        var pot = pileEl.getBoundingClientRect();
+        if (!pot.width) pot = potEl.getBoundingClientRect();
         made.forEach(function(el, k){
-          var r = el.getBoundingClientRect();
-          if (r.width) flyChip(r, pot, k * 35, 'topot');
+          var chips = el.querySelector('.ht-spot-chips');
+          var r = chips && chips.getBoundingClientRect();
+          if (r && r.width) {
+            flyStack({ rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+              html: chips.innerHTML }, pot, k * 35);
+          }
           if (el.parentNode) el.parentNode.removeChild(el);
         });
         if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();

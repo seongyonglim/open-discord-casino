@@ -315,10 +315,32 @@ export interface EquityStage {
   boardLen: number;
   seats: SeatEquity[];
   /** 남은 카드가 한 장일 때만 채운다 — 지고 있는 쪽이 역전하는 카드 */
-  outs?: { seat: number; count: number; ranks: string[] }[];
+  outs?: SeatOuts[];
+}
+
+/**
+ * 역전 카드 묶음.
+ *
+ * `ranks`만으로는 화면에 카드를 그릴 수 없다. "A가 나오면 이긴다"와 "스페이드가 나오면
+ * 이긴다"는 화면에서 전혀 다르게 그려져야 하는데(전자는 A 넉 장, 후자는 무늬 하나),
+ * 랭크 목록으로는 그 구분이 사라진다. 그래서 실제 카드 번호를 그대로 보낸다.
+ *
+ * `bySuit`는 "한 무늬가 통째로 아웃"인 경우다 — 플러시 드로우가 대표적이다.
+ * 그때는 카드 아홉 장을 늘어놓는 대신 무늬 하나로 줄여 그린다.
+ */
+export interface SeatOuts {
+  seat: number;
+  count: number;
+  ranks: string[];
+  /** 카드 번호(0~51). 화면이 미니 카드로 그린다 */
+  cards: number[];
+  /** 통째로 아웃인 무늬 (0~3). 플러시 드로우 */
+  bySuit: number[];
 }
 
 const RANK_CH = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+/** 한 무늬에 남은 카드가 이 비율 이상 아웃이면 "그 무늬가 아웃"으로 묶는다 */
+const SUIT_GROUP_MIN = 5;
 /** 표본을 쓸 때의 뽑기 횟수. 플랍 이전(5장 남음)에만 쓴다 */
 const EQUITY_SAMPLES = 20_000;
 
@@ -404,7 +426,7 @@ export function equityAt(
  */
 export function outsAt(
   hands: { seat: number; hole: number[] }[], board: number[]
-): { seat: number; count: number; ranks: string[] }[] {
+): SeatOuts[] {
   if (hands.length < 2 || board.length !== 4) return [];
   const seen = board.concat(...hands.map(h => h.hole));
   const deck = remainingDeck(seen);
@@ -414,11 +436,10 @@ export function outsAt(
   const nowScore = hands.map(h => bestFive(h.hole.concat(board)).score ?? -1);
   const nowBest = Math.max(...nowScore);
 
-  const out: { seat: number; count: number; ranks: string[] }[] = [];
+  const out: SeatOuts[] = [];
   hands.forEach((h, i) => {
     if (nowScore[i] >= nowBest) return;         // 이미 앞서 있다 — 역전할 것이 없다
-    const ranks = new Set<string>();
-    let count = 0;
+    const hit: number[] = [];
     for (const c of deck) {
       full[4] = c;
       let best = -1, mine = -1;
@@ -428,15 +449,30 @@ export function outsAt(
         if (k === i) mine = s;
         if (s > best) best = s;
       }
-      if (mine >= best) { count++; ranks.add(RANK_CH[c >> 2]); }
+      if (mine >= best) hit.push(c);
     }
-    if (count > 0) {
-      out.push({
-        seat: h.seat, count,
-        // 센 랭크만 높은 순으로 — "A 또는 9가 나오면"처럼 읽히게 한다
-        ranks: [...ranks].sort((a, b) => RANK_CH.indexOf(b) - RANK_CH.indexOf(a)),
-      });
+    if (!hit.length) return;
+
+    /* 한 무늬가 통째로 아웃이면 그 무늬로 묶는다.
+       플러시 드로우는 아웃이 아홉 장인데, 그걸 카드 아홉 장으로 늘어놓으면 화면이
+       카드밭이 되고 "무늬 하나만 나오면 된다"는 사실은 오히려 안 보인다.
+       기준은 "그 무늬로 남은 카드 중 대부분이 아웃"이다 — 몇 장 빠져도(이미 진 조합이
+       되는 예외) 사람이 읽는 규칙은 여전히 "이 무늬가 나오면"이다. */
+    const bySuit: number[] = [];
+    for (let su = 0; su < 4; su++) {
+      const left = deck.filter(c => (c & 3) === su).length;
+      const got = hit.filter(c => (c & 3) === su).length;
+      if (got >= SUIT_GROUP_MIN && got >= left - 1) bySuit.push(su);
     }
+    const cards = hit.filter(c => bySuit.indexOf(c & 3) < 0);
+    const ranks = [...new Set(hit.map(c => RANK_CH[c >> 2]))]
+      .sort((a, b) => RANK_CH.indexOf(b) - RANK_CH.indexOf(a));
+    out.push({
+      seat: h.seat, count: hit.length, ranks,
+      // 높은 카드부터 — 화면은 앞에서 몇 장만 그린다
+      cards: cards.sort((a, b) => b - a),
+      bySuit,
+    });
   });
   return out;
 }
