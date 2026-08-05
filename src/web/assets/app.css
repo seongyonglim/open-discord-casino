@@ -1124,18 +1124,33 @@
   .ht-badge.cancel{background:rgba(255,90,90,.12);color:#e08585}
   @keyframes htPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
-  .ht-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px 0}
-  .ht-grid > div{display:flex;flex-direction:column;gap:3px}
-  .ht-grid .k{font-size:11px;color:var(--muted);letter-spacing:.3px}
+  /* 여섯 지표를 2×3 미니 카드로. 줄 형태로 쌓았을 때는 여섯 줄이 같은 무게로 늘어서서
+     무엇을 봐야 할지 정해지지 않았다. 칸을 나누면 각 값이 자기 상자를 갖는다. */
+  .ht-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:14px 0}
+  .ht-grid > div{display:flex;flex-direction:column;gap:2px;
+    padding:9px 11px;border-radius:11px;
+    background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
+  .ht-grid .k{font-size:10.5px;color:var(--muted);letter-spacing:.3px}
   .ht-grid .v{font-family:var(--mono);font-size:16px;font-weight:700}
   .ht-grid .v.gold{color:var(--gold)}
-  .ht-note{margin:0 0 14px;font-family:var(--mono);font-size:13px;color:var(--gold)}
+  /* 상태 배지와 같은 줄에 선다 — 한 줄짜리 문장 하나에 위아래 여백을 두 겹 주면
+     카드가 그만큼 늘어진다 */
+  .ht-badge-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}
+  .ht-note{font-family:var(--mono);font-size:11.5px;color:var(--gold);text-align:right}
   .ht-actions{display:flex;gap:10px;flex-wrap:wrap}
-  .ht-h3{margin:20px 0 8px;font-size:13px;color:var(--muted);letter-spacing:.4px}
+  .ht-h3{margin:18px 0 6px;font-size:13px;color:var(--muted);letter-spacing:.4px}
+  /* 상금 구조와 결과를 합친 한 표. 상금을 받는 자리만 밝고, 나머지는 가라앉힌다 —
+     이 표의 유일한 의미가 입상 여부인데 예전에는 그게 표에서 안 보였다. */
   .ht-prize{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}
   .ht-prize th{text-align:left;padding:6px 8px;font-size:11px;color:var(--muted);font-weight:600;
     border-bottom:1px solid rgba(255,255,255,.08)}
-  .ht-prize td{padding:6px 8px;font-family:var(--mono);border-bottom:1px solid rgba(255,255,255,.04)}
+  .ht-prize td{padding:7px 8px;font-family:var(--mono);border-bottom:1px solid rgba(255,255,255,.04)}
+  .ht-prize td.pz{text-align:right;font-weight:800}
+  .ht-prize tr.itm td{color:#eef5f0}
+  .ht-prize tr.itm td.pz{color:var(--gold)}
+  .ht-prize tr.itm td.pl{color:var(--gold);font-weight:800}
+  .ht-prize tr.out td{color:#6f7a73;font-size:12px}
+  .ht-prize td.nm i{font-style:normal;color:#4d564f}
 
   /* ── 홀덤 테이블 — 치수는 변수 한 곳에서 ────────────────────────────
      예전에는 아바타·카드·시계 고리 크기가 규칙마다 흩어져 있어서, 브레이크포인트마다
@@ -1987,7 +2002,7 @@
      오른쪽 굵은 자리에는 줄 세운 기준(누적 상금)을 놓는다. 순위를 만든 값과
      참고로 보는 값이 같은 무게로 보이면 표가 무엇을 말하는지 흐려진다. */
   .ht-rec{padding:4px 8px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
-  .ht-rec-row{display:grid;grid-template-columns:16px 1fr auto;gap:6px 8px;
+  .ht-rec-row{display:grid;grid-template-columns:18px 1fr auto;gap:6px 8px;
     align-items:center;padding:6px;border-radius:8px;font-size:12px}
   .ht-rec-row.me{background:rgba(212,175,55,.1)}
   .ht-rec-no{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);text-align:center}
@@ -1996,6 +2011,30 @@
   .ht-rec-s{grid-column:2;font-size:10.5px;color:var(--muted)}
   .ht-rec-p{grid-column:3;font-family:var(--mono);font-size:12px;font-weight:800;color:var(--gold);
     white-space:nowrap}
+  /* ── 포디움 ──────────────────────────────────────────────────────
+     순위표에서 눈이 실제로 찾는 것은 위 세 자리와 내 자리다. 스무 줄이 같은 무게로
+     늘어서면 그 넷을 찾는 데도 스무 줄을 다 읽어야 한다.
+     1~3위는 자기 상자를 주고, 4위 아래는 글자를 줄이고 가라앉힌다 —
+     "읽지 않아도 되는 줄"이라는 것을 모양으로 말한다. */
+  .ht-rec-row.pod{padding:8px 9px;margin-bottom:3px;
+    border:1px solid transparent;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  .ht-rec-row.gold{background:linear-gradient(180deg,rgba(212,175,55,.20),rgba(212,175,55,.06));
+    border-color:rgba(240,205,110,.45)}
+  .ht-rec-row.silver{background:linear-gradient(180deg,rgba(198,208,216,.15),rgba(198,208,216,.04));
+    border-color:rgba(198,208,216,.32)}
+  .ht-rec-row.bronze{background:linear-gradient(180deg,rgba(190,124,74,.16),rgba(190,124,74,.04));
+    border-color:rgba(200,138,84,.34)}
+  .ht-rec-row.gold .ht-rec-nm{font-size:13px;font-weight:800;color:#ffe9a8}
+  .ht-rec-row.gold .ht-rec-p{font-size:13.5px}
+  .ht-rec-row.silver .ht-rec-nm,.ht-rec-row.bronze .ht-rec-nm{font-weight:700}
+  .ht-rec-row.gold .ht-rec-no{font-size:13px}
+  .ht-rec-row.silver .ht-rec-no{color:#c6d0d8}
+  .ht-rec-row.bronze .ht-rec-no{color:#c88a54}
+  /* 4위 아래 — 참고용 수치는 더 작고 더 흐리게 */
+  .ht-rec-row.low .ht-rec-nm{font-size:11.5px;color:#a9b8ae}
+  .ht-rec-row.low .ht-rec-p{font-size:11.5px;color:rgba(212,175,55,.62)}
+  .ht-rec-row.low .ht-rec-s{font-size:9.5px;color:rgba(154,170,160,.55)}
+  .ht-rec-row.low.me .ht-rec-nm{color:#dce8e0}
 
   .ht-rank{padding:0 8px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
   .ht-rank[hidden]{display:none}
@@ -2096,7 +2135,7 @@
   .ht-win[hidden]{display:none}
   @keyframes htWinFade{from{opacity:0}to{opacity:1}}
   .ht-win-box{position:relative;width:min(420px,92vw);padding:30px 26px 24px;border-radius:20px;
-    text-align:center;
+    text-align:center;overflow:hidden;
     background:linear-gradient(180deg,#241d08,#14110a);
     border:1px solid rgba(240,205,110,.45);
     box-shadow:0 20px 60px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05) inset;
@@ -2105,6 +2144,38 @@
     from{opacity:0;transform:translateY(18px) scale(.9)}
     to{opacity:1;transform:none}
   }
+  /* ── 1등 연출 ────────────────────────────────────────────────────
+     상자 뒤에서 금빛이 천천히 숨쉬고, 그 위로 조각이 흩날린다.
+     조각은 요소를 스무 개 만들지 않고 repeating-linear-gradient 두 겹을 아래로
+     흘려서 낸다 — DOM을 늘리지 않고도 "떨어지는 것들"이 되고, 상자가 닫히면
+     같이 사라지므로 치울 것도 없다. */
+  .ht-win-glow{position:absolute;inset:-40% -20%;pointer-events:none;
+    background:radial-gradient(ellipse 55% 45% at 50% 22%,
+      rgba(255,214,110,.28) 0%,rgba(255,190,70,.10) 42%,rgba(255,190,70,0) 72%);
+    animation:htGlow 3.2s ease-in-out infinite}
+  @keyframes htGlow{0%,100%{opacity:.65;transform:scale(1)}50%{opacity:1;transform:scale(1.06)}}
+  /* 점 세 겹이 서로 다른 간격으로 깔려 천천히 내려온다.
+     처음에는 사선 줄무늬(repeating-linear-gradient) 두 겹이었는데, 줄이 화면 끝까지
+     이어져서 흩날리는 조각이 아니라 격자무늬 벽지가 됐다. 조각은 서로 이어지지 않아야
+     조각이다 — 타일마다 점 하나씩 찍고 타일 크기를 서로 어긋나게 둔다. */
+  .ht-win-conf{position:absolute;inset:-40% 0 0;pointer-events:none;opacity:.9;
+    background-image:
+      radial-gradient(circle at 30% 25%,rgba(255,214,110,.9) 0 1.7px,transparent 2.1px),
+      radial-gradient(circle at 72% 62%,rgba(255,255,255,.72) 0 1.3px,transparent 1.7px),
+      radial-gradient(circle at 50% 85%,rgba(255,186,84,.75) 0 1.5px,transparent 1.9px);
+    background-size:63px 84px,44px 61px,97px 73px;
+    -webkit-mask:linear-gradient(180deg,#000 0%,rgba(0,0,0,.4) 52%,transparent 76%);
+    mask:linear-gradient(180deg,#000 0%,rgba(0,0,0,.4) 52%,transparent 76%);
+    animation:htConf 5.5s linear infinite}
+  @keyframes htConf{from{transform:translateY(-9%)}to{transform:translateY(9%)}}
+  @media(prefers-reduced-motion:reduce){
+    .ht-win-glow,.ht-win-conf,.ht-win-crown{animation:none}
+  }
+  /* 글자는 후광 위에 와야 한다 — 후광이 absolute라(=위치 지정 요소) 그냥 두면
+     흐름 속의 글자보다 나중에 그려져 덮는다. 자식을 이름으로 하나씩 적지 않고
+     "장식이 아닌 직계 자식"으로 묶는다 — 나중에 줄이 하나 늘어도 따라온다.
+     (장식 둘은 aria-hidden이라 스크린리더에게도 이미 "내용 아님"으로 표시돼 있다) */
+  .ht-win-box > div:not([aria-hidden]),.ht-win-box > button{position:relative;z-index:1}
   .ht-win-crown{font-size:38px;line-height:1;margin-bottom:6px;
     animation:htCrown 2.4s ease-in-out infinite}
   @keyframes htCrown{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-5px) rotate(4deg)}}
@@ -2119,17 +2190,34 @@
     display:inline-flex;align-items:center;justify-content:center;
     font-size:17px;font-weight:800;color:var(--gold)}
   .ht-win-av.sm{width:22px;height:22px;border-width:1px;font-size:11px;box-shadow:none}
-  .ht-win-who{font-size:26px;font-weight:800;letter-spacing:-.3px;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .ht-win-prize{font-family:var(--mono);font-size:20px;font-weight:800;color:var(--gold);
-    margin-bottom:18px}
+  /* 우승자 이름과 상금은 이 화면의 주인공이다. 금색 그라디언트를 글자에 직접 입힌다 —
+     단색 금색보다 한 단계 화려하고, 큰 글자에서만 그 차이가 보인다. */
+  .ht-win-who{font-size:30px;font-weight:800;letter-spacing:-.4px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    background:linear-gradient(180deg,#fff6d8 0%,#f4dc94 45%,#d9ad3f 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .ht-win-prize{font-family:var(--mono);font-size:27px;font-weight:900;letter-spacing:-.5px;
+    margin-bottom:18px;
+    background:linear-gradient(180deg,#fff3c9 0%,#f0cd6e 50%,#c99a2c 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 2px 6px rgba(212,175,55,.35))}
   .ht-win-rest{display:flex;flex-direction:column;gap:4px;margin-bottom:20px}
   .ht-win-row{display:grid;grid-template-columns:34px 22px 1fr auto;gap:8px;align-items:center;
-    padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.05);
-    font-size:12.5px;text-align:left}
-  .ht-win-row span:first-child{font-family:var(--mono);color:var(--muted);font-size:11px}
+    padding:6px 10px;border-radius:8px;font-size:12.5px;text-align:left}
+  .ht-win-pl{font-family:var(--mono);font-size:11px}
   .ht-win-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .ht-win-row span:last-child{font-family:var(--mono);font-weight:700;color:#cbd8cf}
+  .ht-win-pz{font-family:var(--mono);font-weight:700}
+  /* 상금을 받은 자리 — 자기 상자를 갖는다 */
+  .ht-win-row.itm{background:rgba(212,175,55,.12);border:1px solid rgba(240,205,110,.28)}
+  .ht-win-row.itm .ht-win-pl{color:var(--gold)}
+  .ht-win-row.itm .ht-win-nm{color:#eef5f0;font-weight:600}
+  .ht-win-row.itm .ht-win-pz{color:var(--gold)}
+  /* 못 받은 자리 — 가라앉힌다. 다만 0P는 적는다: '-'는 "정보가 없다"는 뜻이라
+     "0원을 받았다"와 다르다. */
+  .ht-win-row.out{background:rgba(255,255,255,.025);padding:4px 10px;font-size:11.5px}
+  .ht-win-row.out .ht-win-pl,.ht-win-row.out .ht-win-nm,.ht-win-row.out .ht-win-pz{
+    color:#6f7a73}
+  .ht-win-row.out .ht-win-av{opacity:.55}
   .ht-win-close{width:100%}
 
   /* ── 공지사항 ────────────────────────────────────────────────────────

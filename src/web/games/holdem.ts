@@ -531,6 +531,10 @@ export function holdemPage(user: WebUser): string {
          결과표만 조용히 갈아끼우면 대회가 끝난 게 아니라 화면이 넘어간 것처럼 느껴진다. -->
     <div class="ht-win" id="htWin" hidden>
       <div class="ht-win-box">
+        <!-- 금빛 후광과 흩날리는 조각. 1등이 났다는 사실 자체가 연출이어야 한다 —
+             결과표만 갈아끼우면 대회가 끝난 게 아니라 화면이 넘어간 것처럼 느껴진다. -->
+        <div class="ht-win-glow" aria-hidden="true"></div>
+        <div class="ht-win-conf" aria-hidden="true"></div>
         <div class="ht-win-crown">👑</div>
         <div class="ht-win-title">WINNER</div>
         <!-- 디스코드 프로필 + 이름을 한 줄에 — 누가 이겼는지가 한눈에 잡혀야 한다 -->
@@ -598,11 +602,18 @@ export function holdemPage(user: WebUser): string {
       document.getElementById('htWinWho').textContent = first.username;
       document.getElementById('htWinPrize').textContent =
         first.prize > 0 ? num(first.prize) + 'P' : '';
-      document.getElementById('htWinRest').innerHTML = results.slice(1, 4).map(function(r){
-        return '<div class="ht-win-row"><span>' + r.place + '위</span>' +
+      /* 상금을 받은 자리와 못 받은 자리를 눈으로 갈라 놓는다.
+         예전에는 2~4위를 한 덩어리로 같은 톤에 늘어놓고 상금란에 '-'를 찍었다.
+         입상 여부가 이 표의 유일한 의미인데 그게 표에서 안 보였고, '-'는 "정보가 없다"는
+         뜻이라 "0원을 받았다"와 다르다. 이제 입상자는 카드로 세우고, 미입상자는
+         가라앉혀 0P로 적는다. */
+      document.getElementById('htWinRest').innerHTML = results.slice(1).map(function(r){
+        var itm = r.prize > 0;
+        return '<div class="ht-win-row' + (itm ? ' itm' : ' out') + '">' +
+          '<span class="ht-win-pl">' + r.place + '위</span>' +
           avatarHtml(r.userId, r.avatar, r.username, 'ht-win-av sm') +
           '<span class="ht-win-nm">' + esc(r.username) + '</span>' +
-          '<span>' + (r.prize > 0 ? num(r.prize) + 'P' : '-') + '</span></div>';
+          '<span class="ht-win-pz">' + num(r.prize) + 'P</span></div>';
       }).join('');
       winEl.hidden = false;
       if (window.casinoSfx && window.casinoSfx.victory) window.casinoSfx.victory();
@@ -627,13 +638,21 @@ export function holdemPage(user: WebUser): string {
     function recHtml(rows){
       if (!rows.length) return '<div class="empty" style="padding:16px 0">아직 끝난 대회가 없습니다</div>';
       /* 줄 세운 기준(누적 상금)을 오른쪽 굵은 자리에 놓는다. 우승·입상·판수는
-         작게 아래에 붙인다 — 순위를 만든 값과 참고 값이 섞이지 않게. */
+         작게 아래에 붙인다 — 순위를 만든 값과 참고 값이 섞이지 않게.
+
+         1~3위는 금·은·동 카드로 묶어 낸다. 순위표에서 눈이 실제로 찾는 것은 위 세 자리와
+         내 자리다. 스무 줄이 같은 무게로 늘어서면 그 넷을 찾는 데도 스무 줄을 다 읽어야
+         한다. 4위 아래는 글자를 줄이고 가라앉혀서, 읽지 않아도 되는 줄이라는 것을
+         모양으로 말한다. */
+      var PODIUM = ['gold', 'silver', 'bronze'];
       return rows.map(function(r, i){
         var mine = r.userId === MEID;
+        var rank = PODIUM[i] || '';
         var sub = (r.wins > 0 ? '👑 ' + r.wins + ' · ' : '') +
           '입상 ' + r.itm + ' / ' + r.played + '판';
-        return '<div class="ht-rec-row' + (mine ? ' me' : '') + '">' +
-          '<span class="ht-rec-no">' + (i + 1) + '</span>' +
+        return '<div class="ht-rec-row' + (mine ? ' me' : '') +
+            (rank ? ' pod ' + rank : ' low') + '">' +
+          '<span class="ht-rec-no">' + (i === 0 ? '👑' : (i + 1)) + '</span>' +
           '<span class="ht-rec-nm">' + esc(r.username) + '</span>' +
           '<span class="ht-rec-p">' + num(r.prize) + 'P</span>' +
           '<span class="ht-rec-s">' + sub + '</span>' +
@@ -783,19 +802,45 @@ export function holdemPage(user: WebUser): string {
         note = '최소 인원(' + t.minPlayers + '명)이 모이지 않아 취소되었습니다';
       }
 
-      var prizeRows = (t.prizes||[]).map(function(p,i){
-        return '<tr><td>' + (i+1) + '위</td><td>' + num(p) + 'P</td></tr>'; }).join('');
-      var results = (st.results||[]).map(function(r){
-        return '<tr><td>' + r.place + '위</td><td>' + esc(r.username) + '</td><td>' +
-          (r.prize > 0 ? num(r.prize) + 'P' : '-') + '</td></tr>'; }).join('');
+      /* 상금 구조와 결과를 한 표로 합친다.
+         예전에는 [순위|상금] 표와 [순위|이름|상금] 표가 따로 세로로 쌓여서, 대회가 끝난
+         뒤에는 같은 순위가 두 번 나오고 스크롤이 두 배로 길어졌다. 둘은 사실 같은 표의
+         "예정"과 "확정"이다 — 결과가 있으면 이름을 채우고 없으면 비워 둔다. */
+      var prizeList = t.prizes || [];
+      var resList = st.results || [];
+      var rowCount = Math.max(prizeList.length, resList.length);
+      var payTable = '';
+      if (rowCount) {
+        var rows = '';
+        for (var pi = 0; pi < rowCount; pi++) {
+          var res = resList[pi];
+          var place = res ? res.place : pi + 1;
+          var amt = res ? res.prize : (prizeList[pi] || 0);
+          // 상금을 받는 자리만 밝게. 나머지는 가라앉히고 금액도 0P로 적는다("-"는 정보가 없다)
+          var itm = amt > 0;
+          rows += '<tr class="' + (itm ? 'itm' : 'out') + '">' +
+            '<td class="pl">' + place + '위</td>' +
+            '<td class="nm">' + (res ? esc(res.username) : '<i>—<\i>') + '</td>' +
+            '<td class="pz">' + num(amt) + 'P</td></tr>';
+        }
+        payTable = '<h3 class="ht-h3">' + (resList.length ? '결과' : '상금 구조') + '</h3>' +
+          '<table class="ht-prize"><thead><tr><th>순위</th><th>플레이어</th><th>상금</th></tr></thead>' +
+          '<tbody>' + rows + '<\tbody><\table>';
+      }
 
+      /* 안내 문구는 배지 옆으로 붙인다. 한 줄짜리 <p>로 따로 두면 그 줄 하나 때문에
+         위아래 여백이 두 겹 생겨 카드가 늘어졌다 — 상태를 말하는 짧은 문장이므로
+         상태 배지와 같은 줄에 있는 것이 읽기에도 맞다. */
       lobbyEl.innerHTML =
         '<div class="ht-card">' +
           '<div class="ht-card-top">' +
             '<div><h2>' + esc(t.title) + '</h2>' +
               '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 21:00 · 시작 22:00 (KST)</p></div>' +
-            badge +
+            '<div class="ht-badge-wrap">' + badge +
+              (note ? '<span class="ht-note">' + esc(note) + '</span>' : '') + '</div>' +
           '</div>' +
+          /* 여섯 지표를 2×3 미니 카드로 나눈다. 줄 형태(k ····· v)로 쌓았을 때는
+             여섯 줄이 같은 무게로 늘어서서 무엇을 봐야 할지 정해지지 않았다. */
           '<div class="ht-grid">' +
             '<div><span class="k">참가자</span><span class="v">' + t.registered + ' / ' + t.maxPlayers + '</span></div>' +
             '<div><span class="k">상금 풀</span><span class="v gold">' + num(t.prizePool) + 'P</span></div>' +
@@ -804,12 +849,8 @@ export function holdemPage(user: WebUser): string {
             '<div><span class="k">지급 인원</span><span class="v">' + t.itm + '명</span></div>' +
             '<div><span class="k">최소 인원</span><span class="v">' + t.minPlayers + '명</span></div>' +
           '</div>' +
-          '<p class="ht-note">' + esc(note) + '</p>' +
           '<div class="ht-actions">' + action + '</div>' +
-          (prizeRows ? '<h3 class="ht-h3">상금 구조</h3><table class="ht-prize"><thead><tr><th>순위</th><th>상금</th></tr></thead><tbody>' +
-            prizeRows + '</tbody></table>' : '') +
-          (results ? '<h3 class="ht-h3">결과</h3><table class="ht-prize"><thead><tr><th>순위</th><th>이름</th><th>상금</th></tr></thead><tbody>' +
-            results + '</tbody></table>' : '') +
+          payTable +
         '</div>';
 
       var join = document.getElementById('htJoin');
