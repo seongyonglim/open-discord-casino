@@ -296,6 +296,182 @@ export function handScore(hole: number[], board: number[]): number {
   return evaluate7(hole[0], hole[1], board[0], board[1], board[2], board[3], board[4]);
 }
 
+/* ── 쇼다운 승률 (equity) ─────────────────────────────────────────────
+   리버 이전에 액션이 끝나면(전원 올인 등) 결과는 남은 카드에만 달려 있다.
+   그 시점에 "지금 누가 얼마나 유리한가"를 보여주면 남은 카드를 기다리는 재미가 생긴다.
+
+   전수 계산이다 — 몬테카를로가 아니다. 남은 덱에서 필요한 장수를 모두 뽑아 본다:
+     · 리버 한 장 남음: 최대 46가지
+     · 턴+리버: C(46,2) = 1,035가지
+     · 플랍부터: C(47,5)는 152만이라 너무 많다 → 이때만 표본을 쓴다
+   손 평가가 몇 만 번은 순식간이라(evaluate7은 몬테카를로용으로 만든 것이다)
+   서버에서 판이 끝날 때 한 번만 계산해 결과에 담아 둔다.
+
+   무승부는 인원수로 나눠 갖는 것으로 센다 — 실제 팟 분배와 같다.
+   그래서 합은 항상 100%가 된다. */
+export interface SeatEquity { seat: number; win: number; tie: number; equity: number }
+export interface EquityStage {
+  /** 이 단계에서 깔린 보드 장수 (3 = 플랍 · 4 = 턴) */
+  boardLen: number;
+  seats: SeatEquity[];
+  /** 남은 카드가 한 장일 때만 채운다 — 지고 있는 쪽이 역전하는 카드 */
+  outs?: { seat: number; count: number; ranks: string[] }[];
+}
+
+const RANK_CH = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+/** 표본을 쓸 때의 뽑기 횟수. 플랍 이전(5장 남음)에만 쓴다 */
+const EQUITY_SAMPLES = 20_000;
+
+/** 남은 덱 — 전체 52장에서 이미 보이는 카드(보드 + 공개된 홀)를 뺀다 */
+function remainingDeck(seen: number[]): number[] {
+  const used = new Set(seen);
+  const out: number[] = [];
+  for (let c = 0; c < 52; c++) if (!used.has(c)) out.push(c);
+  return out;
+}
+
+/**
+ * 주어진 보드 상태에서 각 사람의 승률.
+ * `hands`는 쇼다운에 남은 사람들의 홀 카드다(두 명 미만이면 계산할 것이 없다).
+ * `rng`를 주면 표본 계산에 쓴다 — 안 주면 5장이 남은 경우는 계산하지 않는다.
+ */
+export function equityAt(
+  hands: { seat: number; hole: number[] }[], board: number[],
+  rng?: (max: number) => number
+): SeatEquity[] | null {
+  if (hands.length < 2 || board.length >= 5) return null;
+  const need = 5 - board.length;
+  const seen = board.concat(...hands.map(h => h.hole));
+  const deck = remainingDeck(seen);
+  if (deck.length < need) return null;
+
+  const win = hands.map(() => 0);
+  const tie = hands.map(() => 0);
+  const eq = hands.map(() => 0);
+  let total = 0;
+
+  const full = board.slice();
+  const score = () => {
+    let best = -1, winners: number[] = [];
+    for (let i = 0; i < hands.length; i++) {
+      const s = evaluate7(hands[i].hole[0], hands[i].hole[1],
+        full[0], full[1], full[2], full[3], full[4]);
+      if (s > best) { best = s; winners = [i]; }
+      else if (s === best) winners.push(i);
+    }
+    total++;
+    if (winners.length === 1) { win[winners[0]]++; eq[winners[0]] += 1; }
+    else for (const w of winners) { tie[w]++; eq[w] += 1 / winners.length; }
+  };
+
+  if (need === 1) {
+    for (const c of deck) { full[4] = c; score(); }
+  } else if (need === 2) {
+    for (let i = 0; i < deck.length - 1; i++) {
+      full[3] = deck[i];
+      for (let j = i + 1; j < deck.length; j++) { full[4] = deck[j]; score(); }
+    }
+  } else {
+    /* 플랍 이전 — 전수는 152만 가지라 표본으로 간다. 20,000회면 오차가 0.4%p 아래라
+       퍼센트 정수 표시에는 충분하다. rng가 없으면 계산하지 않는다(추측을 내놓지 않는다). */
+    if (!rng) return null;
+    const pool = deck.slice();
+    for (let n = 0; n < EQUITY_SAMPLES; n++) {
+      // 필요한 만큼만 부분 셔플한다 — 매번 전체를 섞을 이유가 없다
+      for (let k = 0; k < need; k++) {
+        const j = k + rng(pool.length - k);
+        const t = pool[k]; pool[k] = pool[j]; pool[j] = t;
+      }
+      for (let k = 0; k < need; k++) full[board.length + k] = pool[k];
+      score();
+    }
+  }
+
+  return hands.map((h, i) => ({
+    seat: h.seat,
+    win: win[i] / total,
+    tie: tie[i] / total,
+    equity: eq[i] / total,
+  }));
+}
+
+/**
+ * 역전 카드(outs). 남은 카드가 정확히 한 장일 때만 뜻이 있다 —
+ * 두 장 남은 상태의 "아웃츠"는 실제로 두 장 조합이라 장수로 말할 수 없다.
+ * 실제 온라인 클라이언트도 턴에서만 아웃츠를 보여주는 이유가 이것이다.
+ *
+ * 지금 지고 있는 사람마다 "이 카드가 나오면 이기거나 나눠 갖게 되는" 카드를 센다.
+ */
+export function outsAt(
+  hands: { seat: number; hole: number[] }[], board: number[]
+): { seat: number; count: number; ranks: string[] }[] {
+  if (hands.length < 2 || board.length !== 4) return [];
+  const seen = board.concat(...hands.map(h => h.hole));
+  const deck = remainingDeck(seen);
+  const full = board.concat([0]);
+
+  // 지금(리버 없이) 앞서 있는 사람 — 네 장 보드로는 evaluate7을 쓸 수 없으므로 5장 조합으로 센다
+  const nowScore = hands.map(h => bestFive(h.hole.concat(board)).score ?? -1);
+  const nowBest = Math.max(...nowScore);
+
+  const out: { seat: number; count: number; ranks: string[] }[] = [];
+  hands.forEach((h, i) => {
+    if (nowScore[i] >= nowBest) return;         // 이미 앞서 있다 — 역전할 것이 없다
+    const ranks = new Set<string>();
+    let count = 0;
+    for (const c of deck) {
+      full[4] = c;
+      let best = -1, mine = -1;
+      for (let k = 0; k < hands.length; k++) {
+        const s = evaluate7(hands[k].hole[0], hands[k].hole[1],
+          full[0], full[1], full[2], full[3], full[4]);
+        if (k === i) mine = s;
+        if (s > best) best = s;
+      }
+      if (mine >= best) { count++; ranks.add(RANK_CH[c >> 2]); }
+    }
+    if (count > 0) {
+      out.push({
+        seat: h.seat, count,
+        // 센 랭크만 높은 순으로 — "A 또는 9가 나오면"처럼 읽히게 한다
+        ranks: [...ranks].sort((a, b) => RANK_CH.indexOf(b) - RANK_CH.indexOf(a)),
+      });
+    }
+  });
+  return out;
+}
+
+/**
+ * 판이 끝난 시점에 "스트리트별 승률"을 한꺼번에 만든다.
+ * 화면은 보드를 한 장씩 열면서 지금 깔린 장수에 맞는 단계를 보여준다 —
+ * 그래서 각 단계가 그때의 보드만 알고 계산된 값이어야 한다.
+ *
+ * `boardAtEnd`는 베팅이 끝난 시점의 보드 장수다. 그보다 앞선 단계는 만들지 않는다 —
+ * 그 시점에는 아직 액션이 있었으므로 "결과가 카드에만 달린" 상태가 아니었다.
+ */
+export function equityStages(
+  hands: { seat: number; hole: number[] }[], finalBoard: number[], boardAtEnd: number,
+  rng?: (max: number) => number
+): EquityStage[] {
+  if (hands.length < 2 || boardAtEnd >= 5) return [];
+  const stages: EquityStage[] = [];
+  // 플랍(3) · 턴(4)에서의 승률. 프리플랍(0)은 보여줄 자리가 없어 건너뛴다
+  for (const len of [3, 4]) {
+    if (len < boardAtEnd) continue;            // 이미 액션이 있던 스트리트다
+    if (len >= 5) continue;
+    const board = finalBoard.slice(0, len);
+    const seats = equityAt(hands, board, rng);
+    if (!seats) continue;
+    const stage: EquityStage = { boardLen: len, seats };
+    if (len === 4) {
+      const o = outsAt(hands, board);
+      if (o.length) stage.outs = o;
+    }
+    stages.push(stage);
+  }
+  return stages;
+}
+
 /** 팟 하나의 정산 결과 — 화면에서 팟을 하나씩 넘겨 보여주기 위해 층 단위로 남긴다 */
 export interface PotAward {
   /** 층 번호 (0 = 메인 팟) */

@@ -90,6 +90,20 @@ const st0 = HD.advanceHoldem();
 const TID = st0.tournament.id;
 const TABLE = HD.getTable(TID)!;
 
+/* 시작 블라인드 레벨. 기본은 1이다.
+   앤티는 레벨 6부터 붙는데(50/75/100/125/175/250), 정상 진행으로는 40분을 기다려야
+   그 화면을 볼 수 있다. 레벨은 "시작 시각으로부터 흐른 시간"에서만 나오므로
+   시작 시각을 뒤로 밀면 그 레벨에서 시작한다:
+     SIM_LEVEL=6 npx tsx scripts/sim-holdem.ts   (앤티 연출 확인용) */
+const START_LEVEL = Math.max(1, Math.min(T.BLIND_LEVELS.length, Number(process.env.SIM_LEVEL ?? 1)));
+if (START_LEVEL > 1) {
+  db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ? WHERE id = ?`)
+    .run((START_LEVEL - 1) * T.LEVEL_DURATION_SEC, TID);
+  const lv = T.BLIND_LEVELS[START_LEVEL - 1];
+  console.log(`\n  시작 레벨 ${lv.level} — 블라인드 ${lv.sb}/${lv.bb}`
+    + (lv.ante > 0 ? ` · 앤티 ${lv.ante}` : ' · 앤티 없음'));
+}
+
 const pool = T.prizePool(ALL.length, st0.tournament.prize_multiplier);
 console.log(`\n  대회: ${st0.tournament.title}`);
 console.log(`  참가 ${ALL.length}명 · 시작 스택 ${T.STARTING_STACK.toLocaleString('ko-KR')} · 블라인드 25/50`);

@@ -245,10 +245,18 @@
 
      그래서 앞 목소리가 끝날 때까지 기다렸다가 다음을 낸다. 다만 무한정 기다리지는 않는다 —
      0.8초를 넘기면 화면의 액션 표시보다 소리가 뒤처져서 누구 소리인지 알 수 없게 된다.
-     밀린 것이 3개를 넘으면 오래된 것부터 버린다. 지금 무슨 일이 일어나는지가 중요하지,
-     2초 전에 누가 체크했는지를 뒤늦게 말해줄 이유가 없다. */
+
+     ── 버리지 않는다
+     예전에는 밀린 것이 3개를 넘으면 오래된 것부터 버렸다. 그 결과 베팅 라운드가 길어지면
+     액션 소리가 간헐적으로 아예 안 났다: 폴링 한 번에 봇 액션 두세 개가 함께 도착하고,
+     0.8초 간격으로만 빠지니 큐가 계속 쌓여 넘친 만큼 조용히 사라진 것이다.
+
+     이제는 버리는 대신 간격을 좁혀 따라잡는다. 밀린 것이 둘 이상이면 0.38초로 붙여 내보낸다 —
+     두 낱말이 조금 겹치더라도 알아들을 수 있고, 아무 소리도 안 나는 것보다 낫다.
+     진짜 폭주(8개 초과)에서만 버린다. 그건 정상 진행에서 나올 수 없는 수다. */
   var VOICE_MAX_GAP_MS = 800;
-  var VOICE_QUEUE_MAX = 3;
+  var VOICE_MIN_GAP_MS = 380;   // 밀렸을 때 따라잡는 간격
+  var VOICE_QUEUE_MAX = 8;      // 이걸 넘기면 폭주다 (정상 진행에서는 3을 넘지 않는다)
   var voiceQueue = [], voiceFreeAt = 0, voiceTimer = null;
 
   function voiceLenMs(set){
@@ -259,11 +267,15 @@
     }
     return 400;   // 아직 안 받아졌으면 대략치로 잡는다
   }
+  // 밀린 게 많을수록 붙여 낸다 — 하나라도 버리지 않고 화면과의 시차를 줄인다
+  function voiceGapMs(set){
+    return voiceQueue.length >= 2 ? VOICE_MIN_GAP_MS : voiceLenMs(set);
+  }
   function voiceDrain(){
     voiceTimer = null;
     var next = voiceQueue.shift();
     if (!next) return;
-    voiceFreeAt = Date.now() + voiceLenMs(next[0]);
+    voiceFreeAt = Date.now() + voiceGapMs(next[0]);
     playSample(next[0], next[1]);
     if (voiceQueue.length) voiceTimer = setTimeout(voiceDrain, Math.max(0, voiceFreeAt - Date.now()));
   }
@@ -275,6 +287,8 @@
       return;
     }
     voiceQueue.push([set, gain]);
+    /* 여기서 버리면 그 액션은 소리가 아예 안 난다. 상한을 넉넉히 두고, 넘어가면
+       간격이 스스로 좁혀져(voiceGapMs) 따라잡으므로 실제로는 여기까지 오지 않는다. */
     while (voiceQueue.length > VOICE_QUEUE_MAX) voiceQueue.shift();
     if (!voiceTimer) voiceTimer = setTimeout(voiceDrain, Math.max(0, voiceFreeAt - now));
   }

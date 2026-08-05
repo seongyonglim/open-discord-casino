@@ -19,24 +19,40 @@ import * as T from '../services/tournament';
 
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
-/* 쇼다운을 보여주는 시간 (다음 핸드까지).
-   최악의 경우(프리플랍 올인 → 보드 5장을 한꺼번에 공개)에 클라이언트가 카드를 다 까는 데
-   2.56초, 폴링 지연까지 3.56초가 걸린다. 6초로 두면 그 뒤에도 2.4초는 결과를 읽을 수 있고,
-   보드가 이미 다 깔린 일반적인 리버 쇼다운은 5초가 온전히 남는다.
-   8초였을 때는 체감이 10초를 넘어 판 사이가 늘어졌다. */
+/* 쇼다운을 보여주는 시간 (다음 핸드까지). 보드가 이미 다 깔린 리버 쇼다운 기준이다.
+   그 경우 화면은 [팟 정산 지연 0.55초 → WIN 배지 1.4초 → 칩 이동 0.9초]를 재생하고,
+   폴링 지연 1초를 더해도 6초 안에 끝나 2초는 결과를 읽을 수 있다.
+   8초였을 때는 체감이 10초를 넘어 판 사이가 늘어졌다.
+
+   보드가 덜 깔린 채로 끝난 판(올인)은 클라이언트가 남은 스트리트를 한 장씩 여는데,
+   그 시간을 여기에 더해야 한다 — 아래 revealExtraSec가 그 몫이다. */
 export const SHOWDOWN_SEC = 6;
+/* 남은 보드를 한 장씩 여는 데 드는 추가 시간.
+   클라이언트(web/games/holdem.ts syncBoard)의 박자를 그대로 옮긴 것이다:
+     같은 스트리트 안 0.3초 · 스트리트가 바뀌면 1.5초.
+   두 곳이 어긋나면 마지막 카드를 열다가 다음 판이 시작된다.
+   그래서 스트리트 하나가 남을 때마다 2초를 준다(1.5초 + 카드 한 장 + 여유). */
+export function revealExtraSec(boardAtEnd: number): number {
+  if (boardAtEnd >= 5) return 0;   // 리버까지 이미 깔렸다 — 열 것이 없다
+  if (boardAtEnd === 4) return 2;  // 리버 한 장
+  if (boardAtEnd === 3) return 4;  // 턴 + 리버
+  return 6;                        // 플랍 세 장 + 턴 + 리버 (프리플랍 올인)
+}
 /* 폴드로 끝난 판.
    3초였는데 다시 "급하다"는 말이 나왔다. 계산해 보면 실제로 3초가 남지 않는다:
    마지막 액션 정지(1.1초) + 칩이 팟으로 모이는 연출 + 팟이 승자에게 넘어가는 연출(0.55초 지연)
    이 앞에서 시간을 먹고, 폴링 지연 1초까지 겹치면 결과를 읽을 시간은 1초도 안 남는다.
-   5초로 두면 연출이 다 끝난 뒤에도 2초 남짓 테이블을 볼 수 있다.
-   쇼다운(6초)보다는 짧게 유지한다 — 읽을 것이 승자 이름뿐이라 같을 필요는 없다. */
-export const FOLD_END_SEC = 5;
+   5초로 두면 연출이 다 끝난 뒤에도 2초 남짓 테이블을 볼 수 있었다.
+
+   여기에 WIN 배지(1.4초)가 들어왔다 — 칩보다 먼저 승자를 보여주는 순서가 폴드로 끝난
+   판에도 똑같이 적용된다. 그만큼 6초로 올린다. 5초로 두면 읽을 시간이 다시 사라진다.
+   쇼다운(6초 + 보드 공개 시간)보다는 짧게 유지한다 — 읽을 것이 승자 이름뿐이다. */
+export const FOLD_END_SEC = 6;
 /* 사이드 팟을 하나 더 보여주는 데 드는 시간.
-   화면은 층마다 "승자·족보 표시 → 칩이 날아감 → 잠깐 멈춤"을 재생한다(약 1.9초).
-   실제 온라인 클라이언트도 층당 1.5~2초 남짓 쓴다 — 더 끌면 판이 늘어지고,
-   더 줄이면 칩이 도착하기 전에 다음 층이 시작돼 누가 무엇을 가져갔는지 놓친다. */
-export const SIDE_POT_STEP_SEC = 2;
+   화면은 층마다 "WIN 배지 → 1.4초 대기 → 칩이 날아감(0.9초)"을 재생한다(POT_STEP_MS 2.5초).
+   더 끌면 판이 늘어지고, 더 줄이면 칩이 도착하기 전에 다음 층이 시작돼
+   누가 무엇을 가져갔는지 놓친다. */
+export const SIDE_POT_STEP_SEC = 3;
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
 
@@ -631,6 +647,10 @@ function endHand(
      남은 사람이 한 명이므로 점수를 비교할 필요가 없다. */
   const scores = new Map<number, number>();
   const live = views.filter(v => v.state !== 'folded');
+  /* 베팅이 끝난 시점의 보드 장수. 아래에서 런아웃으로 채우기 전에 기억해 둔다 —
+     클라이언트가 몇 장을 한 장씩 열어야 하는지가 이 값이고, 다음 판 시작을 그만큼
+     미뤄야 마지막 카드를 열다가 판이 넘어가지 않는다. */
+  const boardAtEnd = board.length;
   if (live.length === 1) {
     scores.set(live[0].seat, 1);
   } else {
@@ -702,6 +722,21 @@ function endHand(
           };
         })
       : [],
+    /* 스트리트별 승률 — 리버 이전에 액션이 끝난 판(올인 등)에서만 채워진다.
+       화면이 보드를 한 장씩 열면서 지금 깔린 장수에 맞는 단계를 보여준다.
+
+       여기서 한 번 계산해 박아 둔다. 폴링마다 다시 계산하면 초당 한 번씩 전수 계산을
+       돌리게 되고(턴 기준 46가지 × 사람 수), 무엇보다 판이 끝난 뒤에는 값이 바뀌지 않는다.
+       진행 중인 판에는 절대 담기지 않는다 — 승률은 남의 홀 카드를 알아야 나오는 값이라
+       진행 중에 내려보내면 그게 곧 정보 유출이다. endHand 안에서만 부르는 이유다. */
+    equity: showdown && live.length > 1 && boardAtEnd < 5
+      ? G.equityStages(
+        live.map(v => ({
+          seat: v.seat,
+          hole: JSON.parse(rows.find(r => r.seat === v.seat)!.hole_json) as number[],
+        })),
+        board, boardAtEnd, randomInt)
+      : [],
   };
   run(`UPDATE holdem_hands SET ended_at = ?, result_json = ?, to_act_seat = NULL, action_deadline = NULL
        WHERE id = ? AND ended_at IS NULL`, now, JSON.stringify(result), hand.id);
@@ -710,12 +745,20 @@ function endHand(
   eliminateBusted(t, table, hand, views, now);
 
   /* 팟이 여러 층이면 화면이 하나씩 넘기며 보여주므로 그만큼 시간이 더 든다.
-     늘리지 않으면 마지막 층을 보여주기도 전에 다음 판이 시작된다 —
-     사이드 팟이 세 개면 4초가 더 필요한데 6초 안에 다 넣을 수 없다.
-     층 수는 여기서 이미 알고 있으므로 그 값으로 정확히 계산한다. */
-  const extraPots = showdown && live.length > 1 ? Math.max(0, potAwards.length - 1) : 0;
+     늘리지 않으면 마지막 층을 보여주기도 전에 다음 판이 시작된다.
+     층 수는 여기서 이미 알고 있으므로 그 값으로 정확히 계산한다.
+
+     같은 승자가 연달아 가져가는 층은 화면이 하나로 합쳐서 한 번만 보여준다
+     (mergeSameWinner). 그래서 층 수가 아니라 "승자가 바뀌는 횟수"로 세야 맞다 —
+     사이드 팟 세 개를 한 사람이 다 먹으면 화면은 한 번만 재생한다. */
+  const shownLayers = potAwards.reduce((n, pa, i) => {
+    if (i === 0) return 1;
+    const key = (x: typeof pa) => x.winners.map(w => w.seat).sort((a, b) => a - b).join(',');
+    return key(pa) === key(potAwards[i - 1]) ? n : n + 1;
+  }, 0);
+  const extraPots = showdown && live.length > 1 ? Math.max(0, shownLayers - 1) : 0;
   const delay = showdown && live.length > 1
-    ? SHOWDOWN_SEC + extraPots * SIDE_POT_STEP_SEC
+    ? SHOWDOWN_SEC + revealExtraSec(boardAtEnd) + extraPots * SIDE_POT_STEP_SEC
     : FOLD_END_SEC;
   run(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`, now + delay, table.id);
 }
