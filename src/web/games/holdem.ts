@@ -825,7 +825,7 @@ export function holdemPage(user: WebUser): string {
         }
         payTable = '<h3 class="ht-h3">' + (resList.length ? '결과' : '상금 구조') + '</h3>' +
           '<table class="ht-prize"><thead><tr><th>순위</th><th>플레이어</th><th>상금</th></tr></thead>' +
-          '<tbody>' + rows + '<\tbody><\table>';
+          '<tbody>' + rows + '<\/tbody><\/table>';
       }
 
       /* 안내 문구는 배지 옆으로 붙인다. 한 줄짜리 <p>로 따로 두면 그 줄 하나 때문에
@@ -1259,8 +1259,10 @@ export function holdemPage(user: WebUser): string {
           body = '<span class="ht-eq-p">' + pct.toFixed(1) + '%</span>';
         } else if (pct <= 0) {
           /* 역전할 카드가 한 장도 없다. 0.0%를 적는 것보다 이름을 붙이는 것이 낫다 —
-             포커에서 이 상태에는 이미 이름이 있다. */
-          body = '<span class="ht-eq-dead">DRAWING DEAD</span>';
+             포커에서 이 상태에는 이미 이름이 있다.
+             폭발 안에 넣는다(.ht-eq-outs) — 가장 절박한 상태인데 배경 없는 글자로
+             두면 다른 말풍선들 사이에서 오히려 가장 조용해진다. */
+          body = '<span class="ht-eq-outs"><span class="ht-eq-dead">DRAWING DEAD<\/span><\/span>';
         } else {
           /* 쫓는 쪽 — 숫자보다 "무엇이 나와야 하나"가 먼저다. 실제 카드를 그린다.
              글자로 "아웃 8장 · A K"라고 적던 것을 없앴다. 카드 게임인데 카드를 글자로
