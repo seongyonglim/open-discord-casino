@@ -70,7 +70,9 @@
                   'card-flip':'mp3', 'card-deal':'mp3',
                   'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3',
                   'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3',
-                  'tournament-win':'mp3' };
+                  'tournament-win':'mp3',
+                  'act-allin':'mp3', 'act-bet':'mp3', 'act-call':'mp3',
+                  'act-check':'mp3', 'act-raise':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
   // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
@@ -94,6 +96,16 @@
        (실효 -32.1dB — 가장 조용한 mine-coin과 같은 수준).
        축하 음악이 다른 소리를 압도하면 안 된다. */
     'tournament-win': 0.09,
+    /* 홀덤 액션 음성(All-In · Bet · Call · Check · Raise).
+       실측 RMS: 올인 -20.6 · 벳 -21.5 · 콜 -20.5 · 체크 -23.3 · 레이즈 -27.3dB.
+
+       이 소리는 칩 소리와 "동시에" 난다. 그래서 기준선(-32dB)에 그대로 맞추면 둘이
+       같은 크기로 부딪혀 서로를 갉아먹는다. 목소리는 잡음보다 알아듣기 쉬우므로
+       1dB 낮은 -33dB에 맞춰도 충분히 들리고, 칩 소리가 주된 촉감으로 남는다.
+       올인만 -31dB로 2dB 올렸다 — 판을 통째로 거는 순간이라 다른 액션과 같으면 안 된다.
+       보정 후 피크는 전부 -11dB 이하라 클리핑 여유가 넉넉하다. */
+    'act-allin': 0.302, 'act-bet': 0.266, 'act-call': 0.237,
+    'act-check': 0.327, 'act-raise': 0.519,
   };
 
   // 음원 앞뒤의 무음을 잘라낸다.
@@ -163,6 +175,14 @@
        없으면 playSample이 false를 돌려주고 기존 팡파레로 대체되므로 지금도 동작한다.
        파일을 넣는 순간 자동으로 그쪽이 쓰인다(SFX_NORM에 보정값만 재서 넣으면 된다). */
     victory: ['tournament-win'],
+    /* 홀덤 액션 음성. 칩 소리를 "대체"하지 않고 그 위에 겹쳐 낸다 —
+       칩 소리는 "돈이 나갔다", 이 소리는 "무슨 행동을 했다"로 역할이 다르다.
+       체크는 칩이 나가지 않으므로 이 소리만 난다(그래서 체크가 조용하지 않게 된다). */
+    actallin: ['act-allin'],
+    actbet: ['act-bet'],
+    actcall: ['act-call'],
+    actcheck: ['act-check'],
+    actraise: ['act-raise'],
   };
   // 페이지가 쓰지도 않는 음원까지 받으면 WAV가 커서 낭비가 크다.
   // 각 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다.
@@ -286,6 +306,19 @@
     chipWin: function(){
       if (playSample('chipwin', 1)) return;
       this.win();
+    },
+    /* 홀덤 액션 음성 — 서버가 쓰는 행동 이름(fold/check/call/bet/raise/allin)을 그대로 받는다.
+       칩 소리와 별개로 호출하는 것이 중요하다: 칩 소리를 이걸로 갈아치우면 안 된다.
+       폴드는 음원이 없다(팩에 없다) — 조용히 넘어가는 게 폴드에는 오히려 맞다.
+       음원이 아직 안 받아졌으면 playSample이 false를 돌려주고 아무 일도 일어나지 않는다.
+       대체 합성음을 만들지 않는다 — 목소리를 삐 소리로 흉내 내면 없느니만 못하다. */
+    action: function(kind){
+      var set = kind === 'allin' ? 'actallin'
+        : kind === 'bet' ? 'actbet'
+        : kind === 'call' ? 'actcall'
+        : kind === 'check' ? 'actcheck'
+        : kind === 'raise' ? 'actraise' : null;
+      if (set) playSample(set, 1);
     },
     // 칩 올리기 — 동전 넣는 소리 (동전·골드바 공통)
     chip: function(){

@@ -12,7 +12,7 @@ import {
   type LadderRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
+import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
 const TOTAL_ROWS = 8;
@@ -179,11 +179,10 @@ const RULES_HTML = `
 
 export function ladderPage(user: WebUser): string {
   const body = `
-    ${gameSwitcher('ladder')}
+    ${gameSwitcher('ladder', 'ldHelp')}
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
-          ${helpButton('ldHelp')}
           <div id="lHistory" class="bead"></div>
           <div class="board-stage">
             <div id="lBoard" class="ladder-board"></div>

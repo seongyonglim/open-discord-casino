@@ -15,7 +15,7 @@ import {
   type CrashRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
+import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
 const HOUSE_EDGE = 0.01;
@@ -202,11 +202,10 @@ const RULES_HTML = `
 
 export function crashPage(user: WebUser): string {
   const body = `
-    ${gameSwitcher('graph')}
+    ${gameSwitcher('graph', 'cgHelp')}
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
-          ${helpButton('cgHelp')}
           <div id="cHistory" class="hist-row"></div>
           <div class="crash-stage">
             <div class="crash-center">

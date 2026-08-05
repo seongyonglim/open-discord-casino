@@ -104,7 +104,6 @@
   @keyframes mainIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
   main{max-width:1320px;margin:0 auto;padding:16px 16px 40px}
-  /* position:relative는 오른쪽 위에 붙는 규칙 도움말 버튼(.card > .helpbtn)의 기준이다 */
   .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
     padding:20px;box-shadow:inset 0 1px 0 rgba(212,175,55,.14)}
   .card + .card{margin-top:16px}
@@ -177,6 +176,10 @@
   .gs-pill:hover{border-color:var(--gold-dim);color:var(--txt)}
   .gs-pill.active{border-color:var(--gold);color:var(--gold);background:rgba(212,175,55,.08)}
   .gs-ic{width:16px;height:16px;display:flex;flex:none}
+  /* 규칙 도움말 — 전환 바의 오른쪽 끝. margin-left:auto로 알약들과 떨어뜨려
+     "게임 고르기"와 "규칙 보기"가 다른 일이라는 게 보이게 한다.
+     알약과 높이를 맞춰야 줄이 흐트러지지 않는다(알약은 패딩 8px + 글자 → 약 35px). */
+  .gs-help{width:32px;height:32px;margin-left:auto;align-self:center;font-size:14px}
   .gs-ic svg{width:100%;height:100%}
 
   /* 게임 공통 레이아웃 (베팅 패널 + 게임판) */
@@ -944,10 +947,10 @@
     font-family:var(--mono);font-size:12px;font-weight:700;line-height:1;color:#9fc0ad;
     transition:border-color .12s,color .12s}
   .helpbtn:hover{border-color:var(--gold);color:var(--gold)}
-  /* 게임 카드의 오른쪽 위 구석. 블랙잭은 펠트 안에 따로 자리를 잡아 뒀고(.bj-table > .helpbtn),
-     나머지 게임은 카드 자체를 기준으로 붙인다 — 게임마다 판 모양이 달라서 공통으로 삼을
-     내부 요소가 없다. (기준이 되는 position:relative는 .card 기본 규칙에 있다) */
-  .card > .helpbtn{position:absolute;top:14px;right:14px;z-index:3}
+  /* 예전에는 게임 카드 오른쪽 위 구석에 절대배치했는데(.card > .helpbtn) 게임마다 그 자리에
+     다른 것이 있어서 실제로 가렸다 — 사다리는 출목표, 그래프는 최근 배율 기록, 바카라는 범례.
+     판 위에는 게임이 쓰지 않는 자리가 없다는 게 문제였다.
+     지금은 모든 게임 화면이 공통으로 갖는 전환 바 오른쪽 끝에 둔다(.gs-help). */
   .helpdlg{max-width:440px;width:calc(100% - 32px);padding:0;color:var(--txt);
     background:var(--panel);border:1px solid var(--line);border-radius:14px;
     box-shadow:0 24px 60px rgba(0,0,0,.7)}
