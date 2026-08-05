@@ -115,6 +115,11 @@
   .stat .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
   .stat .val.gold{color:var(--gold)}
   .stat .val.hi{color:var(--win)}
+  .stat .val.lo{color:var(--lose)}
+  /* 큰 숫자를 읽는 데 필요한 맥락 한 줄 — 순위 없는 잔액, 판수 없는 손익은
+     크기를 가늠할 수 없다. 숫자와 같은 무게로 보이면 안 되므로 작고 흐리게. */
+  .stat .sub{margin-top:3px;font-size:11.5px;color:var(--muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th{text-align:left;color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;
     letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -161,6 +166,12 @@
   .game-card h3{margin:2px 0 0;font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.3px}
   /* 설명이 남는 공간을 모두 차지하게 해서, 설명 길이가 달라도 버튼은 항상 카드 맨 아래에 정렬된다 */
   .game-card p{margin:0 0 4px;color:var(--muted);font-size:13px;flex:1}
+  /* 고르기 전에 알면 도움이 되는 수치 한 줄 — 최대 배당, 덱 수 같은 것.
+     설명(flex:1)과 달리 늘어나지 않게 flex:none으로 두고, 숫자라서 고정폭으로 쓴다.
+     설명보다 한 단 작고 흐리게 — 이것부터 읽히면 카드가 사양표가 된다. */
+  .game-card .gc-fact{flex:none;margin:0 0 6px;padding-top:6px;
+    border-top:1px solid rgba(255,255,255,.055);
+    font-family:var(--mono);font-size:11px;color:#6d6d73;letter-spacing:-.1px}
   .game-card .btn{justify-content:center}
 
   /* 아이콘 줄 — 왼쪽 아이콘, 오른쪽 배지 */

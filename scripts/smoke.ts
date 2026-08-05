@@ -148,6 +148,33 @@ async function main(): Promise<void> {
       check(`/sfx/${f} ${gz ? `압축 ${orig.length}→${r.body.length}B` : '무압축(이득 없음)'}`,
         Buffer.compare(decoded(r), orig) === 0);
     }
+
+    /* app.js가 이름을 부르는 음원이 실제로 있는가.
+       위 검사는 "파일이 있는데 서빙되나"를 본다. 그 반대 — app.js에 이름만 올라가고
+       파일이 없는 경우 — 는 아무 데서도 안 걸린다. playSample이 조용히 false를 돌려주고
+       소리만 안 난다. 화면은 정상이라 배포 후에도 모른다.
+
+       SFX_EXT는 app.js가 쓰는 이름 → 확장자 표다. 여기에 있는 것은 전부 파일이 있어야 한다
+       (tournament-win 하나만 예외였는데 지금은 파일이 들어왔다). */
+    {
+      const appSrc = readFileSync(join(ROOT, 'src', 'web', 'assets', 'app.js'), 'utf8');
+      const block = appSrc.match(/var SFX_EXT = \{([\s\S]*?)\};/);
+      check('app.js에서 SFX_EXT 표를 찾았다', block != null);
+      const declared = [...(block?.[1] ?? '').matchAll(/'([\w-]+)'\s*:\s*'(\w+)'/g)]
+        .map(m => `${m[1]}.${m[2]}`);
+      check(`SFX_EXT에 ${declared.length}종이 선언돼 있다`, declared.length >= 18, String(declared.length));
+      const onDisk = new Set(readdirSync(join(ROOT, 'public', 'sfx')));
+      const missing = declared.filter(f => !onDisk.has(f));
+      check('app.js가 부르는 음원 파일이 전부 있다', missing.length === 0, missing.join(', '));
+      // 화이트리스트에 없으면 파일이 있어도 404가 된다 (서버가 이름으로만 받는다)
+      const notServed: string[] = [];
+      for (const f of declared) {
+        if (!onDisk.has(f)) continue;
+        if ((await get(`/sfx/${f}`)).status !== 200) notServed.push(f);
+      }
+      check('app.js가 부르는 음원이 전부 서빙된다 (화이트리스트 누락 없음)',
+        notServed.length === 0, notServed.join(', '));
+    }
     const cardFiles = readdirSync(join(ROOT, 'public', 'cards'));
     // 앞면 52장 + 뒷면 2종(남색·마룬)
     check(`카드 54장 존재 (실제 ${cardFiles.length}장)`, cardFiles.length === 54);

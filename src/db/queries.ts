@@ -256,6 +256,36 @@ export function getLeaderboard(limit = 10): LeaderboardRow[] {
   );
 }
 
+/* ── 로비 상단에 쓰는 내 오늘 요약 ────────────────────────────────────
+   "최근 큰 승리"는 원장에서 순이익을 낼 수 없어서 뺐다. 여기서는 낼 수 있다 —
+   한 사람의 하루치를 전부 더하면 베팅 차감(-)과 정산 지급(+)이 같은 합에 들어가므로
+   짝을 맞출 필요가 없다. 개별 판의 손익은 알 수 없지만 하루 합계는 정확하다.
+
+   'game:'으로 시작하는 행만 본다. 출석·재난지원금·관리자 조정은 게임 손익이 아니다.
+   취소 환불(':cancel')도 같은 합에 들어가야 맞다 — 걸었다가 돌려받았으면 0이다.
+
+   순위는 잔액 기준이다(랭킹 페이지와 같은 기준). 동점자는 같은 등수로 보이는 게
+   맞으므로 "나보다 많은 사람 수 + 1"로 센다 — 랭킹 페이지의 줄 번호와 한 칸
+   어긋날 수 있지만, 그건 줄 번호가 동점을 갈라 놓기 때문이고 이쪽이 맞다. */
+export interface MyTodayRow {
+  net: number;      // 오늘 게임 순손익
+  rounds: number;   // 오늘 정산된 판수 (베팅 행 제외)
+}
+export function getMyToday(userId: string, sinceUnix: number): MyTodayRow {
+  const r = one<{ net: number | null; rounds: number }>(
+    `SELECT COALESCE(SUM(delta), 0) AS net,
+            SUM(CASE WHEN instr(substr(reason, 6), ':') = 0 THEN 1 ELSE 0 END) AS rounds
+       FROM points_ledger
+      WHERE user_id = ? AND reason LIKE 'game:%' AND created_at >= ?`, userId, sinceUnix);
+  return { net: r?.net ?? 0, rounds: r?.rounds ?? 0 };
+}
+
+export function getBalanceRank(balance: number): { rank: number; total: number } {
+  const above = one<{ n: number }>(`SELECT COUNT(*) AS n FROM users WHERE balance > ?`, balance)!.n;
+  const total = one<{ n: number }>(`SELECT COUNT(*) AS n FROM users`)!.n;
+  return { rank: above + 1, total };
+}
+
 // 베팅: 잔액이 충분할 때만 원자적으로 차감 후 라운드 생성 (동시 요청에도 잔액이 음수로 내려가지 않도록 조건부 UPDATE로 검증)
 export function placeBet(userId: string, gameType: string, betAmount: number, initialState: unknown): { ok: true; roundId: number; balance: number } | { ok: false; error: 'insufficient_balance' } {
   betAmount = Math.floor(betAmount);

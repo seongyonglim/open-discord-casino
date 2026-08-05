@@ -170,7 +170,14 @@ function statePayload(st: HoldemStatus, userId: string) {
          초기화되므로 이것 없이는 화면에 한 번도 뜨지 않는다. 클라이언트는 보드를
          깔기 전 정지 구간에서 이걸로 라벨을 채운다. */
       lastActor: hand && hand.last_actor_seat != null && hand.last_actor_action
-        ? { seat: hand.last_actor_seat, act: hand.last_actor_action, amount: hand.last_actor_amount }
+        ? {
+            seat: hand.last_actor_seat, act: hand.last_actor_action,
+            amount: hand.last_actor_amount,
+            /* 그 자리가 이 판에 넣은 총액. committed는 스트리트가 넘어가도 초기화되지
+               않으므로(bet만 초기화된다) 스트리트를 닫은 행동에도 값이 살아 있다.
+               올인 음악이 레이즈 올인과 콜 올인을 가르는 데 쓴다. */
+            committed: bySeat.get(hand.last_actor_seat)?.committed ?? 0,
+          }
         : null,
       level,
       nextLevelIn: T.nextLevelIn(elapsed),
@@ -195,6 +202,10 @@ function statePayload(st: HoldemStatus, userId: string) {
           presence: s.presence,
           inHand: h != null,
           bet: h?.bet ?? 0,
+          /* 이 판에 지금까지 넣은 총액. 베팅은 전부 공개 정보라 숨길 것이 없다.
+             올인 음악이 "이건 레이즈 올인인가, 남의 올인에 대한 콜인가"를 가르는 데 쓴다 —
+             스트리트 베팅액(bet)만으로는 스트리트가 넘어가면 비교가 어긋난다. */
+          committed: h?.committed ?? 0,
           state: h?.state ?? 'out',
           won: h?.won ?? 0,
           // 마지막으로 한 행동 ("콜 300"처럼 자리 옆에 띄운다)
@@ -522,7 +533,8 @@ export function holdemPage(user: WebUser): string {
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
-      'actallin','actbet','actcall','actcheck','actraise','actfold'];</script>
+      'actallin','actbet','actcall','actcheck','actraise','actfold',
+      'potwin','clockwarn','allinbgm'];</script>
   <script>
   (function(){
     var MEID = window.__MEID__;
@@ -981,13 +993,18 @@ export function holdemPage(user: WebUser): string {
        1초마다 뚝뚝 끊긴다. 그래서 폴링이 준 값을 기준점으로 잡고 그 뒤로는
        실제 흐른 시간으로 보간해 매 프레임 그린다 — 다음 폴링이 오면 기준점만 새로 맞춘다.
 
-       마지막 5초에 색을 바꾸고 초당 한 번 짧게 울린다. 시간이 다 되면 서버가 자동으로
-       체크(불가하면 폴드)하므로, 이 경고는 "지금 안 누르면 자동으로 넘어간다"는 뜻이다. */
-    var clockBase = null;      // { seat, left, at, total }
-    var clockBeeped = null;    // 마지막으로 울린 남은 초 (같은 초에 두 번 울리지 않게)
+       마지막 5초에 색을 바꾸고 똑딱 소리를 한 번 낸다(4.6초짜리 음원이라 5초를 그대로
+       메운다). 시간이 다 되면 서버가 자동으로 체크(불가하면 폴드)하므로, 이 경고는
+       "지금 안 누르면 자동으로 넘어간다"는 뜻이다.
+
+       누구 차례든 울린다. 예전에는 내 차례에만 초당 한 번 카드 소리를 냈는데, 남이
+       시간에 쫓기는 것도 판의 긴장이라 보여주는 게 맞다 — 그리고 그 사람이 자동으로
+       넘어가면 내 차례가 곧 온다는 신호이기도 하다. */
+    var clockBase = null;      // { seat, left, at, total, hand, street }
+    var clockWarned = null;    // 이미 경고를 낸 (판:스트리트:자리) — 한 차례에 한 번만 울린다
     function noteClock(tb){
       if (!tb || tb.toActSeat == null || tb.actionLeft == null || tb.ended) {
-        clockBase = null; clockBeeped = null;
+        clockBase = null;
         return;
       }
       // 같은 자리·같은 남은 초가 계속 오는 동안에는 기준점을 흔들지 않는다
@@ -995,6 +1012,8 @@ export function holdemPage(user: WebUser): string {
       clockBase = {
         seat: tb.toActSeat, left: tb.actionLeft, at: Date.now(),
         total: tb.actionSec || 20,
+        // 경고음을 "한 차례에 한 번"으로 묶는 열쇠의 재료다
+        hand: tb.handNo, street: tb.street,
       };
     }
     function paintClock(){
@@ -1027,12 +1046,16 @@ export function holdemPage(user: WebUser): string {
           n.classList.toggle('warn', warn);
         }
       });
-      // 경고음은 내 차례일 때만. 남의 시계까지 울리면 시끄럽고 내 것과 구분도 안 된다.
-      if (warn && st.table && clockBase.seat === st.table.mySeat) {
-        var sec = Math.ceil(left);
-        if (sec > 0 && sec !== clockBeeped) {
-          clockBeeped = sec;
-          if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+      /* 경고음은 한 차례에 한 번. 음원이 4.6초라 남은 5초를 그대로 채운다 —
+         매초 다시 부르면 다섯 겹으로 깔려 무슨 소리인지 알 수 없게 된다.
+
+         "한 차례"는 (판 · 스트리트 · 자리)로 가른다. 자리 하나만 쓰면 같은 사람이
+         플랍·턴·리버에서 다시 시간에 쫓길 때 첫 번째만 울린다. */
+      if (warn && left > 0) {
+        var key = clockBase.hand + ':' + clockBase.street + ':' + clockBase.seat;
+        if (clockWarned !== key) {
+          clockWarned = key;
+          if (window.casinoSfx && window.casinoSfx.clockWarn) window.casinoSfx.clockWarn();
         }
       }
     }
@@ -1548,6 +1571,14 @@ export function holdemPage(user: WebUser): string {
           if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
           showPotLabel(tb, pa, layers.length);
           payLayer(tb, pa, i === layers.length - 1);
+          /* 층마다 다시 낸다 — 첫 층에서만 울리면 뒤 층은 조용히 지나가서
+             "이게 아직 정산 중인가, 끝난 건가"가 소리로는 안 잡힌다.
+             첫 층은 위쪽 chipWin/potWin이 이미 울렸으므로 두 번째 층부터다.
+             상한 1인 셋이라 앞 음악이 끊기고 새로 시작한다. */
+          if (i > 0 && window.casinoSfx) {
+            if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+            if (window.casinoSfx.potWin) window.casinoSfx.potWin();
+          }
         }, i * POT_STEP_MS);
       });
     }
@@ -1769,7 +1800,12 @@ export function holdemPage(user: WebUser): string {
          이미 이 가드를 지키는데 소리만 통과하고 있었다. */
       if (tb.ended && boardRevealed && paidHandNo !== tb.handNo) {
         paidHandNo = tb.handNo;
-        if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+        /* 두 소리를 같이 낸다. 칩이 밀려가는 소리는 "돈이 움직였다"는 촉감이고,
+           팟 음악은 "이겼다"는 뜻이다 — 하나로 갈음하면 한쪽이 사라진다. */
+        if (window.casinoSfx) {
+          if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+          if (window.casinoSfx.potWin) window.casinoSfx.potWin();
+        }
       }
 
       /* 내 조합 — 초심자가 플러시를 완성해 놓고도 모르고 폴드하는 걸 막는다.
@@ -1801,27 +1837,48 @@ export function holdemPage(user: WebUser): string {
        판에 처음 들어온 순간에는 울리지 않는다 — 이미 지나간 행동을 소급해서 떠들면
        무슨 일이 일어난 줄 알고 화면을 다시 보게 된다. */
     var voiceSeen = {}, voiceHand = null;
+    /* 이 판에서 올인이 올려놓은 가장 높은 총액.
+       올인 음악을 "판을 통째로 거는 순간"에만 깔기 위한 기준이다 —
+       남이 올인한 뒤 그걸 콜했는데 마침 내 스택 전부였던 경우는 올인이 아니라 콜이다.
+       그래서 총액이 이 값을 넘길 때만 음악을 깐다. 더 큰 금액으로 다시 올인하면
+       상한 1인 셋이라 앞 음악이 끊기고 새로 시작한다.
+
+       스트리트 베팅액(bet)이 아니라 판 총액(committed)으로 비교한다. 베팅액으로 보면
+       "프리플랍 올인 500 → 플랍에서 300 올인"이 500 > 300이라 레이즈가 아닌 것처럼
+       읽힌다(실제로는 총 800으로 올린 레이즈다). */
+    var allinTop = 0;
     function playActionVoices(tb){
-      if (tb.handNo !== voiceHand) { voiceHand = tb.handNo; voiceSeen = {}; }
+      if (tb.handNo !== voiceHand) { voiceHand = tb.handNo; voiceSeen = {}; allinTop = 0; }
       var sfx = window.casinoSfx;
       if (!sfx || !sfx.action) return;
 
-      function fire(seat, act, amount){
+      function fire(seat, act, amount, committed){
         if (!act) return;
         var key = tb.street + ':' + seat + ':' + act + ':' + (amount || 0);
         if (voiceSeen[key]) return;
         voiceSeen[key] = 1;
+
+        /* 올인 판정은 소리를 낼지와 별개로 항상 갱신한다 — 들어온 순간에 이미
+           올인이 걸려 있었다면, 그 뒤에 콜하는 사람에게 음악이 깔리면 안 된다. */
+        var raisedAllin = false;
+        if (act === 'allin') {
+          var total = committed || 0;
+          if (total > allinTop) { allinTop = total; raisedAllin = true; }
+        }
+
         if (firstTablePaint) return;                     // 들어온 순간의 과거 행동은 조용히 넘긴다
+        // 음악은 내가 눌렀든 남이 눌렀든 깐다 — 판의 분위기이고, 목소리와 역할이 다르다
+        if (raisedAllin && sfx.allinBgm) sfx.allinBgm();
         // 내가 방금 눌렀다면 클릭 순간에 이미 울렸다
         if (seat === tb.mySeat && (Date.now() - myVoiceAt) < 2500) return;
         sfx.action(act);
       }
 
-      (tb.seats || []).forEach(function(s){ fire(s.seat, s.act, s.actAmount); });
+      (tb.seats || []).forEach(function(s){ fire(s.seat, s.act, s.actAmount, s.committed); });
       /* 스트리트를 닫은 행동은 좌석 표시가 초기화되어 s.act에 안 남는다.
          칩 소리와 같은 이유로 여기서도 hand에 남은 기록을 따로 본다. */
       var la = tb.lastActor;
-      if (la && la.seat != null) fire(la.seat, la.act, la.amount);
+      if (la && la.seat != null) fire(la.seat, la.act, la.amount, la.committed);
     }
 
     /* ── 메인 팟 / 사이드 팟 ──────────────────────────────────────────
