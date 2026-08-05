@@ -33,34 +33,32 @@ export const cardsIcon = wrap(
   '<rect x="8.5" y="4.5" width="11" height="15" rx="2"/>'
 );
 
-/* ── 카드게임 네 가지를 구분하는 아이콘 ────────────────────────────────
+/* ── 카드게임 세 가지를 구분하는 아이콘 ────────────────────────────────
    포커 플립·바카라·블랙잭·홀덤이 전부 cardsIcon 하나를 쓰고 있었다. 목록에서
    네 개가 같은 그림이라 "카드게임 묶음"으로만 읽히고 서로 구분이 안 됐다.
-   각 게임에서 실제로 뜻이 통하는 상징을 하나씩 준다 — 다른 아이콘 세 개
-   (폭탄·사다리·차트)와 같은 선 굵기·같은 24 격자를 쓴다. */
 
-// 포커 플립 — 두 핸드가 맞붙는 게임. 뒤집히는 카드 한 장을 화살표로 나타낸다.
-export const flipIcon = wrap(
-  '<rect x="3" y="4.5" width="8" height="15" rx="1.8"/>' +
-  '<rect x="13" y="4.5" width="8" height="15" rx="1.8" stroke-dasharray="2.4 2.2"/>' +
-  '<path d="M11.4 12 L12.6 12"/>'
+   처음에는 게임 구조를 선으로 그렸는데(카드 두 장·좌우 대결·숫자 21) 예쁘지 않았다.
+   구조를 설명하려 들면 작은 크기에서 다 비슷한 사각형이 된다.
+   그래서 카드 무늬 자체를 쓴다 — 스페이드·다이아·하트는 실루엣이 완전히 달라서
+   16px에서도 한눈에 갈리고, 무엇보다 "카드게임"이라는 게 즉시 읽힌다.
+   선이 아니라 면으로 채운다(fill) — 무늬는 채워야 원래 모양이다. */
+const solid = (inner: string) =>
+  `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${inner}</svg>`;
+
+// 포커 플립 — 하트
+export const flipIcon = solid(
+  '<path d="M12 20.6c-.3 0-.6-.1-.8-.3C7.4 17 3 13.3 3 9.4 3 6.6 5.1 4.6 7.7 4.6c1.7 0 3.3.9 4.3 2.3 1-1.4 2.6-2.3 4.3-2.3C18.9 4.6 21 6.6 21 9.4c0 3.9-4.4 7.6-8.2 10.9-.2.2-.5.3-.8.3z"/>'
 );
 
-// 바카라 — 플레이어와 뱅커 두 쪽이 겨루고 9에 가까운 쪽이 이긴다
-export const baccaratIcon = wrap(
-  '<path d="M4.5 6.5h5.2v11H4.5z"/>' +
-  '<path d="M14.3 6.5h5.2v11h-5.2z"/>' +
-  '<path d="M12 9.2v5.6"/>'
+// 바카라 — 다이아
+export const baccaratIcon = solid(
+  '<path d="M12 2.6 21 12l-9 9.4L3 12z"/>'
 );
 
-// 블랙잭 — 21. 숫자를 그대로 쓰는 게 가장 빠르게 읽힌다
-export const blackjackIcon =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
-  'stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="3" y="3.5" width="18" height="17" rx="2.6"/>' +
-  '<text x="12" y="15.4" text-anchor="middle" font-size="9.5" font-weight="700" ' +
-  'fill="currentColor" stroke="none" font-family="ui-monospace,monospace">21</text>' +
-  '</svg>';
+// 블랙잭 — 스페이드
+export const blackjackIcon = solid(
+  '<path d="M12 3.2c-.7 1-6.9 5.9-6.9 10a4.1 4.1 0 0 0 6.2 3.5c-.2 1.7-.9 3.1-2.1 3.9h5.6c-1.2-.8-1.9-2.2-2.1-3.9a4.1 4.1 0 0 0 6.2-3.5c0-4.1-6.2-9-6.9-10z"/>'
+);
 
 // 홀덤 프리롤 — 대회다. 다른 게임과 성격이 달라서 트로피로 구분한다
 export const trophyIcon = wrap(

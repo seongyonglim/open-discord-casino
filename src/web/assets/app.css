@@ -172,14 +172,7 @@
     font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.3px;
     color:#1c1608;background:linear-gradient(180deg,#e8c65a,#c8a52f);
     border:1px solid rgba(255,235,160,.55)}
-  /* 문장 대신 지표. 카드를 훑을 때 읽히는 건 값이지 문장이 아니다.
-     남는 공간을 이 목록이 차지해 버튼이 항상 카드 맨 아래에 붙는다. */
-  .gc-facts{list-style:none;margin:6px 0 10px;padding:0;flex:1;
-    display:flex;flex-direction:column;gap:3px}
-  .gc-facts li{position:relative;padding-left:11px;color:var(--muted);font-size:12.5px;line-height:1.45}
-  .gc-facts li::before{content:"";position:absolute;left:0;top:.55em;
-    width:4px;height:4px;border-radius:50%;background:var(--gold-dim)}
-  .game-card.ready:hover .gc-facts li{color:#c8c8cf}
+  .game-card.ready:hover p{color:#c8c8cf}
   .game-card .soon{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
     color:var(--muted);border:1px dashed #3a3a40;border-radius:10px;padding:10px 0}
   .footer{margin-top:32px;text-align:center;color:var(--muted);font-size:12px}
