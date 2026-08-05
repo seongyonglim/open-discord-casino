@@ -47,11 +47,13 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 /* ── 등장 인물 ────────────────────────────────────────────────────────
    미리보기(사람)와 봇 셋. 이름이 성향을 말해 준다 — 화면에서 누가 무엇을 할지 짐작된다. */
 const ME = { id: 'preview-user', name: '미리보기' };
-const BOTS = [
-  { id: 'sim-raise', name: '최레이즈' },
-  { id: 'sim-call', name: '박콜' },
-  { id: 'sim-fold', name: '정폴드' },
-];
+const BOT_NAMES = ['최레이즈', '박콜', '정폴드', '김올인', '이체크', '한타이트', '조루즈', '윤블러프'];
+/* 봇 수를 바꿀 수 있게 둔다. 기본 3명(=4인 테이블)이면 각본을 눈으로 따라가기 쉽고,
+   좌석 배치는 인원이 꽉 찼을 때만 드러나는 문제가 있다(9인에서 좌우 끝 태그가 넘치는지).
+     SIM_BOTS=8 npx tsx scripts/sim-holdem.ts   (9인 만석 확인용) */
+const BOT_COUNT = Math.max(1, Math.min(BOT_NAMES.length, Number(process.env.SIM_BOTS ?? 3)));
+const BOTS = BOT_NAMES.slice(0, BOT_COUNT)
+  .map((name, i) => ({ id: `sim-bot-${i + 1}`, name }));
 const ALL = [ME, ...BOTS];
 
 for (const p of ALL) {
@@ -178,8 +180,8 @@ function botMove(userId: string, handId: number, seat: number): void {
     return;
   }
 
-  // showdown — 콜 위주. 최레이즈만 가끔 올려서 팟이 커지는 걸 보여준다.
-  if (userId === 'sim-raise' && la.minRaiseTo != null && randomInt(3) === 0) {
+  // showdown — 콜 위주. 첫 봇(최레이즈)만 가끔 올려서 팟이 커지는 걸 보여준다.
+  if (userId === 'sim-bot-1' && la.minRaiseTo != null && randomInt(3) === 0) {
     HD.holdemAction(userId, la.raiseIsBet ? 'bet' : 'raise', la.minRaiseTo);
     return;
   }
@@ -415,7 +417,7 @@ async function main(): Promise<void> {
   await waitHandEnd();
   {
     const SHORT = 1_200;
-    const donor = 'sim-fold';
+    const donor = BOTS[BOTS.length - 1].id;
     const seats = HD.getSeats(TABLE.id).filter(s => s.presence !== 'OUT');
     const from = seats.find(s => s.user_id === donor);
     const to = seats.find(s => s.user_id !== donor && s.stack > 0);

@@ -426,12 +426,11 @@ export function holdemPage(user: WebUser): string {
 
               <div class="ht-center">
                 <div class="ht-pot"><span class="ht-pot-k">POT</span><span id="htPot">0</span></div>
-                <!-- 올인이 섞여 팟이 갈라졌을 때만 나온다 (메인 / 사이드) -->
-                <div class="ht-pots" id="htPots" hidden></div>
                 <div class="ht-board" id="htBoard"></div>
-                <!-- 실제로 중앙에 쌓이는 팟 칩 더미. 숫자만 있으면 팟이 커지는 게 안 보이고,
-                     끝나서 승자에게 갈 때도 "무엇이" 가는지가 없다. -->
-                <div class="ht-potpile" id="htPotPile"></div>
+                <!-- 중앙에 쌓이는 팟 칩 더미. 팟이 갈라지면 층마다 더미가 따로 선다 —
+                     하나로 뭉쳐 있으면 어느 팟을 누가 가져가는지 보여줄 방법이 없다.
+                     이름표(MAIN / SIDE 1…)도 각 더미가 직접 달고 있다. -->
+                <div class="ht-piles" id="htPotPile"></div>
                 <div class="ht-msg" id="htMsg"></div>
                 <!-- 무엇으로 이겼나. 카드 강조(win5)와 짝을 이룬다 — 밝은 5장이 왜
                      밝은지를 이 한 줄이 설명한다. 쇼다운이 있었던 판에만 나온다. -->
@@ -569,7 +568,6 @@ export function holdemPage(user: WebUser): string {
     var rnoteEl = document.getElementById('htRNote');
     var outroEl = document.getElementById('htOutro');
     var lvEl = document.getElementById('htLvUp');
-    var potsEl = document.getElementById('htPots');
     var pileEl = document.getElementById('htPotPile');
     var winEl = document.getElementById('htWin');
 
@@ -990,6 +988,11 @@ export function holdemPage(user: WebUser): string {
         if (!act && holdActor && holdActor.seat === s.seat) {
           act = holdActor.act; amt = holdActor.amount;
         }
+        /* 올인도 다른 액션과 같이 "방금 한 행동"으로만 다룬다 — 잠깐 떴다 사라진다.
+           "지금 올인 상태다"는 스택 자리의 ALL IN 문구가 따로 말한다(아래 htstk 갱신).
+           둘은 서로 다른 것을 말하는 서로 다른 UI다:
+             프로필 위 배지 = 방금 무슨 행동을 했나
+             스택 자리      = 지금 칩이 하나도 없나 */
         /* 판이 끝나면 좌석 앞 칩을 그리지 않는다. 서버는 판이 끝날 때 bet을 0으로
            되돌리지 않는데(초기화는 스트리트 전환에만 있다), 그 사이 팟 더미는 이미
            마지막 스트리트 베팅까지 중앙에 그려 놓는다 — 같은 칩이 두 곳에 보인다. */
@@ -1131,7 +1134,7 @@ export function holdemPage(user: WebUser): string {
     function syncActBadges(tb, list){
       if (tb.handNo !== badgeHand) {
         badgeHand = tb.handNo; badgeKey = {}; badgeAt = 0;
-        // 새 판 — 지난 판의 배지(계속 남는 올인, 승자 표시)를 걷어낸다
+        // 새 판 — 지난 판의 배지와 승자 표시를 걷어낸다
         seatsEl.querySelectorAll('.ht-abadge').forEach(function(el){
           clearTimeout(el.__s); clearTimeout(el.__t);
           el.hidden = true; el.style.animation = 'none';
@@ -1142,43 +1145,42 @@ export function holdemPage(user: WebUser): string {
         var el = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-abadge');
         if (!el) return;
         if (!x.act) {
-          // 판이 끝나 표시가 지워졌다 — 올인 배지도 여기서 걷힌다
-          if (badgeKey[x.seat] != null) { badgeKey[x.seat] = null; el.hidden = true; }
+          // 서버가 표시를 지웠다(스트리트 전환·판 종료) — 열쇠만 비운다.
+          // 배지 자체는 자기 타이머로 사라지므로 여기서 억지로 감추면 도중에 툭 끊긴다.
+          if (badgeKey[x.seat] != null) badgeKey[x.seat] = null;
           return;
         }
-        /* 폴드는 스트리트를 열쇠에 넣지 않는다.
-           서버는 폴드를 스트리트가 바뀌어도 지우지 않는다(계속 유효한 사실이므로). 그래서
-           열쇠에 스트리트가 들어 있으면 플랍에서 접은 사람이 턴·리버마다 다시 "폴드"를
-           띄웠다 — 이미 판에서 빠진 사람이 계속 행동하는 것처럼 보였다.
-           한 판에 폴드는 한 번뿐이니 열쇠도 하나면 된다. */
+        /* 폴드만 스트리트를 열쇠에서 뺀다.
+           서버는 폴드 표시를 스트리트가 바뀌어도 지우지 않으므로(계속 유효한 사실이니까),
+           스트리트가 열쇠에 들어 있으면 플랍에서 접은 사람이 턴·리버마다 다시 "폴드"를
+           띄운다(실제로 그랬다). 한 판에 폴드는 한 번뿐이니 열쇠도 하나면 된다.
+           올인은 서버가 스트리트 전환에서 지우므로 다른 액션과 같이 다뤄도 된다. */
         var key = x.act === 'fold' ? 'fold' : tb.street + ':' + x.act + ':' + (x.amount || 0);
         if (badgeKey[x.seat] === key) return;              // 같은 행동을 다시 띄우지 않는다
         badgeKey[x.seat] = key;
 
         /* 앞 배지가 뜬 지 얼마 안 됐으면 그만큼 미뤄서 띄운다.
            badgeAt은 "다음 배지를 띄워도 되는 시각"이다 — 새 행동이 여러 개 몰려 오면
-           차례차례 밀린다. 올인은 계속 남는 표시라 미루지 않는다(늦게 뜨면 그만큼 늦게 알린다). */
+           차례차례 밀린다. */
         var now = Date.now();
-        var wait = x.act === 'allin' ? 0 : Math.max(0, badgeAt - now);
+        var wait = Math.max(0, badgeAt - now);
         badgeAt = now + wait + BADGE_STAGGER_MS;
         var act = x.act, amount = x.amount;
         var show = function(){
           el.textContent = actLabel(act, amount);
           /* 색은 행동의 성격으로 가른다: 돈을 더 넣는 것(베팅·레이즈)은 붉게,
              맞춰 가는 것(콜)은 파랗게, 안 넣는 것(체크)은 초록, 접는 것은 회색.
-             올인은 나머지와 다른 등급이라 따로 둔다. */
-          el.className = 'ht-abadge a-' + act + (act === 'allin' ? ' keep' : '');
+             올인은 나머지와 다른 등급이라 색만 따로 둔다 — 사라지는 방식은 같다. */
+          el.className = 'ht-abadge a-' + act;
           el.hidden = false;
           // 애니메이션을 다시 재생시킨다 — 클래스만 바꾸면 브라우저가 이어서 틀지 않는다
           el.style.animation = 'none';
           void el.offsetWidth;
-          el.style.animation = act === 'allin' ? '' : 'actBadge ' + ACT_BADGE_MS + 'ms ease-out forwards';
+          el.style.animation = 'actBadge ' + ACT_BADGE_MS + 'ms ease-out forwards';
           /* 다 사라진 뒤에는 실제로 감춘다. 투명해진 요소를 그냥 두면 눈에는 안 보이지만
              같은 자리를 쓰는 WIN 배지와 DOM에서 겹쳐 있어 나중에 헷갈릴 여지가 남는다. */
           clearTimeout(el.__t);
-          if (act !== 'allin') {
-            el.__t = setTimeout(function(){ el.hidden = true; }, ACT_BADGE_MS + 60);
-          }
+          el.__t = setTimeout(function(){ el.hidden = true; }, ACT_BADGE_MS + 60);
         };
         clearTimeout(el.__s);
         if (wait > 0) el.__s = setTimeout(show, wait); else show();
@@ -1426,41 +1428,56 @@ export function holdemPage(user: WebUser): string {
         ' style="left:calc(50% + ' + x + 'px);bottom:' + y + 'px;z-index:' + (10 + idx) + '">' +
         htChipLabel(denom) + '</span>';
     }
-    var potPile = { hand: null, total: 0, list: [], n: 0 };
-    function paintPotPile(){
-      pileEl.style.opacity = '';
-      pileEl.innerHTML = '';
-      for (var i = 0; i < potPile.list.length; i++) {
-        pileEl.insertAdjacentHTML('beforeend', htChipSprite(potPile.list[i].d, potPile.list[i].i, false));
-      }
+    /* ── 층별 칩 더미 ───────────────────────────────────────────────
+       팟이 갈라지면 더미도 갈라진다. 하나로 뭉쳐 두면 "어느 팟을 누가 가져갔나"를
+       보여줄 방법이 없다 — 정산 연출이 층마다 따로 날아가려면 칩도 층마다 있어야 한다.
+
+       칩은 금액의 표현이므로 층 금액에 비례해 나눈다. 쌓인 칩 목록(append-only)은
+       그대로 두고, 그 목록을 층 금액의 누적 경계로 잘라 각 더미에 넣는다.
+       총액을 층마다 다시 쪼개지 않는 이유는 예전과 같다 — 500 두 개가 1000 한 개로
+       합쳐져 보이면 얼마가 어떻게 모였는지가 사라진다. */
+    var potPile = { hand: null, total: 0, list: [], n: 0, sig: '' };
+    /* 지금 층 구성. 서버가 준 pots를 쓰고, 없으면 층 하나로 본다. */
+    function pileLayers(tb){
+      var ps = (tb && tb.pots) || [];
+      if (ps.length > 1) return ps.map(function(p){ return p.amount || 0; });
+      return [tb ? (tb.pot || 0) : 0];
     }
-    function resetPotPile(handNo, settled){
-      potPile = { hand: handNo, total: 0, list: [], n: 0 };
-      pileEl.style.opacity = '';
-      pileEl.innerHTML = '';
-      // 판 도중에 들어온 경우엔 이미 쌓여 있던 만큼을 연출 없이 그린다
-      if (settled > 0) { potPile.total = settled; pushPotChips(htDecompose(settled), false); }
+    function pileLabel(i, n, amount){
+      if (n < 2) return '';
+      return '<span class="ht-pg-k">' + (i === 0 ? 'MAIN' : 'SIDE ' + i) + '</span>' +
+        '<span class="ht-pg-v">' + stackText(amount) + '</span>';
     }
-    function pushPotChips(denoms, animate){
-      var added = [];
-      for (var i = 0; i < denoms.length; i++) {
-        if (potPile.list.length >= HT_MAX_CHIPS) {
-          potPile.list.shift();
-          if (pileEl.firstChild) pileEl.removeChild(pileEl.firstChild);
-        }
-        var slot = potPile.n++ % HT_MAX_CHIPS;
-        potPile.list.push({ d: denoms[i], i: slot });
-        pileEl.insertAdjacentHTML('beforeend', htChipSprite(denoms[i], slot, animate));
-        added.push(pileEl.lastElementChild);
+    /* 더미를 다시 그린다. 층 금액의 누적 경계로 칩 목록을 잘라 넣는다. */
+    function paintPotPile(tb){
+      var amts = pileLayers(tb);
+      var sum = amts.reduce(function(a, b){ return a + b; }, 0) || 1;
+      var chips = potPile.list;
+      pileEl.style.opacity = '';
+      pileEl.className = 'ht-piles' + (amts.length > 1 ? ' split' : '');
+      var html = '', used = 0, acc = 0;
+      for (var i = 0; i < amts.length; i++) {
+        acc += amts[i];
+        // 이 층까지 들어가야 할 칩 개수 (마지막 층은 남은 것 전부)
+        var upto = i === amts.length - 1 ? chips.length
+          : Math.min(chips.length, Math.round(chips.length * acc / sum));
+        var inner = '';
+        for (var k = used; k < upto; k++) inner += htChipSprite(chips[k].d, k - used, false);
+        used = upto;
+        html += '<div class="ht-pg" data-layer="' + i + '">' +
+          '<span class="ht-pg-chips">' + inner + '</span>' +
+          pileLabel(i, amts.length, amts[i]) + '</div>';
       }
-      /* 각자 앞의 칩이 중앙으로 날아오는 연출(flyChip 'topot')이 약 700ms다.
-         그것이 도착할 즈음 더미에 나타나게 해야 "모여서 쌓였다"로 읽힌다. */
-      if (animate) {
-        added.forEach(function(el, k){
-          setTimeout(function(){ if (el) el.classList.remove('pending'); }, 420 + k * 40);
-        });
-      }
-      return added;
+      pileEl.innerHTML = html;
+    }
+    function resetPotPile(tb, settled){
+      potPile = { hand: tb.handNo, total: 0, list: [], n: 0, sig: '' };
+      if (settled > 0) { potPile.total = settled; potPile.list = htDecompose(settled).map(function(d, i){
+        return { d: d, i: i % HT_MAX_CHIPS };
+      }); }
+      potPile.n = potPile.list.length;
+      potPile.sig = pileLayers(tb).join(',');
+      paintPotPile(tb);
     }
     function syncPotPile(tb){
       /* 지금 이 스트리트에 각자 앞에 놓인 칩은 아직 중앙에 온 것이 아니다.
@@ -1470,17 +1487,40 @@ export function holdemPage(user: WebUser): string {
       var live = 0;
       (tb.seats || []).forEach(function(s){ live += s.bet || 0; });
       var settled = tb.ended ? (tb.pot || 0) : Math.max(0, (tb.pot || 0) - live);
-      if (potPile.hand !== tb.handNo) return resetPotPile(tb.handNo, settled);
+      if (potPile.hand !== tb.handNo) return resetPotPile(tb, settled);
       // 콜되지 않은 초과 베팅을 돌려주면 팟이 줄어든다 — 그때는 연출 없이 다시 그린다
-      if (settled < potPile.total) return resetPotPile(tb.handNo, settled);
+      if (settled < potPile.total) return resetPotPile(tb, settled);
+      var sig = pileLayers(tb).join(',');
       var delta = settled - potPile.total;
       if (delta > 0) {
         potPile.total = settled;
-        pushPotChips(htDecompose(delta), !firstTablePaint);
+        var denoms = htDecompose(delta);
+        for (var i = 0; i < denoms.length; i++) {
+          if (potPile.list.length >= HT_MAX_CHIPS) potPile.list.shift();
+          potPile.list.push({ d: denoms[i], i: potPile.n++ % HT_MAX_CHIPS });
+        }
+        potPile.sig = sig;
+        paintPotPile(tb);
+        /* 각자 앞의 칩이 중앙으로 날아오는 연출(flyChip 'topot')이 약 700ms다.
+           그것이 도착할 즈음 더미에 나타나게 해야 "모여서 쌓였다"로 읽힌다.
+           새로 들어온 만큼만 뒤에서부터 늦게 켠다. */
+        if (!firstTablePaint) {
+          var all = pileEl.querySelectorAll('.ht-pchip');
+          var from = Math.max(0, all.length - denoms.length);
+          for (var j = from; j < all.length; j++) {
+            (function(el, k){
+              el.classList.add('pending');
+              setTimeout(function(){ el.classList.remove('pending'); }, 420 + k * 40);
+            })(all[j], j - from);
+          }
+        }
         return;
       }
-      // 금액은 그대로인데 칸이 비었다면 골격이 다시 그려진 것이다 — 기록대로 복원
-      if (pileEl.childElementCount !== potPile.list.length) paintPotPile();
+      // 층 구성이 바뀌었거나 골격이 다시 그려졌다면 기록대로 복원한다
+      if (sig !== potPile.sig || !pileEl.querySelector('.ht-pg')) {
+        potPile.sig = sig;
+        paintPotPile(tb);
+      }
     }
 
     /* 칩 더미 — 금액이 클수록 층이 높아 보이게 최대 3장까지 겹친다.
@@ -1915,18 +1955,32 @@ export function holdemPage(user: WebUser): string {
         + (pa.hand ? ' · ' + esc(pa.hand) : '');
     }
 
-    /* 한 층의 칩을 승자에게 보낸다. last면 더미에 남은 칩을 전부 털어 중앙을 비운다. */
+    /* 한 층의 칩을 승자에게 보낸다.
+       "그 층의 더미"에서만 꺼낸다 — 층마다 더미가 따로 서 있으므로 어느 팟이 누구에게
+       가는지가 칩의 출발점으로 드러난다. 예전에는 하나의 더미에서 비율만큼 세어 꺼냈고,
+       그래서 세 사람이 각각 다른 층을 가져가도 칩이 늘 같은 자리에서 출발했다.
+       합쳐진 층(mergeSameWinner)은 __span만큼 여러 더미를 함께 비운다.
+       last면 남은 더미까지 전부 털어 중앙을 비운다. */
     function payLayer(tb, pa, last){
-      var chips = Array.prototype.slice.call(pileEl.children).filter(function(c){
-        return !c.dataset || c.dataset.sent !== '1';
+      var boxes = Array.prototype.slice.call(pileEl.querySelectorAll('.ht-pg'));
+      var first = pa.index || 0, span = pa.__span || 1;
+      var mine = boxes.filter(function(b, i){
+        if (last) return true;                       // 마지막 층은 남은 것 전부
+        var li = Number(b.getAttribute('data-layer'));
+        void i;
+        return li >= first && li < first + span;
+      });
+      // 층 정보가 없는 옛 기록이나 폴드 종료는 더미가 하나뿐이라 그것이 곧 전부다
+      if (!mine.length) mine = boxes;
+      var chips = [];
+      mine.forEach(function(b){
+        Array.prototype.slice.call(b.querySelectorAll('.ht-pchip')).forEach(function(c){
+          if (!c.dataset || c.dataset.sent !== '1') chips.push(c);
+        });
       });
       var winners = pa.winners;
       var total = winners.reduce(function(a, x){ return a + (x.amount || 0); }, 0) || 1;
-      var potTotal = tb.pot || total;
-      /* 이 층이 전체 팟에서 차지하는 비율만큼만 칩을 보낸다 — 그래야 사이드 팟이 작을 때
-         칩도 조금만 가고, 큰 층에서 뭉텅이가 간다. 마지막 층은 남은 것을 전부 가져간다. */
-      var quota = last ? chips.length
-        : Math.min(chips.length, Math.max(1, Math.round(chips.length * (pa.amount || 0) / potTotal)));
+      var quota = chips.length;
       var n = 0, used = 0;
       winners.forEach(function(w, k){
         // 위 seatOf와 반드시 같은 요소여야 한다 (다르면 문은 통과하고 목표가 null이 된다)
@@ -1952,8 +2006,10 @@ export function holdemPage(user: WebUser): string {
           for (var j = 0; j < cnt; j++) flyChip(pot, tr, (n++) * 45, 'towin');
         }
       });
-      if (last && chips.length) {
-        pileEl.style.opacity = '0';
+      /* 보낸 더미는 그 자리에서 접는다 — 마지막 층에서만 전부 접으면 앞 층의 빈 상자가
+         이름표만 남아 계속 서 있다. 층이 비워지는 것이 보여야 "이 팟은 끝났다"가 읽힌다. */
+      mine.forEach(function(b){ b.classList.add('paid'); });
+      if (last) {
         setTimeout(function(){ pileEl.innerHTML = ''; potPile.list = []; }, 900);
       }
     }
@@ -2127,7 +2183,6 @@ export function holdemPage(user: WebUser): string {
          칩 더미가 날아가기 전까지는 그대로 보여준다 — 얼마짜리 팟이었는지가 정보다. */
       var potPaid = tb.ended && boardRevealed && paidHandNo === tb.handNo;
       potEl.textContent = stackText(potPaid ? 0 : tb.pot) + (unit === 'chip' ? ' P' : '');
-      syncPots(tb, potPaid);
       renderSeats();
       dealSequence(tb);
       renderSide();
@@ -2149,11 +2204,10 @@ export function holdemPage(user: WebUser): string {
           return (s ? s.username : 'Seat ' + (a.seat+1)) + ' +' + stackText(a.amount);
         }).join(' · ') || '핸드 종료';
         if (tb.nextHandIn != null) msg += '  (다음 판 ' + tb.nextHandIn + '초)';
-      } else if (tb.toActSeat != null) {
-        var who = (tb.seats||[]).filter(function(x){ return x.seat === tb.toActSeat; })[0];
-        msg = (tb.toActSeat === tb.mySeat ? '내 차례' : (who ? who.username + ' 차례' : ''))
-          + (tb.actionLeft != null ? ' · ' + tb.actionLeft + '초' : '');
       }
+      /* "OO 차례 · N초"는 없앴다. 지금 차례는 아바타 맥박 · 시계 고리 · 액션 버튼
+         세 가지가 이미 말하고 있고, 그 위에 중앙 텍스트까지 두면 테이블만 지저분해진다.
+         이 자리는 판이 끝났을 때의 결과 요약과 오류 메시지만 쓴다. */
       msgEl.textContent = msg;
 
       /* 소리 두 가지.
@@ -2252,22 +2306,9 @@ export function holdemPage(user: WebUser): string {
       if (la && la.seat != null) fire(la.seat, la.act, la.amount, la.committed);
     }
 
-    /* ── 메인 팟 / 사이드 팟 ──────────────────────────────────────────
-       층이 하나면 위의 POT 숫자로 충분하므로 아무것도 띄우지 않는다. 올인이 섞여 층이
-       갈라졌을 때만 나온다 — 이때는 합계만 보면 내가 다툴 수 있는 금액을 오해한다.
-       내가 자격이 있는 층은 표시해 준다("내가 이 층을 가져갈 수 있다"). */
-    function syncPots(tb, potPaid){
-      var pots = tb.pots || [];
-      // 팟이 이미 승자에게 갔으면 층도 지운다 (같은 칩이 스택과 팟에 동시에 보이지 않게)
-      if (potPaid || pots.length < 2) { potsEl.hidden = true; potsEl.textContent = ''; return; }
-      potsEl.hidden = false;
-      potsEl.innerHTML = pots.map(function(p, i){
-        var mine = tb.mySeat != null && (p.eligible || []).indexOf(tb.mySeat) >= 0;
-        return '<span class="ht-pl' + (mine ? ' mine' : '') + '">' +
-          '<span class="ht-pl-k">' + (i === 0 ? 'MAIN' : 'SIDE ' + i) + '</span>' +
-          '<span class="ht-pl-v">' + stackText(p.amount) + '</span></span>';
-      }).join('');
-    }
+    /* 메인 팟 / 사이드 팟의 알약 줄(.ht-pots)은 없앴다.
+       이제 층마다 칩 더미가 따로 서고 각 더미가 이름표와 금액을 직접 달고 있다 —
+       같은 것을 두 곳에 적을 이유가 없다. 층 구성은 syncPotPile이 그린다. */
 
     /* ── 블라인드 상승 알림 ───────────────────────────────────────────
        예전에는 오른쪽 패널 숫자가 조용히 바뀌기만 했다. 토너먼트에서 블라인드가 오른 걸
