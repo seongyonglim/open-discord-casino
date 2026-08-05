@@ -97,6 +97,59 @@ async function main(): Promise<void> {
     ck(`${p} — 인라인 스크립트 파싱 성공`, bad === '', bad);
   }
 
+  /* ── [2] 카드에 적힌 수치가 실제 게임 코드와 같은가 ──────────────────
+     로비 카드의 한 줄 사실(최대 배당 등)은 pages.ts에 손으로 적혀 있다.
+     game/*.ts가 pages.ts를 import하므로(gameSwitcher) 반대 방향 import는 순환이 된다.
+
+     그래서 여기서 게임 모듈을 직접 불러 값을 다시 계산하고, 그 숫자가 렌더된 로비
+     화면에 실제로 들어 있는지 본다. 배당 상수를 고치고 카드를 잊으면 이 검사가 깨진다 —
+     "카드에 적힌 숫자가 거짓이 되는" 실패는 조용히 지나가면 안 되는 종류다. */
+  console.log('\n[2] 로비 카드의 수치 = 게임 코드의 값');
+  {
+    const lobby = (await get('/', cookie)).text;
+    const has = (s: string) => lobby.includes(s);
+
+    const B = require('../src/web/games/baccarat') as typeof import('../src/web/games/baccarat');
+    const C = require('../src/web/games/crash') as typeof import('../src/web/games/crash');
+    const M = require('../src/web/games/mines') as typeof import('../src/web/games/mines');
+    const PK = require('../src/services/poker') as typeof import('../src/services/poker');
+    const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
+    const BC = require('../src/services/baccarat') as typeof import('../src/services/baccarat');
+    const Q = require('../src/db/queries') as typeof import('../src/db/queries');
+
+    // 바카라 — 다섯 시장 중 가장 높은 배당. 지금은 페어지만 코드가 바뀌면 따라간다
+    const bo = B.baccaratOdds();
+    const baccMax = Math.max(bo.player, bo.banker, bo.tie, bo.ppair, bo.bpair);
+    ck('바카라 최대 배당', has(`최대 배당 ${baccMax}배`), `계산=${baccMax}`);
+    ck('바카라 덱 수', has(`${BC.DECKS}덱`), `DECKS=${BC.DECKS}`);
+
+    /* 블랙잭 — A + K를 들었을 때의 배수. 카드 인덱스는 rank = c >> 2 이고 A는 12, K는 11이다
+       (services/blackjack.ts cardRank). 딜러는 블랙잭이 아니어야 하므로 2 + 3을 준다. */
+    const bjMax = BJ.settleHand([48, 44], [0, 4]).multiplier;
+    ck('블랙잭 배수', bjMax === 2.5 && has(`블랙잭 ${bjMax}배`), `settleHand=${bjMax}`);
+
+    /* 지뢰찾기는 최대 배당을 카드에 적지 않는다 — 이론상 최대(지뢰 10개에서 15칸 전부)가
+       3,236,072배다. 참이지만 확률이 300만분의 1이라 "최대 배당"으로 내놓으면
+       복권 문구가 된다. 대신 실제로 고를 수 있는 구조를 적는다. */
+    ck('지뢰찾기 칸 수', has(`${M.TILE_COUNT}칸`), `TILE_COUNT=${M.TILE_COUNT}`);
+    ck('지뢰찾기 선택 가능한 지뢰 수',
+      has(`지뢰 ${M.ALLOWED_MINE_COUNTS.join('·')}개`), M.ALLOWED_MINE_COUNTS.join('·'));
+
+    ck('그래프 최대 배율', has(`최대 배율 ${C.MAX_CRASH.toLocaleString('ko-KR')}배`),
+      `MAX_CRASH=${C.MAX_CRASH}`);
+    ck('포커 플립 배당 상한', has(`최대 ${PK.MAX_ODDS.toLocaleString('ko-KR')}배`),
+      `MAX_ODDS=${PK.MAX_ODDS}`);
+    ck('사다리 단일·양쪽 배당',
+      has(`단일 ${Q.LADDER_MULTIPLIER}배 · 양쪽 ${Q.LADDER_DOUBLE_MULTIPLIER}배`),
+      `${Q.LADDER_MULTIPLIER} / ${Q.LADDER_DOUBLE_MULTIPLIER}`);
+
+    /* 홀덤 카드에는 고정 사실 줄을 두지 않는다 — 그 카드의 설명이 이미 대회 상태에서
+       나온 살아 있는 수치(신청 인원·상금 풀)를 담고 있고, 그게 고정값보다 낫다.
+       대신 그 살아 있는 수치가 실제로 렌더되는지 확인한다. */
+    ck('홀덤 카드는 대회 상태를 비춘다',
+      /등록은 .*후에 열립니다|등록 중|명 신청|진행 중|오늘 대회|인원 대기/.test(lobby));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

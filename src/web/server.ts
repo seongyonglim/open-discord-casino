@@ -56,6 +56,14 @@ const SFX_FILES = new Set([
      체크는 칩이 나가지 않으므로 이 소리만 난다. */
   'act-allin.mp3', 'act-bet.mp3', 'act-call.mp3', 'act-check.mp3', 'act-raise.mp3',
   'act-fold.mp3',
+  /* 팟 획득 — 칩이 승자에게 밀려가는 소리(chips-to-winner) 위에 겹쳐 낸다.
+     칩 소리는 "돈이 움직였다", 이건 "네가(또는 저 사람이) 이겼다"다. */
+  'win-pot.mp3',
+  // 제한 시간 5초 미만 경고. 시계 링이 붉어지는 순간에 한 번만 울린다
+  'clock-warn.mp3',
+  /* 올인 — 판을 통째로 거는 순간에만 깔린다(콜이 우연히 올인이 된 경우는 제외).
+     act-allin 음성이 "올인"이라고 말하고, 이건 그 순간의 분위기를 담당한다. */
+  'allin-bgm.mp3',
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',

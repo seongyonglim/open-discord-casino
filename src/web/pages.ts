@@ -3,7 +3,10 @@ import {
   bombIcon, ladderIcon, chartIcon, discordIcon,
   flipIcon, baccaratIcon, blackjackIcon, trophyIcon,
 } from './icons';
-import type { LeaderboardRow, WebUser } from '../db/queries';
+import {
+  getMyToday, getBalanceRank, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
+  type LeaderboardRow, type WebUser,
+} from '../db/queries';
 import { recentHoldemWinners, type HoldemStatus } from '../db/holdem';
 import * as T from '../services/tournament';
 import { NOTICES, type Notice } from './notices';
@@ -32,32 +35,57 @@ interface GameDef {
   cta: string;
   /** 시간·성격 배지 (없으면 표시하지 않는다) */
   badge?: string;
+  /* 카드 아래 한 줄로 붙는 사실. 규칙 설명이 아니라 "고르기 전에 알면 도움이 되는 수치"다.
+     실제로 참인 값만 적는다 — "현재 3명 플레이 중" 같은 것은 넣지 않는다.
+     이 커뮤니티에서 그 숫자는 대체로 0이고, 그러면 카드가 사람을 돌려보낸다.
+     지어낸 숫자는 더 나쁘다: 한 번 들키면 나머지 표시도 안 믿게 된다.
+
+     값은 각 게임 코드에서 계산해 옮겨 적은 것이다(아래 주석에 출처를 적었다).
+     game/*.ts가 pages.ts의 gameSwitcher를 import하므로 반대로 import하면 순환이 된다.
+     그래서 손으로 적고, audit-pages [2]가 게임 모듈에서 다시 계산해 로비 화면에
+     그 숫자가 실제로 들어 있는지 확인한다 — 어긋나면 감사가 깨진다. */
+  fact?: string;
   ready: boolean;
 }
 
 const GAMES: GameDef[] = [
   { key: 'holdem', name: '홀덤 프리롤', icon: trophyIcon, group: 'event',
     desc: '참가비 없이 모여서 겨루는 토너먼트. 상위 입상자가 상금을 나눠 갖습니다.',
+    /* 사실 줄을 두지 않는다 — 이 카드의 설명은 freerollOverride가 대회 상태로 갈아끼우고,
+       거기에 신청 인원과 상금 풀이 들어 있다. 살아 있는 수치가 고정값보다 낫다. */
     cta: '참가 신청', badge: '매일 22:00', ready: true },
 
   { key: 'baccarat', name: '바카라', icon: baccaratIcon, group: 'table',
     desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어에도 걸 수 있어요.',
-    cta: '입장하기', ready: true },
+    // web/games/baccarat.ts baccaratOdds() — 페어 16.83이 최대(타이 10.57) · services/baccarat.ts DECKS 1
+    fact: '1덱 · 최대 배당 16.83배 (페어)', cta: '입장하기', ready: true },
   { key: 'blackjack', name: '블랙잭', icon: blackjackIcon, group: 'table',
     desc: '5석 테이블에서 딜러를 함께 상대합니다. 21을 넘기지 않고 이기면 승리!',
-    cta: '자리 잡기', ready: true },
+    // services/blackjack.ts settleHand() — 블랙잭 배수 2.5 (3:2 + 원금) · DECKS 1
+    fact: '1덱 · 블랙잭 2.5배', cta: '자리 잡기', ready: true },
   { key: 'poker', name: '포커 플립', icon: flipIcon, group: 'table',
     desc: '두 핸드가 맞붙습니다. 승자와 완성될 족보에 칩을 올려보세요.',
-    cta: '베팅하기', ready: true },
+    /* services/poker.ts MAX_ODDS 3000 — 공정 배당이 이 값을 넘는 시장은 팔지 않고 막는다.
+       그래서 3,000배는 "볼 수 있는 최대 배당"이 맞다(매치업마다 값이 달라진다). */
+    fact: '매치업마다 배당 재계산 · 최대 3,000배', cta: '베팅하기', ready: true },
 
   { key: 'mines', name: '지뢰찾기', icon: bombIcon, group: 'mini',
     desc: '지뢰를 피해 칸을 열수록 배당이 오릅니다. 원할 때 캐시아웃!',
-    cta: '도전하기', ready: true },
+    /* web/games/mines.ts — TILE_COUNT 25 · ALLOWED_MINE_COUNTS [1,3,5,10,24].
+       최대 배당은 적지 않는다. 이론상 최대(지뢰 10개에서 15칸 전부)가 3,236,072배인데,
+       참이지만 확률이 300만분의 1이라 "최대 배당"으로 내놓으면 복권 문구가 된다.
+       처음엔 24.75배로 적었다가 감사가 잡았다 — 그 값은 지뢰 1개·24개일 때의 최대다. */
+    fact: '25칸 · 지뢰 1·3·5·10·24개', cta: '도전하기', ready: true },
   { key: 'graph', name: '그래프게임', icon: chartIcon, group: 'mini',
     desc: '배율이 계속 오릅니다. 터지기 전에 빠져나오세요. 늦으면 전액 손실!',
-    cta: '베팅하기', ready: true },
+    // web/games/crash.ts MAX_CRASH 10_000 — 이론상 무한이라 둔 상한
+    fact: '최대 배율 10,000배 · 자동 캐시아웃', cta: '베팅하기', ready: true },
   { key: 'ladder', name: '사다리게임', icon: ladderIcon, group: 'mini',
-    desc: '출발과 도착을 예측하세요. 하나만 맞혀도 1.95배, 둘 다 맞히면 3.95배.',
+    /* 설명에서 배당 숫자를 뺐다 — 아래 사실 줄과 같은 값을 두 번 말하고 있었다.
+       설명은 무엇을 하는 게임인지, 사실 줄은 얼마를 받는지로 나눈다. */
+    desc: '출발과 도착을 예측하세요. 하나만 맞혀도 되고, 둘 다 맞히면 배당이 커집니다.',
+    // 이 두 값만은 db/queries.ts에서 직접 가져온다(순환 없이 import된다) — 손으로 적을 이유가 없다
+    fact: `단일 ${LADDER_MULTIPLIER}배 · 양쪽 ${LADDER_DOUBLE_MULTIPLIER}배`,
     cta: '예측하기', ready: true },
 ];
 
@@ -100,9 +128,14 @@ function gameCard(g: GameDef, override?: { badge?: string; desc?: string; cta?: 
   const o = override ?? {};
   const badgeText = o.badge ?? g.badge;
   const badge = badgeText ? `<span class="gc-badge">${esc(badgeText)}</span>` : '';
+  /* 프리롤은 상태에 따라 설명이 바뀌는데, 그 문구가 이미 인원·상금 풀 같은 수치를 담는다.
+     그 위에 고정 사실 줄까지 얹으면 숫자가 두 줄로 겹쳐서 어느 쪽이 지금인지 흐려진다.
+     그래서 override로 설명이 갈아끼워진 카드에서는 사실 줄을 빼고 설명에 맡긴다. */
+  const factText = o.desc ? undefined : g.fact;
+  const fact = factText ? `<p class="gc-fact">${esc(factText)}</p>` : '';
   const inner = `<div class="gc-top"><div class="icon">${g.icon}</div>${badge}</div>
     <h3>${esc(g.name)}</h3>
-    <p>${esc(o.desc ?? g.desc)}</p>`;
+    <p>${esc(o.desc ?? g.desc)}</p>${fact}`;
   if (!g.ready) {
     return `<div class="game-card">${inner}<span class="soon">출시 예정</span></div>`;
   }
@@ -210,6 +243,88 @@ function newsSection(): string {
   </div>`;
 }
 
+/* ── 상단 통계 줄 ──────────────────────────────────────────────────────
+   잔액과 연속 출석 둘만 있었다. 둘 다 "지금 내 상태"이고, 로비에 들어와서 알고 싶은
+   나머지 — 오늘 내가 잃었나 벌었나, 다음 대회가 언제인가 — 는 아무 데도 없었다.
+
+   "온라인 인원"은 넣지 않는다. 이 커뮤니티에서 대부분의 시간에 0~2명이라
+   사실을 말하면 오히려 들어온 사람을 돌려보낸다. 사실이 아닌 값을 넣는 건 더 나쁘고,
+   그러면 남는 선택은 넣지 않는 것이다.
+
+   각 칸의 작은 줄(sub)은 큰 숫자를 읽는 데 필요한 맥락만 적는다 —
+   순위 없는 잔액, 판수 없는 손익은 크기를 가늠할 수 없다. */
+function statRow(user: WebUser, ht: HoldemStatus | null): string {
+  const now = Date.now();
+  const sinceKstMidnight = T.kstTimeToUnix(T.kstDateStr(now), 0, 0);
+  const today = getMyToday(user.id, sinceKstMidnight);
+  const rank = getBalanceRank(user.balance);
+
+  /* 연속 출석 0일은 초록으로 쓰지 않는다.
+     초록(--win)은 "좋은 상태"를 뜻하는 색인데 0일은 아직 시작하지 않은 상태다.
+     하루라도 쌓였을 때부터 초록이 되어야 색이 정보를 전달한다. */
+  const streakCls = user.current_streak > 0 ? 'val hi' : 'val';
+
+  // 오늘 아직 한 판도 안 했으면 0을 초록/빨강으로 칠하지 않는다 — 아직 아무 일도 없었다
+  const netCls = today.rounds === 0 ? 'val' : today.net > 0 ? 'val hi' : today.net < 0 ? 'val lo' : 'val';
+  const netText = today.rounds === 0 ? '–'
+    : (today.net > 0 ? '+' : '') + today.net.toLocaleString('ko-KR') + 'P';
+  const netSub = today.rounds === 0 ? '아직 플레이 없음' : `${today.rounds}판`;
+
+  const ff = nextFreerollStat(ht);
+
+  return `<div class="stat-row">
+    <div class="stat"><div class="lbl">내 잔액</div>
+      <div class="val gold">${esc(pts(user.balance))}</div>
+      <div class="sub">${rank.rank}위 / ${rank.total}명</div></div>
+    <div class="stat"><div class="lbl">오늘 손익</div>
+      <div class="${netCls}">${esc(netText)}</div>
+      <div class="sub">${esc(netSub)}</div></div>
+    <div class="stat"><div class="lbl">연속 출석</div>
+      <div class="${streakCls}">${user.current_streak}일</div>
+      <div class="sub">디스코드에서 출석</div></div>
+    <div class="stat"><div class="lbl">${esc(ff.label)}</div>
+      <div class="val">${esc(ff.value)}</div>
+      <div class="sub">${esc(ff.sub)}</div></div>
+  </div>`;
+}
+
+/* 프리롤 칸. 상태 판정은 advanceHoldem이 이미 해 뒀으므로 문구로만 옮긴다.
+   오늘 대회가 끝났거나 취소됐으면 내일 일정을 계산해서 보여준다 — 그래야
+   하루 중 언제 들어와도 "다음이 언제인가"에 답이 있다. */
+function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: string; sub: string } {
+  // 대회 상태를 못 읽었을 때(DB 오류 등)도 고정 일정은 사실이다
+  if (!ht) return { label: '홀덤 프리롤', value: '매일 22:00', sub: '등록 21:00 시작' };
+  const now = Math.floor(Date.now() / 1000);
+  const short = (at: number) => {
+    const s = Math.max(0, at - now);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+  };
+  const hhmm = (at: number) => new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(at * 1000));
+
+  switch (ht.status) {
+    case 'REGISTRATION_OPEN':
+      return { label: '프리롤 시작까지', value: short(ht.schedule.scheduledStartAt),
+        sub: `등록 중 · ${ht.registered}명 신청` };
+    case 'WAITING_MIN_PLAYERS':
+      return { label: '프리롤 인원 대기', value: `${ht.registered} / ${T.MIN_PLAYERS}명`,
+        sub: `${hhmm(ht.schedule.graceEndsAt)}까지 안 차면 취소` };
+    case 'RUNNING':
+      return { label: '프리롤', value: '진행 중', sub: `${ht.registered}명 참가` };
+    case 'FINISHED': case 'CANCELLED': {
+      // 오늘 판은 끝났다 — 내일 일정을 직접 계산한다(하루 하나라는 규칙이라 항상 있다)
+      const tmr = T.scheduleForDate(T.kstDateStr(Date.now() + 86_400_000));
+      return { label: '다음 프리롤 등록까지', value: short(tmr.regOpenAt),
+        sub: `내일 ${tmr.title}` };
+    }
+    default:
+      return { label: '프리롤 등록까지', value: short(ht.schedule.regOpenAt),
+        sub: `${hhmm(ht.schedule.scheduledStartAt)} 시작 · ${ht.schedule.title}` };
+  }
+}
+
 /* 섹션으로 나눠 그린다. 한 격자에 일곱 개를 늘어놓으면 둘째 줄이 반만 차서 미완성처럼
    보이고, 게임이 늘수록 "무엇을 고를지" 판단할 근거가 사라진다. */
 function gameSections(ht: HoldemStatus | null): string {
@@ -243,15 +358,8 @@ export function lobbyPage(user: WebUser | null, ht: HoldemStatus | null = null):
       </div>`, 'login-page');
   }
 
-  /* 연속 출석 0일은 초록으로 쓰지 않는다.
-     초록(--win)은 "좋은 상태"를 뜻하는 색인데 0일은 아직 시작하지 않은 상태다.
-     하루라도 쌓였을 때부터 초록이 되어야 색이 정보를 전달한다. */
-  const streakCls = user.current_streak > 0 ? 'val hi' : 'val';
   const body = `
-    <div class="stat-row">
-      <div class="stat"><div class="lbl">내 잔액</div><div class="val gold">${esc(pts(user.balance))}</div></div>
-      <div class="stat"><div class="lbl">연속 출석</div><div class="${streakCls}">${user.current_streak}일</div></div>
-    </div>
+    ${statRow(user, ht)}
     ${gameSections(ht)}
     ${newsSection()}
     <div class="card">
