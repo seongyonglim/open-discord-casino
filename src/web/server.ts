@@ -32,6 +32,8 @@ import {
   handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
   handleUnregister as htUnregister,
 } from './games/holdem';
+// 로비의 프리롤 카드가 대회 상태를 비추는 데 쓴다 (상태 판정은 이 함수에만 있다)
+import { advanceHoldem } from '../db/holdem';
 import { rankingGameOf, handleRanking } from './ranking';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
@@ -168,7 +170,12 @@ export function startWebServer(): void {
       setRequestUser(me);
       if (me) touchActive(me.id, Date.now());
 
-      if (path === '/' || path === '/lobby') return send(res, 200, lobbyPage(me));
+            /* 로비의 프리롤 카드가 대회 상태를 비추려면 상태가 필요하다. advanceHoldem을 쓴다 —
+         상태 판정을 로비에서 따로 계산하면 로비 표시와 실제 대회가 갈라진다.
+         지연 진행 구조라 이 호출이 밀린 일을 처리하기도 한다(그게 원래 설계다). */
+      if (path === '/' || path === '/lobby') {
+        return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null));
+      }
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
 
       /* 공지사항 — 글은 코드(web/notices.ts)에 있다. 목록과 개별 글. */
