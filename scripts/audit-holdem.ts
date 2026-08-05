@@ -884,5 +884,120 @@ section('[18] 최강 5장 (evaluate5 · bestFive · coreOfFive)');
     sdShort.name === '' && sdShort.five.length === 0);
 }
 
+/* ── 19. 쇼다운 승률 · 역전 카드 ─────────────────────────────────
+   화면에 퍼센트를 띄우는 순간 그 숫자는 "사실"로 읽힌다. 틀린 승률은 없는 것보다 나쁘다.
+   그래서 손으로 답을 아는 상황과 맞춰 본다.
+
+   덱 장수에 함정이 하나 있다. 흔히 쓰는 "아웃츠 / 46"의 46은 내 홀 카드만 아는 상황의
+   수(52 - 2 - 4)다. 쇼다운은 상대 패까지 공개된 상태라 44장이다.
+   처음에 46으로 기대값을 적었다가 이 절이 잡아냈다. */
+section('[19] 쇼다운 승률 (equityAt · outsAt · equityStages)');
+{
+  const s2c = (t: string) => '23456789TJQKA'.indexOf(t[0]) * 4 + ({ s: 0, h: 1, d: 2, c: 3 } as Record<string, number>)[t[1]];
+  const cs = (t: string) => t.split(' ').map(s2c);
+  const P = require('../src/services/poker') as typeof import('../src/services/poker');
+
+  /* AK vs 77, 보드 A K 2 3. AK는 투페어, 77은 원페어 — 77은 7이 떨어져야 이긴다(2장). */
+  const ak77 = [{ seat: 0, hole: cs('As Ks') }, { seat: 1, hole: cs('7d 7c') }];
+  {
+    const board = cs('Ah Kd 2c 3s');
+    const eq = H.equityAt(ak77, board)!;
+    ck('승률의 합이 정확히 1', Math.abs(eq[0].equity + eq[1].equity - 1) < 1e-12);
+    ck('77 = 2/44 (46이 아니다 — 상대 패도 공개돼 있다)',
+      Math.abs(eq[1].equity - 2 / 44) < 1e-12, (eq[1].equity * 100).toFixed(2) + '%');
+    ck('AK = 42/44', Math.abs(eq[0].equity - 42 / 44) < 1e-12);
+    const outs = H.outsAt(ak77, board);
+    ck('아웃츠는 지고 있는 쪽에만', outs.length === 1 && outs[0].seat === 1, JSON.stringify(outs));
+    ck('아웃츠 2장 · 랭크 7', outs[0]?.count === 2 && outs[0]?.ranks.join('') === '7');
+  }
+
+  /* 같은 값의 홀 카드(무늬만 다름) — 어떤 리버가 와도 무승부다. 무승부를 나눠 갖는
+     것으로 세지 않으면 합이 1이 되지 않는다. */
+  {
+    const same = [{ seat: 0, hole: cs('As Kh') }, { seat: 1, hole: cs('Ad Kc') }];
+    const eq = H.equityAt(same, cs('2s 7h 9d Jc'))!;
+    ck('항상 무승부인 매치업은 0.5 / 0.5',
+      Math.abs(eq[0].equity - 0.5) < 1e-12 && Math.abs(eq[1].equity - 0.5) < 1e-12);
+    ck('무승부는 win이 아니라 tie로 센다', eq[0].win === 0 && Math.abs(eq[0].tie - 1) < 1e-12);
+    ck('앞선 쪽이 없으면 아웃츠도 없다', H.outsAt(same, cs('2s 7h 9d Jc')).length === 0);
+  }
+
+  /* 턴+리버 두 장 — 조합을 다른 방식으로 다시 세서 같은 답이 나오는지 본다.
+     같은 식을 두 번 쓰는 게 아니라 루프를 따로 돌려 교차 검증하는 것이 목적이다. */
+  {
+    const board = cs('Ah Kd 2c');
+    const eq = H.equityAt(ak77, board)!;
+    const used = new Set([...board, ...ak77[0].hole, ...ak77[1].hole]);
+    const deck: number[] = [];
+    for (let c = 0; c < 52; c++) if (!used.has(c)) deck.push(c);
+    let n = 0, e0 = 0;
+    for (let i = 0; i < deck.length; i++) {
+      for (let j = i + 1; j < deck.length; j++) {
+        const b = [...board, deck[i], deck[j]];
+        const s0 = P.evaluate7(ak77[0].hole[0], ak77[0].hole[1], b[0], b[1], b[2], b[3], b[4]);
+        const s1 = P.evaluate7(ak77[1].hole[0], ak77[1].hole[1], b[0], b[1], b[2], b[3], b[4]);
+        n++;
+        if (s0 > s1) e0 += 1; else if (s0 === s1) e0 += 0.5;
+      }
+    }
+    ck('가짓수 C(45,2) = 990', n === 990, String(n));
+    ck('따로 센 값과 완전히 일치', Math.abs(eq[0].equity - e0 / n) < 1e-12);
+    ck('보드가 4장이 아니면 아웃츠를 내지 않는다 (두 장 남으면 장수로 말할 수 없다)',
+      H.outsAt(ak77, board).length === 0);
+  }
+
+  // 세 명 이상에서도 합이 1이어야 한다 — 무승부 분배가 인원수를 따라가는지 본다
+  {
+    const three = [...ak77, { seat: 2, hole: cs('Th 9h') }];
+    const e4 = H.equityAt(three, cs('Ah Kd 2c 3s'))!;
+    ck('세 명 · 리버 — 합이 1', Math.abs(e4.reduce((a, x) => a + x.equity, 0) - 1) < 1e-12,
+      e4.map(x => (x.equity * 100).toFixed(1)).join('/'));
+    const e3 = H.equityAt(three, cs('Ah Kd 2c'))!;
+    ck('세 명 · 턴+리버 — 합이 1', Math.abs(e3.reduce((a, x) => a + x.equity, 0) - 1) < 1e-12);
+  }
+
+  /* 15아웃 — 스트레이트 드로 + 플러시 드로가 겹친 유명한 상황.
+     ♠ 9장 + 5 네 장 + T 네 장 - 겹치는 5♠·T♠ 두 장 = 15장.
+     손으로 셀 수 있는 값이라 아웃츠 계산의 좋은 기준점이다. */
+  {
+    const drw = [{ seat: 0, hole: cs('9s 8s') }, { seat: 1, hole: cs('Ah Ad') }];
+    const board = cs('7s 6s 2h Kc');
+    const outs = H.outsAt(drw, board);
+    ck('15아웃 (스트레이트 + 플러시 드로, 겹침 제외)',
+      outs.length === 1 && outs[0].seat === 0 && outs[0].count === 15,
+      JSON.stringify(outs));
+    const eq = H.equityAt(drw, board)!;
+    ck('승률 = 15/44 (교과서의 54%는 두 장 받을 때의 값이다)',
+      Math.abs(eq[0].equity - 15 / 44) < 1e-12, (eq[0].equity * 100).toFixed(1) + '%');
+  }
+
+  // 프리플랍은 전수가 152만 가지라 표본을 쓴다. 널리 알려진 값에 가까운지 본다
+  {
+    const eq = H.equityAt(ak77, [], randomInt)!;
+    ck('AKs vs 77 ≈ 48% (표본 오차 ±2%p)', Math.abs(eq[0].equity - 0.48) < 0.02,
+      (eq[0].equity * 100).toFixed(1) + '%');
+    ck('rng 없이는 프리플랍 승률을 내지 않는다 (추측을 사실처럼 내놓지 않는다)',
+      H.equityAt(ak77, []) === null);
+  }
+
+  /* 단계 배열 — 화면이 보드를 한 장씩 열면서 쓰는 값이다.
+     액션이 있던 스트리트의 단계를 만들면 안 된다 (그때는 결과가 카드에만 달려 있지 않았다). */
+  {
+    const fb = cs('Ah Kd 2c 3s 9h');
+    ck('프리플랍 올인 → 플랍·턴 두 단계',
+      H.equityStages(ak77, fb, 0, randomInt).map(s => s.boardLen).join(',') === '3,4');
+    ck('플랍 올인 → 플랍·턴 두 단계',
+      H.equityStages(ak77, fb, 3, randomInt).map(s => s.boardLen).join(',') === '3,4');
+    ck('턴 올인 → 턴 한 단계',
+      H.equityStages(ak77, fb, 4, randomInt).map(s => s.boardLen).join(',') === '4');
+    ck('리버 쇼다운 → 단계 없음 (보여줄 확률이 없다)',
+      H.equityStages(ak77, fb, 5, randomInt).length === 0);
+    ck('한 명만 남았으면 단계 없음',
+      H.equityStages([ak77[0]], fb, 0, randomInt).length === 0);
+    const st = H.equityStages(ak77, fb, 0, randomInt);
+    ck('아웃츠는 턴 단계에만 붙는다', !st[0].outs && !!st[1].outs);
+  }
+}
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);

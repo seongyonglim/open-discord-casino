@@ -1286,7 +1286,7 @@
     /* 펠트 위에 놓인 물건으로 읽히게 — 글자에 얇은 하이라이트를 준다 */
     letter-spacing:0;text-shadow:0 1px 0 rgba(255,255,255,.7)}
   /* display:flex가 있으면 hidden 속성이 무시된다 — 명시적으로 막아야 한다 */
-  .ht-puck[hidden],.ht-fold-b[hidden],.ht-zzz[hidden]{display:none}
+  .ht-puck[hidden],.ht-fold-b[hidden]{display:none}
   .ht-puck.r{left:100%;transform:translate(6px,-50%)}
   .ht-puck.l{right:100%;transform:translate(-6px,-50%)}
   /* SB · BB 배지 — 딜러 버튼 반대쪽. 포지션이 보이지 않으면 프리플랍 행동 순서를 못 읽는다.
@@ -1335,7 +1335,7 @@
     animation:clockWarn .5s ease-in-out infinite alternate}
   @keyframes clockWarn{from{filter:none}to{filter:brightness(1.5)}}
   /* 남은 초 — 아바타 오른쪽 아래에 작은 배지. 고리 안에 넣을 수 없다(mask가 자식을
-     같이 지운다). 왼쪽 위는 자리 비움 배지(.ht-zzz)가 쓰고 있어 오른쪽 아래로 둔다. */
+     같이 지운다). 왼쪽은 자리 비움 태그(.ht-out-tag)가 쓰고 있어 오른쪽 아래로 둔다. */
   .ht-clock-n{position:absolute;left:31px;top:calc(50% + 9px);z-index:6;pointer-events:none;
     min-width:16px;height:16px;padding:0 2px;border-radius:8px;
     display:flex;align-items:center;justify-content:center;
@@ -1425,12 +1425,11 @@
   /* 이긴 손에서 쓰이지 않은 두 장은 뒤로 물린다 — 강조의 반대편이 있어야
      "이 5장"이 읽힌다. mucked만큼 죽이지는 않는다(그건 버린 패의 표시다). */
   .pcard.unused{opacity:.62}
-  /* 올인 — 스택이 0이라 숫자 자리가 죽는다. 그 자리를 ALL IN으로 바꿔 쓰고
-     좌석판에 붉은 맥박을 준다. 작은 알약을 아래에 달아두는 것보다 훨씬 눈에 띈다. */
-  .ht-allin{display:inline-block;padding:1px 7px;border-radius:4px;white-space:nowrap;
-    background:linear-gradient(180deg,#e2483f,#a81f18);color:#fff;
-    font-family:var(--mono);font-size:10px;font-weight:900;letter-spacing:1px;
-    box-shadow:0 1px 4px rgba(255,60,50,.5)}
+  /* 올인 — 예전에는 스택 자리에 'ALL IN' 알약을 찍었다. 좌석판 위 행동 배지가 같은 말을
+     하게 되면서 한 사람에게 ALL IN이 두 번 보였다(스택 자리 + 배지). 배지만 남긴다.
+     스택 자리는 스택을 말하는 자리로 되돌리고 — 올인한 사람은 0이다 — 그 0을 붉게 써서
+     "뒤에 남은 칩이 없다"를 색으로 알린다. */
+  .ht-stk.allin{color:#ff6b63}
   .ht-seat.allin .ht-plate{border-color:rgba(255,90,80,.85);
     animation:htAllin 1.5s ease-in-out infinite}
   @keyframes htAllin{
@@ -1440,15 +1439,120 @@
   .ht-seat.hero.allin .ht-plate{border-color:rgba(220,60,50,.9)}
 
   /* 자리 비움 — 아바타를 흑백으로 죽이고 판을 가라앉힌다. 알약 한 줄보다
-     "이 사람은 지금 없다"가 즉시 읽힌다. 아바타 위 II 배지가 이유를 알려준다. */
+     "이 사람은 지금 없다"가 즉시 읽힌다.
+
+     예전에는 아바타 위에 'II' 배지 하나였다. 무슨 뜻인지 알려면 툴팁을 봐야 했다 —
+     그건 아이콘이 정보를 전달하지 못한 것이다. 글자로 적어 이름 앞(왼쪽)에 깐다. */
   .ht-seat.sitout .ht-av{filter:grayscale(1) brightness(.65)}
   .ht-seat.sitout .ht-plate{opacity:.72;border-color:rgba(255,180,60,.5);
     background:linear-gradient(180deg,rgba(30,26,18,.94),rgba(14,12,8,.94))}
   .ht-seat.sitout .ht-nm,.ht-seat.sitout .ht-stk{color:#9a927f}
-  .ht-zzz{position:absolute;left:24px;top:-5px;width:16px;height:16px;border-radius:50%;
-    background:#f0b542;color:#2a1e05;font-size:8.5px;font-weight:900;letter-spacing:-.5px;
-    display:flex;align-items:center;justify-content:center;
-    border:1.5px solid rgba(0,0,0,.35);box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  /* 아바타 위에 정확히 얹는다. 좌석판 폭을 늘리지 않으려고 absolute로 띄우고
+     (판 안에 흘려 넣으면 이름 칸 60px이 밀려 잘린다), 폭도 아바타 안으로 묶는다 —
+     처음엔 padding만 주고 뒀다가 이름 앞 10px을 덮었다(실측). 아바타는 자리 비움이면
+     어차피 흑백으로 죽는 영역이라 태그가 덮어도 잃는 정보가 없다. */
+  .ht-out-tag{position:absolute;left:3px;top:50%;transform:translateY(-50%);z-index:5;
+    width:30px;height:30px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    /* "자리비움" 네 글자를 두 줄로 접는다(자리 / 비움). 한 줄로 두면 30px 안에 안 들어가고,
+       줄여서 넣으면 읽을 수 없는 크기가 된다. */
+    white-space:normal;word-break:break-all;line-height:1.05;pointer-events:none;
+    background:linear-gradient(180deg,rgba(240,181,66,.97),rgba(200,138,28,.97));color:#2a1e05;
+    font-size:9px;font-weight:900;letter-spacing:-.7px;
+    border:1px solid rgba(0,0,0,.4);box-shadow:0 1px 5px rgba(0,0,0,.55)}
+  .ht-out-tag[hidden]{display:none}
+
+  /* ── 좌석판 위 행동 배지 ──────────────────────────────────────────
+     행동한 순간 떠올라 스스로 사라진다. 예전에는 베팅 자리에 계속 남아서 이미 지나간
+     "체크"가 판이 끝날 때까지 붙어 있었다 — 지금 무슨 일이 일어났는지가 흐려졌다.
+
+     색은 행동의 성격으로 가른다: 돈을 더 넣으면 붉게(베팅·레이즈), 맞춰 가면 파랗게(콜),
+     안 넣으면 초록(체크), 접으면 회색(폴드). 올인은 등급이 달라 따로 둔다. */
+  /* 배지는 카드가 없는 쪽에 놓는다.
+     카드는 좌석판 위로 자라므로(12시 쪽 두 자리만 아래로) 배지는 그 반대편이다.
+     처음엔 둘 다 위에 뒀다가 WIN 배지가 승자의 홀 카드를 가렸다 — 쇼다운에서
+     이긴 손을 못 보게 만드는 건 배지가 할 수 있는 최악의 일이다. */
+  .ht-abadge{position:absolute;left:50%;top:100%;transform:translateX(-50%);
+    margin-top:5px;z-index:7;pointer-events:none;white-space:nowrap;
+    padding:2px 9px;border-radius:999px;
+    font-size:10.5px;font-weight:900;letter-spacing:.3px;
+    border:1px solid rgba(0,0,0,.35);box-shadow:0 2px 8px rgba(0,0,0,.55)}
+  .ht-abadge[hidden]{display:none}
+  /* 카드를 판 아래로 깐 자리(12시 쪽)는 아래가 막혔으니 배지를 위로 올린다 */
+  .ht-seat.cards-below .ht-abadge{top:auto;bottom:100%;margin:0 0 5px}
+  .ht-abadge.a-check{background:linear-gradient(180deg,#5fd39a,#2f9d6b);color:#06251a}
+  .ht-abadge.a-call{background:linear-gradient(180deg,#78c2f0,#2f7fbd);color:#04202f}
+  .ht-abadge.a-bet,.ht-abadge.a-raise{background:linear-gradient(180deg,#f0894b,#c8521c);color:#2a1004}
+  .ht-abadge.a-fold{background:linear-gradient(180deg,#9a9a9a,#6a6a6a);color:#141414}
+  /* 올인은 사라지지 않는다 — 판이 끝날 때까지 유효한 사실이다. 그래서 맥박만 준다. */
+  .ht-abadge.a-allin{background:linear-gradient(180deg,#e2483f,#a81f18);color:#fff;
+    font-family:var(--mono);letter-spacing:1px}
+  .ht-abadge.keep{animation:allinBadge 1.6s ease-in-out infinite}
+  @keyframes allinBadge{
+    0%,100%{box-shadow:0 2px 8px rgba(0,0,0,.55),0 0 0 0 rgba(255,70,60,.55)}
+    60%    {box-shadow:0 2px 8px rgba(0,0,0,.55),0 0 0 6px rgba(255,70,60,0)}
+  }
+  /* ── WIN 배지 ────────────────────────────────────────────────────
+     이 판(또는 이 팟 층)을 가져간 사람. 칩이 움직이기 전에 먼저 뜬다 —
+     칩부터 날아가면 이미 정산이 끝난 뒤에 누가 이겼는지 알게 된다.
+     행동 배지와 같은 자리를 쓰므로(좌석판 위) 판이 끝난 뒤에만 나타난다. */
+  /* 처음에는 통금색 알약 + 무한 맥박이었다. 금색이 이미 많은 테이블에서 그 조합은
+     싸구려 스티커처럼 보였다("촌스럽다"). 세 가지를 바꿨다:
+       · 배경을 어둡게 깔고 금색은 테두리와 글자에만 — 금이 강조로 돌아온다
+       · 맥박(무한 반복)을 없애고 등장할 때 한 번 빛이 스쳐 지나가게
+       · 튀어오르는 등장(overshoot 1.5)을 부드럽게 — 과장이 촌스러움의 절반이었다 */
+  .ht-win-b{position:absolute;left:50%;top:100%;transform:translateX(-50%);
+    margin-top:5px;z-index:9;pointer-events:none;white-space:nowrap;overflow:hidden;
+    padding:3px 13px;border-radius:6px;
+    font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:3.4px;
+    text-indent:3.4px;   /* letter-spacing이 마지막 글자 뒤에도 붙어 좌우가 어긋나는 것을 되돌린다 */
+    color:#f4dfa4;
+    background:linear-gradient(180deg,rgba(30,25,14,.96),rgba(14,11,6,.97));
+    border:1px solid rgba(232,198,90,.75);
+    box-shadow:0 3px 12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,235,170,.18);
+    animation:winBadge .34s cubic-bezier(.22,.68,.3,1) both}
+  .ht-win-b[hidden]{display:none}
+  /* 금색 빛이 한 번 스쳐 지나간다. 반복하지 않는다 — 반복은 배지를 광고로 만든다. */
+  .ht-win-b::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(105deg,transparent 38%,rgba(255,238,180,.42) 50%,transparent 62%);
+    transform:translateX(-120%);animation:winShine 1.1s ease-out .3s both}
+  .ht-seat.cards-below .ht-win-b{top:auto;bottom:100%;margin:0 0 6px}
+  @keyframes winBadge{
+    from{opacity:0;transform:translateX(-50%) translateY(-5px) scale(.92)}
+    to  {opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+  }
+  @keyframes winShine{
+    from{transform:translateX(-120%)}
+    to  {transform:translateX(120%)}
+  }
+
+  /* ── 쇼다운 승률 · 역전 카드 ───────────────────────────────────────
+     리버 이전에 액션이 끝난 구간에서만 뜬다. 테이블 바깥쪽에 붙인다 —
+     판 위에 두면 카드와 칩과 겹친다. */
+  .ht-eq{position:absolute;top:50%;z-index:6;pointer-events:none;white-space:nowrap;
+    display:flex;flex-direction:column;align-items:center;gap:0;
+    padding:2px 7px;border-radius:8px;
+    background:rgba(6,10,8,.88);border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 2px 8px rgba(0,0,0,.55)}
+  .ht-eq[hidden]{display:none}
+  /* 좌석이 테이블 왼쪽이면 판의 왼쪽(바깥)으로, 오른쪽이면 오른쪽으로 */
+  .ht-eq.l{right:100%;transform:translate(-7px,-50%)}
+  .ht-eq.r{left:100%;transform:translate(7px,-50%)}
+  .ht-eq-p{font-family:var(--mono);font-size:12px;font-weight:800;color:#cbd8cf;line-height:1.15}
+  .ht-eq.hi .ht-eq-p{color:#5fd39a}
+  /* 아웃츠 — 지고 있는 쪽만. 장수를 먼저, 랭크를 작게 뒤에. */
+  .ht-eq-o{font-size:9px;font-weight:800;color:#f0b542;line-height:1.15}
+  .ht-eq-r{font-family:var(--mono);font-size:8.5px;color:var(--muted);line-height:1.15;
+    letter-spacing:.5px}
+
+  /* 떠올라 잠깐 머물고 사라진다. 1.7초 중 앞 8%가 등장, 뒤 22%가 퇴장이다 —
+     등장이 느리면 "방금 일어난 일"이라는 느낌이 없다. */
+  @keyframes actBadge{
+    0%   {opacity:0;transform:translateX(-50%) translateY(-6px) scale(.9)}
+    8%   {opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+    78%  {opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+    100% {opacity:0;transform:translateX(-50%) translateY(5px) scale(.96)}
+  }
 
   /* 베팅 칩 — 좌석과 중앙 사이. 좌석판과 별개 요소라 서로 겹치지 않는다. */
   .ht-spot{position:absolute;transform:translate(-50%,-50%);z-index:2;
@@ -1459,12 +1563,19 @@
     border:1px solid rgba(0,0,0,.45);box-shadow:0 1px 2px rgba(0,0,0,.5)}
   .ht-spot-amt{font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;
     text-shadow:0 1px 3px rgba(0,0,0,.75)}
-  /* 칩이 있을 때의 행동 이름 — 칩 위에 층을 쌓으면 아래쪽 좌석에서 중앙 블록까지
-     밀고 올라가므로 같은 줄에 붙인다. 칩이 없을 때는 .ht-act가 단독으로 뜬다. */
-  .ht-spot-act{padding:1px 7px;border-radius:999px;flex:none;
-    background:rgba(8,12,10,.9);border:1px solid rgba(255,255,255,.22);
-    font-size:10px;font-weight:800;letter-spacing:.3px;color:#e6f2ea;
-    box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  /* 베팅 자리에는 칩과 금액만 남긴다 — 행동 이름은 좌석판 위 배지(.ht-abadge)가 맡는다.
+     예전에는 여기 이름을 같이 붙였는데, 그러면 이미 지나간 행동이 판이 끝날 때까지
+     테이블에 널려 있었다. */
+
+  /* 앤티 — 판이 시작될 때 각자 앞에 놓이고 곧 중앙으로 간다.
+     서버는 앤티를 committed에만 더해서(bet이 아니다) 좌석 앞에 칩이 안 보인다.
+     그래서 이 순간을 화면이 직접 만든다. 레벨 6부터 매 판 스택이 줄어드는 이유다. */
+  .ht-ante{position:absolute;transform:translate(-50%,-50%);z-index:2;
+    display:flex;align-items:center;gap:5px;white-space:nowrap;
+    animation:antePut .22s ease-out}
+  .ht-ante-a{font-family:var(--mono);font-size:10px;font-weight:800;color:#f0d89a;
+    text-shadow:0 1px 3px rgba(0,0,0,.8)}
+  @keyframes antePut{from{opacity:0;transform:translate(-50%,-90%) scale(.8)}to{opacity:1}}
 
   /* 액션 컨트롤 */
   .ht-controls{margin-top:12px;background:var(--panel);border:1px solid rgba(255,255,255,.07);
@@ -1633,14 +1744,8 @@
     .ht-board .pcard{width:30px;height:45px}
   }
 
-  /* 행동 표시 — "무슨 액션을 했는지"가 보이지 않으면 판이 그냥 스킵된 것처럼 느껴진다.
-     베팅 칩이 있으면 금액은 칩이 말해주므로 행동 이름만 칩 위에 얹는다. */
-  .ht-act{position:absolute;transform:translate(-50%,-50%);z-index:3;
-    padding:2px 9px;border-radius:999px;white-space:nowrap;
-    background:rgba(8,12,10,.9);border:1px solid rgba(255,255,255,.22);
-    font-size:10.5px;font-weight:800;letter-spacing:.3px;color:#e6f2ea;
-    box-shadow:0 2px 6px rgba(0,0,0,.5);animation:htActPop .22s ease-out}
-  @keyframes htActPop{from{opacity:0;transform:translate(-50%,-30%)}to{opacity:1}}
+  /* 베팅 자리의 행동 이름(.ht-act)은 없앴다 — 좌석판 위 배지가 대신한다.
+     정의는 위쪽 .ht-abadge에 모여 있다. */
 
   /* 칩이 중앙 팟으로 / 팟이 승자에게 밀려가는 연출.
      자리 안에서 움직이면 테이블 밖을 지나는 구간이 잘리므로 화면 전체 레이어에서 날린다. */

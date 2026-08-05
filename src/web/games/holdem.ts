@@ -457,6 +457,9 @@ export function holdemPage(user: WebUser): string {
               <!-- 베팅 칩·행동 표시는 좌석과 분리한다. 여기가 매 액션마다 바뀌어도
                    좌석의 카드는 그대로 남아 움찔거리지 않는다. -->
               <div id="htSpots" class="ht-seats"></div>
+              <!-- 앤티 연출만 쓰는 층. htSpots는 폴링마다 innerHTML로 다시 그려지므로
+                   거기에 넣으면 다음 폴링(최대 1초)에 앤티 칩이 사라진다. -->
+              <div id="htAnte" class="ht-seats"></div>
             </div>
           </div>
         </div>
@@ -548,6 +551,7 @@ export function holdemPage(user: WebUser): string {
     var tableEl = document.getElementById('htTable');
     var seatsEl = document.getElementById('htSeats');
     var spotsEl = document.getElementById('htSpots');
+    var anteEl = document.getElementById('htAnte');
     var boardEl = document.getElementById('htBoard');
     var potEl = document.getElementById('htPot');
     var msgEl = document.getElementById('htMsg');
@@ -873,7 +877,7 @@ export function holdemPage(user: WebUser): string {
          자리 번호는 서버가 정한 그대로 두고 화면 위치만 돌린다 —
          내가 3번이든 7번이든 언제나 아래 가운데에서 플레이한다. */
       var anchor = tb.mySeat != null ? tb.mySeat : (seats.length ? seats[0].seat : 0);
-      var html = '', vol = '', sigParts = [];
+      var html = '', vol = '', sigParts = [], actNow = [];
       seats.forEach(function(s){
         var rot = ((s.seat - anchor) % 9 + 9) % 9;
         var p = POS[rot];
@@ -904,7 +908,18 @@ export function holdemPage(user: WebUser): string {
                  포지션(누가 먼저 말하는지)이 보이지 않으면 초보는 프리플랍 순서를 못 읽는다. */
               '<span class="ht-blind ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
               '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
-              '<span class="ht-zzz" title="자리 비움" hidden>II</span>' +
+              /* 자리 비움 — 예전에는 아바타 위 'II' 배지였다. 무슨 뜻인지 알려면 툴팁을
+                 봐야 했다. 글자로 적어 이름 앞에 놓는다(참고 클라이언트도 이 방식이다). */
+              '<span class="ht-out-tag" hidden>자리비움</span>' +
+              /* 방금 한 행동 — 좌석판 위에 잠깐 떴다 사라진다. 예전에는 베팅 자리에
+                 계속 남아 있어서, 이미 지나간 행동이 판이 끝날 때까지 테이블에 널려 있었다.
+                 올인만 예외로 계속 남는다(아래 syncActBadge). */
+              '<span class="ht-abadge" hidden></span>' +
+              /* 이 판(또는 이 팟 층)을 가져간 사람 — 칩이 움직이기 전에 먼저 뜬다 */
+              '<span class="ht-win-b" hidden>WIN</span>' +
+              /* 쇼다운 승률. 테이블 바깥쪽(딜러 버튼 반대편)에 붙인다 —
+                 판 위에 두면 카드·칩과 겹친다. */
+              '<span class="ht-eq ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
             '</div>' +
             /* 남은 행동 시간 — 좌석판을 두르는 고리. 숫자만으로는 "얼마 안 남았다"가
                몸으로 안 느껴진다. 각도는 클라이언트가 매 프레임 보간한다(서버 해상도는 1초). */
@@ -930,21 +945,17 @@ export function holdemPage(user: WebUser): string {
         /* 판이 끝나면 좌석 앞 칩을 그리지 않는다. 서버는 판이 끝날 때 bet을 0으로
            되돌리지 않는데(초기화는 스트리트 전환에만 있다), 그 사이 팟 더미는 이미
            마지막 스트리트 베팅까지 중앙에 그려 놓는다 — 같은 칩이 두 곳에 보인다. */
+        /* 행동 이름은 여기서 그리지 않는다 — 좌석판 위 배지(.ht-abadge)가 맡는다.
+           베팅 자리에는 "실제로 나간 칩"만 남긴다. 이름까지 여기 있으면 이미 지나간
+           행동이 판이 끝날 때까지 테이블에 널려 있게 된다. */
         if (s.bet > 0 && !tb.ended) {
-          /* 칩이 있을 때 행동 이름은 칩 위에 층을 쌓지 않고 같은 줄에 붙인다.
-             위로 쌓으면 아래 좌석에서 중앙 블록(보드·조합)까지 밀고 올라간다. */
           vol += '<div class="ht-spot" id="htspot-' + s.seat + '"' +
             ' style="left:' + p.bet[0] + '%;top:' + p.bet[1] + '%">' +
             '<span class="ht-spot-chips">' + chipStack(s.bet) + '</span>' +
             '<span class="ht-spot-amt">' + stackText(s.bet) + '</span>' +
-            (act ? '<span class="ht-spot-act">' + actLabel(act, amt) + '</span>' : '') +
             '</div>';
         }
-        // 칩이 없을 때(체크·폴드)는 베팅 자리에 행동 이름만 단독으로 띄운다
-        else if (act) {
-          vol += '<div class="ht-act" style="left:' + p.bet[0] + '%;top:' + p.bet[1] + '%">' +
-            actLabel(act, amt) + '</div>';
-        }
+        actNow.push({ seat: s.seat, act: act, amount: amt });
       });
 
       var sig = sigParts.join('|');
@@ -955,8 +966,12 @@ export function holdemPage(user: WebUser): string {
       seats.forEach(function(s){
         var el = document.getElementById('htstk-' + s.seat);
         if (el) {
-          el.textContent = s.state === 'allin' ? 'ALL IN' : stackText(s.stack);
-          el.className = s.state === 'allin' ? 'ht-allin' : 'ht-stk';
+          /* 예전에는 올인이면 스택 자리에 'ALL IN'을 찍었다. 좌석판 위 배지가 같은 말을
+             하게 되면서 한 사람에게 ALL IN이 두 번 보였다. 스택 자리는 스택을 말하는
+             자리다 — 올인한 사람은 0이고, 그게 "뒤에 남은 칩이 없다"는 정보다.
+             올인이라는 사실은 배지와 붉은 좌석판 테두리가 맡는다. */
+          el.textContent = stackText(s.stack);
+          el.className = s.state === 'allin' ? 'ht-stk allin' : 'ht-stk';
         }
         var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
         if (!seatEl) return;
@@ -982,9 +997,110 @@ export function holdemPage(user: WebUser): string {
         }
         var foldB = seatEl.querySelector('.ht-fold-b');
         if (foldB) foldB.hidden = s.state !== 'folded';
-        var zzz = seatEl.querySelector('.ht-zzz');
-        if (zzz) zzz.hidden = !(s.state !== 'folded' && s.presence === 'SIT_OUT');
+        var outTag = seatEl.querySelector('.ht-out-tag');
+        if (outTag) outTag.hidden = !(s.state !== 'folded' && s.presence === 'SIT_OUT');
         syncHole(seatEl.querySelector('.ht-hole'), s);
+      });
+      syncActBadges(tb, actNow);
+      syncEquity(tb);
+    }
+
+    /* ── 쇼다운 승률 · 역전 카드 ───────────────────────────────────────
+       리버 이전에 액션이 끝나면 결과는 남은 카드에만 달려 있다. 그 구간에 각자의 승률을
+       보여주면 남은 카드를 기다리는 재미가 생긴다 — 관전자에게는 특히 그렇다.
+
+       서버가 스트리트별로 미리 계산해 보냈다(result.equity). 여기서는 "지금 화면에 깔린
+       보드 장수"에 맞는 단계를 고르기만 한다 — 카드가 열리는 것보다 승률이 앞서 바뀌면
+       카드를 보기 전에 결과를 알려주는 것이 된다.
+
+       팟 정산이 시작되면(WIN 배지) 내린다. 그때부터는 확률이 아니라 사실이 나온다. */
+    function syncEquity(tb){
+      var stages = (tb.ended && tb.result && tb.result.equity) || [];
+      var stage = null;
+      // 정산이 시작되기 전까지만. potPaidHand는 팟을 밀기 시작할 때 세워진다
+      if (stages.length && potPaidHand !== tb.handNo) {
+        for (var i = 0; i < stages.length; i++) {
+          if (stages[i].boardLen === shownBoard) { stage = stages[i]; break; }
+        }
+      }
+      var byS = {}, outs = {};
+      if (stage) {
+        stage.seats.forEach(function(x){ byS[x.seat] = x; });
+        (stage.outs || []).forEach(function(o){ outs[o.seat] = o; });
+      }
+      (tb.seats || []).forEach(function(s){
+        var el = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"] .ht-eq');
+        if (!el) return;
+        var e = byS[s.seat];
+        if (!e) { el.hidden = true; return; }
+        var pct = Math.round(e.equity * 1000) / 10;
+        var o = outs[s.seat];
+        /* 아웃츠는 남은 카드가 한 장일 때만 뜻이 있다(서버가 그때만 채운다).
+           랭크는 네 개까지 적는다 — 여덟 개를 늘어놓으면 읽지 않는다. */
+        var outTxt = '';
+        if (o) {
+          var rs = o.ranks.slice(0, 4).join(' ');
+          outTxt = '<b class="ht-eq-o">아웃 ' + o.count + '장</b>'
+            + '<span class="ht-eq-r">' + esc(rs) + (o.ranks.length > 4 ? '…' : '') + '</span>';
+        }
+        el.hidden = false;
+        // 좌우 위치 클래스는 골격이 정해 준 것이니 건드리지 않고 강조만 토글한다
+        el.classList.toggle('hi', pct >= 50);
+        el.title = o ? '이 카드가 나오면 이깁니다: ' + o.ranks.join(', ') : '';
+        el.innerHTML = '<span class="ht-eq-p">' + pct.toFixed(1) + '%</span>' + outTxt;
+      });
+    }
+
+    /* ── 좌석판 위 행동 배지 ──────────────────────────────────────────
+       행동한 순간 좌석판 위에 뜨고 스스로 사라진다(CSS 애니메이션이 페이드까지 맡는다).
+       예전에는 베팅 자리에 계속 남아서, 이미 지나간 "체크"가 판이 끝날 때까지 붙어 있었다.
+
+       올인만 계속 남긴다 — 판이 끝날 때까지 유효한 사실이고, 남은 사람들이 무엇을 상대로
+       겨루는지 알아야 한다. 나머지는 방금 일어난 일이라 잠깐 보이면 된다.
+
+       열쇠는 (스트리트 · 자리 · 행동 · 금액)이다. 금액을 넣는 이유는 한 스트리트에서
+       같은 자리가 콜 → 레이즈 → 콜을 할 수 있어서, 행동 이름만으로는 새 행동인지
+       구분되지 않기 때문이다(액션 음성과 같은 규칙이다). */
+    var ACT_BADGE_MS = 1700;
+    var badgeKey = {}, badgeHand = null;
+    function syncActBadges(tb, list){
+      if (tb.handNo !== badgeHand) {
+        badgeHand = tb.handNo; badgeKey = {};
+        // 새 판 — 지난 판의 배지(계속 남는 올인, 승자 표시)를 걷어낸다
+        seatsEl.querySelectorAll('.ht-abadge').forEach(function(el){
+          el.hidden = true; el.style.animation = 'none';
+        });
+        clearWinBadges();
+      }
+      list.forEach(function(x){
+        var el = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-abadge');
+        if (!el) return;
+        if (!x.act) {
+          // 판이 끝나 표시가 지워졌다 — 올인 배지도 여기서 걷힌다
+          if (badgeKey[x.seat] != null) { badgeKey[x.seat] = null; el.hidden = true; }
+          return;
+        }
+        var key = tb.street + ':' + x.act + ':' + (x.amount || 0);
+        if (badgeKey[x.seat] === key) return;              // 같은 행동을 다시 띄우지 않는다
+        badgeKey[x.seat] = key;
+        el.textContent = actLabel(x.act, x.amount);
+        /* 색은 행동의 성격으로 가른다: 돈을 더 넣는 것(베팅·레이즈)은 붉게,
+           맞춰 가는 것(콜)은 파랗게, 안 넣는 것(체크)은 초록, 접는 것은 회색.
+           올인은 나머지와 다른 등급이라 따로 둔다. */
+        el.className = 'ht-abadge a-' + x.act + (x.act === 'allin' ? ' keep' : '');
+        el.hidden = false;
+        // 애니메이션을 다시 재생시킨다 — 클래스만 바꾸면 브라우저가 이어서 틀지 않는다
+        el.style.animation = 'none';
+        void el.offsetWidth;
+        el.style.animation = x.act === 'allin' ? '' : 'actBadge ' + ACT_BADGE_MS + 'ms ease-out forwards';
+        /* 다 사라진 뒤에는 실제로 감춘다. 투명해진 요소를 그냥 두면 눈에는 안 보이지만
+           같은 자리를 쓰는 WIN 배지와 DOM에서 겹쳐 있어 나중에 헷갈릴 여지가 남는다. */
+        if (x.act !== 'allin') {
+          clearTimeout(el.__t);
+          el.__t = setTimeout(function(){ el.hidden = true; }, ACT_BADGE_MS + 60);
+        } else {
+          clearTimeout(el.__t);
+        }
       });
     }
 
@@ -1349,9 +1465,18 @@ export function holdemPage(user: WebUser): string {
        그대로 그리면 프리플랍이 끝난 순간 세 장이 뿅 나타난다.
        그래서 클라이언트가 "지금 몇 장까지 보여줄지"를 따로 들고, 남은 장을
        한 장씩 늘려가며 깐다. 서버는 초 단위 해상도라 이 박자는 클라이언트 몫이다. */
-    var BOARD_FIRST_MS = 340;     // 플랍 첫 장까지
-    var BOARD_STEP_MS = 260;      // 플랍 세 장 사이
-    var BOARD_STREET_MS = 500;    // 한 번에 여러 스트리트를 열 때(올인) 스트리트 사이의 박자
+    var BOARD_FIRST_MS = 420;     // 이번에 깔 첫 장까지
+    var BOARD_STEP_MS = 300;      // 같은 스트리트 안(플랍 세 장) 사이
+    /* 한 번에 여러 스트리트를 여는 경우(올인·전원 콜로 쇼다운이 확정된 판)의 스트리트 사이.
+       여기가 이 판의 긴장이 만들어지는 유일한 구간이다 — 결과는 이미 정해져 있고
+       사람이 할 수 있는 건 기다리는 것뿐이라, 빠르게 넘기면 판이 그냥 스킵된 것처럼 느껴진다.
+       500ms였을 때 "플랍 턴 리버가 너무 빨리 지나간다"는 말이 나왔다.
+
+       한 스트리트씩 정상 진행할 때는 이 값을 쓰지 않는다 — 그때는 이미 ACTION_HOLD_MS로
+       한 박자 쉬고 있고, 거기에 1.5초를 더하면 진행이 늘어진다. */
+    var BOARD_RUNOUT_MS = 1500;
+    // 몇 번째 카드가 어느 스트리트인지 (0~2 플랍 · 3 턴 · 4 리버)
+    function streetOfCard(i){ return i <= 2 ? 0 : i - 2; }
     /* 스트리트가 넘어갈 때 카드를 깔기 전에 두는 정지.
        서버는 마지막 액션과 새 스트리트를 같은 응답에 담아 보낸다 — 그래서 이게 없으면
        "콜 300"이 뜨는 것과 플랍이 깔리는 것이 거의 동시에 일어나 마지막 액션을 볼 틈이 없다.
@@ -1395,11 +1520,14 @@ export function holdemPage(user: WebUser): string {
       if (added && window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
       return added;
     }
-    // 몇 번째 카드인지에 따라 앞에 두는 간격 (0~2 = 플랍, 3 = 턴, 4 = 리버)
-    function boardGap(i){
-      if (i === 0) return BOARD_FIRST_MS;
-      if (i <= 2) return BOARD_STEP_MS;
-      return BOARD_STREET_MS;
+    /* 이번에 깔 카드 앞에 두는 간격.
+       절대 위치가 아니라 "이번 묶음 안에서 몇 번째인가"로 정한다 — 턴 한 장만 여는
+       정상 진행에서 그 장은 묶음의 첫 장이므로 BOARD_FIRST_MS를 받아야 한다.
+       예전에는 절대 위치로 정해서(i>=3이면 STREET) 턴·리버가 정상 진행에서도
+       스트리트 간격을 받았다. */
+    function boardGap(i, from){
+      if (i === from) return BOARD_FIRST_MS;
+      return streetOfCard(i) !== streetOfCard(i - 1) ? BOARD_RUNOUT_MS : BOARD_STEP_MS;
     }
     function syncBoard(tb){
       var cards = tb.board || [];
@@ -1439,15 +1567,25 @@ export function holdemPage(user: WebUser): string {
       if (boardTimers.length) return;          // 이미 깔고 있는 중
       /* 첫 장 앞에만 정지를 둔다. 한 번에 여러 스트리트를 여는 올인 판에서도
          정지는 맨 앞에 한 번이고, 그 뒤 스트리트 사이는 BOARD_STREET_MS로 이어진다. */
-      var t = ACTION_HOLD_MS;
-      for (var i = shownBoard; i < cards.length; i++) {
-        t += boardGap(i);
+      var t = ACTION_HOLD_MS, from = shownBoard;
+      for (var i = from; i < cards.length; i++) {
+        t += boardGap(i, from);
         (function(upto, at){
           boardTimers.push(setTimeout(function(){
             shownBoard = upto;
             var now = (st.table && st.table.board) || [];
             paintBoard(now, upto);
-            if (upto >= now.length) { boardRevealed = true; clearBoardReveal(); }
+            /* 승률은 "지금 깔린 보드"에 맞는 단계를 보여준다. 폴링(1초)에만 맡기면
+               플랍이 다 깔린 뒤에도 최대 1초는 이전 단계가 떠 있고, 런아웃이 빠르면
+               플랍 단계를 아예 못 보고 지나간다. 카드를 열 때마다 여기서 갱신한다. */
+            if (st && st.table) syncEquity(st.table);
+            if (upto >= now.length) {
+              boardRevealed = true;
+              clearBoardReveal();
+              /* 폴링(1초)을 기다리지 않고 바로 다시 그린다 — 액션 버튼이 이 값에 걸려
+                 있어서, 기다리면 카드가 다 깔린 뒤에도 최대 1초는 누를 수 없다. */
+              if (st && st.table && !tableEl.hidden) { renderSeats(); renderControls(); }
+            }
           }, at));
         })(i + 1, t);
       }
@@ -1552,41 +1690,107 @@ export function holdemPage(user: WebUser): string {
        도착할 때까지 기다렸다가 다음 층으로. 서버가 이긴 손이 강한 층부터 담아 주므로
        가장 센 손이 먼저 자기 몫을 가져간다(실제 딜러의 순서다).
 
-       층당 약 1.9초다. 서버도 같은 값(SIDE_POT_STEP_SEC)으로 다음 판 시작을 미룬다 —
-       한쪽만 바꾸면 마지막 층을 보여주다가 판이 넘어간다. */
-    var POT_STEP_MS = 1900;
+       한 층의 순서는 [WIN 배지 → WIN_HOLD_MS 대기 → 칩 이동(약 0.9초)]이다.
+       그래서 층 간격은 1.4 + 0.9에 여유를 더한 2.5초다. 서버도 같은 값
+       (SIDE_POT_STEP_SEC)으로 다음 판 시작을 미룬다 — 한쪽만 바꾸면 마지막 층을
+       보여주다가 판이 넘어간다. */
+    var POT_STEP_MS = 2500;
     // 층 이름표를 띄워 둔 동안에는 syncOutro가 그 줄을 건드리지 않는다
     var potLabelUntil = 0;
     function pushPotToWinners(tb, forHand){
       var seatOf = function(seat){
         return seatsEl.querySelector('.ht-seat[data-seat="' + seat + '"] .ht-plate');
       };
-      var layers = (tb.result.potAwards || []).filter(function(pa){
+      var raw = (tb.result.potAwards || []).filter(function(pa){
         return pa.winners && pa.winners.some(function(w){ return seatOf(w.seat); });
       });
       /* 폴드로 끝난 판이나 옛 판(potAwards가 없는 기록)은 층 정보가 없다.
-         그때는 좌석별 합계로 한 번에 보낸다 — 층이 하나뿐이라 순서를 보여줄 것도 없다. */
-      if (!layers.length) {
+         그때는 좌석별 합계 하나를 층 하나로 취급한다 — 층이 하나뿐이라 순서를 보여줄
+         것은 없지만, WIN 배지와 "먼저 띄우고 나중에 칩" 순서는 똑같이 밟아야 한다.
+         예전에는 이 경로가 payLayer를 바로 불러서, 폴드로 끝난 판에서는 승자 표시가
+         아예 없고 칩만 날아갔다. 판의 대부분이 이 경로다. */
+      var layers;
+      if (!raw.length) {
         var flat = (tb.result.awards || []).filter(function(a){ return seatOf(a.seat); });
         if (!flat.length) return;
-        payLayer(tb, { winners: flat, amount: 0 }, true);
-        return;
+        layers = [{ __key: '', __span: 1, index: 0, score: 0, amount: tb.pot || 0, winners: flat }];
+      } else {
+        layers = mergeSameWinner(raw);
       }
+      /* WIN 배지를 먼저 띄우고 한 박자 쉰 뒤에 칩을 옮긴다.
+         칩이 곧바로 날아가면 "누가 이겼나"를 읽기 전에 정산이 끝나 버린다.
+         참고 클라이언트도 배지가 1.5초쯤 떠 있고 그 다음에 칩이 움직인다. */
       layers.forEach(function(pa, i){
+        var at = i * POT_STEP_MS;
         setTimeout(function(){
           if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
           showPotLabel(tb, pa, layers.length);
-          payLayer(tb, pa, i === layers.length - 1);
+          showWinBadges(tb, pa);
           /* 층마다 다시 낸다 — 첫 층에서만 울리면 뒤 층은 조용히 지나가서
              "이게 아직 정산 중인가, 끝난 건가"가 소리로는 안 잡힌다.
-             첫 층은 위쪽 chipWin/potWin이 이미 울렸으므로 두 번째 층부터다.
-             상한 1인 셋이라 앞 음악이 끊기고 새로 시작한다. */
+             첫 층은 위쪽 chipWin/potWin이 이미 울렸으므로 두 번째 층부터다. */
           if (i > 0 && window.casinoSfx) {
             if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
             if (window.casinoSfx.potWin) window.casinoSfx.potWin();
           }
-        }, i * POT_STEP_MS);
+        }, at);
+        setTimeout(function(){
+          if (!st || !st.table || st.table.handNo !== forHand) return;
+          payLayer(tb, pa, i === layers.length - 1);
+        }, at + WIN_HOLD_MS);
       });
+    }
+
+    /* 인접한 층의 승자가 같으면 하나로 합친다.
+       사이드 팟 세 개를 같은 사람이 다 가져가는 상황에서 세 번 따로 칩을 보내면,
+       같은 사람에게 같은 연출이 세 번 반복되면서 "무슨 일이 세 번 일어났나" 싶어진다.
+       실제 딜러도 그때는 한 번에 밀어 준다.
+
+       승자가 다른 층은 합치지 않는다 — 그 경계가 바로 사이드 팟이 존재하는 이유이고,
+       누가 어느 팟을 가져갔는지 순서로 보여줘야 한다. */
+    function mergeSameWinner(layers){
+      var out = [];
+      layers.forEach(function(pa){
+        var key = pa.winners.map(function(w){ return w.seat; }).sort().join(',');
+        var prev = out.length ? out[out.length - 1] : null;
+        if (prev && prev.__key === key) {
+          prev.amount += pa.amount || 0;
+          prev.winners = prev.winners.map(function(w){
+            var add = pa.winners.filter(function(x){ return x.seat === w.seat; })[0];
+            return { seat: w.seat, amount: (w.amount || 0) + (add ? add.amount || 0 : 0) };
+          });
+          // 합쳐진 층은 이름표에서 "MAIN + SIDE 1" 처럼 묶어 보여준다
+          prev.__span = (prev.__span || 1) + 1;
+          return;
+        }
+        out.push({
+          __key: key, __span: 1, index: pa.index, score: pa.score,
+          amount: pa.amount || 0,
+          winners: pa.winners.map(function(w){ return { seat: w.seat, amount: w.amount || 0 }; }),
+        });
+      });
+      return out;
+    }
+
+    /* ── WIN 배지 ────────────────────────────────────────────────────
+       이 층을 가져가는 사람의 좌석판 위에 WIN을 띄운다. 칩이 움직이기 전에 먼저 뜬다 —
+       칩부터 날아가면 이미 끝난 뒤에 누가 이겼는지 알게 된다. */
+    var WIN_HOLD_MS = 1400;
+    function showWinBadges(tb, pa){
+      var win = {};
+      pa.winners.forEach(function(w){ win[w.seat] = 1; });
+      (tb.seats || []).forEach(function(s){
+        var el = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"] .ht-win-b');
+        if (!el) return;
+        if (!win[s.seat]) { el.hidden = true; return; }
+        el.hidden = false;
+        el.style.animation = 'none';
+        void el.offsetWidth;
+        el.style.animation = '';
+      });
+    }
+    function clearWinBadges(){
+      seatsEl.querySelectorAll('.ht-win-b').forEach(function(el){ el.hidden = true; });
     }
 
     /* 이 층이 무엇이고 누가 어떤 족보로 가져가는지 한 줄로 알린다.
@@ -1600,8 +1804,14 @@ export function holdemPage(user: WebUser): string {
         var s = (tb.seats || []).filter(function(x){ return x.seat === w.seat; })[0];
         return s ? s.username : 'Seat ' + (w.seat + 1);
       }).join(' · ');
-      var label = (pa.index === 0 ? 'MAIN POT' : 'SIDE POT ' + pa.index)
-        + '  ' + stackText(pa.amount);
+      /* 합쳐진 층은 무엇이 합쳐졌는지 이름에 적는다 — "MAIN + SIDE 1"처럼.
+         합계만 보여주면 사이드 팟이 있었다는 사실 자체가 사라진다. */
+      var first = pa.index, span = pa.__span || 1;
+      var names2 = [];
+      for (var k = 0; k < span; k++) {
+        names2.push(first + k === 0 ? 'MAIN' : 'SIDE ' + (first + k));
+      }
+      var label = names2.join(' + ') + ' POT  ' + stackText(pa.amount);
       outroEl.hidden = false;
       outroEl.innerHTML = '<b>' + esc(label) + '</b> — ' + esc(names)
         + (pa.hand ? ' · ' + esc(pa.hand) : '');
@@ -1664,6 +1874,9 @@ export function holdemPage(user: WebUser): string {
     }
     var DEAL_START_MS = 380;      // 셔플 소리가 끝나고 첫 장이 나가기까지
     var DEAL_FLIGHT_MS = 300;     // 복제본이 나는 시간 (CSS deal-in과 맞춘다)
+    /* 앤티를 각자 앞에 놓고 중앙으로 보내는 데 드는 시간.
+       카드보다 먼저다 — 실제 테이블도 앤티·블라인드를 걷고 나서 딜링을 시작한다. */
+    var ANTE_HOLD_MS = 520;
     var dealtHandNo = null, dealTimers = [];
     function clearDeal(){
       dealTimers.forEach(clearTimeout);
@@ -1708,6 +1921,11 @@ export function holdemPage(user: WebUser): string {
       // 셔플은 작게 깔아 둔다 — 기본 크기면 이어지는 딜링음 열여덟 장을 전부 덮는다
       if (window.casinoSfx && window.casinoSfx.shuffle) window.casinoSfx.shuffle(0.5);
 
+      /* 앤티가 있으면 카드보다 먼저 걷는다. 서버는 앤티를 committed에만 더하고 bet에는
+         넣지 않으므로(그래서 좌석 앞에 칩이 안 보인다) 화면이 그 순간을 직접 만든다.
+         레벨 6부터 앤티가 붙는다 — 그때부터 매 판 스택이 줄어드는 이유가 보여야 한다. */
+      var anteWait = anteSequence(tb, inHand);
+
       // 두 바퀴 — 실제 테이블처럼 한 사람에게 두 장을 몰아주지 않는다
       var steps = [];
       for (var pass = 0; pass < 2; pass++) {
@@ -1748,11 +1966,53 @@ export function holdemPage(user: WebUser): string {
             card.style.visibility = '';
           }, DEAL_FLIGHT_MS));
           if (window.casinoSfx && window.casinoSfx.deal) window.casinoSfx.deal();
-        }, DEAL_START_MS + n * step));
+        }, anteWait + DEAL_START_MS + n * step));
       });
       // 연출이 끊겨도 카드는 반드시 다시 보이게 하는 안전장치
       dealTimers.push(setTimeout(clearDeal,
-        DEAL_START_MS + cards.length * step + DEAL_FLIGHT_MS + 600));
+        anteWait + DEAL_START_MS + cards.length * step + DEAL_FLIGHT_MS + 600));
+    }
+
+    /* ── 앤티 제출 ────────────────────────────────────────────────────
+       각자 앞에 앤티를 놓고, 잠깐 뒤 전부 중앙으로 보낸다.
+       "모두가 같은 금액을 먼저 낸다"는 것이 앤티의 성격이라 한 사람씩 순차로 걷지 않고
+       한꺼번에 놓았다가 한꺼번에 보낸다 — 실제 딜러도 그렇게 걷는다.
+
+       돌려주는 값은 "딜링이 이만큼 기다려야 한다"는 시간이다. */
+    function anteSequence(tb, inHand){
+      var ante = (tb.level && tb.level.ante) || 0;
+      if (ante <= 0 || !inHand.length) return 0;
+
+      var made = [];
+      inHand.forEach(function(s){
+        var rot = ((s.seat - (tb.mySeat != null ? tb.mySeat : s.seat)) % 9 + 9) % 9;
+        var p = POS[rot];
+        var el = document.createElement('div');
+        el.className = 'ht-ante';
+        el.style.left = p.bet[0] + '%';
+        el.style.top = p.bet[1] + '%';
+        el.innerHTML = '<span class="ht-spot-chips">' + chipStack(ante) + '</span>' +
+          '<span class="ht-ante-a">' + stackText(ante) + '</span>';
+        anteEl.appendChild(el);
+        made.push(el);
+      });
+      if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+
+      // 다 놓인 뒤 한꺼번에 중앙으로. 칩이 도착할 즈음 더미가 그 금액을 받아 그린다
+      dealTimers.push(setTimeout(function(){
+        var pot = potEl.getBoundingClientRect();
+        made.forEach(function(el, k){
+          var r = el.getBoundingClientRect();
+          if (r.width) flyChip(r, pot, k * 35, 'topot');
+          if (el.parentNode) el.parentNode.removeChild(el);
+        });
+        if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+      }, ANTE_HOLD_MS));
+      // 연출이 끊겨도 남지 않게 (clearDeal이 dealTimers를 걷지만 요소는 따로 지운다)
+      dealTimers.push(setTimeout(function(){
+        made.forEach(function(el){ if (el.parentNode) el.parentNode.removeChild(el); });
+      }, ANTE_HOLD_MS + 900));
+      return ANTE_HOLD_MS + 150;
     }
 
     function renderTable(){
@@ -2019,7 +2279,21 @@ export function holdemPage(user: WebUser): string {
     function currentTarget(){ return Math.floor(Number(rangeEl.value) || 0); }
 
     function renderControls(){
+      /* 커뮤니티 카드가 다 열리기 전에는 액션 버튼을 켜지 않는다.
+         실제 게임에서는 카드가 다 깔린 다음에 상황을 보고 고른다. 예전에는 플랍이
+         한 장씩 날아오는 중에 이미 버튼이 떠서, 판을 보기 전에 누를 수 있었다.
+
+         서버의 제한 시간은 그대로 흐른다. 플랍이 다 깔리는 데 약 1초(ACTION_HOLD 1.1초
+         포함하면 2초)라 20초 중에서 문제가 되지 않는다.
+
+         boardRevealed가 어떤 이유로 true가 되지 않아도 버튼이 영원히 안 나오면 안 된다.
+         그건 "내 차례인데 아무것도 못 누른다"라서 연출이 어긋나는 것보다 훨씬 나쁘다.
+         그래서 남은 시간이 충분히 줄어들면(마지막 12초) 연출과 무관하게 켠다. */
       var la = st.table.legal;
+      if (la && !boardRevealed) {
+        var left = st.table.actionLeft;
+        if (left == null || left > 12) la = null;
+      }
       /* 판이 끝난 뒤의 두 버튼도 이 패널 안(ht-acts)에 있다. 그래서 내 차례가 아니라고
          패널 전체를 접으면 그 버튼이 뜨고 싶어도 보이지 않는다 — 실제로 그렇게 됐다.
          버튼이 하나라도 뜰 상황이면 패널은 열어두고, 베팅 금액 줄과 미리 지정 줄만 접는다. */
