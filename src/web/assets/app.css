@@ -1403,21 +1403,23 @@
     transform:translateX(-50%);z-index:5;
     min-width:calc(var(--htAv) * 1.08);max-width:calc(var(--htAv) * 1.36);
     padding:5px 10px 6px;text-align:center}
-  /* ── 사다리꼴 배경 ────────────────────────────────────────────────
-     윗변이 넓고 아랫변이 좁다. 직사각형은 웹 폼처럼 보이는데, 살짝 좁아지는 사다리꼴은
-     카지노 UI 패널의 문법이다 — 아래로 갈수록 좁아지는 형태가 "위에서 내려다본 물체"로
-     읽혀서 테이블에 놓인 것처럼 보인다.
+  /* ── 태그 배경 ────────────────────────────────────────────────────
+     아래로 갈수록 부드럽게 좁아지는 라운딩이다.
 
-     테두리는 border 대신 drop-shadow로 그린다. clip-path는 그려진 결과를 자르므로
-     border를 주면 좌우 빗변에서 잘려 나가고 위아래에만 선이 남는다. drop-shadow는
-     잘린 모양의 윤곽을 따라가므로 빗변에도 선이 생긴다. */
+     한때 clip-path로 각진 사다리꼴을 잘랐다. 빗변이 직선이라 딱딱했고, 무엇보다
+     테두리를 border로 그릴 수 없었다 — clip-path는 그려진 결과를 자르므로 빗변에서
+     선이 잘려 나간다. drop-shadow로 흉내 냈지만 그건 선이 아니라 번짐이라 상태별로
+     색을 갈아끼울 때마다 두 줄짜리 filter를 통째로 다시 써야 했다.
+     지금은 border-radius로 아래 모서리를 크게 굴린다. 자르는 것이 아니라 원래 그 모양인
+     상자라 테두리도 그림자도 형태를 그대로 따라가고, 상태별 색은 border-color 한 줄이다. */
   .ht-plate-bg{position:absolute;inset:0;pointer-events:none;
-    clip-path:polygon(0 0,100% 0,calc(100% - 6px) 100%,6px 100%);
-    background:linear-gradient(180deg,rgba(28,36,31,.98),rgba(10,15,11,.98));
-    filter:drop-shadow(0 0 .7px rgba(255,255,255,.42))
-           drop-shadow(0 3px 8px rgba(0,0,0,.6))}
+    border-radius:9px 9px 19px 19px / 9px 9px 26px 26px;
+    background:linear-gradient(180deg,rgba(30,38,33,.98),rgba(10,15,11,.98));
+    border:1px solid rgba(255,255,255,.17);
+    box-shadow:0 3px 9px rgba(0,0,0,.6)}
   /* 윗면 하이라이트 — 패널에 두께를 준다 */
   .ht-plate-bg::after{content:"";position:absolute;left:0;right:0;top:0;height:45%;
+    border-radius:8px 8px 0 0;
     background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,0))}
   /* 지금 행동할 차례 — 아바타 둘레에 맥박을 준다. 예전에는 좌석판을 흔들었는데,
      태그가 작아진 지금은 아바타가 훨씬 먼저 눈에 들어온다.
@@ -1425,23 +1427,19 @@
      태그는 초록으로 두 겹이 뛰어서 "내 차례는 초록"이라는 구분이 무너진다. */
   .ht-seat.turn .ht-av{border-color:var(--gold);
     animation:turnPulse 1.4s ease-in-out infinite}
-  /* 상태별 색. 테두리를 drop-shadow로 그리므로 그 색을 함께 바꾼다 —
-     border-color 하나만 갈아끼우던 예전보다 줄이 길지만, 윤곽이 사다리꼴을 따라간다. */
-  .ht-seat.sitout .ht-plate-bg{
-    filter:drop-shadow(0 0 .8px rgba(255,190,80,.75)) drop-shadow(0 3px 8px rgba(0,0,0,.6))}
-  .ht-seat.disc .ht-plate-bg{
-    filter:drop-shadow(0 0 .8px rgba(150,170,200,.7)) drop-shadow(0 3px 8px rgba(0,0,0,.6))}
+  /* 상태별 색 — 테두리 한 줄이면 된다 */
+  .ht-seat.sitout .ht-plate-bg{border-color:rgba(255,190,80,.6)}
+  .ht-seat.disc .ht-plate-bg{border-color:rgba(150,170,200,.55)}
   /* 내 자리는 태그를 밝게 뒤집어 한눈에 구분한다 */
   .ht-seat.hero .ht-plate-bg{background:linear-gradient(180deg,#f7f4ea,#dcd7c4);
-    filter:drop-shadow(0 0 .8px rgba(255,255,255,.85)) drop-shadow(0 3px 9px rgba(0,0,0,.6))}
+    border-color:rgba(255,255,255,.8)}
   .ht-seat.hero .ht-plate-bg::after{background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0))}
   .ht-seat.hero .ht-nm{color:#3a3427}
   .ht-seat.hero .ht-stk{color:#8a6a10}
-  /* 아직 겨루는 중인 사람은 태그 왼쪽에 초록 심지 — 흐려진 쪽과 대비된다.
-     사다리꼴 안쪽에 들어오도록 3px 들여 놓는다(빗변이 6px 파고들므로). */
-  .ht-seat:not(.folded) .ht-plate::before{content:"";position:absolute;left:3px;top:50%;
-    transform:translateY(-50%);width:3px;height:46%;border-radius:2px;z-index:1;
-    background:linear-gradient(180deg,#5fd39a,#2f9d6b)}
+  /* 태그 왼쪽의 초록 세로 막대는 없앴다. "아직 겨루는 중"을 표시하려던 것인데,
+     접은 사람은 좌석이 통째로 흐려지고 아바타가 흑백이 되며 F 배지까지 붙는다 —
+     세 겹으로 이미 말하고 있는 것을 네 번째로 말하는 장식이었다.
+     아홉 자리에 초록 막대가 아홉 개 서 있으면 그것 자체가 소음이다. */
 
   /* 팟에 남은 사람 vs 폴드한 사람 — 카드를 버린 모습 + 아바타 흑백 + F 배지 세 겹 */
   .ht-seat.folded{opacity:.62;transition:opacity .15s}
@@ -1458,7 +1456,7 @@
   .ht-seat.folded .ht-av{filter:grayscale(1) brightness(.6)}
   .ht-seat.folded .ht-plate-bg{
     background:linear-gradient(180deg,rgba(22,22,22,.92),rgba(9,9,9,.92));
-    filter:drop-shadow(0 0 .7px rgba(255,255,255,.14)) drop-shadow(0 2px 6px rgba(0,0,0,.55))}
+    border-color:rgba(255,255,255,.09)}
   .ht-seat.folded .ht-nm,.ht-seat.folded .ht-stk{color:#8b8b8b}
   .ht-seat.folded .ht-hole{transform:translateX(-50%) scale(.8);transform-origin:bottom center}
   .ht-shell .pcard.mucked{filter:grayscale(1) brightness(.55);opacity:.5}
@@ -1540,11 +1538,14 @@
      display:block + overflow로 잘라야 한다 — inline이면 ellipsis가 걸리지 않는다. */
   .ht-nm{display:block;font-size:10.5px;font-weight:700;color:#dce8e0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
-  /* 이름과 스택 사이를 3px로 벌린다. 1px일 때는 두 값이 한 덩어리로 붙어 보여서
-     어느 쪽이 이름인지 한 박자 늦게 읽혔다. */
-  .ht-stk{display:block;margin-top:3px;
+  /* 이름과 스택 사이에 얇은 선을 긋는다. 여백만으로는 두 값이 한 덩어리로 읽혀서
+     어느 쪽이 이름인지 한 박자 늦게 잡혔다. 선은 좌우 여백을 조금 남겨 태그의
+     둥근 모서리 안쪽에 들어오게 한다 — 끝까지 그으면 상자가 둘로 잘려 보인다. */
+  .ht-stk{display:block;margin:4px -4px 0;padding-top:3px;
+    border-top:1px solid rgba(255,255,255,.13);
     font-family:var(--mono);font-size:11.5px;font-weight:800;
     color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ht-seat.hero .ht-stk{border-top-color:rgba(0,0,0,.16)}
   /* 딜러 퍽 — 아바타의 "중앙을 향한 옆면"에 붙인다.
      펠트 위 별도 좌표에 띄워 두면 떠 있는 물체로 보여서 누구 버튼인지 한눈에 안 잡혔다.
      카드는 위, 태그는 아래, 베팅 칩은 더 안쪽이라 어느 것과도 겹치지 않는다. */
@@ -1557,39 +1558,43 @@
        본체    : 위에서 빛을 받는 상아색 원반 + 바닥 그림자
        ::before: 안쪽으로 한 겹 판 링 (실제 버튼의 각인 홈)
        글자    : 링 안에 눌러 새긴 것처럼 밝은 위·어두운 아래 두 겹 그림자 */
+  /* 크기는 아바타의 0.30배다. 0.46이었을 때는 얼굴 옆에 붙은 두 번째 원처럼 보여서
+     "누구 차례인가"를 볼 때마다 시선이 한 번 걸렸다 — 딜러 버튼은 위치만 알면 되는
+     표식이지 읽어야 할 정보가 아니다. 실제 테이블에서도 칩 한 장 크기다. */
   .ht-puck{position:absolute;top:36%;z-index:6;
-    width:calc(var(--htAv) * .46);height:calc(var(--htAv) * .46);border-radius:50%;
+    width:calc(var(--htAv) * .30);height:calc(var(--htAv) * .30);border-radius:50%;
     background:
-      radial-gradient(circle at 36% 26%,#ffffff 0%,#f6f3e8 34%,#ded9c6 72%,#b9b3a0 100%);
-    color:#2a2620;font-size:calc(var(--htAv) * .21);font-weight:900;
+      radial-gradient(circle at 36% 26%,#ffffff 0%,#f7f4ea 38%,#e2ddcc 76%,#c2bcaa 100%);
+    color:#2a2620;font-size:calc(var(--htAv) * .16);font-weight:900;
     display:flex;align-items:center;justify-content:center;
     border:none;
     box-shadow:
-      0 3px 0 rgba(120,112,94,.85),          /* 원반의 두께 */
-      0 5px 9px rgba(0,0,0,.55),
-      inset 0 1px 0 rgba(255,255,255,.9),
-      inset 0 -2px 3px rgba(120,112,94,.4);
-    letter-spacing:0;text-shadow:0 1px 0 rgba(255,255,255,.85)}
-  .ht-puck::before{content:"";position:absolute;inset:14%;border-radius:50%;
-    pointer-events:none;
-    box-shadow:inset 0 0 0 1px rgba(120,112,94,.55),0 1px 0 rgba(255,255,255,.75)}
+      0 2px 0 rgba(120,112,94,.8),           /* 원반의 두께 */
+      0 3px 6px rgba(0,0,0,.5),
+      inset 0 1px 0 rgba(255,255,255,.9);
+    letter-spacing:0;text-shadow:0 1px 0 rgba(255,255,255,.8)}
+  /* 각인 홈 — 작아진 만큼 선도 한 겹만 얇게 */
+  .ht-puck::before{content:"";position:absolute;inset:13%;border-radius:50%;
+    pointer-events:none;box-shadow:inset 0 0 0 1px rgba(120,112,94,.45)}
   /* display:flex가 있으면 hidden 속성이 무시된다 — 명시적으로 막아야 한다 */
   .ht-puck[hidden],.ht-fold-b[hidden]{display:none}
-  .ht-puck.r{left:100%;transform:translate(6px,-50%)}
-  .ht-puck.l{right:100%;transform:translate(-6px,-50%)}
+  .ht-puck.r{left:100%;transform:translate(3px,-50%)}
+  .ht-puck.l{right:100%;transform:translate(-3px,-50%)}
   /* SB · BB 배지 — 딜러 버튼 반대쪽. 포지션이 보이지 않으면 프리플랍 행동 순서를 못 읽는다.
      D(흰 원)와 형태를 다르게(각진 알약) 해서 한눈에 구분된다. */
   /* 퍽과 같은 이유로 아바타 중심보다 위 — 아래는 이름 태그가 넓게 차지한다 */
+  /* 딜러 버튼과 같은 스케일로 맞춘다 — 표식 셋이 크기가 제각각이면 무엇이 더 중요한지
+     크기가 거짓말을 한다. 셋 다 "위치를 알리는 작은 표식"이고 위계가 없다. */
   .ht-blind{position:absolute;top:36%;z-index:6;
-    padding:1px 5px;border-radius:4px;
-    font-family:var(--mono);font-size:9.5px;font-weight:900;letter-spacing:.5px;
+    padding:0 4px;border-radius:3px;line-height:1.45;
+    font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.4px;
     background:rgba(20,26,22,.92);color:#9fd8bb;
-    border:1px solid rgba(120,200,160,.55);
-    box-shadow:0 1px 5px rgba(0,0,0,.5)}
+    border:1px solid rgba(120,200,160,.5);
+    box-shadow:0 1px 4px rgba(0,0,0,.5)}
   .ht-blind[hidden]{display:none}
-  .ht-blind.bb{color:#ffd08a;border-color:rgba(230,170,70,.6)}
-  .ht-blind.r{left:100%;transform:translate(6px,-50%)}
-  .ht-blind.l{right:100%;transform:translate(-6px,-50%)}
+  .ht-blind.bb{color:#ffd08a;border-color:rgba(230,170,70,.55)}
+  .ht-blind.r{left:100%;transform:translate(3px,-50%)}
+  .ht-blind.l{right:100%;transform:translate(-3px,-50%)}
 
   /* ── 현재 차례 ────────────────────────────────────────────────────*/
   @keyframes turnPulse{
@@ -1674,14 +1679,8 @@
   .ht-read.strong{color:#f3e6ff;background:linear-gradient(180deg,rgba(139,69,219,.92),rgba(94,38,158,.92));
     border-color:rgba(200,150,255,.7);box-shadow:0 0 12px rgba(168,85,247,.45)}
 
-  /* 무엇으로 이겼나 — 쇼다운이 있었던 판에만. 카드 강조(win5)와 짝이다.
-     밝은 5장이 왜 밝은지를 이 한 줄이 설명한다. */
-  .ht-outro{padding:3px 12px;border-radius:999px;font-family:var(--mono);
-    font-size:12px;font-weight:800;color:#1c1608;
-    background:linear-gradient(180deg,#f4e08a,#d9b544);
-    border:1px solid rgba(255,240,180,.75);
-    box-shadow:0 2px 10px rgba(212,175,55,.4)}
-  .ht-outro[hidden]{display:none}
+  /* 승자 족보를 알리던 노란 캡슐(.ht-outro)은 없앴다 — 이제 승자 좌석 위(.ht-win-h)다.
+     펠트 한가운데에 글자 줄이 뜨면 그것이 커뮤니티 카드보다 먼저 눈에 들어온다. */
 
   /* ── 카드 강조 ────────────────────────────────────────────────────
      두 단계로 쓴다. 목적이 다르므로 세기도 다르다.
@@ -1720,8 +1719,7 @@
     0%,100%{box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 0 rgba(255,70,60,.5)}
     50%{box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 5px rgba(255,70,60,0)}
   }
-  .ht-seat.hero.allin .ht-plate-bg{
-    filter:drop-shadow(0 0 1px rgba(230,70,60,.95)) drop-shadow(0 3px 9px rgba(0,0,0,.6))}
+  .ht-seat.allin .ht-plate-bg{border-color:rgba(240,80,70,.9)}
 
   /* 자리 비움 — 아바타를 흑백으로 죽이고 판을 가라앉힌다.
      글자(회색 태그)는 .ht-away-b가 따로 말하고, 여기서는 톤만 낮춘다.
@@ -1796,6 +1794,17 @@
     box-shadow:0 3px 12px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,235,170,.18);
     animation:winBadge .34s cubic-bezier(.22,.68,.3,1) both}
   .ht-win-b[hidden]{display:none}
+  /* 무엇으로 이겼나 — WIN 배지 바로 아래. 카드 강조(win5)와 짝이다.
+     밝은 5장이 왜 밝은지를 이 한 줄이 설명한다. WIN보다 작고 조용해야 한다:
+     "이겼다"가 먼저고 "무엇으로"는 그다음이다. */
+  .ht-win-h{position:absolute;left:50%;top:calc(50% + 15px);transform:translateX(-50%);
+    z-index:9;pointer-events:none;white-space:nowrap;
+    padding:1px 7px;border-radius:999px;
+    font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:-.2px;
+    color:#f0dda6;background:rgba(12,10,5,.94);
+    border:1px solid rgba(232,198,90,.45);
+    animation:winBadge .34s cubic-bezier(.22,.68,.3,1) both;animation-delay:.1s}
+  .ht-win-h[hidden]{display:none}
   /* 금색 빛이 한 번 스쳐 지나간다. 반복하지 않는다 — 반복은 배지를 광고로 만든다. */
   .ht-win-b::after{content:"";position:absolute;inset:0;
     background:linear-gradient(105deg,transparent 38%,rgba(255,238,180,.42) 50%,transparent 62%);
@@ -1850,15 +1859,20 @@
      옆면 띠에는 세로 줄무늬를 넣는다(실제 칩의 에지 무늬가 옆에서 보면 그렇다).
      바닥에는 반투명 타원 그림자를 깔아 펠트 위에 놓인 느낌을 만든다. */
   .ht-spot-chips{position:relative;width:22px;height:40px;flex:none}
-  /* 옆면 — 위쪽에 빛, 아래쪽에 그늘. 줄무늬는 아주 옅게만 (진하면 지저분해진다) */
   .ht-chip{position:absolute;left:0;width:22px;height:7px;border-radius:4px / 3.5px;
-    border:1px solid rgba(0,0,0,.5);
+    border:1px solid rgba(0,0,0,.5)}
+  /* 옆면 — 위쪽에 빛, 아래쪽에 그늘. 줄무늬는 아주 옅게만 (진하면 지저분해진다).
+     :not(.top)이 반드시 필요하다. 그냥 .ht-chip에 배경을 주면 특이도가 .pkchip과 같은데
+     이 규칙이 뒤에 있어서 이기고, 맨 위 칩이 윗면 무늬 대신 옆면 줄무늬를 쓴다.
+     반대로 .ht-chip.top{background:none}으로 막으면 이번엔 그게 .pkchip을 이겨서
+     맨 위 칩에 배경이 아예 없어진다 — 실제로 그 버그가 났고, 칩 속으로 초록 펠트가
+     그대로 비쳐 보였다. 배경을 "그리지 않을 규칙"에서 아예 빼는 것이 답이다. */
+  .ht-chip:not(.top){
     background:
       linear-gradient(180deg,rgba(255,255,255,.3) 0 30%,rgba(0,0,0,0) 55%,rgba(0,0,0,.3) 100%),
       repeating-linear-gradient(90deg,var(--c2) 0 2.5px,var(--c1) 2.5px 8px)}
-  /* 맨 위 한 장 — 윗면이 보인다. pkchip이 배경을 다시 덮으므로(뒤에 정의된 규칙이
-     아니라 마크업에서 pkchip을 함께 붙인다) 여기서는 모양과 높이만 정한다. */
-  .ht-chip.top{height:11px;border-radius:50%;background:none;
+  /* 맨 위 한 장 — 윗면이 보인다. 배경은 마크업에서 함께 붙인 .pkchip이 준다. */
+  .ht-chip.top{height:11px;border-radius:50%;
     box-shadow:0 1px 3px rgba(0,0,0,.5)}
   /* 바닥 그림자 */
   .ht-chip-sh{position:absolute;left:1px;bottom:-2px;width:20px;height:6px;border-radius:50%;
@@ -1931,6 +1945,11 @@
     font-size:13px;font-weight:700}
   .ht-side-sub{padding:10px 14px 6px;font-size:11px;font-weight:700;letter-spacing:.5px;
     color:var(--muted);border-top:1px solid rgba(255,255,255,.06)}
+  /* 대회 종료 안내 — 테이블 펠트가 아니라 패널 머리에 붙는다 */
+  .ht-side-note{padding:7px 14px;font-family:var(--mono);font-size:11.5px;font-weight:700;
+    color:#f0b542;background:rgba(240,181,66,.09);
+    border-bottom:1px solid rgba(240,181,66,.22)}
+  .ht-side-note[hidden]{display:none}
   .ht-info{padding:8px 14px 10px;display:flex;flex-direction:column;gap:6px}
   .ht-i{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px}
   .ht-i .k{color:var(--muted);flex:none}
