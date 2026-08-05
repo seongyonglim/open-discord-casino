@@ -72,7 +72,7 @@
                   'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3',
                   'tournament-win':'mp3',
                   'act-allin':'mp3', 'act-bet':'mp3', 'act-call':'mp3',
-                  'act-check':'mp3', 'act-raise':'mp3' };
+                  'act-check':'mp3', 'act-raise':'mp3', 'act-fold':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
   // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
@@ -96,8 +96,8 @@
        (실효 -32.1dB — 가장 조용한 mine-coin과 같은 수준).
        축하 음악이 다른 소리를 압도하면 안 된다. */
     'tournament-win': 0.09,
-    /* 홀덤 액션 음성(All-In · Bet · Call · Check · Raise).
-       실측 RMS: 올인 -20.6 · 벳 -21.5 · 콜 -20.5 · 체크 -23.3 · 레이즈 -27.3dB.
+    /* 홀덤 액션 음성(All-In · Bet · Call · Check · Raise · Fold).
+       실측 RMS: 올인 -20.6 · 벳 -21.5 · 콜 -20.5 · 체크 -23.3 · 레이즈 -27.3 · 폴드 -24.5dB.
 
        이 소리는 칩 소리와 "동시에" 난다. 그래서 기준선(-32dB)에 그대로 맞추면 둘이
        같은 크기로 부딪혀 서로를 갉아먹는다. 목소리는 잡음보다 알아듣기 쉬우므로
@@ -105,7 +105,7 @@
        올인만 -31dB로 2dB 올렸다 — 판을 통째로 거는 순간이라 다른 액션과 같으면 안 된다.
        보정 후 피크는 전부 -11dB 이하라 클리핑 여유가 넉넉하다. */
     'act-allin': 0.302, 'act-bet': 0.266, 'act-call': 0.237,
-    'act-check': 0.327, 'act-raise': 0.519,
+    'act-check': 0.327, 'act-raise': 0.519, 'act-fold': 0.374,
   };
 
   // 음원 앞뒤의 무음을 잘라낸다.
@@ -183,6 +183,7 @@
     actcall: ['act-call'],
     actcheck: ['act-check'],
     actraise: ['act-raise'],
+    actfold: ['act-fold'],
   };
   // 페이지가 쓰지도 않는 음원까지 받으면 WAV가 커서 낭비가 크다.
   // 각 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다.
@@ -207,6 +208,51 @@
   var VOICES = { explode: 5, deal: 8 };
   var DEFAULT_VOICES = 3;
   var playing = {};
+
+  /* ── 액션 목소리는 줄을 세워 내보낸다 ────────────────────────────────
+     칩·카드 소리는 겹쳐도 자연스럽지만 말소리는 다르다. 두 사람의 목소리가 겹치면
+     둘 다 안 들린다.
+
+     홀덤은 다음 사람이 미리 액션을 지정해 둘 수 있어서(자동 체크·자동 콜), 내가 누른
+     직후 0.1초 만에 다음 액션이 처리되는 일이 흔하다. 그때 "콜"과 "체크"가 한 덩어리로
+     뭉개져 들렸다.
+
+     그래서 앞 목소리가 끝날 때까지 기다렸다가 다음을 낸다. 다만 무한정 기다리지는 않는다 —
+     0.8초를 넘기면 화면의 액션 표시보다 소리가 뒤처져서 누구 소리인지 알 수 없게 된다.
+     밀린 것이 3개를 넘으면 오래된 것부터 버린다. 지금 무슨 일이 일어나는지가 중요하지,
+     2초 전에 누가 체크했는지를 뒤늦게 말해줄 이유가 없다. */
+  var VOICE_MAX_GAP_MS = 800;
+  var VOICE_QUEUE_MAX = 3;
+  var voiceQueue = [], voiceFreeAt = 0, voiceTimer = null;
+
+  function voiceLenMs(set){
+    var names = SFX_SETS[set] || [];
+    for (var i = 0; i < names.length; i++) {
+      var b = sfxBuf[names[i]];
+      if (b) return Math.min(b.duration * 1000 + 60, VOICE_MAX_GAP_MS);
+    }
+    return 400;   // 아직 안 받아졌으면 대략치로 잡는다
+  }
+  function voiceDrain(){
+    voiceTimer = null;
+    var next = voiceQueue.shift();
+    if (!next) return;
+    voiceFreeAt = Date.now() + voiceLenMs(next[0]);
+    playSample(next[0], next[1]);
+    if (voiceQueue.length) voiceTimer = setTimeout(voiceDrain, Math.max(0, voiceFreeAt - Date.now()));
+  }
+  function speak(set, gain){
+    var now = Date.now();
+    if (now >= voiceFreeAt && !voiceQueue.length) {
+      voiceFreeAt = now + voiceLenMs(set);
+      playSample(set, gain);
+      return;
+    }
+    voiceQueue.push([set, gain]);
+    while (voiceQueue.length > VOICE_QUEUE_MAX) voiceQueue.shift();
+    if (!voiceTimer) voiceTimer = setTimeout(voiceDrain, Math.max(0, voiceFreeAt - now));
+  }
+
   function playSample(set, gain){
     var c = ac(); if (!c) return false;
     var names = SFX_SETS[set] || [];
@@ -309,16 +355,18 @@
     },
     /* 홀덤 액션 음성 — 서버가 쓰는 행동 이름(fold/check/call/bet/raise/allin)을 그대로 받는다.
        칩 소리와 별개로 호출하는 것이 중요하다: 칩 소리를 이걸로 갈아치우면 안 된다.
-       폴드는 음원이 없다(팩에 없다) — 조용히 넘어가는 게 폴드에는 오히려 맞다.
-       음원이 아직 안 받아졌으면 playSample이 false를 돌려주고 아무 일도 일어나지 않는다.
-       대체 합성음을 만들지 않는다 — 목소리를 삐 소리로 흉내 내면 없느니만 못하다. */
+
+       여섯 액션 모두 음성이 있다(폴드는 나중에 따로 받았다).
+       speak()로 내보내므로 앞 목소리가 끝난 뒤에 나간다 — 겹치면 둘 다 안 들린다.
+       음원이 아직 안 받아졌으면 playSample이 false를 돌려주고 아무 일도 일어나지 않는다. */
     action: function(kind){
       var set = kind === 'allin' ? 'actallin'
         : kind === 'bet' ? 'actbet'
         : kind === 'call' ? 'actcall'
         : kind === 'check' ? 'actcheck'
-        : kind === 'raise' ? 'actraise' : null;
-      if (set) playSample(set, 1);
+        : kind === 'raise' ? 'actraise'
+        : kind === 'fold' ? 'actfold' : null;
+      if (set) speak(set, 1);
     },
     // 칩 올리기 — 동전 넣는 소리 (동전·골드바 공통)
     chip: function(){

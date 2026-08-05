@@ -497,7 +497,7 @@ export function holdemPage(user: WebUser): string {
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
-      'actallin','actbet','actcall','actcheck','actraise'];</script>
+      'actallin','actbet','actcall','actcheck','actraise','actfold'];</script>
   <script>
   (function(){
     var MEID = window.__MEID__;
@@ -994,20 +994,31 @@ export function holdemPage(user: WebUser): string {
       rnoteEl.hidden = !open;
       if (open) rnoteEl.textContent = '🐇 파란 점선 ' + rest.length + '장은 실제로 깔리지 않은 카드입니다';
       if (!open) return;
-      /* 이미 눌렀다 — 실제 보드 뒤에 이어 붙인다.
-         실제 카드는 paintBoard로 유지하고(이미 깔린 장은 건드리지 않는다)
-         래빗 카드만 뒤에 덧붙인다. */
+      /* 이미 눌렀다 — 실제 보드 + 래빗 카드를 한 줄로 놓고 슬롯별로 맞춘다.
+
+         예전에는 실제 카드를 paintBoard(real, real.length)로 먼저 맞추고 래빗을 뒤에
+         덧붙였는데, paintBoard는 "want보다 많은 자식을 지우는" 함수라서 뒤에 붙여 둔
+         래빗 카드를 매 폴링마다 통째로 걷어냈다. 그러면 아래 반복문이 다시 만들어 붙이고,
+         요소가 새로 생기니 cardFlip이 다시 재생된다 — 1초마다 카드가 뒤집혔다.
+         (덤으로 paintBoard가 카드 추가를 감지해 뒤집는 소리까지 매초 냈다.)
+         프리플랍 폴드면 실제 보드가 0장이라 다섯 장 전부가 매초 다시 뒤집혔다.
+
+         그래서 paintBoard를 쓰지 않고 여기서 직접 맞춘다. 같은 카드가 이미 그 자리에
+         있으면 요소를 그대로 두고 클래스만 손본다 — 요소를 다시 만들지 않는 것이 핵심이다. */
       var real = tb.board || [];
-      paintBoard(real, real.length);
-      for (var i = 0; i < rest.length; i++) {
-        var at = real.length + i;
-        var src = '/cards/' + rest[i] + '.svg?v=' + CARD_V;
-        var cur = boardEl.children[at];
-        if (!cur) boardEl.insertAdjacentHTML('beforeend', cardImg(rest[i], 'rabbit'));
-        else if (cur.getAttribute('src') !== src) cur.outerHTML = cardImg(rest[i], 'rabbit');
-      }
-      while (boardEl.children.length > real.length + rest.length) {
-        boardEl.removeChild(boardEl.lastChild);
+      var want = real.concat(rest);
+      while (boardEl.children.length > want.length) boardEl.removeChild(boardEl.lastChild);
+      for (var i = 0; i < want.length; i++) {
+        var isRab = i >= real.length;
+        var src = '/cards/' + want[i] + '.svg?v=' + CARD_V;
+        var cur = boardEl.children[i];
+        if (!cur) {
+          boardEl.insertAdjacentHTML('beforeend', cardImg(want[i], isRab ? 'rabbit' : ''));
+        } else if (cur.getAttribute('src') !== src) {
+          cur.outerHTML = cardImg(want[i], isRab ? 'rabbit' : '');
+        } else if (cur.classList) {
+          cur.classList.toggle('rabbit', isRab);
+        }
       }
     }
     rabbitBtn.addEventListener('click', function(){
@@ -1637,7 +1648,7 @@ export function holdemPage(user: WebUser): string {
       if (!sfx || !sfx.action) return;
 
       function fire(seat, act, amount){
-        if (!act || act === 'fold') return;              // 폴드는 음원이 없다
+        if (!act) return;
         var key = tb.street + ':' + seat + ':' + act + ':' + (amount || 0);
         if (voiceSeen[key]) return;
         voiceSeen[key] = 1;
@@ -1908,7 +1919,7 @@ export function holdemPage(user: WebUser): string {
         myClickAt = Date.now();        // 폴링이 같은 칩 소리를 또 울리지 않게 표시해 둔다
         if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
       }
-      /* 액션 음성은 칩과 별개로, 체크에도 낸다. 서버 응답을 기다리지 않고 클릭 순간에
+      /* 액션 음성은 칩과 별개로, 체크·폴드에도 낸다. 서버 응답을 기다리지 않고 클릭 순간에
          울려야 손맛이 난다 — 칩 소리와 같은 이유다.
          내 것을 여기서 울렸다고 폴링 쪽에 표시해 둔다(겹쳐 울리지 않게). */
       myVoiceAt = Date.now();

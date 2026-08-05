@@ -53,6 +53,7 @@ const SFX_FILES = new Set([
      칩 소리는 "돈이 나갔다", 이건 "무슨 행동을 했다"로 역할이 다르다.
      체크는 칩이 나가지 않으므로 이 소리만 난다. */
   'act-allin.mp3', 'act-bet.mp3', 'act-call.mp3', 'act-check.mp3', 'act-raise.mp3',
+  'act-fold.mp3',
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',
