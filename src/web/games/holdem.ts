@@ -455,8 +455,9 @@ export function holdemPage(user: WebUser): string {
 
               <!-- 자리 비움 배너 — 오른쪽 패널의 버튼만으로는 놓치기 쉽다.
                    지금 자동으로 체크/폴드되고 있다는 사실과 복귀 방법을 테이블 위에 붙인다. -->
-              <div class="ht-sitout-bar" id="htSitBar" hidden>
-                <span class="ht-sitout-t">자리 비움 — 내 차례는 자동으로 체크(불가하면 폴드)됩니다</span>
+              <div class="ht-sitout-bar" id="htSitBar" hidden
+                   title="자리 비움 — 내 차례는 자동으로 체크(불가하면 폴드)됩니다">
+                <span class="ht-sitout-t">자리 비움 · 자동 체크</span>
                 <button type="button" class="btn btn-gold ht-sitout-btn" id="htBack2">게임 복귀</button>
               </div>
 
@@ -834,30 +835,39 @@ export function holdemPage(user: WebUser): string {
     }
 
     /* ── 좌석 좌표 ──────────────────────────────────────────────────
-       스테이지(테이블 바깥 여백 포함) 기준 % 좌표다. 순서는 6시에서 시작해 시계방향.
-         plate  좌석판 중심
+       펠트(.ht-cloth) 기준 % 좌표다. 순서는 6시에서 시작해 시계방향.
+         plate  아바타 중심 — 이 점이 테이블 경계에 놓여 절반은 펠트, 절반은 레일이다
          bet    베팅 칩 자리 — 좌석과 중앙 사이
-       카드는 좌석판 바로 위에 붙이므로 좌표가 따로 필요 없다(CSS가 위로 쌓는다). */
-    /* 아래 세 자리(6시·5시·7시)는 카드가 자라는 방향과 칩이 놓인 방향이 같아서
-       칩이 카드 위를 가로질렀다. 특히 6시는 카드와 칩이 같은 수직선(x=50%)에 있어
-       카드를 키우면 칩이 카드 위에 그대로 얹힌다. 칩을 중앙 쪽으로 더 밀어
-       "카드는 몸 앞, 칩은 베팅 라인 너머"라는 실제 배치로 맞췄다.
-       나머지 여섯 자리는 카드와 칩이 30px 이상 떨어져 있어 건드리지 않는다 —
-       중앙 쪽으로 밀면 보드를 가린다. */
-    var POS = [
-      { plate: [50, 93], bet: [50, 67] },   // 0 = 6시 (Hero)
-      { plate: [25, 90], bet: [34, 70] },
-      { plate: [8,  68], bet: [20, 62] },
-      { plate: [8,  41], bet: [20, 45] },
-      /* 이 두 자리는 카드를 판 아래(중앙 방향)로 깐다(cards-below). 그래서 칩도
-         카드보다 더 중앙 쪽으로 내려야 한다 — 위로 깔던 시절 좌표(30%)를 그대로 두면
-         내려온 카드 위에 칩이 얹힌다. */
-      { plate: [25, 16], bet: [33, 38] },
-      { plate: [75, 16], bet: [67, 38] },
-      { plate: [92, 41], bet: [80, 45] },
-      { plate: [92, 68], bet: [80, 62] },
-      { plate: [75, 90], bet: [66, 70] },
-    ];
+
+       손으로 적지 않고 계산한다. 테이블이 타원이므로 경계는
+         x = 50 + R·cos t,  y = 50 + R·sin t
+       이고 이 식은 가로세로 비율과 무관하게 항상 경계 위의 점을 준다. 그래서 폭이
+       달라져도 좌석이 경계를 따라간다 — 예전 스타디움(직선 구간이 폭에 따라 길어진다)에서는
+       % 좌표로 경계를 따라갈 방법이 없었고, 그래서 좌석을 안쪽에 넉넉히 넣어야 했다.
+
+       아바타는 R=50(경계 위), 칩은 R=41(펠트 안쪽).
+       칩 반지름을 따로 두는 이유: 좌석에 붙이면 카드와 겹치고, 더 안쪽이면 보드를 가린다.
+       36으로 뒀다가 좁은 티어에서 위쪽 칩이 중앙 블록을 밟았다 — 중앙 블록의 높이는
+       고정 px 합이라 펠트가 작아질수록 비중이 커지는데, 칩 반지름은 %라 같이 줄어든다.
+       41이면 320px 티어에서도 13px 여유가 남는다.
+
+       ── 자리를 실제 인원으로 나눈다
+       9칸을 고정해 두고 그 중 몇 칸만 채우면 사람이 한쪽에 몰린다. 4인 테이블이 오른쪽
+       아래에 넉 줄로 붙어 서고 왼쪽 절반이 비었다(실측). 자리 번호는 서버가 정하지만
+       화면 위치는 화면의 몫이므로, 지금 앉아 있는 인원으로 360도를 나눈다.
+       내 자리는 언제나 6시이고 시계방향 순서는 그대로 유지된다 — 포지션(누가 먼저
+       말하는가)이 자리 순서로 읽히므로 그 순서가 흐트러지면 게임을 잘못 읽는다. */
+    /* 지금 화면에서 각 자리가 어디인가 — renderSeats가 채우고 다른 연출이 읽는다.
+       좌표 계산을 두 곳에 두면 반드시 어긋난다(앤티 칩이 옛 9칸 각도에 놓인 적이 있다). */
+    var seatXY = {};
+    function seatPos(i, n){
+      var t = (90 + i * (360 / Math.max(1, n))) * Math.PI / 180;
+      var c = Math.cos(t), s = Math.sin(t);
+      return {
+        plate: [+(50 + 50 * c).toFixed(2), +(50 + 50 * s).toFixed(2)],
+        bet:   [+(50 + 41 * c).toFixed(2), +(50 + 41 * s).toFixed(2)],
+      };
+    }
 
     /* 이 판의 SB·BB 자리. 딜링 순서를 정할 때 쓰는 sbSeatOf를 그대로 쓴다 —
        규칙이 두 곳에 따로 적히면 배지와 실제 블라인드가 어긋난다. */
@@ -874,62 +884,92 @@ export function holdemPage(user: WebUser): string {
       return { sb: sb, bb: bb };
     }
 
+    /* 태그에 적는 이름. 예전에는 'Seat 4'였다 — 자리 번호는 규칙을 읽는 데는 쓸모가 있지만
+       "누구와 겨루는가"를 말해 주지 않았고, 실제 이름은 아바타 이니셜과 오른쪽 패널에만
+       있었다. 이름을 앞에 두고, 자리 번호는 이름이 없을 때만 쓴다.
+       태그 폭이 한정되어 있어 길면 잘린다(CSS ellipsis). */
+    function seatLabel(s){
+      var nm = (s.username || '').trim();
+      if (!nm) nm = 'Seat ' + (s.seat + 1);
+      return s.userId === MEID ? nm + ' (나)' : nm;
+    }
+
     function renderSeats(){
       var tb = st.table, seats = tb.seats || [];
       var blindSeats = blindSeatsOf(tb);
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
-      /* Hero를 항상 6시에 두려면 "내 자리 번호"를 기준으로 회전시킨다.
+      /* Hero를 항상 6시에 두려면 "내 자리 번호"를 기준으로 돌린다.
          자리 번호는 서버가 정한 그대로 두고 화면 위치만 돌린다 —
-         내가 3번이든 7번이든 언제나 아래 가운데에서 플레이한다. */
-      var anchor = tb.mySeat != null ? tb.mySeat : (seats.length ? seats[0].seat : 0);
-      var html = '', vol = '', sigParts = [], actNow = [];
-      seats.forEach(function(s){
-        var rot = ((s.seat - anchor) % 9 + 9) % 9;
-        var p = POS[rot];
+         내가 3번이든 7번이든 언제나 아래 가운데에서 플레이한다.
 
-        /* 12시 쪽 두 자리(rot 4·5)는 카드를 좌석판 아래로 깐다.
-           카드는 원래 판 위로만 자라는데, 이 두 자리는 펠트 상단까지 55px밖에 없어서
-           카드를 키우면 둥근 펠트 경계를 뚫고 나간다(1050px 폭에서 47px). 아래는
-           테이블 중앙이라 공간이 넉넉하다 — 실제 9인 클라이언트도 위쪽 자리는
-           카드를 아래에 놓는다. */
-        var below = (rot === 4 || rot === 5);
-        html += '<div class="ht-seat' + (below ? ' cards-below' : '') + '" data-seat="' + s.seat + '"' +
+         자리 번호 오름차순이 곧 화면상 시계방향이므로, 내 자리에서 시작하도록 목록을
+         한 바퀴 돌려 놓으면 그 순서가 그대로 배치 순서가 된다. */
+      var anchor = tb.mySeat != null ? tb.mySeat : (seats.length ? seats[0].seat : 0);
+      var order = seats.slice().sort(function(a, b){ return a.seat - b.seat; });
+      var at = 0;
+      for (var oi = 0; oi < order.length; oi++) if (order[oi].seat === anchor) { at = oi; break; }
+      order = order.slice(at).concat(order.slice(0, at));
+      var rotOf = {};
+      order.forEach(function(s, i){ rotOf[s.seat] = i; });
+      var seatCount = order.length;
+
+      var html = '', vol = '', sigParts = [], actNow = [];
+      seatXY = {};
+      seats.forEach(function(s){
+        var rot = rotOf[s.seat] || 0;
+        var p = seatPos(rot, seatCount);
+        // 다른 연출(앤티 등)이 같은 좌표를 써야 한다 — 계산을 두 곳에 두면 어긋난다
+        seatXY[s.seat] = p;
+
+        /* 좌석 한 자리 = 세 겹.
+             .ht-hole   홀 카드 — 아바타 위. 비공개면 아바타 뒤(z1), 공개되면 앞(z3).
+             .ht-avbox  아바타 원 — 좌표가 꽂히는 곳. 시계 고리·행동 배지가 여기 붙는다.
+             .ht-plate  이름 + 스택 태그 — 아바타 하단을 덮는다(z5, 가장 앞).
+
+           예전에는 카드·아바타·이름이 한 줄(.ht-plate)에 가로로 나열됐고 좌석이 테이블
+           안쪽에 있었다. 그래서 테이블이 커야 했고, 보드 카드가 위로 밀려 작아졌다.
+           지금은 좌석이 경계에 걸쳐 앉아 중앙이 온전히 비고, 그 공간을 보드가 쓴다.
+
+           cards-below(12시 두 자리는 카드를 아래로) 예외는 없앴다. 카드가 위로 자라도
+           테이블 밖이라 걸리는 것이 없다 — 그 예외 자체가 좌석을 안쪽에 두던 시절의
+           증상이었다. */
+        html += '<div class="ht-seat" data-seat="' + s.seat + '"' +
             ' style="left:' + p.plate[0] + '%;top:' + p.plate[1] + '%">' +
             '<div class="ht-hole"></div>' +
-            '<div class="ht-plate">' +
+            '<div class="ht-avbox">' +
               avatarHtml(s.userId, s.avatar, s.username, 'ht-av') +
-              /* 남은 행동 시간 — 아바타를 두르는 고리 + 작은 숫자.
-                 좌석판 가운데에 두면 이름과 스택을 덮는다(실제로 그랬다). 아바타 둘레는
-                 비어 있는 자리이고, "누구의 시간인지"도 아바타에 붙어 있어야 분명하다. */
+              /* 남은 행동 시간 — 아바타를 두르는 고리 + 작은 숫자 */
               '<span class="ht-clock" hidden></span>' +
               '<span class="ht-clock-n" hidden></span>' +
+              /* 자리 비움 — 얼굴 자리를 덮는다. 이미 흑백으로 죽은 영역이라 잃는 정보가 없고,
+                 그 자리에 글자가 있으면 "이 사람은 지금 없다"가 즉시 읽힌다. */
+              '<span class="ht-out-tag" hidden>자리비움</span>' +
+              /* 방금 한 행동 — 프로필 사진 위에 잠깐 떴다 사라진다.
+                 "누가"와 "무엇을"이 한 점에서 읽힌다. 올인만 예외로 계속 남는다. */
+              '<span class="ht-abadge" hidden></span>' +
+              '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
+            '</div>' +
+            '<div class="ht-plate">' +
+              /* 이름도 스택처럼 제자리 갱신한다(id).
+                 골격 HTML에 구워 넣으면, 서버가 username을 빈 문자열로 먼저 보낸 뒤
+                 실제 이름을 보내도 좌석 배치가 바뀔 때까지 'Seat N'으로 굳는다.
+                 골격 서명에 이름을 넣어 해결하려 하면 이름이 바뀔 때마다 좌석 DOM이 통째로
+                 다시 만들어져 카드가 다시 뒤집히고 움찔거린다 — 그건 서명 주석이 경고하는 상황이다. */
               '<span class="ht-who">' +
-                '<span class="ht-nm">Seat ' + (s.seat + 1) +
-                  (s.userId === MEID ? ' (나)' : '') + '</span>' +
+                '<span class="ht-nm" id="htnm-' + s.seat + '"></span>' +
                 '<span class="ht-stk" id="htstk-' + s.seat + '"></span>' +
               '</span>' +
-              '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼" hidden>D</span>' +
-              /* 블라인드 배지 — 딜러 버튼 반대쪽에 붙인다. 같은 쪽에 두면 D와 겹친다.
-                 포지션(누가 먼저 말하는지)이 보이지 않으면 초보는 프리플랍 순서를 못 읽는다. */
-              '<span class="ht-blind ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
-              '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
-              /* 자리 비움 — 예전에는 아바타 위 'II' 배지였다. 무슨 뜻인지 알려면 툴팁을
-                 봐야 했다. 글자로 적어 이름 앞에 놓는다(참고 클라이언트도 이 방식이다). */
-              '<span class="ht-out-tag" hidden>자리비움</span>' +
-              /* 방금 한 행동 — 좌석판 위에 잠깐 떴다 사라진다. 예전에는 베팅 자리에
-                 계속 남아 있어서, 이미 지나간 행동이 판이 끝날 때까지 테이블에 널려 있었다.
-                 올인만 예외로 계속 남는다(아래 syncActBadge). */
-              '<span class="ht-abadge" hidden></span>' +
-              /* 이 판(또는 이 팟 층)을 가져간 사람 — 칩이 움직이기 전에 먼저 뜬다 */
-              '<span class="ht-win-b" hidden>WIN</span>' +
-              /* 쇼다운 승률. 테이블 바깥쪽(딜러 버튼 반대편)에 붙인다 —
-                 판 위에 두면 카드·칩과 겹친다. */
-              '<span class="ht-eq ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
             '</div>' +
-            /* 남은 행동 시간 — 좌석판을 두르는 고리. 숫자만으로는 "얼마 안 남았다"가
-               몸으로 안 느껴진다. 각도는 클라이언트가 매 프레임 보간한다(서버 해상도는 1초). */
+            '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼" hidden>D</span>' +
+            /* 블라인드 배지 — 딜러 버튼 반대쪽에 붙인다. 같은 쪽에 두면 D와 겹친다.
+               포지션(누가 먼저 말하는지)이 보이지 않으면 초보는 프리플랍 순서를 못 읽는다. */
+            '<span class="ht-blind ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
+            /* 이 판(또는 이 팟 층)을 가져간 사람 — 칩이 움직이기 전에 먼저 뜬다 */
+            '<span class="ht-win-b" hidden>WIN</span>' +
+            /* 쇼다운 승률. 테이블 바깥쪽(딜러 버튼 반대편)에 붙인다 */
+            '<span class="ht-eq ' + (p.plate[0] < 50 ? 'l' : 'r') + '" hidden></span>' +
           '</div>';
 
         /* 골격 서명은 "누가 어느 자리에 앉았나"만 본다.
@@ -937,9 +977,10 @@ export function holdemPage(user: WebUser): string {
            여기에 하나라도 변하는 값을 넣으면 그때마다 좌석 DOM이 새로 만들어지고,
            카드 요소가 다시 생겨 cardFlip이 재생되고 판 폭이 흔들려 카드가 움찔거린다.
            실제로 카드가 액션마다 최대 7.5px씩 움직였다. */
-        /* rot도 넣는다 — 화면 위치와 카드 방향(cards-below)이 rot에서 나오므로,
-           기준 자리(내 자리)가 바뀌면 골격을 다시 그려야 한다. */
-        sigParts.push(s.seat + ':' + s.userId + ':' + rot);
+        /* 화면 위치는 (순번, 인원)에서 나온다. 둘 다 넣어야 한다 —
+           누가 탈락해 인원이 줄면 순번이 그대로여도 모든 자리의 각도가 달라진다.
+           인원을 빼먹으면 좌석이 옛 각도에 그대로 남는다. */
+        sigParts.push(s.seat + ':' + s.userId + ':' + rot + '/' + seatCount);
 
         // 베팅 칩과 행동 표시는 카드와 무관한 별도 레이어에 그린다 (여기가 바뀌어도 카드는 그대로)
         var act = s.act, amt = s.actAmount;
@@ -971,14 +1012,22 @@ export function holdemPage(user: WebUser): string {
 
       // 자주 바뀌는 것은 골격을 건드리지 않고 제자리에서 갱신한다
       seats.forEach(function(s){
+        var nmEl = document.getElementById('htnm-' + s.seat);
+        if (nmEl) {
+          var label = seatLabel(s);
+          if (nmEl.textContent !== label) nmEl.textContent = label;
+        }
         var el = document.getElementById('htstk-' + s.seat);
         if (el) {
-          /* 예전에는 올인이면 스택 자리에 'ALL IN'을 찍었다. 좌석판 위 배지가 같은 말을
-             하게 되면서 한 사람에게 ALL IN이 두 번 보였다. 스택 자리는 스택을 말하는
-             자리다 — 올인한 사람은 0이고, 그게 "뒤에 남은 칩이 없다"는 정보다.
-             올인이라는 사실은 배지와 붉은 좌석판 테두리가 맡는다. */
-          el.textContent = stackText(s.stack);
-          el.className = s.state === 'allin' ? 'ht-stk allin' : 'ht-stk';
+          /* 스택 자리에 ALL IN을 쓴다 — 단 "정말로 칩이 하나도 없을 때"만.
+             올인 상태(state)와 칩이 0인 것은 같은 말이 아니다: 100BB를 밀었는데 상대가
+             40BB만 콜했으면 콜되지 않은 60BB가 판이 끝날 때 돌아온다(returnUncalled).
+             그 순간부터 나는 칩을 가진 사람이므로 ALL IN이 아니고, 돌아온 숫자를 보여줘야
+             한다. state만 보고 찍으면 스택이 60BB인 사람에게 ALL IN이 붙는다.
+             그래서 두 조건을 함께 본다. */
+          var allIn = s.state === 'allin' && s.stack === 0;
+          el.textContent = allIn ? 'ALL IN' : stackText(s.stack);
+          el.className = allIn ? 'ht-stk allin' : 'ht-stk';
         }
         var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
         if (!seatEl) return;
@@ -1225,6 +1274,13 @@ export function holdemPage(user: WebUser): string {
       var cls = s.userId === MEID ? 'hero' : 'sm';
       var want = (s.cards && s.cards.length) ? s.cards.slice()
         : (s.inHand ? [null, null] : []);
+      /* 공개 여부가 카드의 배치를 바꾼다.
+           비공개 — 두 장을 겹치고 기울여 아바타 뒤에 둔다
+           공개   — 나란히 펼치고 커져서 아바타 앞으로 나온다
+         CSS의 .up 하나가 크기·간격·기울기·z를 함께 바꾼다(전환도 CSS가 맡는다).
+         내 카드는 언제나 보이므로 항상 펼친 상태다. */
+      var open = !!(s.cards && s.cards.length);
+      hole.classList.toggle('up', open);
       while (hole.children.length > want.length) hole.removeChild(hole.lastChild);
       for (var i = 0; i < want.length; i++) {
         var src = want[i] ? '/cards/' + want[i] + '.svg?v=' + CARD_V
@@ -1631,7 +1687,10 @@ export function holdemPage(user: WebUser): string {
       if (!fxLayer || !fxLayer.parentNode) {
         fxLayer = document.createElement('div');
         fxLayer.className = 'chip-fly-layer';
-        document.body.appendChild(fxLayer);
+        /* 테이블 안에 붙인다. position:fixed라 어디에 붙어도 화면 좌표로 움직이지만,
+           body 직속이면 --ht* 변수와 .ht-shell 스코프 규칙이 닿지 않아 복제된 카드가
+           기본 .pcard(48×72)로 떨어진다. 지금은 인라인 크기가 그걸 가려 주고 있을 뿐이다. */
+        tableEl.appendChild(fxLayer);
       }
       return fxLayer;
     }
@@ -1730,8 +1789,15 @@ export function holdemPage(user: WebUser): string {
     // 층 이름표를 띄워 둔 동안에는 syncOutro가 그 줄을 건드리지 않는다
     var potLabelUntil = 0;
     function pushPotToWinners(tb, forHand){
+      /* 칩이 도착하는 곳은 아바타다 — "사람이 앉아 있는 자리"다.
+         예전에는 좌석판이었고 그때는 그것이 좌석의 몸통이었다. 지금 좌석판은 아바타 아래에
+         걸친 작은 이름 태그이고, 6시 자리에서는 그 태그 중심이 펠트 경계보다 아래에 있다 —
+         거기로 칩을 보내면 칩이 테이블을 벗어나 사라지는 것처럼 보인다.
+         seatOf는 "이 좌석이 화면에 있나"를 확인하는 문(gate)도 겸하므로 한 곳에서 정한다.
+         두 곳에 따로 적어 한쪽만 바꾸면 문은 통과하고 목표가 null이 되어, 그 승자만
+         칩·WIN·층 이름표가 통째로 사라진다. */
       var seatOf = function(seat){
-        return seatsEl.querySelector('.ht-seat[data-seat="' + seat + '"] .ht-plate');
+        return seatsEl.querySelector('.ht-seat[data-seat="' + seat + '"] .ht-avbox');
       };
       var raw = (tb.result.potAwards || []).filter(function(pa){
         return pa.winners && pa.winners.some(function(w){ return seatOf(w.seat); });
@@ -1863,7 +1929,8 @@ export function holdemPage(user: WebUser): string {
         : Math.min(chips.length, Math.max(1, Math.round(chips.length * (pa.amount || 0) / potTotal)));
       var n = 0, used = 0;
       winners.forEach(function(w, k){
-        var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-plate');
+        // 위 seatOf와 반드시 같은 요소여야 한다 (다르면 문은 통과하고 목표가 null이 된다)
+        var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-avbox');
         if (!target) return;
         var tr = target.getBoundingClientRect();
         var take = k === winners.length - 1
@@ -2017,8 +2084,9 @@ export function holdemPage(user: WebUser): string {
 
       var made = [];
       inHand.forEach(function(s){
-        var rot = ((s.seat - (tb.mySeat != null ? tb.mySeat : s.seat)) % 9 + 9) % 9;
-        var p = POS[rot];
+        // 좌표는 renderSeats가 이미 계산해 둔 것을 쓴다 (좌석이 실제로 어디 있는지의 유일한 출처)
+        var p = seatXY[s.seat];
+        if (!p) return;
         var el = document.createElement('div');
         el.className = 'ht-ante';
         el.style.left = p.bet[0] + '%';
