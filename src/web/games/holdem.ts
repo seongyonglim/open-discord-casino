@@ -371,7 +371,7 @@ const HELP_BODY = `
     <li>노리밋 텍사스 홀덤. 각자 두 장을 받고 보드 다섯 장과 조합해 가장 센 다섯 장을 만듭니다</li>
     <li>내 차례에 <b>폴드 / 체크 / 콜 / 베팅·레이즈 / 올인</b> 중 하나를 고릅니다</li>
     <li>제한 시간을 넘기면 자동으로 체크(체크가 불가하면 폴드)되고 자리 비움으로 바뀝니다.
-        상단의 <b>게임 복귀</b>를 누르면 다시 정상 플레이로 돌아옵니다</li>
+        액션 버튼 자리에 나오는 <b>게임 복귀</b>를 누르면 다시 정상 플레이로 돌아옵니다</li>
     <li>브라우저를 닫아도 자리는 유지됩니다. 다시 들어오면 그대로 이어집니다</li>
   </ul>
 
@@ -420,7 +420,7 @@ export function holdemPage(user: WebUser): string {
         <div class="ht-felt">
           <!-- 레일(바깥) → 펠트(안) → 트랙 선. 세 겹이라야 테이블처럼 보인다 -->
           <div class="ht-rail">
-            <div class="ht-cloth">
+            <div class="ht-cloth" id="htCloth">
               <div class="ht-track" aria-hidden="true"></div>
 
 
@@ -452,14 +452,8 @@ export function holdemPage(user: WebUser): string {
                 </div>
               </div>
 
-              <!-- 자리 비움 배너 — 오른쪽 패널의 버튼만으로는 놓치기 쉽다.
-                   지금 자동으로 체크/폴드되고 있다는 사실과 복귀 방법을 테이블 위에 붙인다. -->
-              <div class="ht-sitout-bar" id="htSitBar" hidden
-                   title="자리 비움 — 내 차례는 자동으로 체크(불가하면 폴드)됩니다">
-                <span class="ht-sitout-t">자리 비움 · 자동 체크</span>
-                <button type="button" class="btn btn-gold ht-sitout-btn" id="htBack2">게임 복귀</button>
-              </div>
-
+              <!-- 자리 비움 배너는 없앴다. 상태는 좌석 위 회색 태그가,
+                   복귀는 액션 버튼 줄의 [게임 복귀]가 맡는다(htBack3). -->
               <div id="htSeats" class="ht-seats"></div>
               <!-- 베팅 칩·행동 표시는 좌석과 분리한다. 여기가 매 액션마다 바뀌어도
                    좌석의 카드는 그대로 남아 움찔거리지 않는다. -->
@@ -497,6 +491,9 @@ export function holdemPage(user: WebUser): string {
                  래빗은 왼쪽(나만 보는 것), 패 공개는 오른쪽(남에게 보이는 것). -->
             <button type="button" class="hta post rabbit" id="htRabbit" hidden>🐇 남은 카드 보기</button>
             <button type="button" class="hta post show" id="htShow" hidden>👁 내 패 공개</button>
+            <!-- 자리 비움일 때 이 줄에 혼자 선다. 액션 버튼이 늘 같은 자리에 있으므로
+                 자리를 비운 사이에도 "내가 누르는 곳"이 바뀌지 않는다. -->
+            <button type="button" class="hta back" id="htBack3" hidden>▶ 게임 복귀</button>
           </div>
           <div class="ht-pre" id="htPre">
             <label><input type="checkbox" id="htPreCheckFold"> 체크 / 폴드</label>
@@ -687,7 +684,8 @@ export function holdemPage(user: WebUser): string {
     var amountEl = document.getElementById('htAmount');
     var unitTag = document.getElementById('htUnitTag');
     var backBtn = document.getElementById('htBack');
-    var sitBar = document.getElementById('htSitBar');
+    var backAct = document.getElementById('htBack3');
+    var clothEl = document.getElementById('htCloth');
     var infoEl = document.getElementById('htInfo');
     var rankEl = document.getElementById('htRank');
     var recEl = document.getElementById('htRec');
@@ -858,12 +856,72 @@ export function holdemPage(user: WebUser): string {
     /* 지금 화면에서 각 자리가 어디인가 — renderSeats가 채우고 다른 연출이 읽는다.
        좌표 계산을 두 곳에 두면 반드시 어긋난다(앤티 칩이 옛 9칸 각도에 놓인 적이 있다). */
     var seatXY = {};
-    function seatPos(i, n){
-      var t = (90 + i * (360 / Math.max(1, n))) * Math.PI / 180;
+    /* ── 곡선 위에서 등간격 ─────────────────────────────────────────
+       각도를 n등분하면 폭이 넓은 타원에서 자리가 고르지 않다. 호의 길이는
+         ds = sqrt(a²sin²t + b²cos²t) dt   (a = 가로 반지름, b = 세로 반지름)
+       이라 같은 각도라도 위아래(a가 지배)에서는 성큼, 좌우 끝(b가 지배)에서는 촘촘히
+       움직인다. 2:1 타원에서 9명을 40도씩 놓았더니 위쪽에 셋이 몰려 붙었다.
+       그래서 각도가 아니라 실제 둘레 길이를 n등분하고, 그 길이에 해당하는 각도를 찾는다.
+
+       가로세로 비율은 화면 폭에 따라 달라지므로 실측해서 넣는다(renderSeats가 잰다). */
+    function arcAngles(n, ratio){
+      var STEP = 720, a = ratio, b = 1;
+      var cum = [0], t;
+      for (var k = 1; k <= STEP; k++) {
+        t = (k - 0.5) * 2 * Math.PI / STEP;
+        var d = Math.sqrt(a * a * Math.sin(t) * Math.sin(t) + b * b * Math.cos(t) * Math.cos(t));
+        cum.push(cum[k - 1] + d * (2 * Math.PI / STEP));
+      }
+      var total = cum[STEP];
+      // 6시(t = 90°)에서 출발한다 — 내 자리가 언제나 아래 가운데다
+      var startS = cum[Math.round(STEP / 4)];
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var want = startS + total * i / n;
+        if (want >= total) want -= total;      // 한 바퀴를 넘으면 처음으로 돌아온다
+        /* 매번 0부터 훑는다. 이어서 찾으려다 한 바퀴 넘어간 목표를 못 잡고 마지막
+           각도를 그대로 내보내, 아홉 명 중 둘이 같은 자리에 겹쳐 선 적이 있다.
+           n은 많아야 9라 720칸을 다시 훑어도 비용이 없다. */
+        var j = 0;
+        while (j < STEP && cum[j] < want) j++;
+        out.push(j * 2 * Math.PI / STEP);
+      }
+      return out;
+    }
+    /* ── 좌석을 경계 밖으로 밀어내기 ────────────────────────────────
+       미는 방향은 중심에서 뻗은 반경이 아니라 타원의 법선이다. 납작한 타원에서 이 둘은
+       크게 다르다 — 오른쪽 위 45도 자리에서 반경은 비스듬하지만 법선은 거의 수직이다.
+       반경 방향으로 밀었더니 그 자리들만 태그가 초록을 50px 파고들었다(실측).
+       법선은 (cos t / rx, sin t / ry)에 비례한다.
+
+       미는 거리는 "그 방향으로 좌석 덩어리가 뻗은 길이"다. 덩어리는 위아래가 비대칭이라
+       (태그가 아바타 아래에만 있다) 세 성분으로 나눠 CSS 변수로 둔다.
+         --htPushX  가로로 뻗은 길이
+         --htPushU  아래로 뻗은 길이 (위로 밀 때 이만큼 밀어야 아래끝이 경계에 온다)
+         --htPushD  위로 뻗은 길이
+       거리 = |nx|·X + |ny|·(위로 밀면 U, 아래로 밀면 D)
+       이걸 다시 법선 방향으로 뿌리면 각 축의 계수가 나온다. px 값은 CSS가 알고
+       방향은 JS가 아니까, 곱셈만 calc에 맡긴다. */
+    function seatPos(i, n, angles, ratio){
+      var t = angles ? angles[i] : (90 + i * (360 / Math.max(1, n))) * Math.PI / 180;
       var c = Math.cos(t), s = Math.sin(t);
+      var px = +(50 + 50 * c).toFixed(2), py = +(50 + 50 * s).toFixed(2);
+      var nx = c / (ratio || 1), ny = s;
+      var len = Math.sqrt(nx * nx + ny * ny) || 1;
+      nx /= len; ny /= len;
+      var ax = Math.abs(nx), ay = Math.abs(ny);
+      var up = ny < 0 ? ay : 0, dn = ny > 0 ? ay : 0;
+      var expr = function(pct, axis){
+        return 'calc(' + pct + '%'
+          + ' + var(--htPushX) * ' + (axis * ax).toFixed(4)
+          + ' + var(--htPushU) * ' + (axis * up).toFixed(4)
+          + ' + var(--htPushD) * ' + (axis * dn).toFixed(4) + ')';
+      };
       return {
-        plate: [+(50 + 50 * c).toFixed(2), +(50 + 50 * s).toFixed(2)],
-        bet:   [+(50 + 41 * c).toFixed(2), +(50 + 41 * s).toFixed(2)],
+        plate: [px, py],
+        left: expr(px, nx),
+        top:  expr(py, ny),
+        bet:  [+(50 + 41 * c).toFixed(2), +(50 + 41 * s).toFixed(2)],
       };
     }
 
@@ -914,10 +972,16 @@ export function holdemPage(user: WebUser): string {
       var seatCount = order.length;
 
       var html = '', vol = '', sigParts = [], actNow = [];
+      /* 펠트의 실제 가로세로 비율. 등간격 계산에 필요한데 CSS 변수만으로는 알 수 없다
+         (가로는 컨테이너가 정하고 세로만 --htCloth다). 재는 값이라 창 크기가 바뀌면
+         달라지므로, 좌표는 골격에 굽지 않고 아래 갱신 루프에서 매번 넣는다. */
+      var clothBox = clothEl ? clothEl.getBoundingClientRect() : null;
+      var ratio = clothBox && clothBox.height > 0 ? clothBox.width / clothBox.height : 1.9;
+      var angles = arcAngles(seatCount, ratio);
       seatXY = {};
       seats.forEach(function(s){
         var rot = rotOf[s.seat] || 0;
-        var p = seatPos(rot, seatCount);
+        var p = seatPos(rot, seatCount, angles, ratio);
         // 다른 연출(앤티 등)이 같은 좌표를 써야 한다 — 계산을 두 곳에 두면 어긋난다
         seatXY[s.seat] = p;
 
@@ -933,23 +997,24 @@ export function holdemPage(user: WebUser): string {
            cards-below(12시 두 자리는 카드를 아래로) 예외는 없앴다. 카드가 위로 자라도
            테이블 밖이라 걸리는 것이 없다 — 그 예외 자체가 좌석을 안쪽에 두던 시절의
            증상이었다. */
-        html += '<div class="ht-seat" data-seat="' + s.seat + '"' +
-            ' style="left:' + p.plate[0] + '%;top:' + p.plate[1] + '%">' +
+        html += '<div class="ht-seat" data-seat="' + s.seat + '">' +
             '<div class="ht-hole"></div>' +
             '<div class="ht-avbox">' +
               avatarHtml(s.userId, s.avatar, s.username, 'ht-av') +
-              /* 남은 행동 시간 — 아바타를 두르는 고리 + 작은 숫자 */
-              '<span class="ht-clock" hidden></span>' +
-              '<span class="ht-clock-n" hidden></span>' +
-              /* 자리 비움 — 얼굴 자리를 덮는다. 이미 흑백으로 죽은 영역이라 잃는 정보가 없고,
-                 그 자리에 글자가 있으면 "이 사람은 지금 없다"가 즉시 읽힌다. */
-              '<span class="ht-out-tag" hidden>자리비움</span>' +
+              /* 자리 비움 — 행동 배지와 같은 생김새의 회색 태그. 다만 스스로 사라지지 않는다.
+                 행동은 "방금 일어난 일", 자리 비움은 "지금의 상태"다.
+                 행동 배지와 별도 요소로 두어야 한다 — 같은 span을 쓰면 자리 비운 사람이
+                 자동 체크될 때 그 배지가 덮어썼다가 1.7초 뒤 사라지면서 상태까지 지운다. */
+              '<span class="ht-abadge away" hidden>자리 비움</span>' +
               /* 방금 한 행동 — 프로필 사진 위에 잠깐 떴다 사라진다.
-                 "누가"와 "무엇을"이 한 점에서 읽힌다. 올인만 예외로 계속 남는다. */
+                 "누가"와 "무엇을"이 한 점에서 읽힌다. */
               '<span class="ht-abadge" hidden></span>' +
               '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
             '</div>' +
             '<div class="ht-plate">' +
+              /* 배경을 따로 둔다 — 사다리꼴은 clip-path로 자르는데, 그걸 태그 자체에
+                 걸면 자식(글자·시간 바)까지 같이 잘린다. 자를 것만 따로 깐다. */
+              '<span class="ht-plate-bg"></span>' +
               /* 이름도 스택처럼 제자리 갱신한다(id).
                  골격 HTML에 구워 넣으면, 서버가 username을 빈 문자열로 먼저 보낸 뒤
                  실제 이름을 보내도 좌석 배치가 바뀔 때까지 'Seat N'으로 굳는다.
@@ -959,6 +1024,9 @@ export function holdemPage(user: WebUser): string {
                 '<span class="ht-nm" id="htnm-' + s.seat + '"></span>' +
                 '<span class="ht-stk" id="htstk-' + s.seat + '"></span>' +
               '</span>' +
+              /* 남은 행동 시간 — 태그 바로 아래, 태그와 같은 폭의 얇은 바.
+                 태그의 자식이라 폭이 저절로 맞는다(태그는 이름 길이에 따라 늘어난다). */
+              '<span class="ht-tbar" hidden><i></i></span>' +
             '</div>' +
             '<span class="ht-puck ' + (p.plate[0] < 50 ? 'r' : 'l') + '" title="딜러 버튼" hidden>D</span>' +
             /* 블라인드 배지 — 딜러 버튼 반대쪽에 붙인다. 같은 쪽에 두면 D와 겹친다.
@@ -1029,11 +1097,22 @@ export function holdemPage(user: WebUser): string {
              한다. state만 보고 찍으면 스택이 60BB인 사람에게 ALL IN이 붙는다.
              그래서 두 조건을 함께 본다. */
           var allIn = s.state === 'allin' && s.stack === 0;
-          el.textContent = allIn ? 'ALL IN' : stackText(s.stack);
+          /* 미니 칩 스택은 숫자 앞에 붙인다. innerHTML로 갈아끼우되 같은 내용이면
+             건드리지 않는다 — 폴링마다 다시 그리면 칩이 매초 깜빡인다. */
+          var want = allIn ? 'ALL IN' : miniStack(s.stack) + stackText(s.stack);
+          if (el.innerHTML !== want) el.innerHTML = want;
           el.className = allIn ? 'ht-stk allin' : 'ht-stk';
         }
         var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
         if (!seatEl) return;
+        /* 좌표는 골격이 아니라 여기서 넣는다. 등간격 계산이 실측한 가로세로 비율에
+           의존하므로, 창 폭이 바뀌면 값도 바뀐다 — 골격에 구워 두면 좌석 구성이
+           바뀔 때까지 옛 자리에 남는다. */
+        var pp = seatXY[s.seat];
+        if (pp) {
+          if (seatEl.style.left !== pp.left) seatEl.style.left = pp.left;
+          if (seatEl.style.top !== pp.top) seatEl.style.top = pp.top;
+        }
         seatEl.classList.toggle('hero', s.userId === MEID);
         seatEl.classList.toggle('turn', s.seat === tb.toActSeat);
         seatEl.classList.toggle('folded', s.state === 'folded');
@@ -1060,8 +1139,8 @@ export function holdemPage(user: WebUser): string {
            예전에는 폴드하지 않은 사람에게만 띄웠다. 그런데 자리 비움이 되는 계기가
            "시간 초과로 자동 폴드"라서, 붙는 순간 폴드도 함께 붙어 표시가 곧바로 사라졌다.
            잠깐 떴다 사라지는 것으로 보인 이유가 이것이다. */
-        var outTag = seatEl.querySelector('.ht-out-tag');
-        if (outTag) outTag.hidden = s.presence !== 'SIT_OUT';
+        var awayB = seatEl.querySelector('.ht-abadge.away');
+        if (awayB) awayB.hidden = s.presence !== 'SIT_OUT';
         syncHole(seatEl.querySelector('.ht-hole'), s);
       });
       syncActBadges(tb, actNow);
@@ -1135,14 +1214,16 @@ export function holdemPage(user: WebUser): string {
       if (tb.handNo !== badgeHand) {
         badgeHand = tb.handNo; badgeKey = {}; badgeAt = 0;
         // 새 판 — 지난 판의 배지와 승자 표시를 걷어낸다
-        seatsEl.querySelectorAll('.ht-abadge').forEach(function(el){
+        /* :not(.away)로 걸러야 한다 — 자리 비움 태그가 같은 클래스를 쓰는데
+           그건 판이 바뀐다고 걷어낼 것이 아니라 복귀할 때까지 남는 상태다. */
+        seatsEl.querySelectorAll('.ht-abadge:not(.away)').forEach(function(el){
           clearTimeout(el.__s); clearTimeout(el.__t);
           el.hidden = true; el.style.animation = 'none';
         });
         clearWinBadges();
       }
       list.forEach(function(x){
-        var el = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-abadge');
+        var el = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-abadge:not(.away)');
         if (!el) return;
         if (!x.act) {
           // 서버가 표시를 지웠다(스트리트 전환·판 종료) — 열쇠만 비운다.
@@ -1187,8 +1268,8 @@ export function holdemPage(user: WebUser): string {
       });
     }
 
-    /* ── 행동 시간 고리 ───────────────────────────────────────────────
-       서버는 남은 초를 정수로만 준다(폴링도 1초 간격이다). 그걸 그대로 그리면 고리가
+    /* ── 행동 시간 바 ─────────────────────────────────────────────────
+       서버는 남은 초를 정수로만 준다(폴링도 1초 간격이다). 그걸 그대로 그리면 바가
        1초마다 뚝뚝 끊긴다. 그래서 폴링이 준 값을 기준점으로 잡고 그 뒤로는
        실제 흐른 시간으로 보간해 매 프레임 그린다 — 다음 폴링이 오면 기준점만 새로 맞춘다.
 
@@ -1199,7 +1280,7 @@ export function holdemPage(user: WebUser): string {
        누구 차례든 울린다. 예전에는 내 차례에만 초당 한 번 카드 소리를 냈는데, 남이
        시간에 쫓기는 것도 판의 긴장이라 보여주는 게 맞다 — 그리고 그 사람이 자동으로
        넘어가면 내 차례가 곧 온다는 신호이기도 하다. */
-    var CLOCK_WARN_SEC = 5;    // 고리·숫자가 붉어지는 시점
+    var CLOCK_WARN_SEC = 5;    // 바가 붉어지고 점멸하는 시점
     var CLOCK_TICK_SEC = 4.5;  // 똑딱 소리가 시작되는 시점 (음원 길이에 맞춘 값)
     var clockBase = null;      // { seat, left, at, total, hand, street }
     var clockWarned = null;    // 이미 경고를 낸 (판:스트리트:자리) — 한 차례에 한 번만 울린다
@@ -1220,10 +1301,8 @@ export function holdemPage(user: WebUser): string {
     function paintClock(){
       var seats = seatsEl.querySelectorAll('.ht-seat');
       if (!clockBase) {
-        // 고리와 숫자를 같이 감춘다 — 하나만 감추면 지난 판의 남은 초가 화면에 남는다
         seats.forEach(function(el){
-          var c = el.querySelector('.ht-clock'); if (c) c.hidden = true;
-          var n = el.querySelector('.ht-clock-n'); if (n) n.hidden = true;
+          var b = el.querySelector('.ht-tbar'); if (b) b.hidden = true;
         });
         return;
       }
@@ -1239,19 +1318,13 @@ export function holdemPage(user: WebUser): string {
       var warn = left <= CLOCK_WARN_SEC;
       var tick = left <= CLOCK_TICK_SEC;
       seats.forEach(function(el){
-        var c = el.querySelector('.ht-clock');
-        if (!c) return;
-        var n = el.querySelector('.ht-clock-n');
+        var b = el.querySelector('.ht-tbar');
+        if (!b) return;
         var mine = Number(el.getAttribute('data-seat')) === clockBase.seat;
-        c.hidden = !mine;
-        if (n) n.hidden = !mine;
+        b.hidden = !mine;
         if (!mine) return;
-        c.style.setProperty('--frac', String(frac));
-        c.classList.toggle('warn', warn);
-        if (n) {
-          n.textContent = String(Math.ceil(left));
-          n.classList.toggle('warn', warn);
-        }
+        b.style.setProperty('--frac', String(frac));
+        b.classList.toggle('warn', warn);
       });
       /* 경고음은 한 차례에 한 번. 매초 다시 부르면 겹겹이 깔려 무슨 소리인지 알 수 없다.
          "한 차례"는 (판 · 스트리트 · 자리)로 가른다. 자리 하나만 쓰면 같은 사람이
@@ -1264,7 +1337,7 @@ export function holdemPage(user: WebUser): string {
         }
       }
     }
-    // 고리는 폴링과 무관하게 계속 돈다 — 폴링 사이 1초를 메우는 것이 목적이다
+    // 바는 폴링과 무관하게 계속 줄어든다 — 폴링 사이 1초를 메우는 것이 목적이다
     setInterval(function(){ if (st && st.table && !tableEl.hidden) paintClock(); }, 80);
 
     /* 홀 카드를 "바뀐 칸만" 갈아 끼운다.
@@ -1402,10 +1475,26 @@ export function holdemPage(user: WebUser): string {
 
        올린 칩은 목록으로 기억한다. 총액을 다시 쪼개면 500 두 개가 1000 한 개로
        합쳐져 버린다 — 블랙잭에서 똑같은 문제를 겪고 칩 로그로 고쳤다. */
-    var HT_DENOMS = [25000, 5000, 1000, 500, 100, 25];
-    var HT_BAR_FROM = 1000;        // 이 액면 이상은 골드바 모양
+    /* ── 칩 액면 ────────────────────────────────────────────────────
+       실제 카지노의 색 규약을 그대로 쓴다:
+         흰 100 · 빨강 500 · 초록 1,000 · 검정 5,000 · 보라 10,000
+       색이 곧 금액이라 숫자를 읽지 않아도 판의 크기가 보인다 — 보라가 섞이기
+       시작하면 큰 판이다. 예전에는 전부 금색 동전과 금색 골드바 두 종류였다.
+       다른 게임과 부품을 공유해서 편했지만, 홀덤 테이블 위에서 모든 칩이 같은
+       색이면 "쌓였다"밖에 말하지 못한다.
+
+       다섯 종으로 정한 근거는 이 대회의 규모다 — 시작 스택 10,000, 15명이면
+       전체 15만이고 블라인드는 25/50에서 시작해 후반에 수천 단위가 된다.
+       어느 구간에서도 칩 두세 개로 표현된다.
+       25·50 같은 초반 블라인드는 100 하나로 뭉뚱그린다. 개수를 금액과 1:1로
+       맞추는 것보다 "칩이 놓였다"가 눈에 보이는 것이 중요하다. */
+    var HT_DENOMS = [10000, 5000, 1000, 500, 100];
+    var HT_DCLASS = { 10000: 'd10k', 5000: 'd5k', 1000: 'd1k', 500: 'd500', 100: 'd100' };
     var HT_MAX_CHIPS = 30;
-    function htChipLabel(v){ return v >= 10000 ? (v / 10000) + '만' : String(v); }
+    function htChipLabel(v){
+      return v >= 10000 ? (v / 10000) + '만' : v >= 1000 ? (v / 1000) + 'K' : String(v);
+    }
+    function htDenomClass(v){ return HT_DCLASS[v] || 'd100'; }
     function htDecompose(amount){
       var out = [];
       for (var i = 0; i < HT_DENOMS.length && out.length < HT_MAX_CHIPS; i++) {
@@ -1413,8 +1502,8 @@ export function holdemPage(user: WebUser): string {
           out.push(HT_DENOMS[i]); amount -= HT_DENOMS[i];
         }
       }
-      /* 블라인드가 오르면 25로도 안 나뉘는 잔액(앤티 나머지 등)이 남을 수 있다.
-         남은 것은 가장 작은 칩 하나로 대신 보여준다 — 개수보다 "쌓였다"가 중요하다. */
+      /* 100으로 안 나뉘는 잔액(25 스몰블라인드, 앤티 나머지)이 남는다.
+         가장 작은 칩 하나로 대신 보여준다. */
       if (amount > 0 && out.length < HT_MAX_CHIPS) out.push(HT_DENOMS[HT_DENOMS.length - 1]);
       return out;
     }
@@ -1423,7 +1512,7 @@ export function holdemPage(user: WebUser): string {
       var col = idx % 6, row = Math.floor(idx / 6);
       var x = Math.round((col - 2.5) * 13 + htJit(idx, 7));
       var y = Math.round(2 + row * 4 + htJit(idx + 7, 2));
-      return '<span class="ht-pchip ' + (denom >= HT_BAR_FROM ? 'c-bar' : 'c-coin') +
+      return '<span class="ht-pchip pkchip ' + htDenomClass(denom) +
         (pending ? ' pending' : '') + '" data-d="' + denom + '"' +
         ' style="left:calc(50% + ' + x + 'px);bottom:' + y + 'px;z-index:' + (10 + idx) + '">' +
         htChipLabel(denom) + '</span>';
@@ -1523,14 +1612,47 @@ export function holdemPage(user: WebUser): string {
       }
     }
 
-    /* 칩 더미 — 금액이 클수록 층이 높아 보이게 최대 3장까지 겹친다.
-       포커 플립·바카라의 .pchip과 같은 모양을 작게 쓴다. */
+    /* ── 좌석 앞 베팅 칩 ────────────────────────────────────────────
+       금액을 액면으로 쪼개 실제로 그 조합대로 쌓는다. 예전에는 금액 구간에 따라
+       똑같이 생긴 금색 원반을 1~3장 얹었다 — 높이는 대충 맞았지만 색이 하나뿐이라
+       "얼마"인지는 옆의 숫자를 읽어야만 알 수 있었다.
+
+       지금은 큰 액면이 아래, 작은 액면이 위로 쌓인다(실제 딜러가 쌓는 순서다).
+       그래서 더미의 아래쪽 색만 봐도 자릿수를 알 수 있다 — 검정이 깔려 있으면 만 단위,
+       흰 것만 있으면 몇백이다.
+
+       8장에서 끊는다. 그 위로는 높이가 화면 밖으로 자라기만 하고 정보는 늘지 않는다
+       (정확한 금액은 바로 옆 숫자가 말한다). */
+    var BET_MAX_CHIPS = 8;
     function chipStack(amount){
-      var bb = (st.table.level && st.table.level.bb) || 1;
-      var n = amount >= bb * 20 ? 3 : amount >= bb * 5 ? 2 : 1;
+      var ds = htDecompose(amount).slice(0, BET_MAX_CHIPS);
       var out = '';
-      for (var i = 0; i < n; i++) out += '<i class="ht-chip" style="bottom:' + (i * 3) + 'px"></i>';
+      /* 큰 액면이 아래로 가야 하므로 뒤에서부터 쌓는다 —
+         htDecompose는 큰 액면부터 담는데, 나중에 그린 것이 위에 온다. */
+      for (var i = ds.length - 1; i >= 0; i--) {
+        var lvl = ds.length - 1 - i;      // 0이 맨 아래
+        out += '<i class="ht-chip pkchip ' + htDenomClass(ds[i]) +
+          '" style="bottom:' + (lvl * 3.5) + 'px;z-index:' + (10 - lvl) + '"></i>';
+      }
       return out;
+    }
+    /* ── 태그 안 미니 스택 ──────────────────────────────────────────
+       스택 숫자 옆에 칩 두세 개를 얹는다. 숫자는 정확하지만 크기 감각을 주지 않는다 —
+       "9,850"과 "89,550"은 한 글자 차이인데 판에서는 전혀 다른 처지다.
+       가장 큰 액면 하나와 그 아래 한둘을 겹쳐 색으로 규모를 말한다. */
+    function miniStack(stack){
+      if (!(stack > 0)) return '';
+      var ds = htDecompose(stack);
+      /* 서로 다른 액면 중 큰 것부터 최대 3종. 같은 액면을 여러 장 쌓아 봐야
+         색이 하나라 정보가 늘지 않는다 — 종류가 곧 자릿수다. */
+      var seen = [], out = '';
+      for (var i = 0; i < ds.length && seen.length < 3; i++) {
+        if (seen.indexOf(ds[i]) < 0) seen.push(ds[i]);
+      }
+      for (var k = seen.length - 1; k >= 0; k--) {
+        out += '<i class="ht-mc pkchip ' + htDenomClass(seen[k]) + '"></i>';
+      }
+      return '<span class="ht-mini">' + out + '</span>';
     }
 
     /* ── 오른쪽 패널 ─────────────────────────────────────────────── */
@@ -1582,9 +1704,7 @@ export function holdemPage(user: WebUser): string {
           '</div>';
       }).join('') || '<div class="empty" style="padding:14px 0">아직 없습니다</div>';
       if (rankEl.dataset.sig !== rankHtml) { rankEl.dataset.sig = rankHtml; rankEl.innerHTML = rankHtml; }
-      var out = tb.myPresence === 'SIT_OUT';
-      backBtn.hidden = !out;
-      sitBar.hidden = !out;
+      backBtn.hidden = tb.myPresence !== 'SIT_OUT';
     }
 
     /* ── 테이블 ───────────────────────────────────────────────────── */
@@ -2175,14 +2295,15 @@ export function holdemPage(user: WebUser): string {
       var tb = st.table;
       noteRabbitScope();      // 대회가 바뀌면 래빗 열림 상태를 버린다
       syncBoard(tb);
-      /* 팟이 승자에게 넘어간 뒤에는 0으로 만든다.
-         서버의 pot은 "이 판에 들어간 돈의 합"이라 판이 끝나도 값이 남는데, 그때 이미
-         스택에는 딴 금액이 반영되어 있다. 그래서 팟을 계속 띄워 두면 같은 칩이 두 곳에
-         보이고, 스택을 더해 보는 사람은 총 칩이 늘어난 것처럼 읽는다
-         (실측: 스택합 40,000 + 팟 20,100 = 60,100).
-         칩 더미가 날아가기 전까지는 그대로 보여준다 — 얼마짜리 팟이었는지가 정보다. */
-      var potPaid = tb.ended && boardRevealed && paidHandNo === tb.handNo;
-      potEl.textContent = stackText(potPaid ? 0 : tb.pot) + (unit === 'chip' ? ' P' : '');
+      /* 팟 금액은 다음 판이 시작될 때까지 그대로 둔다.
+         한때는 칩이 승자에게 날아간 순간 0으로 바꿨다. 총 칩을 세는 사람에게는 그게 맞다 —
+         승자 스택에 이미 반영됐으니 팟까지 남기면 같은 칩이 두 곳에 보인다.
+         그런데 실제로 화면을 보는 사람이 그 순간 궁금해하는 건 총 칩이 아니라
+         "방금 얼마짜리 판이었나"다. 0으로 지워버리면 그걸 확인할 기회가 사라진다 —
+         칩은 이미 날아갔고 숫자도 없어져서 판의 크기를 되짚을 데가 없다.
+         중앙 칩 더미는 정산과 함께 사라지므로 "칩은 갔고 금액만 기록으로 남았다"로 읽힌다.
+         서버 pot은 다음 판이 열리면 그 판의 블라인드·앤티로 저절로 바뀐다. */
+      potEl.textContent = stackText(tb.pot) + (unit === 'chip' ? ' P' : '');
       renderSeats();
       dealSequence(tb);
       renderSide();
@@ -2193,22 +2314,16 @@ export function holdemPage(user: WebUser): string {
       if (boardRevealed) { flyPotToWinners(tb); syncRabbit(tb); syncShow(tb); }
       else { showBtn.hidden = true; rabbitBtn.hidden = true; rnoteEl.hidden = true; }
 
-      var msg = '';
-      if (tb.ended && !boardRevealed) {
-        // 보드를 아직 깔고 있다 — 결과를 먼저 말해버리면 카드를 볼 이유가 없어진다
-        msg = '';
-      } else if (tb.ended && tb.result) {
-        var aw = tb.result.awards || [];
-        msg = aw.map(function(a){
-          var s = (tb.seats||[]).filter(function(x){ return x.seat === a.seat; })[0];
-          return (s ? s.username : 'Seat ' + (a.seat+1)) + ' +' + stackText(a.amount);
-        }).join(' · ') || '핸드 종료';
-        if (tb.nextHandIn != null) msg += '  (다음 판 ' + tb.nextHandIn + '초)';
-      }
-      /* "OO 차례 · N초"는 없앴다. 지금 차례는 아바타 맥박 · 시계 고리 · 액션 버튼
-         세 가지가 이미 말하고 있고, 그 위에 중앙 텍스트까지 두면 테이블만 지저분해진다.
-         이 자리는 판이 끝났을 때의 결과 요약과 오류 메시지만 쓴다. */
-      msgEl.textContent = msg;
+      /* 중앙에는 이제 보드와 팟만 둔다.
+         한때 이 자리에 "OO 차례 · N초"가 있었고, 그다음에는 "OO +12,500 (다음 판 8초)"가
+         있었다. 둘 다 같은 이유로 없앴다 — 그 정보가 이미 다른 데서 더 잘 말해지고 있다.
+           누가 이겼나  → 좌석 위 WIN 배지
+           얼마를 땄나  → 승자에게 날아가는 칩 + 그 자리에서 오르는 스택
+           판이 얼마였나 → 중앙 POT (이제 다음 판까지 남는다)
+           다음 판까지  → 어차피 몇 초라 읽고 나면 이미 시작한다
+         중앙은 커뮤니티 카드를 보는 자리인데, 매 판 끝마다 글자 줄이 나타났다 사라지면서
+         시선을 그리로 당겼다. 이 자리는 오류 메시지에만 쓴다(act()가 직접 채운다). */
+      msgEl.textContent = '';
 
       /* 소리 두 가지.
          · 남이 칩을 올렸을 때 (내 것은 클릭 순간에 이미 울렸다)
@@ -2432,14 +2547,21 @@ export function holdemPage(user: WebUser): string {
          규칙이 서버에 있으니 여기서는 그 값을 그대로 따른다. */
       var la = st.table.legal;
       if (la && st.table.actOpenIn > 0) la = null;
+      /* 자리 비움이면 이 줄은 통째로 [게임 복귀] 하나짜리가 된다.
+         행동할 수 없는 상태이므로 la는 어차피 비어 있지만, 판이 끝난 뒤의 래빗·패 공개
+         버튼은 자리를 비웠어도 뜰 수 있다 — 그것들과 나란히 서면 "지금 눌러야 할 것"이
+         흐려지므로 복귀가 있을 때는 나머지를 다 내린다. 자리를 비운 사람이 할 일은 하나다. */
+      var away = st.table.myPresence === 'SIT_OUT';
+      backAct.hidden = !away;
       /* 판이 끝난 뒤의 두 버튼도 이 패널 안(ht-acts)에 있다. 그래서 내 차례가 아니라고
          패널 전체를 접으면 그 버튼이 뜨고 싶어도 보이지 않는다 — 실제로 그렇게 됐다.
          버튼이 하나라도 뜰 상황이면 패널은 열어두고, 베팅 금액 줄과 미리 지정 줄만 접는다. */
-      var post = !rabbitBtn.hidden || !showBtn.hidden;
-      ctrlEl.hidden = !la && !post;
-      ctopEl.hidden = !la;
-      preEl.hidden = !la;
-      if (!la) {
+      var post = !away && (!rabbitBtn.hidden || !showBtn.hidden);
+      if (away) { rabbitBtn.hidden = true; showBtn.hidden = true; rnoteEl.hidden = true; }
+      ctrlEl.hidden = !la && !post && !away;
+      ctopEl.hidden = !la || away;
+      preEl.hidden = !la || away;
+      if (!la || away) {
         /* 행동할 수 없으면 네 버튼을 반드시 내린다. 전에는 패널이 통째로 닫혀서
            그냥 두어도 보이지 않았는데, 이제 판이 끝나도 패널이 열려 있으므로
            내리지 않으면 지난 판의 "폴드·콜 100"이 공개 버튼 옆에 그대로 남는다. */
@@ -2577,7 +2699,7 @@ export function holdemPage(user: WebUser): string {
     });
     function sitIn(){ post('/api/games/holdem/sitin', {}).then(poll); }
     backBtn.addEventListener('click', sitIn);
-    document.getElementById('htBack2').addEventListener('click', sitIn);
+    backAct.addEventListener('click', sitIn);
 
     /* ── 사전 액션 ───────────────────────────────────────────────────
        내 차례가 오기 전에 미리 정해두는 것. 상황이 바뀌면(베팅·레이즈가 들어오면)
