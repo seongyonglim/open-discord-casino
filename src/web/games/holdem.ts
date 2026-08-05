@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
-  showHoldemCards,
+  showHoldemCards, holdemRecords,
   ACTION_SEC, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
@@ -312,6 +312,15 @@ export async function handleSitIn(
   return sendJson(res, 200, { ok: true });
 }
 
+/* 역대 프리롤 전적. 끝난 대회만 집계하므로 진행 중인 판의 정보가 새지 않는다.
+   폴링에 얹지 않고 따로 둔다 — 판마다 바뀌는 값이 아니라서 매초 받을 이유가 없다. */
+export async function handleRecords(
+  _req: IncomingMessage, res: ServerResponse, userId: string
+): Promise<void> {
+  const rows = holdemRecords(20);
+  return sendJson(res, 200, { ok: true, me: userId, rows });
+}
+
 export async function handleShow(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
@@ -379,6 +388,14 @@ export function holdemPage(user: WebUser): string {
     ${gameSwitcher('holdem', 'htHelp')}
 
     <div id="htLobby" class="ht-lobby" hidden></div>
+
+    <!-- 로비(대회 전·후)에서도 역대 전적을 보여준다. 테이블 오른쪽 패널에만 두면
+         자리에 앉은 사람만 볼 수 있는데, 정작 "누가 상금을 제일 많이 먹었나"가
+         궁금해지는 시점은 대회를 기다리는 동안이다. -->
+    <div id="htLobbyRec" class="ht-lrec" hidden>
+      <h3 class="ht-h3">누적 상금 순위</h3>
+      <div class="ht-rec" id="htLobbyRecList"></div>
+    </div>
 
     <div id="htTable" class="game-shell ht-shell" hidden>
       <div class="game-main">
@@ -468,14 +485,22 @@ export function holdemPage(user: WebUser): string {
         </div>
       </div>
 
-      <!-- 오른쪽: 토너먼트 정보 + 칩 순위 -->
+      <!-- 오른쪽: 토너먼트 정보 + 칩 순위 / 역대 전적 (탭으로 갈아 본다)
+           대회 전·후에는 칩 순위가 비어 있어서 이 자리가 통째로 남는다.
+           프리롤을 보러 온 사람이 그때 궁금해하는 건 "역대 누가 잘했나"다. -->
       <div class="game-side ht-side">
         <div class="ht-side-head">
           <span id="htSideTitle">데일리 프리롤</span>
         </div>
         <div class="ht-info" id="htInfo"></div>
-        <div class="ht-side-sub">칩 순위</div>
+        <div class="ht-tabs">
+          <button type="button" class="ht-tab active" data-htab="live">칩 순위</button>
+          <button type="button" class="ht-tab" data-htab="rec">역대 전적</button>
+        </div>
         <div class="ht-rank" id="htRank"></div>
+        <div class="ht-rec-wrap" id="htRec" hidden>
+          <div class="ht-rec" id="htRecList"></div>
+        </div>
         <button type="button" class="btn ht-back" id="htBack" hidden>게임 복귀</button>
       </div>
     </div>
@@ -507,6 +532,7 @@ export function holdemPage(user: WebUser): string {
     var firstTablePaint = true;
 
     var lobbyEl = document.getElementById('htLobby');
+    var lobbyRecEl = document.getElementById('htLobbyRec');
     var tableEl = document.getElementById('htTable');
     var seatsEl = document.getElementById('htSeats');
     var spotsEl = document.getElementById('htSpots');
@@ -557,9 +583,77 @@ export function holdemPage(user: WebUser): string {
       }).join('');
       winEl.hidden = false;
       if (window.casinoSfx && window.casinoSfx.victory) window.casinoSfx.victory();
+      // 우승 기록이 하나 늘었다 — 역대 전적을 다시 받아 온다
+      if (recAsked) loadRecords(true);
     }
     document.getElementById('htWinClose').addEventListener('click', function(){
       winEl.hidden = true;
+    });
+
+    /* ── 역대 전적 탭 ─────────────────────────────────────────────────
+       지표를 게임별 랭킹(판수·승률·수익액)과 다르게 잡는다. 프리롤은 참가비가 0이라
+       상금만 양수로 들어와서 "수익액"이 실력과 무관하게 참가 횟수만큼 오른다.
+       그래서 우승·입상·참가·누적 상금을 센다.
+
+       처음 열 때 한 번만 받아 온다. 판마다 바뀌는 값이 아니라 매초 받을 이유가 없고,
+       대회가 끝나면 그때 한 번 더 받는다(우승 기록이 늘었으므로). */
+    /* 표는 두 곳에 걸린다 — 로비(#htLobbyRecList)와 테이블 오른쪽 패널(#htRecList).
+       받아 온 줄을 한 번만 담아 두고 두 곳에 같이 그린다. 화면마다 따로 받으면
+       같은 순위표가 두 벌이 되고, 대회가 끝날 때 한쪽만 갱신되는 일이 생긴다. */
+    var recRows = null, recAsked = false;
+    function recHtml(rows){
+      if (!rows.length) return '<div class="empty" style="padding:16px 0">아직 끝난 대회가 없습니다</div>';
+      /* 줄 세운 기준(누적 상금)을 오른쪽 굵은 자리에 놓는다. 우승·입상·판수는
+         작게 아래에 붙인다 — 순위를 만든 값과 참고 값이 섞이지 않게. */
+      return rows.map(function(r, i){
+        var mine = r.userId === MEID;
+        var sub = (r.wins > 0 ? '👑 ' + r.wins + ' · ' : '') +
+          '입상 ' + r.itm + ' / ' + r.played + '판';
+        return '<div class="ht-rec-row' + (mine ? ' me' : '') + '">' +
+          '<span class="ht-rec-no">' + (i + 1) + '</span>' +
+          '<span class="ht-rec-nm">' + esc(r.username) + '</span>' +
+          '<span class="ht-rec-p">' + num(r.prize) + 'P</span>' +
+          '<span class="ht-rec-s">' + sub + '</span>' +
+          '</div>';
+      }).join('');
+    }
+    /* 기록이 하나도 없으면 로비 쪽 블록은 아예 접는다 — 첫 대회 전에는 "아직 없습니다"만
+       적힌 빈 카드가 로비 절반을 차지한다. 탭 쪽은 사용자가 직접 눌러서 들어온 것이니
+       빈 상태라도 그대로 말해 준다. */
+    var recEmpty = true;
+    function paintRecords(){
+      if (!recRows) return;
+      recEmpty = recRows.length === 0;
+      // 다음 폴링(1초)까지 기다리지 않고 여기서 바로 접거나 펼친다
+      if (lobbyRecEl) lobbyRecEl.hidden = recEmpty || !tableEl.hidden;
+      var html = recHtml(recRows);
+      ['htRecList', 'htLobbyRecList'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+      });
+    }
+    function loadRecords(force){
+      if (recRows && !force) { paintRecords(); return; }
+      recAsked = true;
+      fetch('/api/games/holdem/records')
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (!d || !d.ok) return;
+          recRows = d.rows;
+          paintRecords();
+        })
+        .catch(function(){ /* 실패하면 다음에 탭을 다시 누를 때 받는다 */ });
+    }
+    document.querySelector('.ht-tabs').addEventListener('click', function(e){
+      var b = e.target.closest ? e.target.closest('.ht-tab') : null;
+      if (!b) return;
+      var which = b.getAttribute('data-htab');
+      document.querySelectorAll('.ht-tab').forEach(function(t){
+        t.classList.toggle('active', t === b);
+      });
+      rankEl.hidden = which !== 'live';
+      recEl.hidden = which !== 'rec';
+      if (which === 'rec') loadRecords(false);
     });
     var ctrlEl = document.getElementById('htControls');
     var ctopEl = document.getElementById('htCtop');
@@ -574,6 +668,7 @@ export function holdemPage(user: WebUser): string {
     var sitBar = document.getElementById('htSitBar');
     var infoEl = document.getElementById('htInfo');
     var rankEl = document.getElementById('htRank');
+    var recEl = document.getElementById('htRec');
     var sideTitle = document.getElementById('htSideTitle');
 
     function esc(s){ return String(s == null ? '' : s)
@@ -2055,9 +2150,10 @@ export function holdemPage(user: WebUser): string {
       if (st.table != null && st.table.mySeat == null && st.tournament.iRegistered) spectate = true;
       var showTable = st.table != null && (st.table.mySeat != null || spectate);
       lobbyEl.hidden = showTable;
+      lobbyRecEl.hidden = showTable || recEmpty;
       tableEl.hidden = !showTable;
       if (showTable) { renderTable(); updatePreLabels(); firstTablePaint = false; }
-      else { renderLobby(); }
+      else { renderLobby(); loadRecords(false); }
       // 테이블에 있든 로비에 있든 축하는 뜬다 — 예전엔 로비 분기에만 있었다
       celebrate();
     }

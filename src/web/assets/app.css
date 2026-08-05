@@ -1086,8 +1086,16 @@
   /* ── 홀덤 프리롤 ────────────────────────────────────────────────
      테이블은 세 겹이다: 레일(바깥 두꺼운 테) → 펠트(초록) → 트랙 선(안쪽 얇은 선).
      한 겹으로 하면 그냥 초록 알약이 되고 테이블처럼 안 보인다. */
-  .ht-lobby{padding:8px 0 24px}
+  .ht-lobby{padding:8px 0 0}
   .ht-lobby[hidden],.ht-shell[hidden]{display:none}
+
+  /* 로비의 역대 전적 — 대회 카드와 같은 폭으로 아래에 붙인다.
+     기다리는 동안 볼 것이 카드 하나뿐이던 자리를 채운다. */
+  .ht-lrec{background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:16px;
+    padding:18px 24px 12px;max-width:720px;margin:14px auto 24px}
+  .ht-lrec[hidden]{display:none}
+  .ht-lrec .ht-h3{margin-top:0}
+  .ht-lrec .ht-rec{padding:0}
 
   .ht-card{background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:16px;
     padding:22px 24px;max-width:720px;margin:0 auto}
@@ -1513,7 +1521,35 @@
     background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16)}
   .ht-i .ht-unit:hover{border-color:var(--gold);color:var(--gold)}
 
+  /* ── 칩 순위 / 역대 전적 탭 ───────────────────────────────────────
+     대회 전·후에는 칩 순위가 비어 있어 이 자리가 통째로 남는다. 그 시간에
+     "역대 누가 잘했나"를 보여준다 — 프리롤을 보러 온 사람이 그때 궁금해하는 것이다. */
+  .ht-tabs{display:flex;border-top:1px solid rgba(255,255,255,.06)}
+  .ht-tab{flex:1;padding:9px 6px;cursor:pointer;font-family:inherit;
+    background:none;border:none;border-bottom:2px solid transparent;
+    font-size:11.5px;font-weight:700;letter-spacing:.3px;color:var(--muted);
+    transition:color .12s,border-color .12s}
+  .ht-tab:hover{color:var(--txt)}
+  .ht-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+
+  .ht-rec-wrap[hidden]{display:none}
+
+  /* 역대 전적 한 줄 — 순번 · 이름 · 누적 상금 / 우승·입상·판수.
+     오른쪽 굵은 자리에는 줄 세운 기준(누적 상금)을 놓는다. 순위를 만든 값과
+     참고로 보는 값이 같은 무게로 보이면 표가 무엇을 말하는지 흐려진다. */
+  .ht-rec{padding:4px 8px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+  .ht-rec-row{display:grid;grid-template-columns:16px 1fr auto;gap:6px 8px;
+    align-items:center;padding:6px;border-radius:8px;font-size:12px}
+  .ht-rec-row.me{background:rgba(212,175,55,.1)}
+  .ht-rec-no{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);text-align:center}
+  .ht-rec-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  /* 둘째 줄 — 첫 칸(순번) 아래는 비우고 이름 칸부터 시작한다 */
+  .ht-rec-s{grid-column:2;font-size:10.5px;color:var(--muted)}
+  .ht-rec-p{grid-column:3;font-family:var(--mono);font-size:12px;font-weight:800;color:var(--gold);
+    white-space:nowrap}
+
   .ht-rank{padding:0 8px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+  .ht-rank[hidden]{display:none}
   .ht-rw{display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:8px}
   .ht-rw.me{background:rgba(212,175,55,.1)}
   .ht-rw-n{width:16px;flex:none;text-align:center;font-family:var(--mono);
