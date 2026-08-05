@@ -856,59 +856,70 @@ export function holdemPage(user: WebUser): string {
     /* 지금 화면에서 각 자리가 어디인가 — renderSeats가 채우고 다른 연출이 읽는다.
        좌표 계산을 두 곳에 두면 반드시 어긋난다(앤티 칩이 옛 9칸 각도에 놓인 적이 있다). */
     var seatXY = {};
-    /* ── 곡선 위에서 등간격 ─────────────────────────────────────────
-       각도를 n등분하면 폭이 넓은 타원에서 자리가 고르지 않다. 호의 길이는
-         ds = sqrt(a²sin²t + b²cos²t) dt   (a = 가로 반지름, b = 세로 반지름)
-       이라 같은 각도라도 위아래(a가 지배)에서는 성큼, 좌우 끝(b가 지배)에서는 촘촘히
-       움직인다. 2:1 타원에서 9명을 40도씩 놓았더니 위쪽에 셋이 몰려 붙었다.
-       그래서 각도가 아니라 실제 둘레 길이를 n등분하고, 그 길이에 해당하는 각도를 찾는다.
+    /* ── 스타디움(알약) 둘레 위의 자리 ──────────────────────────────
+       테이블은 위아래가 직선이고 좌우 끝만 반원인 알약 모양이다. 타원이었을 때는
+       위아래도 곡선이라 12시 근처 자리들이 안쪽으로 휘어 들어와 펠트를 파고들었다.
+       직선 구간에서는 좌석이 한 줄로 나란히 서고 그 아래가 통째로 빈 초록이 된다.
 
-       가로세로 비율은 화면 폭에 따라 달라지므로 실측해서 넣는다(renderSeats가 잰다). */
-    function arcAngles(n, ratio){
-      var STEP = 720, a = ratio, b = 1;
-      var cum = [0], t;
-      for (var k = 1; k <= STEP; k++) {
-        t = (k - 0.5) * 2 * Math.PI / STEP;
-        var d = Math.sqrt(a * a * Math.sin(t) * Math.sin(t) + b * b * Math.cos(t) * Math.cos(t));
-        cum.push(cum[k - 1] + d * (2 * Math.PI / STEP));
-      }
-      var total = cum[STEP];
-      // 6시(t = 90°)에서 출발한다 — 내 자리가 언제나 아래 가운데다
-      var startS = cum[Math.round(STEP / 4)];
+       한때 타원을 썼던 이유는 % 좌표로 경계를 따라갈 수 있어서였다(스타디움은 직선
+       구간 길이가 폭에 따라 달라져 % 하나로 표현되지 않는다). 지금은 좌표를 골격에
+       굽지 않고 매 렌더마다 넣으므로, 펠트를 실측해서 픽셀로 풀면 된다.
+
+       둘레를 n등분한다 — 각도가 아니라 길이다. 그래야 직선 구간과 반원 구간에
+       사람이 고르게 선다. 0번(나)은 언제나 바닥 한가운데이고 거기서 왼쪽으로 돈다.
+
+       각 점에서 바깥 법선도 같이 낸다. 직선 구간은 (0,±1), 반원 구간은 그 원의
+       반지름 방향이다 — 이게 좌석을 밖으로 밀어내는 방향이 된다. */
+    function stadiumSeats(n, W, H){
+      var r = Math.min(W, H) / 2;
+      var flat = Math.max(0, W - 2 * r);      // 위(아래) 직선 한 변의 길이
+      var half = flat / 2;
+      var cap = Math.PI * r;                  // 반원 하나의 길이
+      var L = 2 * flat + 2 * cap;
       var out = [];
       for (var i = 0; i < n; i++) {
-        var want = startS + total * i / n;
-        if (want >= total) want -= total;      // 한 바퀴를 넘으면 처음으로 돌아온다
-        /* 매번 0부터 훑는다. 이어서 찾으려다 한 바퀴 넘어간 목표를 못 잡고 마지막
-           각도를 그대로 내보내, 아홉 명 중 둘이 같은 자리에 겹쳐 선 적이 있다.
-           n은 많아야 9라 720칸을 다시 훑어도 비용이 없다. */
-        var j = 0;
-        while (j < STEP && cum[j] < want) j++;
-        out.push(j * 2 * Math.PI / STEP);
+        var s = (L * i / n) % L;
+        var x, y, nx, ny, ph;
+        if (s < half) {                                   // 바닥 가운데 → 왼쪽
+          x = W / 2 - s; y = H; nx = 0; ny = 1;
+        } else if (s < half + cap) {                      // 왼쪽 반원 (아래 → 위)
+          ph = Math.PI / 2 + (s - half) / r;
+          x = r + r * Math.cos(ph); y = H / 2 + r * Math.sin(ph);
+          nx = Math.cos(ph); ny = Math.sin(ph);
+        } else if (s < half + cap + flat) {               // 윗변 왼쪽 → 오른쪽
+          x = r + (s - half - cap); y = 0; nx = 0; ny = -1;
+        } else if (s < half + 2 * cap + flat) {           // 오른쪽 반원 (위 → 아래)
+          ph = -Math.PI / 2 + (s - half - cap - flat) / r;
+          x = (W - r) + r * Math.cos(ph); y = H / 2 + r * Math.sin(ph);
+          nx = Math.cos(ph); ny = Math.sin(ph);
+        } else {                                          // 바닥 오른쪽 → 가운데
+          x = (W - r) - (s - half - 2 * cap - flat); y = H; nx = 0; ny = 1;
+        }
+        /* 베팅 칩은 그 자리에서 안쪽으로 들어온 점이다. 가로로 들어올 때와 세로로
+           들어올 때 여유가 다르다 — 세로는 중앙 블록이 거의 다 쓰고 있고 가로는 넓다.
+           그래서 방향에 따라 다른 거리를 쓴다. */
+        var inX = W * 0.15, inY = H * 0.11;
+        var bx = x - nx * (Math.abs(nx) * inX + Math.abs(ny) * inY);
+        var by = y - ny * (Math.abs(nx) * inX + Math.abs(ny) * inY);
+        out.push({
+          x: +(x / W * 100).toFixed(2), y: +(y / H * 100).toFixed(2),
+          nx: nx, ny: ny,
+          bet: [+(bx / W * 100).toFixed(2), +(by / H * 100).toFixed(2)],
+        });
       }
       return out;
     }
     /* ── 좌석을 경계 밖으로 밀어내기 ────────────────────────────────
-       미는 방향은 중심에서 뻗은 반경이 아니라 타원의 법선이다. 납작한 타원에서 이 둘은
-       크게 다르다 — 오른쪽 위 45도 자리에서 반경은 비스듬하지만 법선은 거의 수직이다.
-       반경 방향으로 밀었더니 그 자리들만 태그가 초록을 50px 파고들었다(실측).
-       법선은 (cos t / rx, sin t / ry)에 비례한다.
-
        미는 거리는 "그 방향으로 좌석 덩어리가 뻗은 길이"다. 덩어리는 위아래가 비대칭이라
        (태그가 아바타 아래에만 있다) 세 성분으로 나눠 CSS 변수로 둔다.
          --htPushX  가로로 뻗은 길이
          --htPushU  아래로 뻗은 길이 (위로 밀 때 이만큼 밀어야 아래끝이 경계에 온다)
          --htPushD  위로 뻗은 길이
        거리 = |nx|·X + |ny|·(위로 밀면 U, 아래로 밀면 D)
-       이걸 다시 법선 방향으로 뿌리면 각 축의 계수가 나온다. px 값은 CSS가 알고
-       방향은 JS가 아니까, 곱셈만 calc에 맡긴다. */
-    function seatPos(i, n, angles, ratio){
-      var t = angles ? angles[i] : (90 + i * (360 / Math.max(1, n))) * Math.PI / 180;
-      var c = Math.cos(t), s = Math.sin(t);
-      var px = +(50 + 50 * c).toFixed(2), py = +(50 + 50 * s).toFixed(2);
-      var nx = c / (ratio || 1), ny = s;
-      var len = Math.sqrt(nx * nx + ny * ny) || 1;
-      nx /= len; ny /= len;
+       이걸 법선 방향으로 뿌리면 각 축의 계수가 나온다. px 값은 CSS가 알고 방향은
+       JS가 아니까, 곱셈만 calc에 맡긴다. */
+    function seatPos(pt){
+      var nx = pt.nx, ny = pt.ny;
       var ax = Math.abs(nx), ay = Math.abs(ny);
       var up = ny < 0 ? ay : 0, dn = ny > 0 ? ay : 0;
       var expr = function(pct, axis){
@@ -918,10 +929,10 @@ export function holdemPage(user: WebUser): string {
           + ' + var(--htPushD) * ' + (axis * dn).toFixed(4) + ')';
       };
       return {
-        plate: [px, py],
-        left: expr(px, nx),
-        top:  expr(py, ny),
-        bet:  [+(50 + 41 * c).toFixed(2), +(50 + 41 * s).toFixed(2)],
+        plate: [pt.x, pt.y],
+        left: expr(pt.x, nx),
+        top:  expr(pt.y, ny),
+        bet:  pt.bet,
       };
     }
 
@@ -952,6 +963,8 @@ export function holdemPage(user: WebUser): string {
 
     function renderSeats(){
       var tb = st.table, seats = tb.seats || [];
+      // 판이 바뀌면 "아직 안 받은 상금" 장부를 비운다
+      if (paidSeatHand !== tb.handNo) { paidSeatHand = tb.handNo; paidSeat = {}; }
       var blindSeats = blindSeatsOf(tb);
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
@@ -972,16 +985,17 @@ export function holdemPage(user: WebUser): string {
       var seatCount = order.length;
 
       var html = '', vol = '', sigParts = [], actNow = [];
-      /* 펠트의 실제 가로세로 비율. 등간격 계산에 필요한데 CSS 변수만으로는 알 수 없다
-         (가로는 컨테이너가 정하고 세로만 --htCloth다). 재는 값이라 창 크기가 바뀌면
-         달라지므로, 좌표는 골격에 굽지 않고 아래 갱신 루프에서 매번 넣는다. */
+      /* 펠트의 실제 크기. 스타디움은 직선 구간 길이가 폭에 따라 달라져서 % 만으로는
+         경계를 표현할 수 없다 — 재서 픽셀로 푼 뒤 %로 되돌린다. 재는 값이라 창 크기가
+         바뀌면 달라지므로, 좌표는 골격에 굽지 않고 아래 갱신 루프에서 매번 넣는다. */
       var clothBox = clothEl ? clothEl.getBoundingClientRect() : null;
-      var ratio = clothBox && clothBox.height > 0 ? clothBox.width / clothBox.height : 1.9;
-      var angles = arcAngles(seatCount, ratio);
+      var cw = clothBox && clothBox.width > 0 ? clothBox.width : 560;
+      var ch = clothBox && clothBox.height > 0 ? clothBox.height : 300;
+      var pts = stadiumSeats(seatCount, cw, ch);
       seatXY = {};
       seats.forEach(function(s){
         var rot = rotOf[s.seat] || 0;
-        var p = seatPos(rot, seatCount, angles, ratio);
+        var p = seatPos(pts[rot] || pts[0]);
         // 다른 연출(앤티 등)이 같은 좌표를 써야 한다 — 계산을 두 곳에 두면 어긋난다
         seatXY[s.seat] = p;
 
@@ -1096,11 +1110,10 @@ export function holdemPage(user: WebUser): string {
              그 순간부터 나는 칩을 가진 사람이므로 ALL IN이 아니고, 돌아온 숫자를 보여줘야
              한다. state만 보고 찍으면 스택이 60BB인 사람에게 ALL IN이 붙는다.
              그래서 두 조건을 함께 본다. */
-          var allIn = s.state === 'allin' && s.stack === 0;
-          /* 미니 칩 스택은 숫자 앞에 붙인다. innerHTML로 갈아끼우되 같은 내용이면
-             건드리지 않는다 — 폴링마다 다시 그리면 칩이 매초 깜빡인다. */
-          var want = allIn ? 'ALL IN' : miniStack(s.stack) + stackText(s.stack);
-          if (el.innerHTML !== want) el.innerHTML = want;
+          var shown = stackOf(tb, s);
+          var allIn = s.state === 'allin' && shown === 0;
+          var want = allIn ? 'ALL IN' : stackText(shown);
+          if (el.textContent !== want) el.textContent = want;
           el.className = allIn ? 'ht-stk allin' : 'ht-stk';
         }
         var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
@@ -1491,9 +1504,6 @@ export function holdemPage(user: WebUser): string {
     var HT_DENOMS = [10000, 5000, 1000, 500, 100];
     var HT_DCLASS = { 10000: 'd10k', 5000: 'd5k', 1000: 'd1k', 500: 'd500', 100: 'd100' };
     var HT_MAX_CHIPS = 30;
-    function htChipLabel(v){
-      return v >= 10000 ? (v / 10000) + '만' : v >= 1000 ? (v / 1000) + 'K' : String(v);
-    }
     function htDenomClass(v){ return HT_DCLASS[v] || 'd100'; }
     function htDecompose(amount){
       var out = [];
@@ -1512,10 +1522,13 @@ export function holdemPage(user: WebUser): string {
       var col = idx % 6, row = Math.floor(idx / 6);
       var x = Math.round((col - 2.5) * 13 + htJit(idx, 7));
       var y = Math.round(2 + row * 4 + htJit(idx + 7, 2));
+      /* 칩 위에 숫자를 적지 않는다. 실제 칩은 액면을 색과 무늬로 말하고, 지름 17px에
+         들어가는 6.5px 글자는 어차피 안 읽힌다 — 무늬만 흐려질 뿐이었다.
+         금액은 더미마다 붙는 이름표(.ht-pg-v)가 적는다. */
       return '<span class="ht-pchip pkchip ' + htDenomClass(denom) +
         (pending ? ' pending' : '') + '" data-d="' + denom + '"' +
         ' style="left:calc(50% + ' + x + 'px);bottom:' + y + 'px;z-index:' + (10 + idx) + '">' +
-        htChipLabel(denom) + '</span>';
+        '</span>';
     }
     /* ── 층별 칩 더미 ───────────────────────────────────────────────
        팟이 갈라지면 더미도 갈라진다. 하나로 뭉쳐 두면 "어느 팟을 누가 가져갔나"를
@@ -1628,31 +1641,41 @@ export function holdemPage(user: WebUser): string {
       var ds = htDecompose(amount).slice(0, BET_MAX_CHIPS);
       var out = '';
       /* 큰 액면이 아래로 가야 하므로 뒤에서부터 쌓는다 —
-         htDecompose는 큰 액면부터 담는데, 나중에 그린 것이 위에 온다. */
+         htDecompose는 큰 액면부터 담는데, 나중에 그린 것이 위에 온다.
+
+         맨 위 한 장만 윗면(타원 탑뷰)이고 나머지는 옆면 띠다. 실제로 칩을 쌓아
+         비스듬히 내려다보면 그렇게 보인다 — 전부 윗면으로 그리면 원반을 부채처럼
+         늘어놓은 것이 되어 기둥으로 안 읽힌다. */
       for (var i = ds.length - 1; i >= 0; i--) {
         var lvl = ds.length - 1 - i;      // 0이 맨 아래
-        out += '<i class="ht-chip pkchip ' + htDenomClass(ds[i]) +
-          '" style="bottom:' + (lvl * 3.5) + 'px;z-index:' + (10 - lvl) + '"></i>';
+        // 윗면만 pkchip(탑뷰 무늬)을 쓴다. 옆면은 .ht-chip 자체의 줄무늬다.
+        var top = i === 0 ? ' top pkchip' : '';
+        out += '<i class="ht-chip' + top + ' ' + htDenomClass(ds[i]) +
+          '" style="bottom:' + (lvl * 4) + 'px;z-index:' + (10 + lvl) + '"></i>';
       }
-      return out;
+      return '<i class="ht-chip-sh"></i>' + out;
     }
-    /* ── 태그 안 미니 스택 ──────────────────────────────────────────
-       스택 숫자 옆에 칩 두세 개를 얹는다. 숫자는 정확하지만 크기 감각을 주지 않는다 —
-       "9,850"과 "89,550"은 한 글자 차이인데 판에서는 전혀 다른 처지다.
-       가장 큰 액면 하나와 그 아래 한둘을 겹쳐 색으로 규모를 말한다. */
-    function miniStack(stack){
-      if (!(stack > 0)) return '';
-      var ds = htDecompose(stack);
-      /* 서로 다른 액면 중 큰 것부터 최대 3종. 같은 액면을 여러 장 쌓아 봐야
-         색이 하나라 정보가 늘지 않는다 — 종류가 곧 자릿수다. */
-      var seen = [], out = '';
-      for (var i = 0; i < ds.length && seen.length < 3; i++) {
-        if (seen.indexOf(ds[i]) < 0) seen.push(ds[i]);
-      }
-      for (var k = seen.length - 1; k >= 0; k--) {
-        out += '<i class="ht-mc pkchip ' + htDenomClass(seen[k]) + '"></i>';
-      }
-      return '<span class="ht-mini">' + out + '</span>';
+    /* 태그 안에는 칩 그림을 넣지 않는다. 한때 스택 숫자 앞에 액면 세 종을 겹쳐
+       규모를 색으로 보였는데, 아홉 자리에 작은 색점이 스물일곱 개 붙으니 테이블 위에서
+       가장 시끄러운 요소가 됐다. 태그는 이름과 숫자만 말한다 —
+       칩 그림이 필요한 곳은 실제로 칩이 움직이는 곳(베팅 자리·중앙 팟)이다. */
+
+    /* ── 스택 숫자는 칩이 도착한 뒤에 오른다 ────────────────────────
+       서버는 판이 끝나는 순간 상금이 이미 반영된 스택을 보낸다. 그대로 그리면
+       쇼다운 카드가 열리기도 전에 숫자가 먼저 올라 결과를 알려 버린다 — 전원 올인이면
+       카드 다섯 장이 깔리는 동안 이미 누가 이겼는지 스택에 적혀 있었다.
+       그래서 "아직 화면에서 안 받은 상금"을 빼고 그린다. payLayer가 그 층의 칩을
+       실제로 날려 보내고 도착할 때 paidSeat에 적고, 그때 숫자가 오른다.
+       판이 바뀌면 초기화한다(그 판의 상금은 이미 다 반영된 뒤다). */
+    var paidSeat = {}, paidSeatHand = null;
+    function stackOf(tb, s){
+      if (!tb.ended || !tb.result || !tb.result.awards) return s.stack;
+      var owed = 0;
+      tb.result.awards.forEach(function(a){
+        if (a.seat === s.seat) owed += a.amount || 0;
+      });
+      owed -= (paidSeat[s.seat] || 0);
+      return owed > 0 ? Math.max(0, s.stack - owed) : s.stack;
     }
 
     /* ── 오른쪽 패널 ─────────────────────────────────────────────── */
@@ -1900,6 +1923,8 @@ export function holdemPage(user: WebUser): string {
     /* 중앙 더미에 실제로 쌓여 있는 칩 하나를 그대로 복제해 날린다.
        예전에는 팟 라벨 위치에서 익명의 작은 칩을 날렸는데, 그러면 쌓인 더미와
        무관한 것이 지나가서 "대충 넣은 애니메이션"으로 보인다. */
+    // .ht-pchip.flyout 애니메이션 길이와 같아야 한다 (CSS htPileFly .7s)
+    var PILE_FLY_MS = 700;
     function flyPileChip(chipEl, toRect, delay){
       var r = chipEl.getBoundingClientRect();
       if (!r.width) return;
@@ -2082,6 +2107,7 @@ export function holdemPage(user: WebUser): string {
        합쳐진 층(mergeSameWinner)은 __span만큼 여러 더미를 함께 비운다.
        last면 남은 더미까지 전부 털어 중앙을 비운다. */
     function payLayer(tb, pa, last){
+      var payHand = tb.handNo;
       var boxes = Array.prototype.slice.call(pileEl.querySelectorAll('.ht-pg'));
       var first = pa.index || 0, span = pa.__span || 1;
       var mine = boxes.filter(function(b, i){
@@ -2129,6 +2155,20 @@ export function holdemPage(user: WebUser): string {
       /* 보낸 더미는 그 자리에서 접는다 — 마지막 층에서만 전부 접으면 앞 층의 빈 상자가
          이름표만 남아 계속 서 있다. 층이 비워지는 것이 보여야 "이 팟은 끝났다"가 읽힌다. */
       mine.forEach(function(b){ b.classList.add('paid'); });
+      /* 칩이 도착한 다음에야 스택 숫자를 올린다.
+         서버는 판이 끝나는 순간 이미 상금이 반영된 스택을 보낸다. 그걸 그대로 그리면
+         쇼다운 카드가 열리기도 전에 숫자가 먼저 올라 누가 이겼는지 알려 버린다 —
+         올인 판에서 특히 심했다. 그래서 화면은 "아직 안 받은 상금"을 빼고 그리다가
+         (renderSeats의 stackOf), 그 층의 칩이 실제로 날아가 닿는 시점에 풀어 준다.
+         칩 비행은 flyPileChip이 45ms씩 시차를 두고 띄우므로 마지막 칩까지 기다린다. */
+      var landed = PILE_FLY_MS + n * 45;
+      setTimeout(function(){
+        if (!st || !st.table || st.table.handNo !== payHand) return;
+        winners.forEach(function(w){
+          paidSeat[w.seat] = (paidSeat[w.seat] || 0) + (w.amount || 0);
+        });
+        renderSeats();
+      }, landed);
       if (last) {
         setTimeout(function(){ pileEl.innerHTML = ''; potPile.list = []; }, 900);
       }
