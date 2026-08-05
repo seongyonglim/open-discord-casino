@@ -648,6 +648,42 @@ console.log('\n[1d] 쇼다운 결과에 족보명 · 이긴 5장이 담긴다');
       if (rv.five.some(c => !pool.has(c))) notSubset++;
     }
   }
+  /* 층별 정산(potAwards)은 화면이 팟을 하나씩 넘겨 보여주는 근거다.
+     실제로 칩이 움직이는 것은 hand_seats.won이므로, 둘이 어긋나면
+     "화면에서 본 분배"와 "실제 받은 돈"이 달라진다 — 가장 나쁜 종류의 버그다. */
+  {
+    let potSumBad = 0, perSeatBad = 0, withPots = 0, badOrder = 0;
+    const rows2 = db3.prepare(
+      `SELECT id, result_json FROM holdem_hands WHERE result_json IS NOT NULL`).all() as
+      { id: number; result_json: string }[];
+    for (const r of rows2) {
+      const res = JSON.parse(r.result_json) as {
+        potAwards?: { index: number; amount: number; winners: { seat: number; amount: number }[] }[];
+        awards: { seat: number; amount: number }[];
+      };
+      if (!res.potAwards || !res.potAwards.length) continue;
+      withPots++;
+      // 층 합계 = 좌석별 합계
+      const layerSum = res.potAwards.reduce(
+        (a, p) => a + p.winners.reduce((b, w) => b + w.amount, 0), 0);
+      const awardSum = res.awards.reduce((a, x) => a + x.amount, 0);
+      if (layerSum !== awardSum) potSumBad++;
+      // 좌석 단위로도 맞아야 한다 (합계만 맞고 사람이 바뀌는 경우를 잡는다)
+      const bySeat = new Map<number, number>();
+      for (const p of res.potAwards) {
+        for (const w of p.winners) bySeat.set(w.seat, (bySeat.get(w.seat) ?? 0) + w.amount);
+      }
+      for (const a of res.awards) if ((bySeat.get(a.seat) ?? 0) !== a.amount) perSeatBad++;
+      // 층 금액의 합이 그 층들의 amount 합과도 같아야 한다
+      const declared = res.potAwards.reduce((a, p) => a + p.amount, 0);
+      if (declared !== layerSum) badOrder++;
+    }
+    ck('층별 정산이 기록된 판이 있었다', withPots > 0, String(withPots));
+    ck('층 합계 = 좌석별 정산 합계', potSumBad === 0, `${potSumBad}판 어긋남`);
+    ck('좌석 단위로도 층별 정산과 실제 정산이 같다', perSeatBad === 0, `${perSeatBad}건`);
+    ck('각 층의 금액이 그 층 승자들이 받은 합과 같다', badOrder === 0, `${badOrder}판`);
+  }
+
   ck('쇼다운이 실제로 여러 번 있었다 (검사가 헛돌지 않았다)', withReveal > 0, String(withReveal));
   ck('공개된 손마다 족보명이 있다', missingHand === 0, `${missingHand}건 누락`);
   ck('공개된 손마다 이긴 5장이 있다', missingFive === 0, `${missingFive}건 누락`);

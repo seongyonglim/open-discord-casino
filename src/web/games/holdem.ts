@@ -1416,38 +1416,102 @@ export function holdemPage(user: WebUser): string {
            pushPotToWinners는 실시간 pileEl을 읽고 마지막에 비우므로, 그냥 두면
            다음 판의 팟 더미를 지워 버린다. */
         if (!st || !st.table || st.table.handNo !== forHand) return;
-        pushPotToWinners(tb);
+        pushPotToWinners(tb, forHand);
       }, 550);
     }
-    function pushPotToWinners(tb){
-      var awards = (tb.result.awards || []).filter(function(a){
-        var seat = seatsEl.querySelector('.ht-seat[data-seat="' + a.seat + '"]');
-        return seat && seat.querySelector('.ht-plate');
+
+    /* ── 팟을 층별로 하나씩 넘겨 준다 ─────────────────────────────────
+       예전에는 모든 층을 한 번에 정산해서 칩이 여러 자리로 동시에 흩어졌다. 사이드 팟이
+       있으면 누가 어느 팟을 가져갔는지 알 수 없었고, 큰 판일수록 더 그랬다.
+
+       이제 한 층씩 간다: 그 층의 승자와 족보를 띄우고 → 칩을 그 사람에게 보내고 →
+       도착할 때까지 기다렸다가 다음 층으로. 서버가 이긴 손이 강한 층부터 담아 주므로
+       가장 센 손이 먼저 자기 몫을 가져간다(실제 딜러의 순서다).
+
+       층당 약 1.9초다. 서버도 같은 값(SIDE_POT_STEP_SEC)으로 다음 판 시작을 미룬다 —
+       한쪽만 바꾸면 마지막 층을 보여주다가 판이 넘어간다. */
+    var POT_STEP_MS = 1900;
+    // 층 이름표를 띄워 둔 동안에는 syncOutro가 그 줄을 건드리지 않는다
+    var potLabelUntil = 0;
+    function pushPotToWinners(tb, forHand){
+      var seatOf = function(seat){
+        return seatsEl.querySelector('.ht-seat[data-seat="' + seat + '"] .ht-plate');
+      };
+      var layers = (tb.result.potAwards || []).filter(function(pa){
+        return pa.winners && pa.winners.some(function(w){ return seatOf(w.seat); });
       });
-      if (!awards.length) return;
-      var chips = Array.prototype.slice.call(pileEl.children);
-      var total = awards.reduce(function(a, x){ return a + x.amount; }, 0) || 1;
+      /* 폴드로 끝난 판이나 옛 판(potAwards가 없는 기록)은 층 정보가 없다.
+         그때는 좌석별 합계로 한 번에 보낸다 — 층이 하나뿐이라 순서를 보여줄 것도 없다. */
+      if (!layers.length) {
+        var flat = (tb.result.awards || []).filter(function(a){ return seatOf(a.seat); });
+        if (!flat.length) return;
+        payLayer(tb, { winners: flat, amount: 0 }, true);
+        return;
+      }
+      layers.forEach(function(pa, i){
+        setTimeout(function(){
+          if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
+          showPotLabel(tb, pa, layers.length);
+          payLayer(tb, pa, i === layers.length - 1);
+        }, i * POT_STEP_MS);
+      });
+    }
+
+    /* 이 층이 무엇이고 누가 어떤 족보로 가져가는지 한 줄로 알린다.
+       층이 하나뿐이면 이름표를 붙이지 않는다 — 붙일 이유가 없다. */
+    function showPotLabel(tb, pa, layerCount){
+      if (layerCount < 2) return;
+      /* 이 줄은 syncOutro도 쓴다(판 전체의 승리 족보). 층을 넘기는 동안은 이쪽이 주인이라고
+         표시해 둔다 — 안 그러면 1초 폴링이 층 이름표를 곧바로 덮어써서 한 번도 안 보인다. */
+      potLabelUntil = Date.now() + POT_STEP_MS - 150;
+      var names = pa.winners.map(function(w){
+        var s = (tb.seats || []).filter(function(x){ return x.seat === w.seat; })[0];
+        return s ? s.username : 'Seat ' + (w.seat + 1);
+      }).join(' · ');
+      var label = (pa.index === 0 ? 'MAIN POT' : 'SIDE POT ' + pa.index)
+        + '  ' + stackText(pa.amount);
+      outroEl.hidden = false;
+      outroEl.innerHTML = '<b>' + esc(label) + '</b> — ' + esc(names)
+        + (pa.hand ? ' · ' + esc(pa.hand) : '');
+    }
+
+    /* 한 층의 칩을 승자에게 보낸다. last면 더미에 남은 칩을 전부 털어 중앙을 비운다. */
+    function payLayer(tb, pa, last){
+      var chips = Array.prototype.slice.call(pileEl.children).filter(function(c){
+        return !c.dataset || c.dataset.sent !== '1';
+      });
+      var winners = pa.winners;
+      var total = winners.reduce(function(a, x){ return a + (x.amount || 0); }, 0) || 1;
+      var potTotal = tb.pot || total;
+      /* 이 층이 전체 팟에서 차지하는 비율만큼만 칩을 보낸다 — 그래야 사이드 팟이 작을 때
+         칩도 조금만 가고, 큰 층에서 뭉텅이가 간다. 마지막 층은 남은 것을 전부 가져간다. */
+      var quota = last ? chips.length
+        : Math.min(chips.length, Math.max(1, Math.round(chips.length * (pa.amount || 0) / potTotal)));
       var n = 0, used = 0;
-      awards.forEach(function(a, k){
-        var target = seatsEl.querySelector('.ht-seat[data-seat="' + a.seat + '"] .ht-plate');
+      winners.forEach(function(w, k){
+        var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-plate');
+        if (!target) return;
         var tr = target.getBoundingClientRect();
-        /* 그 사람이 가져가는 몫만큼의 칩을 보낸다. 마지막 승자가 남은 것을 전부 받아
-           더미에 칩이 남지 않게 한다(사이드 팟이 있어도 중앙이 깨끗하게 비워진다). */
-        var take = k === awards.length - 1
-          ? chips.length - used
-          : Math.max(1, Math.round(chips.length * a.amount / total));
-        take = Math.min(take, chips.length - used);
-        for (var i = 0; i < take; i++) flyPileChip(chips[used + i], tr, (n++) * 45);
+        var take = k === winners.length - 1
+          ? quota - used
+          : Math.max(1, Math.round(quota * (w.amount || 0) / total));
+        take = Math.min(take, quota - used);
+        for (var i = 0; i < take; i++) {
+          var c = chips[used + i];
+          if (!c) break;
+          if (c.dataset) c.dataset.sent = '1';
+          flyPileChip(c, tr, (n++) * 45);
+        }
         used += take;
         // 더미가 비어 있으면(판 도중 합류 등) 최소한 칩 몇 개는 날아가게 한다
         if (!chips.length) {
           var pot = potEl.getBoundingClientRect();
-          var cnt = a.amount >= tb.level.bb * 20 ? 5 : a.amount >= tb.level.bb * 5 ? 3 : 2;
+          var amt = w.amount || 0;
+          var cnt = amt >= tb.level.bb * 20 ? 5 : amt >= tb.level.bb * 5 ? 3 : 2;
           for (var j = 0; j < cnt; j++) flyChip(pot, tr, (n++) * 45, 'towin');
         }
       });
-      // 날아간 만큼 중앙은 비운다
-      if (chips.length) {
+      if (last && chips.length) {
         pileEl.style.opacity = '0';
         setTimeout(function(){ pileEl.innerHTML = ''; potPile.list = []; }, 900);
       }
@@ -1754,6 +1818,9 @@ export function holdemPage(user: WebUser): string {
        족보명이 없으면 무엇으로 이겼는지 카드를 직접 읽어야 안다. 실제로 다른 클라이언트도
        이걸 안 보여줘서 "4초 안에 카드를 다 읽어야 한다"는 불만이 흔하다. */
     function syncOutro(tb){
+      /* 사이드 팟을 층별로 넘기는 동안에는 이 줄의 주인이 showPotLabel이다.
+         여기서 덮어쓰면 1초 폴링이 층 이름표를 지워 한 번도 못 보게 된다. */
+      if (Date.now() < potLabelUntil) return;
       var reveal = (tb.ended && boardRevealed && tb.result && tb.result.reveal) || [];
       var awards = (tb.ended && boardRevealed && tb.result && tb.result.awards) || [];
       var text = '';

@@ -32,6 +32,11 @@ export const SHOWDOWN_SEC = 6;
    5초로 두면 연출이 다 끝난 뒤에도 2초 남짓 테이블을 볼 수 있다.
    쇼다운(6초)보다는 짧게 유지한다 — 읽을 것이 승자 이름뿐이라 같을 필요는 없다. */
 export const FOLD_END_SEC = 5;
+/* 사이드 팟을 하나 더 보여주는 데 드는 시간.
+   화면은 층마다 "승자·족보 표시 → 칩이 날아감 → 잠깐 멈춤"을 재생한다(약 1.9초).
+   실제 온라인 클라이언트도 층당 1.5~2초 남짓 쓴다 — 더 끌면 판이 늘어지고,
+   더 줄이면 칩이 도착하기 전에 다음 층이 시작돼 누가 무엇을 가져갔는지 놓친다. */
+export const SIDE_POT_STEP_SEC = 2;
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
 
@@ -593,6 +598,9 @@ function endHand(
     }
   }
 
+  /* 층별 정산 내역을 그대로 받아 둔다. 화면이 팟을 하나씩 넘겨 보여주려면
+     "어느 층을 누가 가져갔는지"가 필요한데, 좌석별 합계(awards)로는 알 수 없다. */
+  const potAwards = G.awardPotsDetailed(pots, scores, hand.button_seat, T.MAX_PLAYERS);
   const awards = G.awardPots(pots, scores, hand.button_seat, T.MAX_PLAYERS);
   for (const a of awards) {
     run(`UPDATE holdem_hand_seats SET won = ? WHERE hand_id = ? AND seat = ?`, a.amount, hand.id, a.seat);
@@ -625,6 +633,26 @@ function endHand(
         return { seat: v.seat, cards: G.cardsToStrings(hole), hand: sd.name, five: sd.five };
       })
       : [],
+    /* 층별 정산 — 화면이 팟을 하나씩 넘겨 보여주는 데 쓴다.
+       보여줄 순서대로 담는다: 이긴 손이 강한 층부터. 실제 딜러도 가장 센 손이 걸린
+       사이드 팟부터 밀어 주고 메인 팟을 마지막에 정리한다. 같은 점수면 위층(사이드)이 먼저다.
+       족보 이름은 그 층을 가져간 사람의 것이다 — 층마다 이긴 손이 다를 수 있다. */
+    potAwards: showdown && live.length > 1
+      ? potAwards
+        .slice()
+        .sort((a, b) => (b.score - a.score) || (b.index - a.index))
+        .map(pa => {
+          const w = pa.winners[0];
+          const row = w ? rows.find(r => r.seat === w.seat) : undefined;
+          const name = row
+            ? G.showdownHand(JSON.parse(row.hole_json) as number[], board).name
+            : '';
+          return {
+            index: pa.index, amount: pa.amount,
+            winners: pa.winners, hand: name,
+          };
+        })
+      : [],
   };
   run(`UPDATE holdem_hands SET ended_at = ?, result_json = ?, to_act_seat = NULL, action_deadline = NULL
        WHERE id = ? AND ended_at IS NULL`, now, JSON.stringify(result), hand.id);
@@ -632,7 +660,14 @@ function endHand(
   // 스택이 0이 된 사람을 탈락 처리한다 (같은 핸드에서 여러 명이 나가면 투입액이 많은 쪽이 상위)
   eliminateBusted(t, table, hand, views, now);
 
-  const delay = showdown && live.length > 1 ? SHOWDOWN_SEC : FOLD_END_SEC;
+  /* 팟이 여러 층이면 화면이 하나씩 넘기며 보여주므로 그만큼 시간이 더 든다.
+     늘리지 않으면 마지막 층을 보여주기도 전에 다음 판이 시작된다 —
+     사이드 팟이 세 개면 4초가 더 필요한데 6초 안에 다 넣을 수 없다.
+     층 수는 여기서 이미 알고 있으므로 그 값으로 정확히 계산한다. */
+  const extraPots = showdown && live.length > 1 ? Math.max(0, potAwards.length - 1) : 0;
+  const delay = showdown && live.length > 1
+    ? SHOWDOWN_SEC + extraPots * SIDE_POT_STEP_SEC
+    : FOLD_END_SEC;
   run(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`, now + delay, table.id);
 }
 
