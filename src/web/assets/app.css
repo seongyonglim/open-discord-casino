@@ -1445,12 +1445,12 @@
   /* 상태별 색 — 테두리 한 줄이면 된다 */
   .ht-seat.sitout .ht-plate-bg{border-color:rgba(255,190,80,.6)}
   .ht-seat.disc .ht-plate-bg{border-color:rgba(150,170,200,.55)}
-  /* 내 자리는 태그를 밝게 뒤집어 한눈에 구분한다 */
-  .ht-seat.hero .ht-plate-bg{background:linear-gradient(180deg,#f7f4ea,#dcd7c4);
-    border-color:rgba(255,255,255,.8)}
-  .ht-seat.hero .ht-plate-bg::after{background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0))}
-  .ht-seat.hero .ht-nm{color:#3a3427}
-  .ht-seat.hero .ht-stk{color:#8a6a10}
+  /* 내 자리도 남들과 같은 다크 태그다.
+     한때 밝은 아이보리로 뒤집어 두었다. 눈에는 잘 띄었지만 아홉 개 중 하나만 색이
+     달라서 테이블의 톤이 거기서 끊겼다 — 그리고 애초에 필요가 없다. 내 자리는 언제나
+     6시 한가운데에 고정돼 있고(hero-centric), 위치가 색보다 확실한 신호다.
+     테두리만 아주 옅게 금색을 준다 — 색을 바꾸는 것이 아니라 한 겹 얹는 정도. */
+  .ht-seat.hero .ht-plate-bg{border-color:rgba(240,205,110,.5)}
   /* 태그 왼쪽의 초록 세로 막대는 없앴다. "아직 겨루는 중"을 표시하려던 것인데,
      접은 사람은 좌석이 통째로 흐려지고 아바타가 흑백이 되며 F 배지까지 붙는다 —
      세 겹으로 이미 말하고 있는 것을 네 번째로 말하는 장식이었다.
@@ -1531,18 +1531,23 @@
      생김새가 같아져서, 한 화면에 두 종류의 카드가 있다는 사실이 흐려진다.
      내 패는 기울어 있고 모두의 패는 반듯하다 — 그 차이가 곧 구분이다.
      회전 기준을 아래로 잡아 위쪽만 벌어지게 한다(부채처럼). */
+  /* 겹침을 −0.06에서 −0.24로 키웠다. 두 장이 거의 붙지 않고 벌어져 있으면 한 손이
+     아니라 따로 놓인 두 장으로 보인다 — 실제로 패를 쥐면 카드는 겹친다.
+     기울기는 8°까지 올린다. 겹치는 만큼 각도가 있어야 뒷장의 좌측 상단 숫자·무늬가
+     앞장 밖으로 나온다. 왼쪽 카드의 오른쪽 위가 가려지는 것은 상관없다 —
+     카드를 읽는 자리는 왼쪽 위 한 곳이다. */
   .ht-hole.up{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:0}
   .ht-hole.up .pcard{transform-origin:bottom center}
-  .ht-hole.up .pcard:first-child{--tilt:-5deg;margin-right:calc(var(--htUpW) * -.06)}
-  .ht-hole.up .pcard:last-child{--tilt:4.5deg}
+  .ht-hole.up .pcard:first-child{--tilt:-8deg;margin-right:calc(var(--htUpW) * -.24);z-index:1}
+  .ht-hole.up .pcard:last-child{--tilt:7deg;z-index:2}
   .ht-shell .ht-hole.up .pcard.sm{width:var(--htUpW);height:var(--htUpH)}
   /* 내 카드는 언제나 공개 상태로 크게 본다 */
   .ht-shell .pcard.hero{width:var(--htUpW);height:var(--htUpH);border-radius:5px;
     box-shadow:0 3px 10px rgba(0,0,0,.55)}
   .ht-seat.hero .ht-hole{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:0}
   .ht-seat.hero .ht-hole .pcard{transform-origin:bottom center}
-  .ht-seat.hero .ht-hole .pcard:first-child{--tilt:-5deg;margin-right:calc(var(--htUpW) * -.06)}
-  .ht-seat.hero .ht-hole .pcard:last-child{--tilt:4.5deg}
+  .ht-seat.hero .ht-hole .pcard:first-child{--tilt:-8deg;margin-right:calc(var(--htUpW) * -.24);z-index:1}
+  .ht-seat.hero .ht-hole .pcard:last-child{--tilt:7deg;z-index:2}
 
   /* 이름과 스택은 태그 안에서 두 줄. 사이를 조금 띄운다 — 붙여 두면 두 값이
      한 덩어리로 읽혀서 어느 쪽이 이름인지 잠깐 헷갈린다. */
@@ -1560,7 +1565,6 @@
     border-top:1px solid rgba(255,255,255,.13);
     font-family:var(--mono);font-size:11.5px;font-weight:800;
     color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .ht-seat.hero .ht-stk{border-top-color:rgba(0,0,0,.16)}
   /* 딜러 퍽 — 아바타의 "중앙을 향한 옆면"에 붙인다.
      펠트 위 별도 좌표에 띄워 두면 떠 있는 물체로 보여서 누구 버튼인지 한눈에 안 잡혔다.
      카드는 위, 태그는 아래, 베팅 칩은 더 안쪽이라 어느 것과도 겹치지 않는다. */
@@ -1839,21 +1843,58 @@
   /* pointer-events를 끄지 않는다 — 아웃츠 랭크를 네 개까지만 적고 나머지는 title에
      맡기는데(JS), 클릭이 안 통하면 그 툴팁이 절대 뜨지 않아 코드는 있고 화면에는 없는
      기능이 된다. 다른 지표들과 달리 이것만 예외인 이유다. */
+  /* 말풍선 둘로 나눈다. 같은 상자에 색만 다르게 하면 "누가 앞서고 누가 쫓는가"가
+     색을 아는 사람에게만 읽힌다. 형태를 다르게 두면 색맹이어도 구분된다.
+       앞선 쪽: 둥근 초록 말풍선 + 승률 하나
+       쫓는 쪽: 각진 붉은 말풍선 + 역전 카드 + 붉은 승률
+     각진 쪽이 시각적으로 불안정해서 그 자체로 "위태롭다"를 말한다. */
   .ht-eq{position:absolute;top:42%;z-index:6;white-space:nowrap;
-    display:flex;flex-direction:column;align-items:center;gap:0;
-    padding:2px 7px;border-radius:8px;
-    background:rgba(6,10,8,.88);border:1px solid rgba(255,255,255,.16);
-    box-shadow:0 2px 8px rgba(0,0,0,.55)}
+    display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:3px 8px;
+    box-shadow:0 3px 10px rgba(0,0,0,.6)}
   .ht-eq[hidden]{display:none}
   /* 좌석이 테이블 왼쪽이면 판의 왼쪽(바깥)으로, 오른쪽이면 오른쪽으로 */
-  .ht-eq.l{right:100%;transform:translate(-7px,-50%)}
-  .ht-eq.r{left:100%;transform:translate(7px,-50%)}
-  .ht-eq-p{font-family:var(--mono);font-size:12px;font-weight:800;color:#cbd8cf;line-height:1.15}
-  .ht-eq.hi .ht-eq-p{color:#5fd39a}
-  /* 아웃츠 — 지고 있는 쪽만. 장수를 먼저, 랭크를 작게 뒤에. */
-  .ht-eq-o{font-size:9px;font-weight:800;color:#f0b542;line-height:1.15}
-  .ht-eq-r{font-family:var(--mono);font-size:8.5px;color:var(--muted);line-height:1.15;
-    letter-spacing:.5px}
+  .ht-eq.l{right:100%;transform:translate(-9px,-50%)}
+  .ht-eq.r{left:100%;transform:translate(9px,-50%)}
+  .ht-eq-p{font-family:var(--mono);font-size:12px;font-weight:800;line-height:1.15}
+  /* 앞선 쪽 — 부드러운 초록 */
+  .ht-eq.lead{border-radius:11px;
+    background:linear-gradient(180deg,rgba(38,110,78,.96),rgba(20,68,47,.96));
+    border:1px solid rgba(120,225,170,.55)}
+  .ht-eq.lead .ht-eq-p{color:#b6f2d3}
+  /* 쫓는 쪽 — 각진 붉은 쪽. 모서리를 어긋나게 잘라 뾰족하게 만든다. */
+  .ht-eq.chase{border-radius:4px 11px 4px 11px;
+    background:linear-gradient(180deg,rgba(140,36,30,.96),rgba(86,18,14,.96));
+    border:1px solid rgba(255,120,110,.6)}
+  .ht-eq.chase .ht-eq-p{color:#ffb3ad;font-size:11px}
+  /* 말풍선 꼬리 — 좌석 쪽을 가리킨다. 없으면 그냥 옆에 놓인 상자다. */
+  .ht-eq::after{content:"";position:absolute;top:50%;width:0;height:0;
+    border:5px solid transparent;transform:translateY(-50%)}
+  .ht-eq.l::after{left:100%;border-left-color:rgba(120,225,170,.55)}
+  .ht-eq.r::after{right:100%;border-right-color:rgba(120,225,170,.55)}
+  .ht-eq.chase.l::after{border-left-color:rgba(255,120,110,.6)}
+  .ht-eq.chase.r::after{border-right-color:rgba(255,120,110,.6)}
+  /* ── 역전 카드 미니 아이콘 ────────────────────────────────────────
+     "아웃 8장 · A K"라고 글자로 적던 것을 카드 그림으로 바꿨다. 카드 게임인데
+     카드를 글자로 옮겨 적으면 한 번 더 번역해서 읽어야 한다.
+     한 무늬가 통째로 아웃이면(플러시 드로우) 무늬 하나로 줄인다 — 아홉 장을 늘어놓으면
+     "이 무늬만 나오면 된다"는 사실이 오히려 안 보인다. */
+  .ht-eq-outs{display:flex;align-items:center;gap:2px}
+  .ht-oc{display:inline-flex;align-items:center;justify-content:center;
+    min-width:13px;height:17px;padding:0 1px;border-radius:2.5px;
+    background:#f4f2ec;color:#16181a;
+    font-family:var(--mono);font-size:9px;font-weight:900;line-height:1;
+    border:1px solid rgba(0,0,0,.45);box-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .ht-oc b{font-size:8px;font-weight:900;margin-left:.5px}
+  /* 하트·다이아는 붉게 (무늬 순서 s h d c) */
+  .ht-oc.s1,.ht-oc.s2{color:#c8322a}
+  /* 무늬 하나로 줄인 것 — 랭크 없이 무늬만 크게 */
+  .ht-oc.suit{min-width:17px;font-size:12px}
+  .ht-oc.more{background:rgba(255,255,255,.16);color:#ffd9d4;border-color:rgba(255,255,255,.2);
+    font-size:8.5px}
+  /* 역전할 카드가 한 장도 없다 — 포커에는 이미 이름이 있는 상태다 */
+  .ht-eq-dead{font-family:var(--mono);font-size:9px;font-weight:900;letter-spacing:.6px;
+    color:#ff9d95}
 
   /* 떠올라 잠깐 머물고 사라진다. 1.7초 중 앞 8%가 등장, 뒤 22%가 퇴장이다 —
      등장이 느리면 "방금 일어난 일"이라는 느낌이 없다.
@@ -2102,14 +2143,29 @@
   /* 베팅 자리의 행동 이름(.ht-act)은 없앴다 — 좌석판 위 배지가 대신한다.
      정의는 위쪽 .ht-abadge에 모여 있다. */
 
-  /* 칩이 중앙 팟으로 / 팟이 승자에게 밀려가는 연출.
+  /* ── 베팅 칩이 중앙으로 모이는 연출 ─────────────────────────────
+     좌석 앞에 서 있던 칩 기둥을 통째로 복제해 중앙까지 미끄러뜨린다.
+
+     예전에는 익명의 작은 칩 하나를 날리면서 opacity를 .15까지 떨어뜨렸다. 그러면
+     칩이 허공에서 사라지고, 잠시 뒤 중앙에 더미가 뿅 하고 생겼다 — 두 사건이
+     연결돼 보이지 않았다. 지금은 끝까지 불투명하게 가서 도착하는 순간 살짝 오므라들고,
+     바로 그 순간 중앙 더미가 그만큼 자란다(syncPotPile의 pending 해제 시점과 맞췄다).
      자리 안에서 움직이면 테이블 밖을 지나는 구간이 잘리므로 화면 전체 레이어에서 날린다. */
+  .ht-fly-stack{position:fixed;z-index:60;pointer-events:none;
+    animation:htStackFly .62s cubic-bezier(.32,.06,.24,1) forwards}
+  @keyframes htStackFly{
+    0%  {transform:translate(0,0) scale(1)}
+    22% {transform:translate(calc(var(--tx) * .2),calc(var(--ty) * .2 - 9px)) scale(1.06)}
+    88% {opacity:1}
+    100%{transform:translate(var(--tx),var(--ty)) scale(.82);opacity:0}
+  }
+  /* 승자에게 갈 때 쓰는 낱개 칩 — 중앙 더미가 비었을 때의 대비책이다 */
   .ht-chip.fly{position:fixed;z-index:60;pointer-events:none;
     animation:htChipFly .62s cubic-bezier(.4,.02,.3,1) forwards}
   @keyframes htChipFly{
-    0%{opacity:0;transform:translate(0,0) scale(.7)}
-    12%{opacity:1;transform:translate(0,0) scale(1)}
-    100%{opacity:.15;transform:translate(var(--tx),var(--ty)) scale(.8)}
+    0%{opacity:1;transform:translate(0,0) scale(1)}
+    88%{opacity:1}
+    100%{opacity:0;transform:translate(var(--tx),var(--ty)) scale(.82)}
   }
 
   /* 실제로 깔리지 않은 카드 — 결과와 혼동하면 안 되니 확실히 구분한다.
