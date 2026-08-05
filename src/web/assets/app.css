@@ -1143,22 +1143,40 @@
      아바타 크기에 딸린 값인데 따로 적혀 있어서, 아바타를 건드리면 고리가 조용히 어긋났다.
      이제 아래 변수만 덮으면 딸린 값이 전부 따라온다. */
   .ht-shell{
-    --htAv:50px;         /* 아바타 지름 — 아래 대부분이 여기서 유도된다 */
-    --htTagUp:15px;      /* 이름 태그가 아바타를 덮는 높이 (지름의 약 30%) */
+    /* 좌석은 [아바타 + 이름 태그]가 한 덩어리로 읽혀야 한다. 그러려면 둘의 폭이 비슷해야
+       한다 — 태그가 아바타보다 훨씬 넓으면 접시 위에 얹힌 구슬처럼 따로 논다.
+       아바타 지름을 태그 윗변의 92%로 잡는다(태그 = 아바타 × 1.08). 그리고 아바타 아래
+       25%가 태그 안으로 들어간다(--htTagUp). 이 두 값이 "하나의 컴포넌트"를 만든다. */
+    --htAv:72px;         /* 아바타 지름 — 아래 대부분이 여기서 유도된다 */
+    --htTagUp:18px;      /* 아바타 아래 몇 px이 태그 안으로 들어가는가 (지름의 25%) */
     --htBoardW:62px;     /* 커뮤니티 카드 */
     --htBoardH:93px;
-    --htCloth:392px;     /* 펠트 높이 */
-    /* 홀 카드는 아바타 지름에서 유도한다. 티어마다 따로 적었더니 아바타와 카드의 비율이
-       구간마다 달라졌다(1100에서 카드가 상대적으로 컸다) — 비율이 규칙이면 한 번만 적는다.
-       가로:세로는 2:3으로 맞춘다(0.56 / 0.84, 0.84 / 1.26).
-       비공개 카드는 아바타 대비 0.56까지 줄였다. 카드가 아바타 앞에 오면서 0.66에서는
-       겹친 두 장의 폭이 아바타의 0.94가 되어 얼굴이 통째로 사라졌다(실측 84.9% 가림).
-       0.56이면 폭이 0.79로 내려가 좌우 테두리와 머리 위 10px이 남는다 — 그 남는 부분이
-       "겹쳐 있다"를 보이게 한다. */
-    --htCardW:calc(var(--htAv) * .56);   /* 비공개 — 겹친 두 장이 아바타보다 좁아야 한다 */
-    --htCardH:calc(var(--htAv) * .84);
-    --htUpW:calc(var(--htAv) * .84);     /* 공개 — 펼쳐지며 커진다 */
-    --htUpH:calc(var(--htAv) * 1.26);
+    --htCloth:326px;     /* 펠트 높이 — 폭 대비 1:1.8 안팎이라야 포커 테이블로 읽힌다 */
+    --htRail:21px;       /* 레일(쿠션) 두께 */
+    /* 좌석을 경계에서 바깥으로 얼마나 더 미는가.
+       예전에는 아바타 중심이 경계 위에 있었다. 그러면 아바타 절반과 이름 태그 전부가
+       펠트를 밟는다 — 9인 만석에서는 그 덩어리 아홉 개가 초록을 안쪽까지 파고들어
+       보드와 팟이 좁은 우물 속에 있는 것처럼 보였다.
+       이제 좌석 덩어리(아바타 + 그 아래 태그 + 시간 바)를 통째로 밖으로 밀어
+       덩어리의 안쪽 끝만 경계에 걸치게 한다.
+
+       위·아래를 다르게 두는 이유: 태그가 아바타 아래에만 있어서 덩어리가 위아래로
+       비대칭이다. 12시 자리는 태그가 펠트 쪽으로 뻗으므로 많이(U), 6시 자리는
+       아바타 위쪽만 걸치면 되므로 적게(D) 민다. */
+    --htPushU:76px;      /* 아래로 뻗은 길이 — 아바타 반지름 + 태그 + 시간 바 */
+    --htPushD:32px;      /* 위로 뻗은 길이 — 아바타 반지름쯤 */
+    --htPushX:26px;      /* 가로 — 더 키우면 만석에서 태그가 화면을 넘는다 */
+    /* 홀 카드 폭은 아바타에서 떼어 놓는다.
+       한때 --htAv에서 비율로 유도했다. 카드를 아바타 앞으로 옮기고 나니 그 결합이
+       거꾸로 작동했다 — 얼굴이 안 보인다고 아바타를 키우면 카드도 같이 커져서 가림 비율이
+       그대로였다. 지금은 "카드는 이 크기, 아바타는 이 크기"를 따로 정한다.
+       가리는 정도는 두 값의 비에서 나오는 결과이지 규칙이 아니다.
+       세로는 2:3(×1.5), 공개 카드는 비공개의 1.5배 — 이 둘은 카드끼리의 관계라 비율로 둔다. */
+    --htCard:34px;                       /* 비공개 홀 카드 폭 */
+    --htCardW:var(--htCard);
+    --htCardH:calc(var(--htCard) * 1.5);
+    --htUpW:calc(var(--htCard) * 1.5);   /* 공개 — 펼쳐지며 커진다 */
+    --htUpH:calc(var(--htCard) * 2.25);
   }
 
   /* 테이블 — 타원 3겹.
@@ -1170,36 +1188,79 @@
   /* 좌석이 테이블 밖으로 걸치므로 그만큼 자리를 비워 둔다.
      실측: 카드 위로 26px · 태그 아래로 30px · 좌우 24px를 넘어간다.
      이 여백이 없으면 위쪽 좌석 카드가 게임 전환 바를, 아래쪽 태그가 액션 버튼을 밟는다. */
-  .ht-felt{padding:32px 24px 30px}
-  .ht-rail{position:relative;padding:15px;border-radius:50%;
-    background:linear-gradient(180deg,#3a2b20,#241a13);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -2px 6px rgba(0,0,0,.5),
-      0 10px 28px rgba(0,0,0,.45)}
-  .ht-cloth{position:relative;height:var(--htCloth);border-radius:50%;
-    background:radial-gradient(ellipse at 50% 42%,#2f8a5f 0%,#1e6b48 46%,#12482f 100%);
-    box-shadow:inset 0 0 40px rgba(0,0,0,.45)}
-  .ht-track{position:absolute;inset:8%;border-radius:50%;
-    border:1.5px solid rgba(255,255,255,.13);pointer-events:none}
+  /* 좌석이 밖으로 밀려난 만큼 여백이 필요하다. 위쪽은 --htPushU + 아바타 반지름,
+     아래쪽은 --htPushD + 아바타 반지름 + 태그 높이만큼 좌석이 뻗는다.
+     레일 두께가 그 일부를 감당하므로 나머지를 padding으로 준다. */
+  .ht-felt{padding:calc(var(--htPushU) + var(--htAv) * .5 - var(--htRail) + 4px)
+                   38px
+                   calc(var(--htPushD) + var(--htAv) * .5 + 34px - var(--htRail))}
 
-  /* 자리 비움 배너 — 왼쪽 위 구석에 놓는다.
-     예전에는 테이블 위쪽 가운데였다. 좌석을 경계로 내보내면서 그 자리에 12시 좌석이
-     들어와 통째로 가렸다(실측). 테이블이 타원이므로 네 구석은 어느 좌석도 쓰지 않는
-     빈 공간이다 — 그 중 왼쪽 위를 쓴다.
-     문구도 줄였다. 구석에 놓으려면 좁아야 하고, 긴 설명은 오른쪽 패널이 이미 하고 있다. */
-  .ht-sitout-bar{position:absolute;left:0;top:0;z-index:8;
-    display:flex;align-items:center;gap:8px;padding:5px 8px 5px 11px;border-radius:999px;
-    background:rgba(28,20,4,.95);border:1px solid rgba(240,181,66,.55);
-    box-shadow:0 4px 14px rgba(0,0,0,.5);white-space:nowrap;max-width:46%}
-  .ht-sitout-bar[hidden]{display:none}
-  .ht-sitout-t{font-size:11px;font-weight:700;color:#f0b542;overflow:hidden;text-overflow:ellipsis}
-  .ht-sitout-btn{padding:4px 10px;font-size:11px;flex:none}
+  /* ── 레일 — 팔을 올려놓는 두툼한 쿠션 ─────────────────────────────
+     예전에는 갈색 그라디언트 한 겹에 안쪽 그림자 두 줄이었다. 색은 테이블 같았지만
+     두께가 없어서 "초록 원에 갈색 테를 두른 것"으로 보였다. 쿠션으로 읽히려면
+     빛이 어디서 오는지가 표면 전체에서 일관돼야 한다 — 위는 밝고, 배가 부풀고,
+     아래로 갈수록 그늘지고, 안쪽 턱에서 한 번 꺾인다.
+
+     그래서 세 겹으로 나눈다.
+       본체    : 위→아래 가죽 그라디언트 + 바닥에 드리우는 그림자
+       ::before: 바깥 모서리를 감싸는 하이라이트 (쿠션의 볼록한 윗면)
+       ::after : 안쪽 턱 — 펠트가 레일보다 한 단 낮게 앉아 있다는 신호
+     한 요소에 box-shadow를 여섯 줄 쌓는 것으로는 이게 안 된다. 그림자는 모두 같은
+     경계선에서 출발하므로 "서로 다른 깊이의 면"이 생기지 않는다. */
+  .ht-rail{position:relative;padding:var(--htRail);border-radius:50%;
+    background:linear-gradient(177deg,
+      #8a6242 0%, #6b4931 13%, #543821 34%, #3d2717 58%, #2b1a10 80%, #1d110a 100%);
+    box-shadow:
+      0 32px 62px -24px rgba(0,0,0,.85),   /* 바닥에 드리우는 그림자 — 테이블이 떠 있다 */
+      0 8px 20px rgba(0,0,0,.42),
+      inset 0 3px 1px rgba(255,216,170,.34),  /* 윗 모서리에 닿는 빛 */
+      inset 0 -7px 12px rgba(0,0,0,.62)}      /* 아랫배의 그늘 */
+  .ht-rail::before{content:"";position:absolute;inset:2px;border-radius:50%;
+    pointer-events:none;
+    background:linear-gradient(180deg,
+      rgba(255,230,196,.15) 0%, rgba(255,255,255,.03) 26%,
+      rgba(0,0,0,0) 52%, rgba(0,0,0,.26) 100%)}
+  /* 안쪽 턱. inset을 레일 두께보다 3px 작게 잡아 펠트 가장자리에 걸치게 한다 —
+     그 3px이 "레일이 펠트 위로 올라와 있다"를 만드는 유일한 단서다. */
+  .ht-rail::after{content:"";position:absolute;
+    inset:calc(var(--htRail) - 3px);border-radius:50%;pointer-events:none;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.6),
+      inset 0 1px 0 rgba(255,214,166,.20),
+      inset 0 5px 11px rgba(0,0,0,.62),
+      inset 0 -3px 8px rgba(0,0,0,.42)}
+
+  /* ── 펠트 ─────────────────────────────────────────────────────────
+     빛을 위쪽에서 받는다(레일과 같은 방향이어야 한 물체로 보인다). 사선 두 겹을
+     아주 옅게 깔아 천의 결을 낸다 — 매끈한 단색은 플라스틱처럼 보인다. */
+  .ht-cloth{position:relative;height:var(--htCloth);border-radius:50%;
+    background:
+      repeating-linear-gradient(45deg,rgba(255,255,255,.016) 0 2px,transparent 2px 4px),
+      repeating-linear-gradient(-45deg,rgba(0,0,0,.022) 0 2px,transparent 2px 4px),
+      radial-gradient(ellipse 76% 92% at 50% 26%,
+        #3da874 0%, #2b8b60 34%, #1a6543 68%, #0f4530 100%);
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.34),
+      inset 0 16px 34px rgba(0,0,0,.42),
+      inset 0 -12px 28px rgba(0,0,0,.36)}
+  /* 베팅 라인 — 실제 테이블에도 있는 얇은 안쪽 원. 금빛으로 아주 옅게. */
+  .ht-track{position:absolute;inset:9%;border-radius:50%;
+    border:1px solid rgba(255,238,196,.14);
+    box-shadow:0 1px 0 rgba(0,0,0,.28);pointer-events:none}
+
+  /* 자리 비움 배너(.ht-sitout-bar)는 없앴다 — 테이블 위에 떠 있던 알약 하나가
+     좌석과 자리를 다투는 동안, 정작 복귀 버튼은 테이블 구석에 숨어 있었다.
+     지금은 좌석 위의 회색 상태 태그(.ht-away-b)가 "누가 없는지"를 말하고,
+     복귀 버튼은 액션 버튼 줄로 내려갔다(.hta.back) — 늘 손이 가 있는 자리다. */
 
   /* 중앙 — POT · 보드 · 안내
      좌석이 테이블 밖으로 나가면서 중앙이 온전히 비었다. 예전에는 아래쪽 좌석을 피해
      블록을 38%로 올려 두었고(그 위로 카드가 밀려 작아졌다), 아래 175px이 그냥 비어 있었다.
      이제 진짜 중앙에 놓고 그만큼 카드를 키운다 — 시선이 커뮤니티 카드로 모이는 게 목표다. */
+  /* 중앙 블록의 세로 길이가 곧 12시·6시 좌석과의 여유다.
+     테이블을 납작하게(폭:높이 2:1) 만들면서 그 여유가 사라져 12시 좌석 태그가 POT을
+     밟았다(실측 22px). 그래서 gap을 줄이고, 빈 줄이 자리를 차지하지 않게 했다. */
   .ht-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    display:flex;flex-direction:column;align-items:center;gap:9px;z-index:1}
+    display:flex;flex-direction:column;align-items:center;gap:7px;z-index:1}
   .ht-pot{display:flex;align-items:center;gap:8px;padding:4px 15px;border-radius:999px;
     background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);font-family:var(--mono)}
   .ht-pot-k{font-size:10px;letter-spacing:1.4px;color:#b8c7bd}
@@ -1211,8 +1272,8 @@
      "어느 팟이 얼마인가"와 "그 팟이 누구에게 갔나"가 같은 물체에서 읽힌다.
      높이를 고정해 두어야 더미가 커져도 중앙 블록 높이가 흔들리지 않는다. */
   .ht-piles{display:flex;align-items:flex-end;justify-content:center;gap:10px;
-    min-height:34px;flex:none}
-  .ht-pg{position:relative;width:170px;height:34px;flex:none;
+    min-height:28px;flex:none}
+  .ht-pg{position:relative;width:170px;height:28px;flex:none;
     display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
     transition:opacity .5s ease-out,transform .5s ease-out}
   /* 층이 갈라지면 더미를 좁혀 나란히 세운다 — 170px 세 개는 펠트를 넘는다 */
@@ -1220,19 +1281,41 @@
   /* 그 층을 이미 보냈다 — 빈 상자가 이름표만 남아 서 있지 않게 접는다 */
   .ht-pg.paid{opacity:0;transform:scale(.9)}
   /* span이므로 display:block을 줘야 width·height가 먹는다 — 인라인은 둘 다 무시한다 */
-  .ht-pg-chips{display:block;position:relative;width:100%;height:22px;flex:none}
+  .ht-pg-chips{display:block;position:relative;width:100%;height:18px;flex:none}
   .ht-pg-k{font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.7px;
     color:var(--muted);line-height:1.1}
   .ht-pg-v{font-family:var(--mono);font-size:9.5px;font-weight:800;color:#cbd8cf;line-height:1.1}
+  /* ── 포커 칩 ────────────────────────────────────────────────────
+     액면마다 색이 다르다 — 흰 100 · 빨강 500 · 초록 1,000 · 검정 5,000 · 보라 10,000.
+     실제 카지노의 색 규약이라 포커를 아는 사람은 숫자를 안 읽어도 금액을 안다.
+
+     칩처럼 보이게 하는 것은 세 가지다.
+       · 가장자리의 점무늬(edge spot) — repeating-conic-gradient로 낸다.
+         이게 없으면 그냥 동그란 색 딱지다. 진짜 칩의 인상은 거의 여기서 나온다.
+       · 안쪽 원반과 그 사이의 얇은 링
+       · 아래로 깔리는 두께 그림자 (box-shadow의 첫 줄) — 칩은 납작한 원기둥이다.
+     색만 --c1/--c2/--tx 세 변수로 갈아끼우고 무늬는 한 번만 적는다. */
+  /* 칩 표면. 팟 더미·베팅 칩·태그 미니 스택이 이 클래스를 함께 붙인다 —
+     세 곳에 같은 그라디언트를 적어 두면 반드시 한 곳만 고치게 된다. */
+  .pkchip{
+    background:
+      radial-gradient(circle at 50% 42%,rgba(255,255,255,.30) 0 14%,rgba(255,255,255,0) 40%),
+      radial-gradient(circle at 50% 50%,var(--c1) 0 56%,rgba(0,0,0,.28) 56% 60%,rgba(0,0,0,0) 60%),
+      repeating-conic-gradient(from 12deg,var(--c2) 0deg 22deg,var(--c1) 22deg 45deg);
+    border:1px solid rgba(0,0,0,.5);
+    --c1:#eceff1;--c2:#9aa3aa;--tx:#2b3136}
+  .d100{--c1:#eceff1;--c2:#9aa3aa;--tx:#2b3136}
+  .d500{--c1:#c8342c;--c2:#f2ece4;--tx:#fff}
+  .d1k {--c1:#1f8a54;--c2:#f2ece4;--tx:#fff}
+  .d5k {--c1:#23262b;--c2:#d8b34a;--tx:#f6e6b4}
+  .d10k{--c1:#6f3fa8;--c2:#f0e3ff;--tx:#fff}
+
+  /* 중앙 팟 더미의 칩 — 위에서 내려다본 원형 */
   .ht-pchip{position:absolute;display:flex;align-items:center;justify-content:center;
-    font-family:var(--mono);font-weight:800;color:#2a2107;letter-spacing:-.2px;
-    text-shadow:0 1px 0 rgba(255,255,255,.35)}
-  .ht-pchip.c-coin{width:17px;height:17px;margin-left:-8.5px;border-radius:50%;font-size:7px;
-    background:radial-gradient(circle at 35% 30%,#f6dc84,#c69a24 70%);
-    box-shadow:0 2px 0 #8a6a1e,0 3px 4px rgba(0,0,0,.5)}
-  .ht-pchip.c-bar{width:32px;height:19px;margin-left:-16px;border-radius:3px;font-size:9px;
-    background:linear-gradient(160deg,#f7e79b,#d4af37 55%,#a9821f);
-    box-shadow:0 2px 0 #7a5c14,0 4px 5px rgba(0,0,0,.55)}
+    width:18px;height:18px;margin-left:-9px;border-radius:50%;
+    font-family:var(--mono);font-size:6.5px;font-weight:900;letter-spacing:-.3px;
+    color:var(--tx);text-shadow:0 1px 1px rgba(0,0,0,.45);
+    box-shadow:0 2px 0 rgba(0,0,0,.45),0 3px 5px rgba(0,0,0,.5)}
   .ht-pchip.pending{opacity:0}
   /* 승자에게 갈 때는 실제로 쌓여 있던 칩을 복제해 날린다 */
   .ht-pchip.flyout{animation:htPileFly .7s cubic-bezier(.45,.02,.3,1) forwards}
@@ -1240,8 +1323,12 @@
     0%{opacity:1;transform:translate(0,0) scale(1)}
     100%{opacity:.1;transform:translate(var(--tx),var(--ty)) scale(.7)}
   }
-  .ht-msg{font-family:var(--mono);font-size:12px;color:#cfe0d5;text-align:center;min-height:16px;
+  /* 오류 메시지 전용. min-height를 두지 않는다 — 결과 요약을 없앤 뒤로 이 줄은
+     거의 늘 비어 있는데, 높이를 잡아 두면 빈 줄이 중앙 블록을 16px씩 늘려
+     12시 좌석을 밀어낸다. :empty로 완전히 접는다. */
+  .ht-msg{font-family:var(--mono);font-size:12px;color:#cfe0d5;text-align:center;
     text-shadow:0 1px 3px rgba(0,0,0,.6)}
+  .ht-msg:empty{display:none}
 
   /* ── 좌석 ────────────────────────────────────────────────────────────
      테이블 밖에 걸쳐 앉는다. 세로로 [홀 카드 → 아바타 → 이름·스택 태그] 세 겹이고,
@@ -1257,10 +1344,12 @@
   /* ── 좌석 안의 층 순서 (뒤 → 앞) ──────────────────────────────────
        2  아바타           .ht-av
        3  홀 카드          .ht-hole          — 공개·비공개 모두 아바타 앞에 걸친다
-       4  시계 고리        .ht-clock
        5  이름·스택 태그   .ht-plate         — 아바타 하단과 카드 아래 끝을 덮는다
+                          .ht-plate-bg      — 사다리꼴 배경 (태그의 자식, 글자 아래)
+                          .ht-tbar          — 태그에 붙은 시간 바 (태그의 자식)
        6  자리 비움·폴드·딜러 퍽·블라인드·승률
        7  행동 배지        .ht-abadge        — 1.7초짜리라 무엇보다 위에 보여야 한다
+                                              자리 비움 태그(z6)를 잠깐 덮었다 물러난다
        9  WIN 배지         .ht-win-b
      번호를 한곳에 적어 두는 이유: 예전에는 puck 4 · blind 4 · clock 5 · out-tag 5 처럼
      같은 번호가 흩어져 있어서 무엇이 무엇을 덮는지 코드를 다 읽어야 알 수 있었다. */
@@ -1285,35 +1374,61 @@
   /* 이름 + 스택 태그 — 아바타 하단을 --htTagUp 만큼 덮는다.
      덮는 것이 핵심이다: 태그가 아바타 아래에 떨어져 있으면 두 개의 별개 물체로 보이고,
      겹치면 하나의 "플레이어"로 읽힌다. */
+  /* 폭은 아바타에 묶는다 — 1.08배가 "아바타 지름 = 태그 윗변의 92%"다.
+     이 비율이 아바타와 태그를 한 덩어리로 만든다. 예전에는 1.9배여서 태그가 훨씬 넓었고,
+     둘이 접시와 구슬처럼 따로 놀았다.
+     긴 이름은 1.3배까지 늘어난다. 상한이 곧 9인 만석에서 3시·9시 태그가 컨테이너를
+     넘느냐를 결정하므로 여기를 함부로 키우면 안 된다(실측으로 여유가 몇 px뿐이다). */
   .ht-plate{position:absolute;left:50%;top:calc(100% - var(--htTagUp));
     transform:translateX(-50%);z-index:5;
-    min-width:calc(var(--htAv) * 1.9);max-width:calc(var(--htAv) * 2.5);
-    padding:3px 10px 4px;border-radius:8px;text-align:center;
-    background:linear-gradient(180deg,rgba(20,26,22,.97),rgba(9,13,10,.97));
-    border:1px solid rgba(255,255,255,.16);box-shadow:0 3px 10px rgba(0,0,0,.5)}
+    min-width:calc(var(--htAv) * 1.08);max-width:calc(var(--htAv) * 1.36);
+    padding:5px 10px 6px;text-align:center}
+  /* ── 사다리꼴 배경 ────────────────────────────────────────────────
+     윗변이 넓고 아랫변이 좁다. 직사각형은 웹 폼처럼 보이는데, 살짝 좁아지는 사다리꼴은
+     카지노 UI 패널의 문법이다 — 아래로 갈수록 좁아지는 형태가 "위에서 내려다본 물체"로
+     읽혀서 테이블에 놓인 것처럼 보인다.
+
+     테두리는 border 대신 drop-shadow로 그린다. clip-path는 그려진 결과를 자르므로
+     border를 주면 좌우 빗변에서 잘려 나가고 위아래에만 선이 남는다. drop-shadow는
+     잘린 모양의 윤곽을 따라가므로 빗변에도 선이 생긴다. */
+  .ht-plate-bg{position:absolute;inset:0;pointer-events:none;
+    clip-path:polygon(0 0,100% 0,calc(100% - 6px) 100%,6px 100%);
+    background:linear-gradient(180deg,rgba(28,36,31,.98),rgba(10,15,11,.98));
+    filter:drop-shadow(0 0 .7px rgba(255,255,255,.42))
+           drop-shadow(0 3px 8px rgba(0,0,0,.6))}
+  /* 윗면 하이라이트 — 패널에 두께를 준다 */
+  .ht-plate-bg::after{content:"";position:absolute;left:0;right:0;top:0;height:45%;
+    background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,0))}
   /* 지금 행동할 차례 — 아바타 둘레에 맥박을 준다. 예전에는 좌석판을 흔들었는데,
      태그가 작아진 지금은 아바타가 훨씬 먼저 눈에 들어온다.
      맥박은 아바타 한 곳에만 준다. 태그까지 같이 흔들면 내 차례일 때 아바타는 금색,
      태그는 초록으로 두 겹이 뛰어서 "내 차례는 초록"이라는 구분이 무너진다. */
   .ht-seat.turn .ht-av{border-color:var(--gold);
     animation:turnPulse 1.4s ease-in-out infinite}
-  .ht-seat.sitout .ht-plate{border-color:rgba(255,180,60,.55)}
-  .ht-seat.disc .ht-plate{border-style:dashed}
+  /* 상태별 색. 테두리를 drop-shadow로 그리므로 그 색을 함께 바꾼다 —
+     border-color 하나만 갈아끼우던 예전보다 줄이 길지만, 윤곽이 사다리꼴을 따라간다. */
+  .ht-seat.sitout .ht-plate-bg{
+    filter:drop-shadow(0 0 .8px rgba(255,190,80,.75)) drop-shadow(0 3px 8px rgba(0,0,0,.6))}
+  .ht-seat.disc .ht-plate-bg{
+    filter:drop-shadow(0 0 .8px rgba(150,170,200,.7)) drop-shadow(0 3px 8px rgba(0,0,0,.6))}
   /* 내 자리는 태그를 밝게 뒤집어 한눈에 구분한다 */
-  .ht-seat.hero .ht-plate{background:linear-gradient(180deg,#f4f1e6,#ddd8c6);
-    border-color:rgba(255,255,255,.7)}
+  .ht-seat.hero .ht-plate-bg{background:linear-gradient(180deg,#f7f4ea,#dcd7c4);
+    filter:drop-shadow(0 0 .8px rgba(255,255,255,.85)) drop-shadow(0 3px 9px rgba(0,0,0,.6))}
+  .ht-seat.hero .ht-plate-bg::after{background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0))}
   .ht-seat.hero .ht-nm{color:#3a3427}
   .ht-seat.hero .ht-stk{color:#8a6a10}
-  /* 아직 겨루는 중인 사람은 태그 왼쪽에 초록 심지 — 흐려진 쪽과 대비된다 */
-  .ht-seat:not(.folded) .ht-plate::before{content:"";position:absolute;left:0;top:50%;
-    transform:translateY(-50%);width:3px;height:60%;border-radius:0 3px 3px 0;
+  /* 아직 겨루는 중인 사람은 태그 왼쪽에 초록 심지 — 흐려진 쪽과 대비된다.
+     사다리꼴 안쪽에 들어오도록 3px 들여 놓는다(빗변이 6px 파고들므로). */
+  .ht-seat:not(.folded) .ht-plate::before{content:"";position:absolute;left:3px;top:50%;
+    transform:translateY(-50%);width:3px;height:46%;border-radius:2px;z-index:1;
     background:linear-gradient(180deg,#5fd39a,#2f9d6b)}
 
   /* 팟에 남은 사람 vs 폴드한 사람 — 카드를 버린 모습 + 아바타 흑백 + F 배지 세 겹 */
   .ht-seat.folded{opacity:.62}
   .ht-seat.folded .ht-av{filter:grayscale(1) brightness(.6)}
-  .ht-seat.folded .ht-plate{border-color:rgba(255,255,255,.08);
-    background:linear-gradient(180deg,rgba(18,18,18,.9),rgba(9,9,9,.9))}
+  .ht-seat.folded .ht-plate-bg{
+    background:linear-gradient(180deg,rgba(22,22,22,.92),rgba(9,9,9,.92));
+    filter:drop-shadow(0 0 .7px rgba(255,255,255,.14)) drop-shadow(0 2px 6px rgba(0,0,0,.55))}
   .ht-seat.folded .ht-nm,.ht-seat.folded .ht-stk{color:#8b8b8b}
   .ht-seat.folded .ht-hole{transform:translateX(-50%) scale(.8);transform-origin:bottom center}
   .ht-shell .pcard.mucked{filter:grayscale(1) brightness(.55);opacity:.5}
@@ -1347,32 +1462,67 @@
      둘이 합쳐져 "카드가 앞으로 나오며 뒤집힌다"가 된다. */
   .ht-shell .pcard.sm{width:var(--htCardW);height:var(--htCardH);border-radius:4px;
     box-shadow:0 2px 7px rgba(0,0,0,.55)}
-  /* 겹치고 기울인다 — 두 장이 한 덩어리로 보이게.
-     많이 겹쳐야(0.58) 두 장의 총 폭이 아바타 지름보다 좁아, 카드가 앞에 있어도
+
+  /* 기울기는 --tilt 한 변수로 모은다.
+     두 곳에서 써야 하기 때문이다 — 평상시의 transform과, 카드가 열릴 때 재생되는
+     뒤집기 애니메이션의 끝 프레임. 애니메이션이 transform을 건드리므로 거기에도 같은
+     각도를 넣지 않으면, 0.32초 뒤 애니메이션이 끝나는 순간 카드가 기울기로 툭 튄다.
+     키프레임 안의 var()는 요소 기준으로 풀리므로 카드마다 제 각도를 가져간다. */
+  .ht-hole .pcard{--tilt:0deg;transform:rotate(var(--tilt))}
+  .ht-shell .ht-hole .pcard{animation:holeFlip .32s cubic-bezier(.3,.8,.35,1)}
+  .ht-shell .ht-hole .pcard.back{animation:none}
+  @keyframes holeFlip{
+    from{transform:rotateY(-88deg) rotate(var(--tilt)) scale(.92);opacity:.25}
+    to{transform:rotate(var(--tilt));opacity:1}
+  }
+
+  /* 비공개 — 많이 겹치고 크게 기울인다.
+     겹침이 커야(0.58) 두 장의 총 폭이 아바타 지름보다 좁아, 카드가 앞에 있어도
      아바타 테두리가 좌우로 남는다. 그 남는 테두리가 계단 겹침을 보이게 하는 것이다 —
      카드가 아바타보다 넓으면 얼굴이 통째로 사라지고 겹침이 아니라 가림이 된다. */
-  .ht-hole:not(.up) .pcard:first-child{transform:rotate(-9deg);margin-right:calc(var(--htCardW) * -.58)}
-  .ht-hole:not(.up) .pcard:last-child{transform:rotate(8deg)}
-  /* 공개 — 나란히 펼치고 커진다. 아래 10%만 태그 뒤에 남아 카드가 거의 다 보인다. */
-  .ht-hole.up{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:3px}
-  .ht-hole.up .pcard{transform:none;margin:0}
+  .ht-hole:not(.up) .pcard:first-child{--tilt:-9deg;margin-right:calc(var(--htCardW) * -.58)}
+  .ht-hole:not(.up) .pcard:last-child{--tilt:8deg}
+  /* 공개 — 펼치고 커지되 V자는 남긴다. 각도를 9°에서 5°로 줄인다: 카드가 커졌으므로
+     같은 각도면 아래쪽 모서리가 태그를 뚫고 나온다. 일자로 세워 두면 보드의 커뮤니티
+     카드와 생김새가 같아져서, 한 화면에 두 종류의 카드가 있다는 사실이 흐려진다.
+     내 패는 기울어 있고 모두의 패는 반듯하다 — 그 차이가 곧 구분이다.
+     회전 기준을 아래로 잡아 위쪽만 벌어지게 한다(부채처럼). */
+  .ht-hole.up{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:0}
+  .ht-hole.up .pcard{transform-origin:bottom center}
+  .ht-hole.up .pcard:first-child{--tilt:-5deg;margin-right:calc(var(--htUpW) * -.06)}
+  .ht-hole.up .pcard:last-child{--tilt:4.5deg}
   .ht-shell .ht-hole.up .pcard.sm{width:var(--htUpW);height:var(--htUpH)}
   /* 내 카드는 언제나 공개 상태로 크게 본다 */
   .ht-shell .pcard.hero{width:var(--htUpW);height:var(--htUpH);border-radius:5px;
     box-shadow:0 3px 10px rgba(0,0,0,.55)}
-  .ht-seat.hero .ht-hole{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:3px}
-  .ht-seat.hero .ht-hole .pcard{transform:none;margin:0}
+  .ht-seat.hero .ht-hole{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:0}
+  .ht-seat.hero .ht-hole .pcard{transform-origin:bottom center}
+  .ht-seat.hero .ht-hole .pcard:first-child{--tilt:-5deg;margin-right:calc(var(--htUpW) * -.06)}
+  .ht-seat.hero .ht-hole .pcard:last-child{--tilt:4.5deg}
 
   /* 이름과 스택은 태그 안에서 두 줄. 사이를 조금 띄운다 — 붙여 두면 두 값이
      한 덩어리로 읽혀서 어느 쪽이 이름인지 잠깐 헷갈린다. */
-  .ht-who{display:block;line-height:1.25}
+  /* position이 필요하다 — .ht-plate-bg가 absolute라(=위치 지정 요소) 그냥 두면
+     흐름 속의 글자보다 나중에 그려져 이름을 덮는다. */
+  .ht-who{display:block;position:relative;z-index:1;line-height:1.25}
   /* 폭은 태그가 정하고(min/max-width), 이름은 길면 잘린다.
      display:block + overflow로 잘라야 한다 — inline이면 ellipsis가 걸리지 않는다. */
   .ht-nm{display:block;font-size:10.5px;font-weight:700;color:#dce8e0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
-  .ht-stk{display:block;margin-top:1px;
+  /* 이름과 스택 사이를 3px로 벌린다. 1px일 때는 두 값이 한 덩어리로 붙어 보여서
+     어느 쪽이 이름인지 한 박자 늦게 읽혔다. */
+  .ht-stk{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:3px;
     font-family:var(--mono);font-size:11.5px;font-weight:800;
     color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 스택 숫자 앞의 미니 칩 더미 — 규모를 색으로 말한다.
+     "9,850"과 "89,550"은 한 글자 차이인데 판에서는 전혀 다른 처지다. 숫자는 정확하지만
+     크기 감각을 주지 않으므로, 가장 큰 액면부터 세 종을 겹쳐 색으로 자릿수를 보인다.
+     서로 3px씩만 물리게 겹쳐 좁은 태그 안에서도 자리를 적게 쓴다. */
+  .ht-mini{display:inline-flex;align-items:center;flex:none;padding-left:3px}
+  .ht-mc{width:9px;height:9px;border-radius:50%;flex:none;margin-left:-3px;
+    box-shadow:0 1px 2px rgba(0,0,0,.5)}
+  .ht-seat.folded .ht-mini,.ht-seat.sitout .ht-mini{filter:grayscale(.75) opacity(.7)}
+
   /* 딜러 퍽 — 아바타의 "중앙을 향한 옆면"에 붙인다.
      펠트 위 별도 좌표에 띄워 두면 떠 있는 물체로 보여서 누구 버튼인지 한눈에 안 잡혔다.
      카드는 위, 태그는 아래, 베팅 칩은 더 안쪽이라 어느 것과도 겹치지 않는다. */
@@ -1421,43 +1571,36 @@
     50%    {box-shadow:0 0 0 4px rgba(80,220,150,.75),0 0 30px rgba(90,240,160,.7)}
   }
 
-  /* ── 행동 시간 고리 ───────────────────────────────────────────────
-     conic-gradient를 --frac(1→0)으로 깎아 남은 시간을 부채꼴로 보여주고, 가운데를
-     mask로 파내 도넛으로 만든다. 아바타를 두른다 — "누구의 시간"인지가 얼굴에 붙어 있어야
-     분명하다.
+  /* ── 행동 시간 바 ─────────────────────────────────────────────────
+     이름 태그 바로 아래에 태그와 같은 폭의 얇은 바. 남은 시간만큼 왼쪽에서 차 있다가
+     오른쪽 끝부터 타들어간다.
 
-     네 값(left·width·height·mask 반지름)이 전부 아바타 지름에서 유도된다. 예전에는 이걸
-     브레이크포인트마다 따로 적어서, 아바타 크기를 바꾸면 고리가 조용히 어긋났다.
-     지금은 --htAv 하나만 덮으면 다 따라온다.
+     예전에는 아바타를 두르는 원형 고리(conic-gradient + mask 도넛)였다. 예쁘긴 했지만
+     세 가지가 걸렸다: 얼굴 둘레라 시선이 카드·태그와 겹치는 곳으로 계속 끌려갔고,
+     부채꼴은 "얼마나 남았나"가 한눈에 안 읽히며(각도를 눈으로 재야 한다), 무엇보다
+     네 값(left·width·height·mask 반지름)이 전부 아바타 지름에 묶여 있어서 아바타를
+     건드릴 때마다 조용히 어긋났다. 가로 바는 길이가 곧 비율이라 눈이 바로 읽고,
+     태그에 붙어 있어 좌석 치수와 독립이다. 남은 초 숫자 배지도 같이 없앴다 —
+     길이와 색이 이미 말하고 있어서 숫자는 한 겹 더 읽을 것을 만들 뿐이었다.
 
-     각도는 클라이언트가 매 프레임 보간한다(서버는 1초 단위라 그대로 쓰면 뚝뚝 끊긴다). */
-  .ht-clock{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:calc(var(--htAv) + 10px);height:calc(var(--htAv) + 10px);
-    border-radius:50%;z-index:4;pointer-events:none;
-    background:conic-gradient(from -90deg,
-      rgba(120,225,170,.95) calc(var(--frac,1) * 360deg),
-      rgba(255,255,255,.14) 0);
-    -webkit-mask:radial-gradient(circle,transparent 0 calc(var(--htAv) / 2 + 1px),
-      #000 calc(var(--htAv) / 2 + 2px));
-    mask:radial-gradient(circle,transparent 0 calc(var(--htAv) / 2 + 1px),
-      #000 calc(var(--htAv) / 2 + 2px))}
-  .ht-clock[hidden]{display:none}
-  .ht-clock.warn{background:conic-gradient(from -90deg,
-      rgba(255,90,80,.98) calc(var(--frac,1) * 360deg),
-      rgba(255,255,255,.14) 0);
-    animation:clockWarn .5s ease-in-out infinite alternate}
-  @keyframes clockWarn{from{filter:none}to{filter:brightness(1.5)}}
-  /* 남은 초 — 아바타 오른쪽 위에 작은 배지. 고리 안에 넣을 수 없다(mask가 자식을
-     같이 지운다). 아래쪽은 이름 태그가 쓰고 있으므로 위로 올렸다.
-     자리도 아바타 지름에서 유도한다 — 크기를 바꿀 때 따라오게. */
-  .ht-clock-n{position:absolute;left:calc(100% - 4px);top:-5px;z-index:6;pointer-events:none;
-    min-width:calc(var(--htAv) * .38);height:calc(var(--htAv) * .38);
-    padding:0 2px;border-radius:999px;
-    display:flex;align-items:center;justify-content:center;
-    background:rgba(8,14,10,.94);border:1px solid rgba(120,225,170,.6);
-    font-family:var(--mono);font-size:calc(var(--htAv) * .22);font-weight:900;color:#c9f2dc}
-  .ht-clock-n[hidden]{display:none}
-  .ht-clock-n.warn{color:#ffb3ad;border-color:rgba(255,120,110,.8)}
+     길이는 클라이언트가 매 프레임 보간한다(서버는 1초 단위라 그대로 쓰면 뚝뚝 끊긴다). */
+  /* left·right를 -1px로 두어 태그의 테두리까지 포함한 폭에 맞춘다.
+     0으로 두면 안쪽(패딩 박스) 기준이라 바가 태그보다 2px 좁아 눈에 걸린다. */
+  .ht-tbar{position:absolute;left:-1px;right:-1px;top:calc(100% + 3px);height:4px;
+    border-radius:999px;overflow:hidden;pointer-events:none;
+    background:rgba(255,255,255,.13);box-shadow:0 1px 3px rgba(0,0,0,.5)}
+  .ht-tbar[hidden]{display:none}
+  /* 안쪽 막대. width를 --frac으로 직접 잡는다 — transform:scaleX를 쓰면 끝단의
+     border-radius까지 눌려서 짧아질수록 모서리가 납작해진다. */
+  .ht-tbar i{display:block;height:100%;border-radius:999px;
+    width:calc(var(--frac,1) * 100%);
+    background:linear-gradient(90deg,#2f9d6b,#5fd39a)}
+  /* 마지막 5초 — 색을 바꾸고 점멸시킨다. 색만 바꾸면 화면을 안 보고 있던 사람은
+     바뀐 순간을 놓친다. 움직임은 시야 가장자리에서도 잡힌다. */
+  .ht-tbar.warn{background:rgba(255,120,110,.18)}
+  .ht-tbar.warn i{background:linear-gradient(90deg,#c8342c,#ff6b60);
+    animation:tbarWarn .5s ease-in-out infinite alternate}
+  @keyframes tbarWarn{from{filter:none}to{filter:brightness(1.55)}}
 
   /* ── 블라인드 상승 알림 ───────────────────────────────────────────
      중앙 블록과 같은 자리에 뜬다. 38%로 두면 중앙이 50%로 옮겨진 뒤에도 옛 자리에 뜬다. */
@@ -1541,28 +1684,17 @@
     0%,100%{box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 0 rgba(255,70,60,.5)}
     50%{box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 5px rgba(255,70,60,0)}
   }
-  .ht-seat.hero.allin .ht-plate{border-color:rgba(220,60,50,.9)}
+  .ht-seat.hero.allin .ht-plate-bg{
+    filter:drop-shadow(0 0 1px rgba(230,70,60,.95)) drop-shadow(0 3px 9px rgba(0,0,0,.6))}
 
-  /* 자리 비움 — 아바타를 흑백으로 죽이고 판을 가라앉힌다. 알약 한 줄보다
-     "이 사람은 지금 없다"가 즉시 읽힌다.
-
-     예전에는 아바타 위에 'II' 배지 하나였다. 무슨 뜻인지 알려면 툴팁을 봐야 했다 —
-     그건 아이콘이 정보를 전달하지 못한 것이다. 글자로 적어 이름 앞(왼쪽)에 깐다. */
+  /* 자리 비움 — 아바타를 흑백으로 죽이고 판을 가라앉힌다.
+     글자(회색 태그)는 .ht-away-b가 따로 말하고, 여기서는 톤만 낮춘다.
+     테두리 색은 위쪽 .ht-seat.sitout .ht-plate-bg 한 곳에서 정한다 —
+     예전에는 여기와 위 두 곳에 border-color가 갈라져 있어서, 위쪽만 고치면
+     아래 규칙이 이겨서 아무 변화가 없었다. */
   .ht-seat.sitout .ht-av{filter:grayscale(1) brightness(.65)}
-  .ht-seat.sitout .ht-plate{opacity:.72;border-color:rgba(255,180,60,.5);
-    background:linear-gradient(180deg,rgba(30,26,18,.94),rgba(14,12,8,.94))}
+  .ht-seat.sitout .ht-plate{opacity:.78}
   .ht-seat.sitout .ht-nm,.ht-seat.sitout .ht-stk{color:#9a927f}
-  /* 자리 비움 — 아바타를 덮는 원판. 아바타는 이미 흑백으로 죽은 영역이라 덮어도
-     잃는 정보가 없고, 얼굴 자리에 글자가 있으면 "이 사람은 지금 없다"가 즉시 읽힌다.
-     크기를 아바타에 맞춰 두면 지름이 바뀌어도 따라온다. */
-  .ht-out-tag{position:absolute;inset:0;z-index:6;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;text-align:center;
-    /* "자리비움" 네 글자를 두 줄로 접는다(자리 / 비움) */
-    white-space:normal;word-break:break-all;line-height:1.05;pointer-events:none;
-    background:linear-gradient(180deg,rgba(240,181,66,.94),rgba(200,138,28,.94));color:#2a1e05;
-    font-size:calc(var(--htAv) * .2);font-weight:900;letter-spacing:-.7px;
-    border:1px solid rgba(0,0,0,.4);box-shadow:0 1px 5px rgba(0,0,0,.55)}
-  .ht-out-tag[hidden]{display:none}
 
   /* ── 좌석판 위 행동 배지 ──────────────────────────────────────────
      행동한 순간 떠올라 스스로 사라진다. 예전에는 베팅 자리에 계속 남아서 이미 지나간
@@ -1581,6 +1713,20 @@
     font-size:10.5px;font-weight:900;letter-spacing:.3px;
     border:1px solid rgba(0,0,0,.35);box-shadow:0 2px 8px rgba(0,0,0,.55)}
   .ht-abadge[hidden]{display:none}
+  /* 자리 비움 — 행동 배지와 같은 생김새의 회색 태그지만 스스로 사라지지 않는다.
+     행동은 "방금 일어난 일"이라 1.7초면 되고, 자리 비움은 "지금 이 사람의 상태"라
+     복귀할 때까지 유효하다. 같은 모양을 쓰는 것은 둘 다 "이 사람에 대한 한 줄"이라서다 —
+     예전에는 아바타를 통째로 덮는 노란 원판이었는데, 얼굴이 사라지는 데다 다른 표시와
+     생김새가 달라 좌석 위에 규칙이 둘 있는 것처럼 보였다.
+
+     같은 클래스에 .away 수식자를 붙인 별개의 요소다. 요소를 하나만 두면 자리 비운
+     사람이 자동 체크될 때 그 배지가 자리 비움 글자를 덮어쓰고, 1.7초 뒤 사라지면서
+     상태 표시까지 함께 지운다. 둘로 나누면 행동 배지(z7)가 잠깐 위에 떴다 물러나고
+     그 아래에서 상태(z6)가 그대로 드러난다.
+     그래서 행동 배지를 찾는 코드는 반드시 :not(.away)로 걸러야 한다. */
+  .ht-abadge.away{z-index:6;
+    background:linear-gradient(180deg,#b8b2a4,#7d786c);color:#171512;
+    letter-spacing:-.2px}
   .ht-abadge.a-check{background:linear-gradient(180deg,#5fd39a,#2f9d6b);color:#06251a}
   .ht-abadge.a-call{background:linear-gradient(180deg,#78c2f0,#2f7fbd);color:#04202f}
   .ht-abadge.a-bet,.ht-abadge.a-raise{background:linear-gradient(180deg,#f0894b,#c8521c);color:#2a1004}
@@ -1662,10 +1808,12 @@
   /* 베팅 칩 — 좌석과 중앙 사이. 좌석판과 별개 요소라 서로 겹치지 않는다. */
   .ht-spot{position:absolute;transform:translate(-50%,-50%);z-index:2;
     display:flex;align-items:center;gap:6px;white-space:nowrap}
-  .ht-spot-chips{position:relative;width:18px;height:18px;flex:none}
-  .ht-chip{position:absolute;left:0;width:18px;height:11px;border-radius:50%;
-    background:linear-gradient(180deg,#e8c65a,#a3821f);
-    border:1px solid rgba(0,0,0,.45);box-shadow:0 1px 2px rgba(0,0,0,.5)}
+  /* 좌석 앞 베팅 칩 더미. 옆에서 본 모습이라 타원으로 눌러 그린다 —
+     원형이면 테이블 위에 떠 있는 것처럼 보이고, 타원이어야 "놓여 있다"가 된다.
+     높이는 액면 개수에 따라 자라므로 컨테이너 높이를 넉넉히 잡고 아래로 정렬한다. */
+  .ht-spot-chips{position:relative;width:20px;height:34px;flex:none}
+  .ht-chip{position:absolute;left:0;width:20px;height:9px;border-radius:50%;
+    box-shadow:0 1px 2px rgba(0,0,0,.55)}
   .ht-spot-amt{font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;
     text-shadow:0 1px 3px rgba(0,0,0,.75)}
   /* 베팅 자리에는 칩과 금액만 남긴다 — 행동 이름은 좌석판 위 배지(.ht-abadge)가 맡는다.
@@ -1715,6 +1863,12 @@
     background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.18);color:#cfe0d5}
   .hta.post.rabbit{margin-right:auto}
   .hta.post.show{margin-left:auto;border-color:rgba(240,205,110,.4);color:#f0dda6}
+  /* 자리 비움 중에는 이 줄에 이 버튼 하나만 선다. 예전에는 테이블 왼쪽 위 구석에
+     따로 떠 있었다 — 액션 버튼은 늘 같은 자리에 있는데 복귀 버튼만 다른 곳에 있으니,
+     자리를 비운 사이 화면이 통째로 낯설어졌다. 같은 줄을 쓰면 "여기가 내가 누르는 곳"이
+     상태와 무관하게 유지된다. 금색으로 두어 이 줄에서 유일하게 살아 있는 것임을 보인다. */
+  .hta.back{background:linear-gradient(180deg,#4a3a10,#2c220a);
+    border-color:rgba(240,205,110,.6);color:#ffdd8a}
 
   .ht-pre{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#a9bdb1}
   .ht-pre[hidden]{display:none}
@@ -1797,39 +1951,43 @@
      주의: 뷰포트 폭과 펠트 실폭이 늘 같은 방향으로 움직이지는 않는다. 700px 아래에서는
      오른쪽 패널이 아래로 쌓이면서 본문이 화면 폭을 다 쓰게 되므로, 펠트는 오히려
      넓어진다. 그래서 640 구간에서 다시 키우지 않고 641~700 구간을 따로 둔다. */
-  /* 홀 카드는 --htAv에서 유도되므로 티어에서는 아바타·태그·보드·펠트만 덮으면 된다 */
+  /* 홀 카드 폭(--htCard)도 티어마다 덮는다. 아바타에서 유도하지 않기로 했으므로
+     한 줄에 아바타·태그·카드·보드·펠트가 함께 온다 — 다섯 값이 한 화면 폭의 한 벌이다. */
   @media (max-width:1100px){
-    .ht-shell{--htCloth:360px;--htBoardW:54px;--htBoardH:81px;--htAv:46px;--htTagUp:14px}
+    .ht-shell{--htCloth:300px;--htBoardW:54px;--htBoardH:81px;
+      --htAv:66px;--htTagUp:17px;--htCard:31px;--htRail:19px;
+      --htPushU:70px;--htPushD:30px;--htPushX:16px}
   }
   @media (max-width:820px){
-    .ht-shell{--htCloth:320px;--htBoardW:44px;--htBoardH:66px;--htAv:40px;--htTagUp:12px}
-    .ht-rail{padding:11px}
-    .ht-felt{padding:22px 22px 24px}
+    .ht-shell{--htCloth:292px;--htBoardW:44px;--htBoardH:66px;
+      --htAv:58px;--htTagUp:15px;--htCard:27px;--htRail:15px;
+      --htPushU:62px;--htPushD:27px;--htPushX:13px}
     .ht-grid{grid-template-columns:repeat(2,1fr)}
     .ht-acts{flex-wrap:wrap}
     .hta{flex:1 1 44%}
   }
   /* 오른쪽 패널이 아직 옆에 붙어 있는 가장 좁은 구간 — 여기가 펠트가 가장 좁다 */
   @media (max-width:700px){
-    .ht-shell{--htCloth:300px;--htBoardW:40px;--htBoardH:60px;--htAv:34px;--htTagUp:10px}
-    .ht-clock-n{display:none}   /* 이 폭에서는 고리로 충분하다 — 남은 초는 중앙 메시지에도 있다 */
+    .ht-shell{--htCloth:286px;--htBoardW:40px;--htBoardH:60px;
+      --htAv:48px;--htTagUp:12px;--htCard:23px;--htRail:12px;
+      --htPushU:52px;--htPushD:23px;--htPushX:8px}
     /* 좌우 여백을 늘린다. 3시·9시 좌석은 이름 태그의 절반이 테이블 밖으로 나가는데,
-       태그 최소 폭이 아바타의 1.7배이므로 좁은 화면에서는 그 절반이 화면을 넘었다(실측). */
-    .ht-felt{padding:22px 30px 26px}
-    /* 자리 비움 배너를 왼쪽 아래 구석으로. 좁아지면 위쪽 구석이 12시 좌석과 겹친다 —
-       6시 좌석은 x=50%라 아래 구석은 어느 좌석도 쓰지 않는다. */
-    .ht-sitout-bar{top:auto;bottom:0;max-width:66%}
+       그 절반이 좁은 화면에서는 화면을 넘었다(실측). */
+    .ht-felt{padding-left:38px;padding-right:38px}
   }
   /* 패널이 아래로 쌓여 본문이 화면 폭을 다 쓴다 — 위 구간보다 오히려 넓어진다 */
   @media (max-width:700px) and (min-width:481px){
-    .ht-shell{--htCloth:330px;--htBoardW:46px;--htBoardH:69px;--htAv:38px;--htTagUp:11px}
+    .ht-shell{--htCloth:300px;--htBoardW:46px;--htBoardH:69px;
+      --htAv:54px;--htTagUp:14px;--htCard:25px;--htRail:14px;
+      --htPushU:58px;--htPushD:25px;--htPushX:11px}
   }
   @media (max-width:480px){
-    .ht-shell{--htCloth:270px;--htBoardW:34px;--htBoardH:51px;--htAv:32px;--htTagUp:10px}
-    .ht-felt{padding:20px 30px 24px}
+    .ht-shell{--htCloth:276px;--htBoardW:34px;--htBoardH:51px;
+      --htAv:46px;--htTagUp:12px;--htCard:22px;--htRail:11px;
+      --htPushU:50px;--htPushD:22px;--htPushX:6px}
     .ht-spot-amt{font-size:9.5px}
     /* 이 폭에서는 이름을 더 좁게 — 태그 절반이 밖으로 나가므로 폭이 곧 화면 여유다 */
-    .ht-plate{min-width:calc(var(--htAv) * 1.5);max-width:calc(var(--htAv) * 1.9);padding:2px 5px 3px}
+    .ht-plate{min-width:calc(var(--htAv) * 1.05);max-width:calc(var(--htAv) * 1.2);padding:3px 6px 4px}
     .ht-nm{font-size:8.5px}
     .ht-stk{font-size:9.5px}
   }

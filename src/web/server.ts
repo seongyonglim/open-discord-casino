@@ -116,21 +116,27 @@ const APP_FILES: Record<string, { path: string; mime: string }> = {
   '/app.js': { path: 'app.js', mime: 'text/javascript; charset=utf-8' },
 };
 const appCache = new Map<string, CachedAsset>();
+/* 로컬 미리보기에서는 캐시하지 않는다.
+   프로세스 수명 동안 캐시하면 스타일 한 줄을 고칠 때마다 서버를 다시 띄워야 한다 —
+   시뮬레이션이 돌고 있으면 대회가 처음부터 다시 시작되므로, 화면을 확인하려던 그
+   상황을 다시 만들 수 없다. 배포 환경(FLY_APP_NAME)에서는 그대로 캐시한다. */
+const APP_CACHE_ON = !!process.env.FLY_APP_NAME || process.env.PREVIEW_LOGIN !== '1';
 
 function serveAppFile(route: string, res: http.ServerResponse): void {
   const meta = APP_FILES[route];
-  let hit = appCache.get(route);
+  let hit = APP_CACHE_ON ? appCache.get(route) : undefined;
   if (!hit) {
     // app.js 안의 효과음 URL이 자산 버전을 필요로 하므로 여기서 치환한다
     const text = readFileSync(join(process.cwd(), 'src', 'web', 'assets', meta.path), 'utf8')
       .split('__ASSET_V__').join(ASSET_V);
     const raw = Buffer.from(text, 'utf8');
     hit = { raw, gz: gzipSync(raw, { level: 9 }) };
-    appCache.set(route, hit);
+    if (APP_CACHE_ON) appCache.set(route, hit);
   }
   const useGz = acceptsGzip(res);
   sendBody(res, 200, meta.mime, useGz ? hit.gz! : hit.raw,
-    { 'cache-control': 'public, max-age=604800' }, useGz ? 'gzip' : 'identity');
+    { 'cache-control': APP_CACHE_ON ? 'public, max-age=604800' : 'no-store' },
+    useGz ? 'gzip' : 'identity');
 }
 
 function send(res: http.ServerResponse, status: number, html: string): void {
