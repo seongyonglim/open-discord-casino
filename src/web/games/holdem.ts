@@ -993,13 +993,15 @@ export function holdemPage(user: WebUser): string {
        1초마다 뚝뚝 끊긴다. 그래서 폴링이 준 값을 기준점으로 잡고 그 뒤로는
        실제 흐른 시간으로 보간해 매 프레임 그린다 — 다음 폴링이 오면 기준점만 새로 맞춘다.
 
-       마지막 5초에 색을 바꾸고 똑딱 소리를 한 번 낸다(4.6초짜리 음원이라 5초를 그대로
-       메운다). 시간이 다 되면 서버가 자동으로 체크(불가하면 폴드)하므로, 이 경고는
-       "지금 안 누르면 자동으로 넘어간다"는 뜻이다.
+       마지막 5초에 색을 바꾸고, 4.5초부터 똑딱 소리를 한 번 낸다(시점이 다른 이유는
+       아래 CLOCK_TICK_SEC에 적었다). 시간이 다 되면 서버가 자동으로 체크(불가하면 폴드)
+       하므로, 이 경고는 "지금 안 누르면 자동으로 넘어간다"는 뜻이다.
 
        누구 차례든 울린다. 예전에는 내 차례에만 초당 한 번 카드 소리를 냈는데, 남이
        시간에 쫓기는 것도 판의 긴장이라 보여주는 게 맞다 — 그리고 그 사람이 자동으로
        넘어가면 내 차례가 곧 온다는 신호이기도 하다. */
+    var CLOCK_WARN_SEC = 5;    // 고리·숫자가 붉어지는 시점
+    var CLOCK_TICK_SEC = 4.5;  // 똑딱 소리가 시작되는 시점 (음원 길이에 맞춘 값)
     var clockBase = null;      // { seat, left, at, total, hand, street }
     var clockWarned = null;    // 이미 경고를 낸 (판:스트리트:자리) — 한 차례에 한 번만 울린다
     function noteClock(tb){
@@ -1030,7 +1032,13 @@ export function holdemPage(user: WebUser): string {
       if (left < 0) left = 0;
       var frac = clockBase.total > 0 ? left / clockBase.total : 0;
       if (frac > 1) frac = 1;
-      var warn = left <= 5;
+      /* 색과 소리의 시점을 따로 둔다.
+         색은 5초부터 — 눈으로 먼저 알아채는 게 낫다.
+         소리는 4.5초부터 — 음원의 들리는 길이가 3.75초라(4.63초 파일에서 앞뒤 무음을
+         잘라낸 값), 4.5초에 시작하면 0.75초쯤 남기고 끝난다. 5초에 시작하면 1.25초를
+         남기고 조용해져서 "아직 시간이 남았나" 싶은 공백이 생긴다. */
+      var warn = left <= CLOCK_WARN_SEC;
+      var tick = left <= CLOCK_TICK_SEC;
       seats.forEach(function(el){
         var c = el.querySelector('.ht-clock');
         if (!c) return;
@@ -1046,12 +1054,10 @@ export function holdemPage(user: WebUser): string {
           n.classList.toggle('warn', warn);
         }
       });
-      /* 경고음은 한 차례에 한 번. 음원이 4.6초라 남은 5초를 그대로 채운다 —
-         매초 다시 부르면 다섯 겹으로 깔려 무슨 소리인지 알 수 없게 된다.
-
+      /* 경고음은 한 차례에 한 번. 매초 다시 부르면 겹겹이 깔려 무슨 소리인지 알 수 없다.
          "한 차례"는 (판 · 스트리트 · 자리)로 가른다. 자리 하나만 쓰면 같은 사람이
          플랍·턴·리버에서 다시 시간에 쫓길 때 첫 번째만 울린다. */
-      if (warn && left > 0) {
+      if (tick && left > 0) {
         var key = clockBase.hand + ':' + clockBase.street + ':' + clockBase.seat;
         if (clockWarned !== key) {
           clockWarned = key;
