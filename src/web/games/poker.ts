@@ -20,7 +20,7 @@ import {
   evaluate7, scoreCategory, categoryBucket, cardToString, CAT_NAMES, BUCKET_NAMES,
 } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
+import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 
@@ -221,13 +221,13 @@ export async function handleClear(_req: IncomingMessage, res: ServerResponse, us
    단계 초는 POKER_BETTING_SEC 15 · TURN 2 · RIVER 4 · SETTLE 7. */
 const RULES_HTML = `
   <h4>목표</h4>
-  <p>홀덤 두 손 <b>MASTER</b> 와 <b>SHARK</b> 가 겨룹니다. 카드를 직접 받지 않고
+  <p>홀덤 두 핸드 <b>MASTER</b> 와 <b>SHARK</b> 가 겨룹니다. 카드를 직접 받지 않고
      <b>어느 쪽이 이길지</b> 또는 <b>어떤 등급이 완성될지</b>에 칩을 겁니다.</p>
 
   <h4>두 종류의 시장</h4>
   <ul>
     <li><b>승자</b> — MASTER / SHARK. 무승부면 <b>원금을 그대로 돌려받습니다</b></li>
-    <li><b>완성 등급</b> — 이긴 손의 최종 족보가 어느 묶음에 드는가</li>
+    <li><b>완성 등급</b> — 이긴 핸드의 최종 족보가 어느 묶음에 드는가</li>
   </ul>
 
   <h4>등급 묶음</h4>
@@ -255,11 +255,10 @@ const RULES_HTML = `
 
 export function pokerPage(user: WebUser): string {
   const body = `
-    ${gameSwitcher('poker')}
+    ${gameSwitcher('poker', 'pfHelp')}
     <div class="game-shell poker-shell">
       <div class="game-main">
         <div class="card">
-          ${helpButton('pfHelp')}
           <div class="poker-table">
             <div class="poker-seats">
               <div class="seat">

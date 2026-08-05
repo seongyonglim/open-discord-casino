@@ -24,7 +24,7 @@ import {
   canSurrender, settleSurrender,
 } from '../../services/blackjack';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, helpButton, helpDialog, sidePanel, rankPane, rankJs } from '../views';
+import { layout, jsonForScript, helpDialog, sidePanel, rankPane, rankJs } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import { COIN_SIZES } from './poker';
@@ -245,7 +245,7 @@ const RULES_HTML = `
 
 export function blackjackPage(user: WebUser): string {
   const body = `
-    ${gameSwitcher('blackjack')}
+    ${gameSwitcher('blackjack', 'bjHelp')}
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
@@ -265,7 +265,6 @@ export function blackjackPage(user: WebUser): string {
               <span id="bjDealerBust" class="bj-bust" hidden>DEALER BUST</span>
               <p class="bj-rule">blackjack pays 3 to 2 · dealer stands on all 17</p>
             </div>
-            ${helpButton('bjHelp')}
             <div id="bjStatus" class="bj-status">테이블을 준비하는 중…</div>
             <div id="bjSeats" class="bj-seats"></div>
           </div>

@@ -18,7 +18,7 @@ import {
 import { baccaratProbabilities, drawRound, playRound, cardsToStrings, handTotal } from '../../services/baccarat';
 import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
+import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import { COIN_SIZES } from './poker';
@@ -222,11 +222,10 @@ export function baccaratPage(user: WebUser): string {
   const p = baccaratProbabilities();
 
   const body = `
-    ${gameSwitcher('baccarat')}
+    ${gameSwitcher('baccarat', 'bcHelp')}
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
-          ${helpButton('bcHelp')}
           <div class="bacc-bead-head">
             <span>최근 결과</span>
             <span class="bacc-bead-legend">

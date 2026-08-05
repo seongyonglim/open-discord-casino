@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import { placeBet, getActiveRound, updateRoundState, settleGameRound, type GameRound } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, sidePanel, rankPane, rankJs, helpButton, helpDialog } from '../views';
+import { layout, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 import { bombIcon, coinIcon, mysteryMark } from '../icons';
 import type { WebUser } from '../../db/queries';
@@ -173,11 +173,10 @@ const RULES_HTML = `
 export function minesPage(user: WebUser): string {
   const active = activeRoundPayload(user.id);
   const body = `
-    ${gameSwitcher('mines')}
+    ${gameSwitcher('mines', 'mnHelp')}
     <div class="game-shell mines-shell">
       <div class="game-main">
         <div class="card">
-          ${helpButton('mnHelp')}
           <div class="board-stage">
             <div id="mGrid" class="mines-grid"></div>
           </div>

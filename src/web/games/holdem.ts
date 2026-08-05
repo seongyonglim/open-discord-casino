@@ -19,7 +19,7 @@ import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
 import { getWebUser } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { layout, jsonForScript, helpButton, helpDialog } from '../views';
+import { layout, jsonForScript, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
 import type { WebUser } from '../../db/queries';
@@ -376,7 +376,7 @@ const HELP_BODY = `
 
 export function holdemPage(user: WebUser): string {
   const body = `
-    ${gameSwitcher('holdem')}
+    ${gameSwitcher('holdem', 'htHelp')}
 
     <div id="htLobby" class="ht-lobby" hidden></div>
 
@@ -472,7 +472,6 @@ export function holdemPage(user: WebUser): string {
       <div class="game-side ht-side">
         <div class="ht-side-head">
           <span id="htSideTitle">데일리 프리롤</span>
-          ${helpButton('htHelp')}
         </div>
         <div class="ht-info" id="htInfo"></div>
         <div class="ht-side-sub">칩 순위</div>
@@ -497,7 +496,8 @@ export function holdemPage(user: WebUser): string {
 
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
-    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory'];</script>
+    window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
+      'actallin','actbet','actcall','actcheck','actraise'];</script>
   <script>
   (function(){
     var MEID = window.__MEID__;
@@ -1615,7 +1615,43 @@ export function holdemPage(user: WebUser): string {
       noteClock(tb);
       paintClock();
       syncLevelUp(tb);
+      playActionVoices(tb);
       renderControls();
+    }
+
+    /* ── 액션 음성 ────────────────────────────────────────────────────
+       칩 소리와 별개다. 칩 소리는 "돈이 나갔다", 이건 "무슨 행동을 했다"를 알린다.
+       그래서 체크처럼 칩이 안 나가는 행동도 소리가 나고, 콜은 둘 다 난다.
+       (칩 소리를 이걸로 대체하면 안 된다 — 두 정보가 겹치지 않는다)
+
+       같은 행동에 두 번 울리지 않게 (판·스트리트·자리·행동·금액)으로 열쇠를 만든다.
+       금액까지 넣는 이유: 같은 자리가 한 스트리트에서 콜 → 레이즈 → 콜을 할 수 있고,
+       그때 행동 이름만으로는 새 행동인지 구분되지 않는다.
+
+       판에 처음 들어온 순간에는 울리지 않는다 — 이미 지나간 행동을 소급해서 떠들면
+       무슨 일이 일어난 줄 알고 화면을 다시 보게 된다. */
+    var voiceSeen = {}, voiceHand = null;
+    function playActionVoices(tb){
+      if (tb.handNo !== voiceHand) { voiceHand = tb.handNo; voiceSeen = {}; }
+      var sfx = window.casinoSfx;
+      if (!sfx || !sfx.action) return;
+
+      function fire(seat, act, amount){
+        if (!act || act === 'fold') return;              // 폴드는 음원이 없다
+        var key = tb.street + ':' + seat + ':' + act + ':' + (amount || 0);
+        if (voiceSeen[key]) return;
+        voiceSeen[key] = 1;
+        if (firstTablePaint) return;                     // 들어온 순간의 과거 행동은 조용히 넘긴다
+        // 내가 방금 눌렀다면 클릭 순간에 이미 울렸다
+        if (seat === tb.mySeat && (Date.now() - myVoiceAt) < 2500) return;
+        sfx.action(act);
+      }
+
+      (tb.seats || []).forEach(function(s){ fire(s.seat, s.act, s.actAmount); });
+      /* 스트리트를 닫은 행동은 좌석 표시가 초기화되어 s.act에 안 남는다.
+         칩 소리와 같은 이유로 여기서도 hand에 남은 기록을 따로 본다. */
+      var la = tb.lastActor;
+      if (la && la.seat != null) fire(la.seat, la.act, la.amount);
     }
 
     /* ── 메인 팟 / 사이드 팟 ──────────────────────────────────────────
@@ -1817,6 +1853,8 @@ export function holdemPage(user: WebUser): string {
     var lastBets = {}, betHandNo = null, betStreet = null, myClickAt = 0;
     // 스트리트를 닫은 액션에 소리를 한 번만 내기 위한 기억
     var lastCloseKey = null, endSoundHand = null;
+    // 내가 직접 눌러 액션 음성을 낸 시각 (폴링이 같은 소리를 또 내지 않게)
+    var myVoiceAt = 0;
     function playBetSounds(){
       var tb = st.table;
       if (!tb) return;
@@ -1870,6 +1908,11 @@ export function holdemPage(user: WebUser): string {
         myClickAt = Date.now();        // 폴링이 같은 칩 소리를 또 울리지 않게 표시해 둔다
         if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
       }
+      /* 액션 음성은 칩과 별개로, 체크에도 낸다. 서버 응답을 기다리지 않고 클릭 순간에
+         울려야 손맛이 난다 — 칩 소리와 같은 이유다.
+         내 것을 여기서 울렸다고 폴링 쪽에 표시해 둔다(겹쳐 울리지 않게). */
+      myVoiceAt = Date.now();
+      if (window.casinoSfx && window.casinoSfx.action) window.casinoSfx.action(kind);
       return post('/api/games/holdem/action', { action: kind, amount: amount || 0 })
         .then(function(r){
           if (!r.ok && r.d && r.d.error) msgEl.textContent = r.d.error;

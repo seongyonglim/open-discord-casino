@@ -49,6 +49,10 @@ const SFX_FILES = new Set([
   'chip-bet.mp3', 'chip-bet2.mp3', 'chips-to-winner.mp3',
   // 우승 음원은 아직 파일이 없다 — 넣는 순간 서빙되도록 목록에만 올려 둔다
   'tournament-win.mp3',
+  /* 홀덤 액션 음성. 칩 소리를 대체하는 게 아니라 그 위에 겹쳐 낸다 —
+     칩 소리는 "돈이 나갔다", 이건 "무슨 행동을 했다"로 역할이 다르다.
+     체크는 칩이 나가지 않으므로 이 소리만 난다. */
+  'act-allin.mp3', 'act-bet.mp3', 'act-call.mp3', 'act-check.mp3', 'act-raise.mp3',
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',

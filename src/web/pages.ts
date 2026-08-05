@@ -13,14 +13,26 @@ const GAMES: { key: string; name: string; desc: string; icon: string; ready: boo
   { key: 'holdem', name: '홀덤 프리롤', desc: '매일 22:00 시작하는 참가비 없는 토너먼트. 노리밋 홀덤으로 겨루고 상위 입상자가 상금을 받습니다.', icon: cardsIcon, ready: true },
 ];
 
-// 게임 화면 상단의 게임 전환 바 — 로비를 거치지 않고 바로 다른 게임으로 이동할 수 있게 한다.
-// 출시된 게임만 노출하고, 현재 플레이 중인 게임은 활성 표시.
-export function gameSwitcher(currentKey: string): string {
+/* 게임 화면 상단의 게임 전환 바 — 로비를 거치지 않고 바로 다른 게임으로 이동할 수 있게 한다.
+   출시된 게임만 노출하고, 현재 플레이 중인 게임은 활성 표시.
+
+   규칙 도움말(?) 버튼도 여기 오른쪽 끝에 붙인다. 처음에는 게임 카드의 오른쪽 위 구석에
+   띄웠는데, 게임마다 그 자리에 다른 것이 있어서 실제로 가렸다 — 사다리는 출목표,
+   그래프는 최근 배율 기록, 바카라는 범례를 덮었고, 포커·지뢰찾기는 펠트 안에 떠 있었다.
+   판 위에는 게임이 쓰는 자리가 아닌 곳이 없다는 게 문제였다.
+
+   이 바는 모든 게임 화면이 공통으로 갖는 "게임 밖" 영역이라 무엇도 가리지 않고,
+   일곱 게임에서 항상 같은 자리라 한 번 찾으면 계속 안다. 게임이 늘어도 그대로 간다. */
+export function gameSwitcher(currentKey: string, helpDialogId?: string): string {
   const pills = GAMES.filter(g => g.ready).map(g => `
     <a class="gs-pill${g.key === currentKey ? ' active' : ''}" href="/games/${g.key}">
       <span class="gs-ic">${g.icon}</span>${esc(g.name)}
     </a>`).join('');
-  return `<div class="game-switch">${pills}</div>`;
+  const help = helpDialogId
+    ? `<button class="helpbtn gs-help" type="button" data-help="${esc(helpDialogId)}"
+         aria-label="규칙 보기" title="규칙 보기">?</button>`
+    : '';
+  return `<div class="game-switch">${pills}${help}</div>`;
 }
 
 // 게임 선택 카드 그리드 (로비에서 사용).
