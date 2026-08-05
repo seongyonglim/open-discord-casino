@@ -296,31 +296,61 @@ export function handScore(hole: number[], board: number[]): number {
   return evaluate7(hole[0], hole[1], board[0], board[1], board[2], board[3], board[4]);
 }
 
-export function awardPots(
+/** 팟 하나의 정산 결과 — 화면에서 팟을 하나씩 넘겨 보여주기 위해 층 단위로 남긴다 */
+export interface PotAward {
+  /** 층 번호 (0 = 메인 팟) */
+  index: number;
+  amount: number;
+  eligible: number[];
+  /** 이 층을 가져간 자리들과 각자 받은 금액 (동점이면 여럿) */
+  winners: { seat: number; amount: number }[];
+  /** 이긴 손의 점수 — 층끼리 "누가 더 센 손으로 이겼나"를 비교할 때 쓴다 */
+  score: number;
+}
+
+/**
+ * 층별로 누가 얼마를 가져가는지 그대로 남긴다.
+ * awardPots는 이걸 좌석별로 합쳐서 돌려주는 얇은 껍데기다 — 두 함수가 갈라지면
+ * 화면에 보여준 분배와 실제 정산이 어긋나므로 계산은 여기 한 곳에만 둔다.
+ */
+export function awardPotsDetailed(
   pots: Pot[],
   scoreBySeat: Map<number, number>,   // 폴드하지 않은 자리의 핸드 점수 (높을수록 강함)
   buttonSeat: number,
   seatCount: number,
-): Award[] {
-  const bySeat = new Map<number, number>();
-  const add = (seat: number, n: number) => bySeat.set(seat, (bySeat.get(seat) ?? 0) + n);
-
+): PotAward[] {
   // 홀수 칩 배분 순서: 버튼 다음 자리부터 시계방향
   const order = (seat: number) => (seat - buttonSeat - 1 + seatCount * 2) % seatCount;
+  const out: PotAward[] = [];
 
-  for (const pot of pots) {
+  pots.forEach((pot, index) => {
     const scored = pot.eligible
       .filter(s => scoreBySeat.has(s))
       .map(s => ({ seat: s, score: scoreBySeat.get(s)! }));
-    if (!scored.length) continue;
+    if (!scored.length) return;
     const best = Math.max(...scored.map(x => x.score));
-    const winners = scored.filter(x => x.score === best).map(x => x.seat).sort((a, b) => order(a) - order(b));
-    const share = Math.floor(pot.amount / winners.length);
-    let rest = pot.amount - share * winners.length;
-    for (const w of winners) {
-      add(w, share + (rest > 0 ? 1 : 0));
+    const seats = scored.filter(x => x.score === best).map(x => x.seat).sort((a, b) => order(a) - order(b));
+    const share = Math.floor(pot.amount / seats.length);
+    let rest = pot.amount - share * seats.length;
+    const winners = seats.map(seat => {
+      const amount = share + (rest > 0 ? 1 : 0);
       if (rest > 0) rest--;
-    }
+      return { seat, amount };
+    });
+    out.push({ index, amount: pot.amount, eligible: pot.eligible, winners, score: best });
+  });
+  return out;
+}
+
+export function awardPots(
+  pots: Pot[],
+  scoreBySeat: Map<number, number>,
+  buttonSeat: number,
+  seatCount: number,
+): Award[] {
+  const bySeat = new Map<number, number>();
+  for (const pa of awardPotsDetailed(pots, scoreBySeat, buttonSeat, seatCount)) {
+    for (const w of pa.winners) bySeat.set(w.seat, (bySeat.get(w.seat) ?? 0) + w.amount);
   }
   return [...bySeat].map(([seat, amount]) => ({ seat, amount })).sort((a, b) => a.seat - b.seat);
 }

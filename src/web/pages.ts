@@ -12,11 +12,10 @@ import { NOTICES, type Notice } from './notices';
    같은 그림이라 "카드게임 묶음"으로만 읽히고 서로 구분이 안 됐다. 게임마다 뜻이 통하는
    상징을 하나씩 준다.
 
-   ── 설명 대신 지표
-   예전에는 카드마다 두세 줄짜리 문장을 넣었다. 게임을 고르는 동안 읽히지 않는 분량이고,
-   이미 아는 사람에게는 자리만 차지한다. 지금은 "이 게임이 어떤 게임인지"를 가르는 지표
-   두세 개만 놓는다 — 자세한 규칙은 게임 화면의 ? 도움말이 받는다.
-   지표 숫자는 도움말과 같은 근거(코드 상수)에서 온다.
+   ── 설명
+   한 줄로 줄였다. 예전 두세 줄은 고르는 동안 다 읽히지 않았고, 그렇다고 지표만
+   나열하니(한때 그렇게 해봤다) 안내문이 아니라 사양표처럼 차가워졌다.
+   말투는 그대로 두고 길이만 줄인다 — 자세한 규칙은 게임 화면의 ? 도움말이 받는다.
 
    ── 분류
    카드게임과 미니게임은 성격이 다르다(테이블에 앉는가 / 혼자 빠르게 도는가).
@@ -25,8 +24,8 @@ import { NOTICES, type Notice } from './notices';
 type GameGroup = 'table' | 'mini' | 'event';
 interface GameDef {
   key: string; name: string; icon: string; group: GameGroup;
-  /** 카드에 보여줄 지표 두세 개 — 문장이 아니라 값이어야 한다 */
-  facts: string[];
+  /** 한 줄 소개 */
+  desc: string;
   /** 버튼 문구. 게임마다 하는 일이 다르므로 "플레이"로 뭉뚱그리지 않는다 */
   cta: string;
   /** 시간·성격 배지 (없으면 표시하지 않는다) */
@@ -36,22 +35,28 @@ interface GameDef {
 
 const GAMES: GameDef[] = [
   { key: 'holdem', name: '홀덤 프리롤', icon: trophyIcon, group: 'event',
-    facts: ['참가비 없음', '노리밋 홀덤', '상위 입상 시 상금'], cta: '참가 신청',
-    badge: '매일 22:00', ready: true },
+    desc: '참가비 없이 모여서 겨루는 토너먼트. 상위 입상자가 상금을 나눠 갖습니다.',
+    cta: '참가 신청', badge: '매일 22:00', ready: true },
 
   { key: 'baccarat', name: '바카라', icon: baccaratIcon, group: 'table',
-    facts: ['5가지 베팅', '1덱', '타이 약 9%'], cta: '입장하기', ready: true },
+    desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어에도 걸 수 있어요.',
+    cta: '입장하기', ready: true },
   { key: 'blackjack', name: '블랙잭', icon: blackjackIcon, group: 'table',
-    facts: ['5석 · 딜러전', '블랙잭 3:2', '더블 · 서렌더'], cta: '자리 잡기', ready: true },
+    desc: '5석 테이블에서 딜러를 함께 상대합니다. 21을 넘기지 않고 이기면 승리!',
+    cta: '자리 잡기', ready: true },
   { key: 'poker', name: '포커 플립', icon: flipIcon, group: 'table',
-    facts: ['두 핸드 대결', '배당 매판 계산', '족보 시장'], cta: '베팅하기', ready: true },
+    desc: '두 핸드가 맞붙습니다. 승자와 완성될 족보에 칩을 올려보세요.',
+    cta: '베팅하기', ready: true },
 
   { key: 'mines', name: '지뢰찾기', icon: bombIcon, group: 'mini',
-    facts: ['난이도 5단계', '최대 5만 배', '언제든 캐시아웃'], cta: '도전하기', ready: true },
+    desc: '지뢰를 피해 칸을 열수록 배당이 오릅니다. 원할 때 캐시아웃!',
+    cta: '도전하기', ready: true },
   { key: 'graph', name: '그래프게임', icon: chartIcon, group: 'mini',
-    facts: ['최대 10,000배', '자동 캐시아웃', '한 판 20초'], cta: '베팅하기', ready: true },
+    desc: '배율이 계속 오릅니다. 터지기 전에 빠져나오세요. 늦으면 전액 손실!',
+    cta: '베팅하기', ready: true },
   { key: 'ladder', name: '사다리게임', icon: ladderIcon, group: 'mini',
-    facts: ['1.95배 / 3.95배', '한 판 15초', '출발 · 홀짝'], cta: '예측하기', ready: true },
+    desc: '출발과 도착을 예측하세요. 하나만 맞혀도 1.95배, 둘 다 맞히면 3.95배.',
+    cta: '예측하기', ready: true },
 ];
 
 const GROUP_TITLE: Record<GameGroup, string> = {
@@ -90,20 +95,14 @@ export function gameSwitcher(currentKey: string, helpDialogId?: string): string 
    대회에 신청하는 것이고 바카라·블랙잭은 테이블에 들어가는 것이라 하는 일이 서로 다르다.
    문구가 다르면 누르기 전에 무슨 일이 일어날지 알 수 있다. */
 function gameCard(g: GameDef): string {
-  const facts = g.facts.map(f => `<li>${esc(f)}</li>`).join('');
   const badge = g.badge ? `<span class="gc-badge">${esc(g.badge)}</span>` : '';
-  if (!g.ready) {
-    return `<div class="game-card">
-      <div class="gc-top"><div class="icon">${g.icon}</div>${badge}</div>
-      <h3>${esc(g.name)}</h3>
-      <ul class="gc-facts">${facts}</ul>
-      <span class="soon">출시 예정</span>
-    </div>`;
-  }
-  return `<a class="game-card ready" href="/games/${g.key}">
-    <div class="gc-top"><div class="icon">${g.icon}</div>${badge}</div>
+  const inner = `<div class="gc-top"><div class="icon">${g.icon}</div>${badge}</div>
     <h3>${esc(g.name)}</h3>
-    <ul class="gc-facts">${facts}</ul>
+    <p>${esc(g.desc)}</p>`;
+  if (!g.ready) {
+    return `<div class="game-card">${inner}<span class="soon">출시 예정</span></div>`;
+  }
+  return `<a class="game-card ready" href="/games/${g.key}">${inner}
     <span class="btn btn-gold">${esc(g.cta)}</span>
   </a>`;
 }
