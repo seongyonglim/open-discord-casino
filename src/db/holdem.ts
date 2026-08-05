@@ -19,6 +19,27 @@ import * as T from '../services/tournament';
 
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
+/* ── 최소 액션 간격 ────────────────────────────────────────────────────
+   차례가 넘어와도 이 시간이 지나기 전에는 아무도 행동할 수 없다.
+
+   왜 서버에 두는가: 봇(그리고 자동 체크·자동 콜)은 즉시 결정한다. 클라이언트에서만
+   버튼을 잠가도 서버는 액션을 받으므로, 실제로는 "레이즈 → 폴드 → 폴드"가 0.1초 안에
+   처리되고 화면은 그 셋을 한 프레임에 몰아 보여준다. 누가 무엇을 했는지 따라갈 수 없다.
+   규칙 자체에 간격이 있어야 화면이 따라갈 수 있다.
+
+   스트리트가 열릴 때는 더 길게 준다 — 커뮤니티 카드가 다 열리는 데 클라이언트가
+   약 2.1초를 쓴다(ACTION_HOLD 1.1 + 첫 장 0.42 + 두 장 0.6). 그 뒤에 한 박자 쉬고
+   첫 행동자가 열리게 3초로 둔다. 보드를 보기도 전에 베팅이 시작되면 안 된다.
+
+   구현: 새 컬럼을 두지 않고 action_deadline을 그만큼 뒤로 민다.
+   열리는 시각 = action_deadline - ACTION_SEC 이 항상 성립한다(간격이 0이면 즉시 열린다). */
+export const ACT_GAP_SEC = 1;
+export const STREET_OPEN_SEC = 3;
+/* eslint 없이도 읽히게: 두 값의 관계가 규칙이다 — 스트리트 시작이 더 길다 */
+/** 이 차례가 열리는 시각. 마감에서 제한 시간을 되돌리면 나온다. */
+export function actOpenAt(hand: { action_deadline: number | null }): number | null {
+  return hand.action_deadline == null ? null : hand.action_deadline - ACTION_SEC;
+}
 /* 쇼다운을 보여주는 시간 (다음 핸드까지). 보드가 이미 다 깔린 리버 쇼다운 기준이다.
    그 경우 화면은 [팟 정산 지연 0.55초 → WIN 배지 1.4초 → 칩 이동 0.9초]를 재생하고,
    폴링 지연 1초를 더해도 6초 안에 끝나 2초는 결과를 읽을 수 있다.
@@ -443,6 +464,13 @@ function startTournament(t: HtRow, regs: HtEntryRow[], now: number): void {
  *  · 더 할 일이 없으면 빠져나온다
  */
 function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
+  /* 베팅이 완전히 끝난 순간의 보드 장수.
+     쇼다운 승률은 "결과가 남은 카드에만 달린" 시점의 보드로 계산해야 한다.
+     그 값을 endHand에서 읽으면 이미 늦다 — 전원 올인이면 아래 루프가 nextStreet를
+     연달아 불러 보드를 리버까지 채우고 나서 endHand에 닿기 때문에, endHand가 보는
+     보드는 언제나 5장이다(실제로 승률이 한 번도 담기지 않았던 이유다).
+     그래서 "더 이상 베팅이 있을 수 없다"를 처음 확인한 그 자리에서 기억해 둔다. */
+  let lockedBoardLen: number | null = null;
   for (let step = 0; step < MAX_STEPS; step++) {
     const living = livingSeats(table.id);
 
@@ -466,10 +494,26 @@ function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
     const views = toViews(rows);
 
     // 팟을 다툴 사람이 한 명뿐이면 쇼다운 없이 끝난다
-    if (G.contenders(views).length <= 1) { endHand(t, table, hand, views, false, now); table = reload(table.id); continue; }
+    if (G.contenders(views).length <= 1) {
+      endHand(t, table, hand, views, false, now, lockedBoardLen);
+      table = reload(table.id); continue;
+    }
+
+    /* 더 이상 베팅이 있을 수 없는가 — 남은 사람 중 칩이 있는 사람이 한 명 이하일 때다.
+       혼자 남은 사람은 상대가 없어 베팅할 수 없으므로, 이 시점부터 보드는 그냥 깔릴 뿐이다.
+       그 순간의 보드 장수가 승률 계산의 기준이 된다(그 뒤로는 정보가 늘지 않는다). */
+    if (lockedBoardLen == null) {
+      const live = views.filter(v => v.state !== 'folded');
+      if (live.filter(v => v.state !== 'allin').length <= 1) {
+        lockedBoardLen = (JSON.parse(hand.board_json) as number[]).length;
+      }
+    }
 
     if (G.bettingRoundClosed(views)) {
-      if (hand.street === 'river') { endHand(t, table, hand, views, true, now); table = reload(table.id); continue; }
+      if (hand.street === 'river') {
+        endHand(t, table, hand, views, true, now, lockedBoardLen);
+        table = reload(table.id); continue;
+      }
       nextStreet(hand, views, now);
       continue;
     }
@@ -488,7 +532,12 @@ function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
       `SELECT presence FROM holdem_seats WHERE table_id = ? AND seat = ?`,
       table.id, hand.to_act_seat)?.presence === 'SIT_OUT';
     const deadline = hand.action_deadline ?? now;
-    if (!awaySeat && now < deadline) return;   // 아직 기다리는 중 — 여기서 끝낸다
+    /* 자리 비움도 최소 간격은 지킨다. 예전에는 마감을 통째로 무시했는데, 그러면 자리 비움이
+       둘 이상일 때 이 while 루프가 그들 전부를 한 번의 호출에서 접어 버린다 —
+       화면에는 "레이즈 → 폴드 → 폴드"가 0.1초 안에 몰려 나온다.
+       유예(20초)는 여전히 건너뛴다. 그게 자리 비움을 즉시 넘기는 목적이었다. */
+    const openAt = deadline - ACTION_SEC;
+    if (awaySeat ? now < openAt : now < deadline) return;   // 아직 기다리는 중
 
     /* 마감 초과 → 자동 액션. 체크할 수 있으면 체크, 없으면 폴드.
        강제로 콜하지 않는 게 중요하다. 게임이 플레이어 대신 칩을 걸어선 안 된다.
@@ -514,14 +563,18 @@ function reload(tableId: number): HtTableRow {
   return one<HtTableRow>(`SELECT * FROM holdem_tables WHERE id = ?`, tableId)!;
 }
 
-/** 다음 행동자를 정한다. 없으면 to_act를 비운다(라운드 종료로 판정된다). */
-function setToAct(hand: HtHandRow, views: G.SeatView[], from: number, now: number): void {
+/** 다음 행동자를 정한다. 없으면 to_act를 비운다(라운드 종료로 판정된다).
+ *  gapSec: 차례가 열리기까지의 최소 간격. 마감을 그만큼 뒤로 밀어 표현한다
+ *  (열리는 시각 = 마감 - ACTION_SEC). 제한 시간 20초는 열린 뒤부터 온전히 준다. */
+function setToAct(
+  hand: HtHandRow, views: G.SeatView[], from: number, now: number, gapSec = ACT_GAP_SEC
+): void {
   const next = G.nextActor(views, from, T.MAX_PLAYERS);
   if (next == null) {
     run(`UPDATE holdem_hands SET to_act_seat = NULL, action_deadline = NULL WHERE id = ?`, hand.id);
   } else {
     run(`UPDATE holdem_hands SET to_act_seat = ?, action_deadline = ? WHERE id = ?`,
-      next, now + ACTION_SEC, hand.id);
+      next, now + gapSec + ACTION_SEC, hand.id);
   }
 }
 
@@ -590,8 +643,10 @@ function startHand(t: HtRow, table: HtTableRow, now: number): void {
   }
   saveViews(handId, views);
 
-  // 프리플랍 첫 행동자. 블라인드를 낸 것은 "행동"이 아니므로 acted는 그대로 0이다.
-  setToAct(hand, views, prevSeat(bp.firstToAct, occupied), now);
+  /* 프리플랍 첫 행동자. 블라인드를 낸 것은 "행동"이 아니므로 acted는 그대로 0이다.
+     카드가 다 돌아갈 때까지는 열지 않는다 — 화면은 앤티를 걷고 열두 장을 한 장씩 돌리는 데
+     2~3초를 쓴다. 그 전에 첫 베팅이 들어오면 카드를 받기도 전에 판이 시작된다. */
+  setToAct(hand, views, prevSeat(bp.firstToAct, occupied), now, STREET_OPEN_SEC);
 }
 
 /** occupied 안에서 seat의 바로 앞 자리 — setToAct가 "다음"을 찾으므로 한 칸 뒤에서 시작한다 */
@@ -629,12 +684,18 @@ function nextStreet(hand: HtHandRow, views: G.SeatView[], now: number): void {
   const fresh = one<HtHandRow>(`SELECT * FROM holdem_hands WHERE id = ?`, hand.id)!;
   const occupied = views.map(v => v.seat);
   const first = G.firstToActPostflop(occupied, hand.button_seat, T.MAX_PLAYERS);
-  setToAct(fresh, views, prevSeat(first ?? hand.button_seat, occupied), now);
+  /* 카드가 다 열릴 때까지는 아무도 행동할 수 없다. 보드를 보기 전에 베팅이 시작되면
+     "카드가 펼쳐지는 중에 이미 다음 액션이 진행되는" 화면이 된다. */
+  setToAct(fresh, views, prevSeat(first ?? hand.button_seat, occupied), now, STREET_OPEN_SEC);
 }
 
-/** 핸드 종료 — 팟을 나누고 스택에 반영한다 */
+/** 핸드 종료 — 팟을 나누고 스택에 반영한다.
+ *  lockedBoardLen: 베팅이 완전히 끝난 순간의 보드 장수(advanceTable이 기억해 둔 값).
+ *  여기서 board.length를 쓰면 안 된다 — 전원 올인이면 그 전에 nextStreet가 리버까지
+ *  채워 놓아서 언제나 5가 나온다. null이면 이 핸드는 정상 진행으로 끝난 것이다. */
 function endHand(
-  t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], showdown: boolean, now: number
+  t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], showdown: boolean, now: number,
+  lockedBoardLen: number | null = null
 ): void {
   const rows = getHandSeats(hand.id);
   const board = JSON.parse(hand.board_json) as number[];
@@ -647,10 +708,13 @@ function endHand(
      남은 사람이 한 명이므로 점수를 비교할 필요가 없다. */
   const scores = new Map<number, number>();
   const live = views.filter(v => v.state !== 'folded');
-  /* 베팅이 끝난 시점의 보드 장수. 아래에서 런아웃으로 채우기 전에 기억해 둔다 —
-     클라이언트가 몇 장을 한 장씩 열어야 하는지가 이 값이고, 다음 판 시작을 그만큼
-     미뤄야 마지막 카드를 열다가 판이 넘어가지 않는다. */
-  const boardAtEnd = board.length;
+  /* 베팅이 끝난 시점의 보드 장수 — 클라이언트가 몇 장을 한 장씩 열어야 하는지가 이 값이고,
+     다음 판 시작을 그만큼 미뤄야 마지막 카드를 열다가 판이 넘어가지 않는다.
+
+     advanceTable이 넘겨준 값을 먼저 쓴다. 이 함수가 보는 board는 이미 리버까지 채워져
+     있을 수 있다(전원 올인이면 nextStreet가 연달아 불려 여기 오기 전에 다 깐다).
+     넘겨준 값이 없으면 정상 진행으로 끝난 판이므로 지금 보드가 그대로 답이다. */
+  const boardAtEnd = lockedBoardLen ?? board.length;
   if (live.length === 1) {
     scores.set(live[0].seat, 1);
   } else {
@@ -934,7 +998,9 @@ export function registerHoldem(userId: string, username: string):
 }
 
 export type ActionError =
-  | 'no_tournament' | 'not_seated' | 'no_hand' | 'not_your_turn' | 'illegal';
+  /* too_soon은 "차례는 맞지만 아직 열리지 않았다"다. 실패가 아니라 잠깐 뒤에 다시 하면
+     되는 상태이므로 호출부(봇·자동 액션)는 다음 주기에 그대로 재시도하면 된다. */
+  | 'no_tournament' | 'not_seated' | 'no_hand' | 'not_your_turn' | 'too_soon' | 'illegal';
 
 /** 힛/폴드가 아니라 포커 액션. amount는 "이 스트리트에 올릴 총액"이다. */
 export function holdemAction(
@@ -965,6 +1031,11 @@ export function holdemAction(
     if (hand.action_deadline != null && now > hand.action_deadline) {
       return { ok: false, error: 'not_your_turn' };   // 이미 마감돼 자동 처리될 차례다
     }
+    /* 아직 차례가 열리지 않았다. 최소 간격이 규칙에 있어야 봇도 그것을 지킨다 —
+       클라이언트에서 버튼만 잠그면 봇(과 자동 체크·자동 콜)은 그대로 즉시 눌러서
+       화면이 따라갈 수 없는 속도로 판이 흘러간다. */
+    const open = actOpenAt(hand);
+    if (open != null && now < open) return { ok: false, error: 'too_soon' };
 
     const views = toViews(getHandSeats(hand.id));
     const r = G.applyAction(views, seatRow.seat, kind, amount, hand.last_raise_size, hand.bb);

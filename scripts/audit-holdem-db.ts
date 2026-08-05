@@ -42,6 +42,16 @@ function mkUser(id: string): void {
 function expireAction(): void {
   db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE ended_at IS NULL`).run(nowSec() - 1);
 }
+/* 최소 액션 간격을 지난 것으로 만든다 — 시간이 흘렀다고 치는 것이다.
+   차례가 열리는 시각은 (마감 - ACTION_SEC)이므로, 마감을 정확히 now + ACTION_SEC로
+   맞추면 "지금 열렸고 제한 시간은 온전히 남았다"가 된다.
+   expireAction과 다르다: 그건 마감을 넘겨 자동 액션을 유발하고, 이건 직접 액션을 받게 한다.
+   이게 없으면 감사가 넣는 액션이 전부 too_soon으로 거절돼 판이 자동 체크로만 흘러간다. */
+function openAction(): void {
+  db.prepare(`UPDATE holdem_hands SET action_deadline = ?
+              WHERE ended_at IS NULL AND action_deadline IS NOT NULL`)
+    .run(nowSec() + HD.ACTION_SEC);
+}
 /** 다음 핸드 시작 예약을 지금으로 */
 function expireNextHand(): void {
   db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE next_hand_at IS NOT NULL`).run(nowSec() - 1);
@@ -372,6 +382,7 @@ console.log('\n[5] 토너먼트를 끝까지 (실제 액션 — 전원 올인)')
     if (h.to_act_seat == null) { expireAction(); continue; }
     const seat = HD.getSeats(table.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
     if (!seat) { expireAction(); continue; }
+    openAction();                                  // 최소 액션 간격이 지난 것으로 본다
     const r = HD.holdemAction(seat.user_id, 'allin', 0);
     if (r.ok) allins++; else expireAction();
   }
@@ -587,6 +598,7 @@ console.log('\n[8] 무작위 토너먼트 반복 (칩 보존 · 순위 · 상금
       // 무작위 액션 — 폴드/체크/콜/올인을 섞어 사이드 팟이 겹치게 만든다
       const pick = rnd(10);
       const kind: G.ActionKind = pick < 2 ? 'fold' : pick < 5 ? 'check' : pick < 8 ? 'call' : 'allin';
+      openAction();                                // 최소 액션 간격이 지난 것으로 본다
       const r = HD.holdemAction(seat.user_id, kind, 0);
       if (!r.ok) {
         const r2 = HD.holdemAction(seat.user_id, 'call', 0);
@@ -728,9 +740,17 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
     ck('평소에는 마감까지 기다린다 (즉시 넘기지 않는다)', hand.to_act_seat === actor,
       `to_act=${hand.to_act_seat}`);
 
-    // 자리 비움으로 바꾸면 마감 전에도 바로 처리한다
+    /* 자리 비움으로 바꾸면 마감(20초)을 기다리지 않는다.
+       다만 최소 액션 간격은 지킨다 — 그게 없으면 자리 비움이 둘 이상일 때 한 번의
+       advanceHoldem이 그들 전부를 접어 버려서 화면에 "폴드 폴드 폴드"가 한꺼번에 나온다.
+       그래서 간격이 지난 것으로 만든 다음에 넘어가는지 본다. */
     db2.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT' WHERE table_id = ? AND seat = ?`)
       .run(tableX.id, actor);
+    HD.advanceHoldem();
+    hand = HD.getCurrentHand(tableX.id)!;
+    ck('자리 비움도 최소 액션 간격 전에는 넘기지 않는다', hand.to_act_seat === actor,
+      `to_act=${hand.to_act_seat}`);
+    openAction();                       // 간격이 지났다 (마감은 아직 20초 남아 있다)
     HD.advanceHoldem();
     hand = HD.getCurrentHand(tableX.id)!;
     const moved = hand.ended_at != null || hand.to_act_seat !== actor;
@@ -753,6 +773,7 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
         db2.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT' WHERE table_id = ? AND seat = ?`)
           .run(tableX.id, nextActor);
         const who = HD.getSeats(tableX.id).find(s => s.seat === nextActor)!;
+        openAction();
         const res = HD.holdemAction(who.user_id, 'allin', 0);
         ck('자리 비움이어도 직접 누른 액션은 수락된다 (복귀 경로)', res.ok, JSON.stringify(res));
         const after = HD.getSeats(tableX.id).find(s => s.seat === nextActor)!;
@@ -762,15 +783,84 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
       }
     }
 
-    // 전원 자리 비움이어도 무한 루프에 빠지지 않고 판이 끝난다
+    /* 전원 자리 비움이어도 무한 루프에 빠지지 않고 판이 끝난다.
+       최소 액션 간격 때문에 한 번의 호출로는 한 자리씩만 넘어간다 — 실제로도 그게 맞다
+       (그래야 화면이 한 명씩 따라갈 수 있다). 그래서 간격을 지난 것으로 만들며 반복한다.
+       판이 끝나는가와, 그 과정이 유한한가를 함께 본다. */
     db2.prepare(`UPDATE holdem_seats SET presence = 'SIT_OUT' WHERE table_id = ?`).run(tableX.id);
     const t0 = Date.now();
-    HD.advanceHoldem();
+    let rounds = 0;
+    while (rounds++ < 60) {
+      HD.advanceHoldem();
+      hand = HD.getCurrentHand(tableX.id)!;
+      if (hand.ended_at != null) break;
+      openAction();
+    }
     const elapsed = Date.now() - t0;
-    hand = HD.getCurrentHand(tableX.id)!;
     ck('전원 자리 비움이면 판이 스스로 끝난다', hand.ended_at != null,
-      `street=${hand.street} to_act=${hand.to_act_seat}`);
+      `street=${hand.street} to_act=${hand.to_act_seat} rounds=${rounds}`);
+    ck('넘어가는 데 걸린 단계가 유한하다 (자리 수 안쪽)', rounds <= 12, `${rounds}단계`);
     ck('무한 루프가 아니다 (1초 안에 끝난다)', elapsed < 1000, `${elapsed}ms`);
+  }
+}
+
+/* ── [1f] 최소 액션 간격 ─────────────────────────────────────────────
+   차례가 열리기 전에는 아무도 행동할 수 없다. 이게 없으면 봇과 자동 액션이 즉시 결정해서
+   "레이즈 → 폴드 → 폴드"가 0.1초 안에 처리되고, 화면은 그 셋을 한 프레임에 몰아 보여준다.
+   클라이언트에서 버튼만 잠그는 것으로는 부족하다 — 규칙에 있어야 봇도 지킨다. */
+{
+  console.log('\n[1f] 최소 액션 간격 (차례가 열리기 전에는 행동 불가)');
+  const db3 = getDb();
+  db3.prepare(`DELETE FROM holdem_hands`).run();
+  db3.prepare(`DELETE FROM holdem_seats`).run();
+  db3.prepare(`DELETE FROM holdem_tables`).run();
+  db3.prepare(`DELETE FROM holdem_entries`).run();
+  db3.prepare(`DELETE FROM holdem_tournaments`).run();
+  for (const id of ['g0', 'g1', 'g2']) { mkUser(id); Q.adjustBalance(id, 10_000, 'test'); }
+  HD.advanceHoldem();
+  db3.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
+    started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
+    .run(nowSec() - 30, nowSec() + 600, nowSec() + 3600);
+  for (const id of ['g0', 'g1', 'g2']) HD.registerHoldem(id, id);
+  db3.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  const stG = HD.advanceHoldem();
+  const tG = HD.getTable(stG.tournament!.id);
+  ck('대회가 시작됐다', stG.status === 'RUNNING' && tG != null, stG.status);
+  if (tG) {
+    const h = HD.getCurrentHand(tG.id)!;
+    const open = HD.actOpenAt(h)!;
+    /* 판이 시작될 때는 카드가 다 돌아갈 때까지 기다린다(STREET_OPEN_SEC).
+       마감은 그만큼 뒤로 밀려 있고, 화면에 보이는 제한 시간은 상한이 씌워져 20초다. */
+    ck('첫 차례는 카드가 다 돌아간 뒤에 열린다',
+      open - nowSec() >= HD.STREET_OPEN_SEC - 1, `${open - nowSec()}초 후`);
+    ck('마감 = 열리는 시각 + 제한 시간',
+      (h.action_deadline ?? 0) - open === HD.ACTION_SEC, `${(h.action_deadline ?? 0) - open}`);
+
+    const who = HD.getSeats(tG.id).find(s => s.seat === h.to_act_seat)!;
+    const early = HD.holdemAction(who.user_id, 'call', 0);
+    ck('열리기 전 액션은 too_soon으로 거절된다',
+      !early.ok && early.error === 'too_soon', JSON.stringify(early));
+    const still = HD.getCurrentHand(tG.id)!;
+    ck('거절된 액션은 판을 바꾸지 않는다', still.to_act_seat === h.to_act_seat,
+      `to_act=${still.to_act_seat}`);
+
+    // 간격이 지난 것으로 만들면 같은 액션이 수락된다
+    openAction();
+    const ok = HD.holdemAction(who.user_id, 'call', 0);
+    ck('열린 뒤에는 같은 액션이 수락된다', ok.ok, JSON.stringify(ok));
+
+    /* 액션 직후 다음 사람의 차례도 곧바로 열리지 않는다 — 그게 이 규칙의 요점이다. */
+    const h2 = HD.getCurrentHand(tG.id)!;
+    if (h2.to_act_seat != null && h2.ended_at == null) {
+      const open2 = HD.actOpenAt(h2)!;
+      ck('다음 사람의 차례도 최소 간격만큼 뒤에 열린다',
+        open2 - nowSec() >= HD.ACT_GAP_SEC - 1, `${open2 - nowSec()}초 후`);
+      const who2 = HD.getSeats(tG.id).find(s => s.seat === h2.to_act_seat)!;
+      ck('그 사이에는 다음 사람도 행동할 수 없다',
+        HD.holdemAction(who2.user_id, 'call', 0).error === 'too_soon');
+    } else {
+      ck('다음 차례를 검사할 수 있었다', false, `to_act=${h2.to_act_seat}`);
+    }
   }
 }
 

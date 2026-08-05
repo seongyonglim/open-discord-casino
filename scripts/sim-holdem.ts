@@ -128,6 +128,11 @@ let openedBy: string | null = null;
 function botMove(userId: string, handId: number, seat: number): void {
   const hand = HD.getCurrentHand(TABLE.id);
   if (!hand || hand.id !== handId) return;
+  /* 차례가 아직 열리지 않았으면 이번 주기는 건너뛴다.
+     서버가 too_soon으로 거절하므로 시도해도 아무 일도 일어나지 않지만, 여기서 멈추면
+     아래의 대체 시도(올인 실패 → 콜 → 체크)가 헛돌지 않는다. 다음 주기에 다시 온다. */
+  const openAt = HD.actOpenAt(hand);
+  if (openAt != null && nowSec() < openAt) return;
   const hs = HD.getHandSeats(hand.id).find(h => h.seat === seat);
   if (!hs) return;
   const views = HD.getHandSeats(hand.id).map(h => ({
@@ -246,7 +251,10 @@ setInterval(() => {
     if (!seat || seat.user_id === ME.id) return;      // 사람 차례는 위에서 처리한다
     botMove(seat.user_id, hand.id, seat.seat);
   } catch { /* 경합은 다음 주기에 다시 본다 */ }
-}, 900);
+  /* 주기가 최소 액션 간격(ACT_GAP_SEC 1초)보다 촘촘해야 그 간격이 실제 템포가 된다.
+     900ms였을 때는 "간격 1초 + 다음 주기까지 최대 0.9초"라 액션 사이가 최대 1.9초까지
+     벌어졌다 — 규칙이 정한 1초가 아니라 폴링 주기가 템포를 정하고 있었다. */
+}, 300);
 
 /* ── 각본 진행 도우미 ─────────────────────────────────────────────── */
 
