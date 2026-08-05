@@ -1143,15 +1143,22 @@
      아바타 크기에 딸린 값인데 따로 적혀 있어서, 아바타를 건드리면 고리가 조용히 어긋났다.
      이제 아래 변수만 덮으면 딸린 값이 전부 따라온다. */
   .ht-shell{
-    --htAv:46px;         /* 아바타 지름 — 시계 고리와 그 mask가 여기서 유도된다 */
-    --htTagUp:14px;      /* 이름 태그가 아바타를 덮는 높이 (지름의 약 30%) */
-    --htCardW:34px;      /* 남의 홀 카드 (비공개) */
-    --htCardH:51px;
-    --htUpW:44px;        /* 공개된 홀 카드 — 펼쳐지면 커진다 */
-    --htUpH:66px;
+    --htAv:50px;         /* 아바타 지름 — 아래 대부분이 여기서 유도된다 */
+    --htTagUp:15px;      /* 이름 태그가 아바타를 덮는 높이 (지름의 약 30%) */
     --htBoardW:62px;     /* 커뮤니티 카드 */
     --htBoardH:93px;
     --htCloth:392px;     /* 펠트 높이 */
+    /* 홀 카드는 아바타 지름에서 유도한다. 티어마다 따로 적었더니 아바타와 카드의 비율이
+       구간마다 달라졌다(1100에서 카드가 상대적으로 컸다) — 비율이 규칙이면 한 번만 적는다.
+       가로:세로는 2:3으로 맞춘다(0.56 / 0.84, 0.84 / 1.26).
+       비공개 카드는 아바타 대비 0.56까지 줄였다. 카드가 아바타 앞에 오면서 0.66에서는
+       겹친 두 장의 폭이 아바타의 0.94가 되어 얼굴이 통째로 사라졌다(실측 84.9% 가림).
+       0.56이면 폭이 0.79로 내려가 좌우 테두리와 머리 위 10px이 남는다 — 그 남는 부분이
+       "겹쳐 있다"를 보이게 한다. */
+    --htCardW:calc(var(--htAv) * .56);   /* 비공개 — 겹친 두 장이 아바타보다 좁아야 한다 */
+    --htCardH:calc(var(--htAv) * .84);
+    --htUpW:calc(var(--htAv) * .84);     /* 공개 — 펼쳐지며 커진다 */
+    --htUpH:calc(var(--htAv) * 1.26);
   }
 
   /* 테이블 — 타원 3겹.
@@ -1200,9 +1207,23 @@
   .ht-board{display:flex;gap:6px;min-height:var(--htBoardH);align-items:center}
   .ht-shell .ht-board .pcard{width:var(--htBoardW);height:var(--htBoardH);border-radius:6px}
   /* 중앙 팟 칩 더미 — 스트리트가 닫힐 때마다 여기로 칩이 모여 쌓인다.
-     크기를 고정해 두어야 더미가 커져도 중앙 블록 높이가 흔들리지 않는다. */
-  .ht-potpile{position:relative;width:170px;height:30px;flex:none;
-    transition:opacity .5s ease-out}
+     팟이 갈라지면 층마다 더미가 하나씩 선다. 각 더미가 이름표와 금액을 직접 달고 있어
+     "어느 팟이 얼마인가"와 "그 팟이 누구에게 갔나"가 같은 물체에서 읽힌다.
+     높이를 고정해 두어야 더미가 커져도 중앙 블록 높이가 흔들리지 않는다. */
+  .ht-piles{display:flex;align-items:flex-end;justify-content:center;gap:10px;
+    min-height:34px;flex:none}
+  .ht-pg{position:relative;width:170px;height:34px;flex:none;
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    transition:opacity .5s ease-out,transform .5s ease-out}
+  /* 층이 갈라지면 더미를 좁혀 나란히 세운다 — 170px 세 개는 펠트를 넘는다 */
+  .ht-piles.split .ht-pg{width:88px}
+  /* 그 층을 이미 보냈다 — 빈 상자가 이름표만 남아 서 있지 않게 접는다 */
+  .ht-pg.paid{opacity:0;transform:scale(.9)}
+  /* span이므로 display:block을 줘야 width·height가 먹는다 — 인라인은 둘 다 무시한다 */
+  .ht-pg-chips{display:block;position:relative;width:100%;height:22px;flex:none}
+  .ht-pg-k{font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.7px;
+    color:var(--muted);line-height:1.1}
+  .ht-pg-v{font-family:var(--mono);font-size:9.5px;font-weight:800;color:#cbd8cf;line-height:1.1}
   .ht-pchip{position:absolute;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-weight:800;color:#2a2107;letter-spacing:-.2px;
     text-shadow:0 1px 0 rgba(255,255,255,.35)}
@@ -1226,17 +1247,16 @@
      테이블 밖에 걸쳐 앉는다. 세로로 [홀 카드 → 아바타 → 이름·스택 태그] 세 겹이고,
      좌표는 아바타 중심에 꽂힌다 — 그 점이 타원 경계 위에 놓여 절반은 펠트, 절반은 레일이다.
 
-     겹치는 순서(앞에서 뒤로): 태그 > 공개된 카드 > 아바타 > 비공개 카드 > 테이블.
-     비공개 카드가 아바타 뒤인 것이 중요하다 — 앞에 두면 카드가 얼굴을 다 덮는다.
-     공개되면 앞으로 나와 아바타를 덮는다. "지금 볼 것"이 바뀌는 것을 층으로 표현한다.
+     겹치는 순서(앞에서 뒤로): 태그 > 카드 > 아바타 > 테이블. 셋이 계단처럼 물린다 —
+     카드가 아바타를 조금 덮고, 태그가 카드 아래를 덮는다. 이 계단이 입체감을 만든다.
+     공개 여부로 층이 바뀌지 않는다. 바뀌는 것은 얼마나 가려지는가다(아래 45% → 10%).
 
      박스 크기는 아바타와 같게 고정한다. 태그와 카드는 흐름에서 빼내므로(absolute)
      스택 자릿수나 ALL IN 표시가 바뀌어도 박스가 흔들리지 않는다 —
      박스가 흔들리면 거기 걸린 카드가 매 액션마다 움찔거린다(예전에 실제로 그랬다). */
   /* ── 좌석 안의 층 순서 (뒤 → 앞) ──────────────────────────────────
-       1  비공개 홀 카드   .ht-hole          — 아바타 뒤. 위 절반만 솟는다
        2  아바타           .ht-av
-       3  공개된 홀 카드   .ht-hole.up       — 앞으로 나와 아바타를 덮는다
+       3  홀 카드          .ht-hole          — 공개·비공개 모두 아바타 앞에 걸친다
        4  시계 고리        .ht-clock
        5  이름·스택 태그   .ht-plate         — 아바타 하단과 카드 아래 끝을 덮는다
        6  자리 비움·폴드·딜러 퍽·블라인드·승률
@@ -1267,8 +1287,8 @@
      겹치면 하나의 "플레이어"로 읽힌다. */
   .ht-plate{position:absolute;left:50%;top:calc(100% - var(--htTagUp));
     transform:translateX(-50%);z-index:5;
-    min-width:calc(var(--htAv) * 1.7);max-width:calc(var(--htAv) * 2.3);
-    padding:2px 7px 3px;border-radius:7px;text-align:center;line-height:1.15;
+    min-width:calc(var(--htAv) * 1.9);max-width:calc(var(--htAv) * 2.5);
+    padding:3px 10px 4px;border-radius:8px;text-align:center;
     background:linear-gradient(180deg,rgba(20,26,22,.97),rgba(9,13,10,.97));
     border:1px solid rgba(255,255,255,.16);box-shadow:0 3px 10px rgba(0,0,0,.5)}
   /* 지금 행동할 차례 — 아바타 둘레에 맥박을 준다. 예전에는 좌석판을 흔들었는데,
@@ -1303,20 +1323,21 @@
     display:flex;align-items:center;justify-content:center;
     border:1.5px solid rgba(0,0,0,.4);box-shadow:0 1px 4px rgba(0,0,0,.5)}
 
-  /* ── 홀 카드 — 비공개와 공개가 서로 다른 배치 ──────────────────────
-     비공개: 두 장을 겹치고 서로 기울인다. 아래쪽은 아바타·태그 뒤로 들어간다(z 1).
-             "무엇인지 모르는 두 장이 얼굴 뒤에 놓여 있다"로 읽힌다.
-     공개  : 나란히 펼치고 커진다. 앞으로 나와 아바타를 덮고(z 3), 아래 끝만 태그 뒤에 남는다.
-             볼 것이 카드로 바뀌었으니 층도 바뀐다. */
-  /* 두 상태에서 카드를 가리는 것이 서로 다르다 — 그래서 기준도 다르다.
-       비공개: 아바타가 가린다. bottom:50%면 카드 아래 끝이 아바타 중앙에 놓여
-               아래 절반이 얼굴 뒤로 들어가고 위 절반이 그 위로 솟는다.
-       공개  : 태그가 가린다. 카드 아래 끝을 태그 상단보다 카드 높이의 10%만큼 내려
-               그만큼만 태그 뒤에 남는다.  bottom = --htTagUp - 높이×0.1
-               (좌석 높이가 아바타 지름이므로 태그 상단은 좌석 아래에서 --htTagUp 위다) */
+  /* ── 홀 카드 ────────────────────────────────────────────────────────
+     카드는 두 상태 모두 아바타 앞이다(z 3 > 아바타 2). 카드를 가리는 것은 이름 태그뿐이다.
+     그래서 층은 [태그 5 > 카드 3 > 아바타 2 > 테이블]이고, 셋이 계단처럼 겹친다 —
+     카드가 얼굴을 조금 덮고, 태그가 카드 아래를 덮는다. 이 계단이 입체감을 만든다.
+     (한때 비공개 카드를 아바타 뒤에 뒀는데, 그러면 카드와 사람이 따로 떠 있는 두 물체로
+      보였다. 앞에 걸쳐 있어야 "이 사람의 패"로 읽힌다.)
+
+     상태에 따라 다른 것은 얼마나 가려지는가와 크기·기울기다.
+       비공개: 아래 45%가 태그 뒤. 두 장을 많이 겹치고 서로 기울인다.
+       공개  : 아래 10%만 태그 뒤. 나란히 펼치고 커진다.
+     좌석 높이가 아바타 지름이므로 태그 상단은 좌석 아래에서 --htTagUp 위다.
+     따라서 bottom = --htTagUp - 카드높이 × 가려질비율. */
   .ht-hole{position:absolute;left:50%;transform:translateX(-50%);
     display:flex;align-items:flex-end;pointer-events:none;
-    z-index:1;bottom:50%;gap:0;
+    z-index:3;bottom:calc(var(--htTagUp) - var(--htCardH) * .45);gap:0;
     transition:bottom .28s cubic-bezier(.2,.7,.3,1)}
   /* 카드 자체에는 transition을 걸지 않는다.
      공개되는 순간 syncHole이 뒷면 요소를 앞면으로 교체하므로(src가 달라진다) 요소가
@@ -1326,26 +1347,31 @@
      둘이 합쳐져 "카드가 앞으로 나오며 뒤집힌다"가 된다. */
   .ht-shell .pcard.sm{width:var(--htCardW);height:var(--htCardH);border-radius:4px;
     box-shadow:0 2px 7px rgba(0,0,0,.55)}
-  /* 겹치고 기울인다 — 두 장이 한 덩어리로 보이게 */
-  .ht-hole:not(.up) .pcard:first-child{transform:rotate(-8deg);margin-right:calc(var(--htCardW) * -.5)}
-  .ht-hole:not(.up) .pcard:last-child{transform:rotate(7deg)}
-  /* 공개 — 나란히 펼치고 앞으로 나와 아바타를 덮는다. 아래 10%만 태그 뒤에 남는다. */
-  .ht-hole.up{z-index:3;bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:3px}
+  /* 겹치고 기울인다 — 두 장이 한 덩어리로 보이게.
+     많이 겹쳐야(0.58) 두 장의 총 폭이 아바타 지름보다 좁아, 카드가 앞에 있어도
+     아바타 테두리가 좌우로 남는다. 그 남는 테두리가 계단 겹침을 보이게 하는 것이다 —
+     카드가 아바타보다 넓으면 얼굴이 통째로 사라지고 겹침이 아니라 가림이 된다. */
+  .ht-hole:not(.up) .pcard:first-child{transform:rotate(-9deg);margin-right:calc(var(--htCardW) * -.58)}
+  .ht-hole:not(.up) .pcard:last-child{transform:rotate(8deg)}
+  /* 공개 — 나란히 펼치고 커진다. 아래 10%만 태그 뒤에 남아 카드가 거의 다 보인다. */
+  .ht-hole.up{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:3px}
   .ht-hole.up .pcard{transform:none;margin:0}
   .ht-shell .ht-hole.up .pcard.sm{width:var(--htUpW);height:var(--htUpH)}
   /* 내 카드는 언제나 공개 상태로 크게 본다 */
   .ht-shell .pcard.hero{width:var(--htUpW);height:var(--htUpH);border-radius:5px;
     box-shadow:0 3px 10px rgba(0,0,0,.55)}
-  .ht-seat.hero .ht-hole{z-index:3;bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:3px}
+  .ht-seat.hero .ht-hole{bottom:calc(var(--htTagUp) - var(--htUpH) * .1);gap:3px}
   .ht-seat.hero .ht-hole .pcard{transform:none;margin:0}
 
-  /* 이름과 스택은 태그 안에서 두 줄 */
-  .ht-who{display:block;line-height:1.15}
-  /* 태그 안 두 줄. 폭은 태그가 정하고(min/max-width), 이름은 길면 잘린다.
+  /* 이름과 스택은 태그 안에서 두 줄. 사이를 조금 띄운다 — 붙여 두면 두 값이
+     한 덩어리로 읽혀서 어느 쪽이 이름인지 잠깐 헷갈린다. */
+  .ht-who{display:block;line-height:1.25}
+  /* 폭은 태그가 정하고(min/max-width), 이름은 길면 잘린다.
      display:block + overflow로 잘라야 한다 — inline이면 ellipsis가 걸리지 않는다. */
-  .ht-nm{display:block;font-size:9.5px;font-weight:700;color:#dce8e0;white-space:nowrap;
+  .ht-nm{display:block;font-size:10.5px;font-weight:700;color:#dce8e0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
-  .ht-stk{display:block;font-family:var(--mono);font-size:10.5px;font-weight:800;
+  .ht-stk{display:block;margin-top:1px;
+    font-family:var(--mono);font-size:11.5px;font-weight:800;
     color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* 딜러 퍽 — 아바타의 "중앙을 향한 옆면"에 붙인다.
      펠트 위 별도 좌표에 띄워 두면 떠 있는 물체로 보여서 누구 버튼인지 한눈에 안 잡혔다.
@@ -1453,18 +1479,9 @@
   .ht-lvup-ar{color:var(--gold)}
   .ht-lvup-to{color:#fff}
 
-  /* ── 메인 / 사이드 팟 ─────────────────────────────────────────────
-     층이 하나뿐이면 아예 안 나온다(POT 숫자로 충분하다). 올인이 섞여 갈라졌을 때만. */
-  .ht-pots{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:3px}
-  .ht-pots[hidden]{display:none}
-  .ht-pl{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:5px;
-    background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12)}
-  .ht-pl-k{font-family:var(--mono);font-size:8.5px;font-weight:900;letter-spacing:.6px;
-    color:var(--muted)}
-  .ht-pl-v{font-family:var(--mono);font-size:10.5px;font-weight:800;color:#dcece2}
-  /* 내가 다툴 수 있는 층 — 스택이 작으면 메인 팟만 가져갈 수 있다 */
-  .ht-pl.mine{border-color:rgba(212,175,55,.6);background:rgba(212,175,55,.14)}
-  .ht-pl.mine .ht-pl-v{color:var(--gold-hi)}
+  /* 메인 / 사이드 팟의 알약 줄(.ht-pots · .ht-pl)은 없앴다.
+     층마다 칩 더미가 따로 서고 그 더미가 이름표와 금액을 직접 달고 있어서(.ht-pg 계열)
+     같은 것을 두 곳에 적을 이유가 없어졌다. */
 
   /* 내 조합 — 보드 아래 한 줄. 투페어 이상이면 금색으로 힘을 준다. */
   .ht-read{padding:3px 12px;border-radius:999px;font-family:var(--mono);
@@ -1568,14 +1585,10 @@
   .ht-abadge.a-call{background:linear-gradient(180deg,#78c2f0,#2f7fbd);color:#04202f}
   .ht-abadge.a-bet,.ht-abadge.a-raise{background:linear-gradient(180deg,#f0894b,#c8521c);color:#2a1004}
   .ht-abadge.a-fold{background:linear-gradient(180deg,#9a9a9a,#6a6a6a);color:#141414}
-  /* 올인은 사라지지 않는다 — 판이 끝날 때까지 유효한 사실이다. 그래서 맥박만 준다. */
+  /* 올인도 다른 액션과 같이 잠깐 떴다 사라진다 — 색만 다르게 둔다.
+     "지금 올인 상태다"는 스택 자리의 ALL IN 문구가 따로 말한다(.ht-stk.allin). */
   .ht-abadge.a-allin{background:linear-gradient(180deg,#e2483f,#a81f18);color:#fff;
     font-family:var(--mono);letter-spacing:1px}
-  .ht-abadge.keep{animation:allinBadge 1.6s ease-in-out infinite}
-  @keyframes allinBadge{
-    0%,100%{box-shadow:0 2px 8px rgba(0,0,0,.55),0 0 0 0 rgba(255,70,60,.55)}
-    60%    {box-shadow:0 2px 8px rgba(0,0,0,.55),0 0 0 6px rgba(255,70,60,0)}
-  }
   /* ── WIN 배지 ────────────────────────────────────────────────────
      이 판(또는 이 팟 층)을 가져간 사람. 칩이 움직이기 전에 먼저 뜬다 —
      칩부터 날아가면 이미 정산이 끝난 뒤에 누가 이겼는지 알게 된다.
@@ -1784,23 +1797,21 @@
      주의: 뷰포트 폭과 펠트 실폭이 늘 같은 방향으로 움직이지는 않는다. 700px 아래에서는
      오른쪽 패널이 아래로 쌓이면서 본문이 화면 폭을 다 쓰게 되므로, 펠트는 오히려
      넓어진다. 그래서 640 구간에서 다시 키우지 않고 641~700 구간을 따로 둔다. */
+  /* 홀 카드는 --htAv에서 유도되므로 티어에서는 아바타·태그·보드·펠트만 덮으면 된다 */
   @media (max-width:1100px){
-    .ht-shell{--htCloth:360px;--htBoardW:54px;--htBoardH:81px;
-      --htAv:42px;--htTagUp:13px;--htCardW:31px;--htCardH:46px;--htUpW:40px;--htUpH:60px}
+    .ht-shell{--htCloth:360px;--htBoardW:54px;--htBoardH:81px;--htAv:46px;--htTagUp:14px}
   }
   @media (max-width:820px){
-    .ht-shell{--htCloth:320px;--htBoardW:44px;--htBoardH:66px;
-      --htAv:36px;--htTagUp:11px;--htCardW:26px;--htCardH:39px;--htUpW:34px;--htUpH:51px}
+    .ht-shell{--htCloth:320px;--htBoardW:44px;--htBoardH:66px;--htAv:40px;--htTagUp:12px}
     .ht-rail{padding:11px}
-    .ht-felt{padding:22px 18px 24px}
+    .ht-felt{padding:22px 22px 24px}
     .ht-grid{grid-template-columns:repeat(2,1fr)}
     .ht-acts{flex-wrap:wrap}
     .hta{flex:1 1 44%}
   }
   /* 오른쪽 패널이 아직 옆에 붙어 있는 가장 좁은 구간 — 여기가 펠트가 가장 좁다 */
   @media (max-width:700px){
-    .ht-shell{--htCloth:300px;--htBoardW:40px;--htBoardH:60px;
-      --htAv:32px;--htTagUp:10px;--htCardW:23px;--htCardH:35px;--htUpW:30px;--htUpH:45px}
+    .ht-shell{--htCloth:300px;--htBoardW:40px;--htBoardH:60px;--htAv:34px;--htTagUp:10px}
     .ht-clock-n{display:none}   /* 이 폭에서는 고리로 충분하다 — 남은 초는 중앙 메시지에도 있다 */
     /* 좌우 여백을 늘린다. 3시·9시 좌석은 이름 태그의 절반이 테이블 밖으로 나가는데,
        태그 최소 폭이 아바타의 1.7배이므로 좁은 화면에서는 그 절반이 화면을 넘었다(실측). */
@@ -1811,12 +1822,10 @@
   }
   /* 패널이 아래로 쌓여 본문이 화면 폭을 다 쓴다 — 위 구간보다 오히려 넓어진다 */
   @media (max-width:700px) and (min-width:481px){
-    .ht-shell{--htCloth:330px;--htBoardW:46px;--htBoardH:69px;
-      --htAv:36px;--htTagUp:11px;--htCardW:26px;--htCardH:39px;--htUpW:34px;--htUpH:51px}
+    .ht-shell{--htCloth:330px;--htBoardW:46px;--htBoardH:69px;--htAv:38px;--htTagUp:11px}
   }
   @media (max-width:480px){
-    .ht-shell{--htCloth:270px;--htBoardW:34px;--htBoardH:51px;
-      --htAv:30px;--htTagUp:9px;--htCardW:21px;--htCardH:32px;--htUpW:27px;--htUpH:41px}
+    .ht-shell{--htCloth:270px;--htBoardW:34px;--htBoardH:51px;--htAv:32px;--htTagUp:10px}
     .ht-felt{padding:20px 30px 24px}
     .ht-spot-amt{font-size:9.5px}
     /* 이 폭에서는 이름을 더 좁게 — 태그 절반이 밖으로 나가므로 폭이 곧 화면 여유다 */

@@ -597,7 +597,9 @@ export function cardsToStrings(cards: number[]): string[] {
    조합을 전개할 필요가 없다.
    내 카드로 계산한 내 정보만 내려보내므로 히든 정보가 새지 않는다. */
 
-const RANK_LABEL = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+/* 10을 'T'로 적는다. 포커에서는 랭크를 항상 한 글자로 쓰기 때문이다 —
+   'T4s'는 한 덩어리로 읽히는데 '104 수티드'는 백네 개로 먼저 읽힌다(실제로 그렇게 보였다). */
+const RANK_LABEL = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 
 export interface HandRead {
   /** 등급 번호 (CAT_* 와 같은 체계). 2장뿐일 때는 null */
@@ -656,6 +658,21 @@ export function readHand(hole: number[], board: number[]): HandRead {
 
   const L = (r: number) => RANK_LABEL[r];
 
+  /* 보드가 없으면(프리플랍) 족보가 아니라 두 장의 표기를 읽어 준다 — QJs · T9o · TT.
+     이 판정을 아래 족보 판정보다 먼저 둔다. 뒤에 두면 포켓 페어만 '원페어 (T)'로 갈라져
+     같은 프리플랍인데 표기 체계가 둘이 된다. 포커에서는 프리플랍을 늘 두 장 표기로 부른다.
+     페어는 무늬가 다를 수밖에 없으므로 s/o를 붙이지 않는다(TT, 44). */
+  if (!board.length && hole.length === 2) {
+    const a = hole[0] >> 2, b = hole[1] >> 2;
+    const hi = Math.max(a, b), lo = Math.min(a, b);
+    const suited = (hole[0] & 3) === (hole[1] & 3);
+    return {
+      category: a === b ? CAT_PAIR : null,
+      text: a === b ? `${L(hi)}${L(lo)}` : `${L(hi)}${L(lo)}${suited ? 's' : 'o'}`,
+      highlight,
+    };
+  }
+
   if (sfHigh >= 0) {
     return {
       category: CAT_STRAIGHT_FLUSH,
@@ -675,19 +692,6 @@ export function readHand(hole: number[], board: number[]): HandRead {
   }
   if (pairs.length === 1) return { category: CAT_PAIR, text: `원페어 (${L(pairs[0].r)})`, highlight };
 
-  /* 아무것도 안 됐을 때.
-     보드가 아직 안 깔린 프리플랍은 "무엇이 완성됐나"를 말할 수 없으므로
-     내 두 장을 읽어준다(수티드인지가 이 시점의 유일한 정보다). */
-  if (!board.length && hole.length === 2) {
-    const a = hole[0] >> 2, b = hole[1] >> 2;
-    const suited = (hole[0] & 3) === (hole[1] & 3);
-    const hi = Math.max(a, b), lo = Math.min(a, b);
-    return {
-      category: null,
-      text: `${L(hi)}${L(lo)} ${suited ? '수티드' : '오프수트'}`,
-      highlight,
-    };
-  }
   const best = Math.max(...cards.map(c => c >> 2));
   return { category: CAT_HIGH, text: `${L(best)} 하이`, highlight };
 }
