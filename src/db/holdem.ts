@@ -130,6 +130,39 @@ export function recentHoldemWinners(limit = 2): {
       LIMIT ?`, limit);
 }
 
+/* ── 역대 프리롤 전적 ──────────────────────────────────────────────────
+   지표를 게임별 랭킹(판수·승률·수익액)과 다르게 잡는다. 프리롤은 참가비가 0이라
+   상금만 양수로 들어오므로 "수익액"이 실력과 무관하게 참가 횟수만큼 오른다 —
+   그래서 게임 랭킹에서 홀덤을 뺐고, 여기서도 같은 함정을 반복하지 않는다.
+
+   대신 대회에서 실제로 의미가 있는 것을 센다: 우승·입상·참가·누적 상금.
+
+   줄 세우는 기준은 누적 상금 하나다 — "지금까지 쭉 얼마를 먹었나". 우승 횟수로도
+   정렬할 수 있게 만들어 봤지만 표가 둘로 갈리기만 하고 알고 싶은 것은 하나였다.
+   우승 횟수는 줄 안에 같이 적어 둔다.
+
+   끝난 대회만 센다(finished_at). 진행 중인 대회는 등수가 아직 없다.
+   새 테이블이 필요 없다 — holdem_entries에 finish_place와 prize가 이미 쌓여 있다. */
+export interface HoldemRecordRow {
+  userId: string; username: string;
+  played: number; wins: number; itm: number; prize: number;
+}
+export function holdemRecords(limit = 20): HoldemRecordRow[] {
+  return all<HoldemRecordRow>(
+    `SELECT e.user_id AS userId,
+            MAX(e.username) AS username,
+            COUNT(*) AS played,
+            SUM(CASE WHEN e.finish_place = 1 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN e.prize > 0 THEN 1 ELSE 0 END) AS itm,
+            SUM(e.prize) AS prize
+       FROM holdem_entries e
+       JOIN holdem_tournaments t ON t.id = e.tournament_id
+      WHERE t.finished_at IS NOT NULL AND e.finish_place IS NOT NULL
+      GROUP BY e.user_id
+      ORDER BY prize DESC, wins DESC, played DESC
+      LIMIT ?`, limit);
+}
+
 export function getEntries(tournamentId: number): HtEntryRow[] {
   return all<HtEntryRow>(
     `SELECT * FROM holdem_entries WHERE tournament_id = ? ORDER BY registered_at ASC`, tournamentId);

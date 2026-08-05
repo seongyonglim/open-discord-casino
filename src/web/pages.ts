@@ -3,7 +3,7 @@ import {
   bombIcon, ladderIcon, chartIcon, discordIcon,
   flipIcon, baccaratIcon, blackjackIcon, trophyIcon,
 } from './icons';
-import { getRecentBigWins, type LeaderboardRow, type WebUser } from '../db/queries';
+import type { LeaderboardRow, WebUser } from '../db/queries';
 import { recentHoldemWinners, type HoldemStatus } from '../db/holdem';
 import * as T from '../services/tournament';
 import { NOTICES, type Notice } from './notices';
@@ -188,17 +188,14 @@ function newsSection(): string {
       <span class="dim">(${esc(w.dateStr)} · ${w.players}명)</span></span></li>`);
   }
 
-  const GAME_KO: Record<string, string> = {
-    mines: '지뢰찾기', ladder: '사다리', graph: '그래프',
-    poker: '포커 플립', baccarat: '바카라', blackjack: '블랙잭',
-    holdem: '홀덤',
-  };
-  for (const w of getRecentBigWins(2)) {
-    const g = GAME_KO[w.game.replace(/:.*$/, '')] ?? w.game;
-    items.push(`<li><span class="nw-k">${esc(g)}</span>
-      <span class="nw-v"><b>${esc(w.username)}</b>
-      <span class="pos">+${w.amount.toLocaleString('ko-KR')}P</span></span></li>`);
-  }
+  /* "최근 큰 승리"를 넣었다가 뺐다.
+     원장에서 뽑을 수 있는 값은 정산으로 받아간 금액이고, 그 판에 얼마를 걸었는지는
+     짝지을 수 없다(원장 행에 라운드 번호가 없다). 그래서 그래프에서 30,000P를 걸고
+     1.03배에 뺀 사람이 "+31,080P"로 찍혔다 — 실제 이익은 1,080P다.
+     무엇을 뜻하는지 알 수 없는 숫자를 크게 보여주는 건 아예 없는 것보다 나쁘다.
+
+     순이익을 제대로 내려면 게임별 라운드 표(ladder_bets·crash_bets·... 각각 amount와
+     payout이 있다)를 여섯 개 합쳐야 한다. 그럴 가치가 있다고 판단되면 그때 만든다. */
 
   const notice = NOTICES[0];
   if (notice) {

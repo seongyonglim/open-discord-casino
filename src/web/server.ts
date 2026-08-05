@@ -30,7 +30,7 @@ import {
 import {
   holdemPage, handleState as htState, handleRegister as htRegister,
   handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
-  handleUnregister as htUnregister,
+  handleUnregister as htUnregister, handleRecords as htRecords,
 } from './games/holdem';
 // 로비의 프리롤 카드가 대회 상태를 비추는 데 쓴다 (상태 판정은 이 함수에만 있다)
 import { advanceHoldem } from '../db/holdem';
@@ -329,6 +329,10 @@ export function startWebServer(): void {
       if (path === '/api/games/holdem/sitin' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await htSitIn(req, res, me.id);
+      }
+      if (path === '/api/games/holdem/records' && req.method === 'GET') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htRecords(req, res, me.id);
       }
       if (path === '/api/games/holdem/show' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });

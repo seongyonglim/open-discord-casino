@@ -774,6 +774,59 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
   }
 }
 
+/* ── [1e] 역대 전적 집계 ─────────────────────────────────────────────
+   누적 상금으로만 줄 세운다. 우승을 많이 했어도 소액 대회만 먹었으면 아래로
+   내려가야 한다 — "지금까지 쭉 먹은 상금"이 이 표가 말하는 것이다.
+   끝난 대회만 세는지도 함께 본다. */
+{
+  console.log('\n[1e] 역대 전적 — 누적 상금 집계');
+  const db3 = getDb();
+  const at = nowSec() - 40 * 86_400;
+  /* 큰 대회 하나(꾸준한 사람이 상금을 쌓는다)와 작은 대회 둘(다른 사람이 우승만 챙긴다).
+     여기에 아직 끝나지 않은 대회 하나를 섞어서 그 판이 세어지지 않는지 확인한다. */
+  const plan: { day: number; finished: boolean; places: [string, number][] }[] = [
+    { day: 5, finished: true,  places: [['r_steady', 9000], ['r_spike', 0], ['r_zero', 0]] },
+    { day: 4, finished: true,  places: [['r_spike', 1500], ['r_steady', 900], ['r_zero', 0]] },
+    { day: 3, finished: true,  places: [['r_spike', 1500], ['r_steady', 900], ['r_zero', 0]] },
+    { day: 2, finished: false, places: [['r_zero', 99_999]] },   // 진행 중 — 세어지면 안 된다
+  ];
+  for (const p of plan) {
+    const t = at + p.day * 3600;
+    const tid = Number(db3.prepare(`INSERT INTO holdem_tournaments
+      (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at) VALUES (?, ?, ?, ?, ?, 3, ?, ?)`)
+      .run(`rec-${p.day}`, '집계 검사', t - 60, t, t + 60, t, p.finished ? t + 600 : null)
+      .lastInsertRowid);
+    p.places.forEach(([uid, prize], i) => {
+      db3.prepare(`INSERT INTO holdem_entries
+        (tournament_id, user_id, username, registered_at, finish_place, elim_seq, prize)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(tid, uid, uid, t - 10, i + 1, p.places.length - i, prize);
+    });
+  }
+  const rows = HD.holdemRecords(20).filter(r => r.userId.startsWith('r_'));
+  const of_ = (id: string) => rows.find(r => r.userId === id);
+
+  ck('1위는 누적 상금이 가장 많은 쪽', rows[0]?.userId === 'r_steady',
+    rows.map(r => `${r.userId}:${r.prize}`).join(' '));
+  // 이 검사가 헛돌지 않도록 전제부터 확인한다 — 우승은 spike가 더 많아야 한다
+  ck('검사 전제: 우승은 spike가 더 많다',
+    (of_('r_spike')?.wins ?? 0) > (of_('r_steady')?.wins ?? 0),
+    `spike=${of_('r_spike')?.wins} steady=${of_('r_steady')?.wins}`);
+  ck('우승이 많아도 상금이 적으면 아래로 간다',
+    rows.findIndex(r => r.userId === 'r_spike') > rows.findIndex(r => r.userId === 'r_steady'),
+    `spike prize=${of_('r_spike')?.prize} steady prize=${of_('r_steady')?.prize}`);
+  ck('누적 상금 = 끝난 대회 상금 합', of_('r_steady')?.prize === 9000 + 900 + 900,
+    String(of_('r_steady')?.prize));
+  ck('우승 = finish_place 1 인 판의 수', of_('r_spike')?.wins === 2, String(of_('r_spike')?.wins));
+  ck('입상은 상금 > 0 인 판만 센다', of_('r_zero')?.itm === 0, String(of_('r_zero')?.itm));
+  ck('진행 중인 대회는 참가 수에 안 들어간다', of_('r_zero')?.played === 3,
+    String(of_('r_zero')?.played));
+  ck('진행 중인 대회 상금은 안 더한다', of_('r_zero')?.prize === 0, String(of_('r_zero')?.prize));
+  ck('상금 순 내림차순', rows.every((r, i) => i === 0 || rows[i - 1].prize >= r.prize),
+    rows.map(r => r.prize).join(','));
+}
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 try { rmSync(process.env.DB_PATH!, { recursive: true, force: true }); } catch { /* OS가 정리 */ }
 process.exit(fail ? 1 : 0);
