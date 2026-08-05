@@ -3,7 +3,9 @@ import {
   bombIcon, ladderIcon, chartIcon, discordIcon,
   flipIcon, baccaratIcon, blackjackIcon, trophyIcon,
 } from './icons';
-import type { LeaderboardRow, WebUser } from '../db/queries';
+import { getRecentBigWins, type LeaderboardRow, type WebUser } from '../db/queries';
+import { recentHoldemWinners, type HoldemStatus } from '../db/holdem';
+import * as T from '../services/tournament';
 import { NOTICES, type Notice } from './notices';
 
 /* 로비의 게임 목록.
@@ -94,34 +96,141 @@ export function gameSwitcher(currentKey: string, helpDialogId?: string): string 
    버튼 문구는 게임마다 다르다. 전부 "플레이"였는데, 홀덤은 바로 플레이가 아니라
    대회에 신청하는 것이고 바카라·블랙잭은 테이블에 들어가는 것이라 하는 일이 서로 다르다.
    문구가 다르면 누르기 전에 무슨 일이 일어날지 알 수 있다. */
-function gameCard(g: GameDef): string {
-  const badge = g.badge ? `<span class="gc-badge">${esc(g.badge)}</span>` : '';
+function gameCard(g: GameDef, override?: { badge?: string; desc?: string; cta?: string; hot?: boolean }): string {
+  const o = override ?? {};
+  const badgeText = o.badge ?? g.badge;
+  const badge = badgeText ? `<span class="gc-badge">${esc(badgeText)}</span>` : '';
   const inner = `<div class="gc-top"><div class="icon">${g.icon}</div>${badge}</div>
     <h3>${esc(g.name)}</h3>
-    <p>${esc(g.desc)}</p>`;
+    <p>${esc(o.desc ?? g.desc)}</p>`;
   if (!g.ready) {
     return `<div class="game-card">${inner}<span class="soon">출시 예정</span></div>`;
   }
-  return `<a class="game-card ready" href="/games/${g.key}">${inner}
-    <span class="btn btn-gold">${esc(g.cta)}</span>
+  return `<a class="game-card ready${o.hot ? ' live' : ''}" href="/games/${g.key}">${inner}
+    <span class="btn btn-gold">${esc(o.cta ?? g.cta)}</span>
   </a>`;
+}
+
+/* ── 프리롤 카드는 대회 상태를 그대로 비춘다 ────────────────────────────
+   "매일 22:00"이라는 고정 배지만 붙여 두면 하루 23시간 동안 아무 정보가 없다.
+   등록이 열렸는지, 지금 몇 명인지, 이미 끝났는지가 로비에서 보여야 한다.
+
+   상태 판정은 advanceHoldem 하나에만 둔다 — 로비에서 따로 계산하면 로비 표시와
+   실제 대회가 갈라진다. 이 함수는 그 결과를 문구로 옮기기만 한다.
+
+   등록 중일 때만 카드를 강조한다(hot). 상시로 크게 띄우면 하루 대부분의 시간에
+   거짓 긴박감을 만들고, 그런 배지는 한 번 들키면 나머지도 안 믿게 된다. */
+function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; cta?: string; hot?: boolean } {
+  const t = st.tournament;
+  const n = st.registered;
+  const pool = T.prizePool(n, t.prize_multiplier);
+  const now = Math.floor(Date.now() / 1000);
+  const left = (at: number) => {
+    const s = Math.max(0, at - now);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+  };
+
+  switch (st.status) {
+    case 'REGISTRATION_OPEN':
+      return {
+        badge: `등록 중 · ${left(st.schedule.scheduledStartAt)} 후 시작`,
+        desc: n > 0
+          ? `${n}명 신청 · 상금 풀 ${pool.toLocaleString('ko-KR')}P. 지금 신청할 수 있습니다.`
+          : '참가 신청이 열렸습니다. 최소 3명이 모이면 시작합니다.',
+        cta: st.tournament.id ? '참가 신청' : '참가 신청',
+        hot: true,
+      };
+    case 'WAITING_MIN_PLAYERS':
+      return {
+        badge: '인원 대기 중',
+        desc: `${n}명 신청 — 최소 ${T.MIN_PLAYERS}명이 모이면 시작합니다. 아직 들어올 수 있어요.`,
+        cta: '참가 신청', hot: true,
+      };
+    case 'RUNNING':
+      return {
+        badge: '진행 중',
+        desc: `${n}명이 참가한 대회가 돌고 있습니다. 늦은 등록이나 관전으로 들어가세요.`,
+        cta: '테이블 보기', hot: true,
+      };
+    case 'FINISHED':
+      return {
+        badge: '오늘 종료',
+        desc: '오늘 대회는 끝났습니다. 결과는 안에서 확인할 수 있어요.',
+        cta: '결과 보기',
+      };
+    case 'CANCELLED':
+      return {
+        badge: '취소',
+        desc: `최소 인원(${T.MIN_PLAYERS}명)이 모이지 않아 오늘 대회는 취소됐습니다.`,
+        cta: '자세히 보기',
+      };
+    default:
+      return {
+        badge: '매일 22:00',
+        desc: `등록은 ${left(st.schedule.regOpenAt)} 후에 열립니다. 참가비 없이 상금만 걸린 대회예요.`,
+        cta: '자세히 보기',
+      };
+  }
+}
+
+/* ── 최근 소식 ─────────────────────────────────────────────────────────
+   로비가 "내가 없는 동안 무슨 일이 있었는지"를 전혀 알려주지 않았다.
+   소규모 커뮤니티에서 다시 들어오는 이유는 대체로 그것이다.
+   보여줄 게 하나도 없으면 이 칸 자체를 그리지 않는다 — 빈 상자가 더 허전하다. */
+function newsSection(): string {
+  const items: string[] = [];
+
+  for (const w of recentHoldemWinners(1)) {
+    items.push(`<li><span class="nw-k">프리롤</span>
+      <span class="nw-v"><b>${esc(w.username)}</b> 우승
+      ${w.prize > 0 ? `· ${w.prize.toLocaleString('ko-KR')}P` : ''}
+      <span class="dim">(${esc(w.dateStr)} · ${w.players}명)</span></span></li>`);
+  }
+
+  const GAME_KO: Record<string, string> = {
+    mines: '지뢰찾기', ladder: '사다리', graph: '그래프',
+    poker: '포커 플립', baccarat: '바카라', blackjack: '블랙잭',
+    holdem: '홀덤',
+  };
+  for (const w of getRecentBigWins(2)) {
+    const g = GAME_KO[w.game.replace(/:.*$/, '')] ?? w.game;
+    items.push(`<li><span class="nw-k">${esc(g)}</span>
+      <span class="nw-v"><b>${esc(w.username)}</b>
+      <span class="pos">+${w.amount.toLocaleString('ko-KR')}P</span></span></li>`);
+  }
+
+  const notice = NOTICES[0];
+  if (notice) {
+    items.push(`<li><span class="nw-k">공지</span>
+      <span class="nw-v"><a href="/notices/${esc(notice.id)}">${esc(notice.title)}</a></span></li>`);
+  }
+
+  if (!items.length) return '';
+  return `<div class="card">
+    <h2>최근 소식</h2>
+    <ul class="news">${items.join('')}</ul>
+  </div>`;
 }
 
 /* 섹션으로 나눠 그린다. 한 격자에 일곱 개를 늘어놓으면 둘째 줄이 반만 차서 미완성처럼
    보이고, 게임이 늘수록 "무엇을 고를지" 판단할 근거가 사라진다. */
-function gameSections(): string {
+function gameSections(ht: HoldemStatus | null): string {
   const order: GameGroup[] = ['event', 'table', 'mini'];
+  const htOverride = ht ? freerollOverride(ht) : undefined;
   return order.map(gr => {
     const list = GAMES.filter(g => g.group === gr);
     if (!list.length) return '';
+    const cards = list.map(g =>
+      g.key === 'holdem' ? gameCard(g, htOverride) : gameCard(g)).join('');
     return `<div class="card">
       <h2>${esc(GROUP_TITLE[gr])}</h2>
-      <div class="game-grid">${list.map(gameCard).join('')}</div>
+      <div class="game-grid">${cards}</div>
     </div>`;
   }).join('');
 }
 
-export function lobbyPage(user: WebUser | null): string {
+export function lobbyPage(user: WebUser | null, ht: HoldemStatus | null = null): string {
   // 로그인 전에는 보여줄 게 없으므로 화면 가운데에 로그인만 크게 놓는다
   // (좁은 카드 안에 작은 버튼을 넣으면 빈 화면에 덩그러니 남아 허전해 보인다).
   if (!user) {
@@ -146,7 +255,8 @@ export function lobbyPage(user: WebUser | null): string {
       <div class="stat"><div class="lbl">내 잔액</div><div class="val gold">${esc(pts(user.balance))}</div></div>
       <div class="stat"><div class="lbl">연속 출석</div><div class="${streakCls}">${user.current_streak}일</div></div>
     </div>
-    ${gameSections()}
+    ${gameSections(ht)}
+    ${newsSection()}
     <div class="card">
       <h2>출석체크</h2>
       <p style="color:var(--muted);font-size:13.5px;margin:0">디스코드 서버의 출석체크 채널에서 버튼을 눌러 매일 포인트를 받으세요. KST 자정이 지나면 다시 누를 수 있습니다.</p>

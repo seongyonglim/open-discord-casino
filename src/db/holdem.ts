@@ -114,6 +114,22 @@ export function getSeats(tableId: number): HtSeatRow[] {
   return all<HtSeatRow>(`SELECT * FROM holdem_seats WHERE table_id = ? ORDER BY seat ASC`, tableId);
 }
 
+/* 최근에 끝난 대회의 우승자. 로비의 "최근 소식"이 쓴다 —
+   소규모 커뮤니티에서 다시 들어오는 이유는 "내가 없는 동안 무슨 일이 있었나"다.
+   진행 중인 대회는 제외한다(결과가 아직 없다). */
+export function recentHoldemWinners(limit = 2): {
+  dateStr: string; title: string; username: string; prize: number; players: number;
+}[] {
+  return all<{ dateStr: string; title: string; username: string; prize: number; players: number }>(
+    `SELECT t.date_str AS dateStr, t.title AS title, e.username AS username, e.prize AS prize,
+            (SELECT COUNT(*) FROM holdem_entries x WHERE x.tournament_id = t.id) AS players
+       FROM holdem_tournaments t
+       JOIN holdem_entries e ON e.tournament_id = t.id AND e.finish_place = 1
+      WHERE t.finished_at IS NOT NULL
+      ORDER BY t.finished_at DESC
+      LIMIT ?`, limit);
+}
+
 export function getEntries(tournamentId: number): HtEntryRow[] {
   return all<HtEntryRow>(
     `SELECT * FROM holdem_entries WHERE tournament_id = ? ORDER BY registered_at ASC`, tournamentId);

@@ -249,6 +249,38 @@ export interface LeaderboardRow {
   current_streak: number;
 }
 
+/* ── 최근 큰 승리 ─────────────────────────────────────────────────────
+   로비의 "최근 소식"이 쓴다. 소규모 커뮤니티에서 다시 들어오는 이유는
+   "내가 없는 동안 무슨 일이 있었나"이고, 그건 남이 크게 딴 판이다.
+
+   원장의 정산 행(delta > 0, reason이 'game:<게임>')만 본다. 베팅 차감 행은
+   ':bet'/':cancel'/':clear'로 끝나므로 게임 키에 콜론이 없는 것만 고르면 걸러진다.
+   지급액에서 그 판의 베팅을 빼지 않는다 — 원장 행에 라운드 번호가 없어서 짝지을 수
+   없기 때문이다(랭킹의 승률을 rated로만 계산하는 것과 같은 이유다).
+   그래서 "얼마 벌었나"가 아니라 "얼마를 받아갔나"로 읽어야 맞다. */
+export interface RecentWinRow {
+  username: string;
+  game: string;
+  amount: number;
+  createdAt: number;
+}
+export function getRecentBigWins(limit = 3, sinceHours = 48): RecentWinRow[] {
+  const since = Math.floor(Date.now() / 1000) - sinceHours * 3600;
+  return all<RecentWinRow>(
+    `SELECT u.username AS username,
+            substr(l.reason, 6) AS game,
+            l.delta AS amount,
+            l.created_at AS createdAt
+       FROM points_ledger l
+       JOIN users u ON u.id = l.user_id
+      WHERE l.delta > 0
+        AND l.reason LIKE 'game:%'
+        AND instr(substr(l.reason, 6), ':') = 0
+        AND l.created_at >= ?
+      ORDER BY l.delta DESC
+      LIMIT ?`, since, limit);
+}
+
 export function getLeaderboard(limit = 10): LeaderboardRow[] {
   return all<LeaderboardRow>(
     `SELECT id, username, avatar, balance, current_streak FROM users ORDER BY balance DESC, id ASC LIMIT ?`,
