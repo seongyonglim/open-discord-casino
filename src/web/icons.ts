@@ -59,8 +59,22 @@ const pip = (d: string) =>
   `<g transform="translate(14 12) scale(.38) translate(-12 -12)" fill="currentColor" stroke="none">`
   + `<path d="${d}"/></g>`;
 
+/* 뒷장은 앞장에 가려지는 부분을 지운다.
+   svg가 fill:none이라 뒷장 윤곽선이 앞장을 그대로 통과해 보였고, 두 사각형이 교차하는
+   선이 남아 지저분했다. 앞장 모양(선 굵기만큼 여유를 준다)을 마스크로 뚫어 그 아래를
+   감춘다 — 실제 카드처럼 앞장이 뒷장을 덮는다.
+
+   마스크 id가 한 화면에 여러 번 들어가지만(로비 카드·전환 바·로그인 화면) 세 아이콘이
+   모두 같은 모양이라 어느 것을 참조해도 결과가 같다. */
+const CARD_MASK_ID = 'odCardFront';
 const cardPair = (suit: string) => wrap(
-  '<rect x="3.5" y="7" width="11" height="15" rx="2" transform="rotate(-9 9 14.5)"/>' +
+  `<defs><mask id="${CARD_MASK_ID}" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">` +
+    '<rect x="0" y="0" width="24" height="24" fill="#fff"/>' +
+    '<rect x="8.5" y="4.5" width="11" height="15" rx="2" fill="#000" stroke="#000" stroke-width="2.6"/>' +
+  '</mask></defs>' +
+  `<g mask="url(#${CARD_MASK_ID})">` +
+    '<rect x="3.5" y="7" width="11" height="15" rx="2" transform="rotate(-9 9 14.5)"/>' +
+  '</g>' +
   '<rect x="8.5" y="4.5" width="11" height="15" rx="2"/>' +
   pip(suit)
 );
