@@ -609,12 +609,17 @@ export function holdemPage(user: WebUser): string {
        이제 연출이 스스로 "끝났다"고 말한다(potDoneAt). 링거는 그 사이 테이블을
        살려 두는 상한일 뿐이고, 축하 시점을 정하지 않는다.
 
-       정산이 시작조차 안 했으면(진행 중인 대회에 뒤늦게 들어온 경우) 기다릴 연출이
-       없으므로 링거에 맡긴다. */
+       "아직 시작 안 함"과 "할 것이 없음"을 가르는 것이 핵심이다. 처음에는 정산이
+       시작됐는지(potPaidHand)만 봤는데, 마지막 판이 끝난 직후는 아직 카드를 여는
+       중이라 정산이 시작 전이고 — 그걸 "할 것이 없음"으로 읽어 팝업이 먼저 떴다.
+       실측으로 팝업 t=119.7초, WIN 배지 t=123.8초, 칩 이동 t=126.3초였다.
+       그래서 판 자체를 본다: 상금이 걸린 판이면 아직 시작 전이어도 기다린다. */
     var WIN_POPUP_AFTER_MS = 500;
     function settleDone(tb){
-      if (potPaidHand !== tb.handNo) return true;
-      return !!potDoneAt && Date.now() >= potDoneAt + WIN_POPUP_AFTER_MS;
+      if (potDoneAt) return Date.now() >= potDoneAt + WIN_POPUP_AFTER_MS;
+      var r = tb.ended && tb.result;
+      var payable = !!r && (((r.awards || []).length > 0) || ((r.potAwards || []).length > 0));
+      return !payable;
     }
     function celebrate(){
       var t = st.tournament;
@@ -2383,7 +2388,10 @@ export function holdemPage(user: WebUser): string {
            pushPotToWinners는 실시간 pileEl을 읽고 마지막에 비우므로, 그냥 두면
            다음 판의 팟 더미를 지워 버린다. */
         if (!st || !st.table || st.table.handNo !== forHand) return;
-        pushPotToWinners(tb, forHand);
+        /* 보여줄 층이 하나도 없으면(승자가 화면 밖에 있는 등) 연출도 없다.
+           그때는 여기서 끝났다고 표시해 둔다 — 안 그러면 potDoneAt이 영원히 0이라
+           우승 축하 팝업이 링거가 끝날 때까지 붙들려 있는다. */
+        if (!pushPotToWinners(tb, forHand)) potDoneAt = Date.now();
       }, 550);
     }
 
@@ -2432,7 +2440,7 @@ export function holdemPage(user: WebUser): string {
       var layers;
       if (!raw.length) {
         var flat = (tb.result.awards || []).filter(function(a){ return seatOf(a.seat); });
-        if (!flat.length) return;
+        if (!flat.length) return false;   // 보여줄 것이 없다 (부른 쪽이 끝났다고 표시한다)
         layers = [{ __key: '', __span: 1, index: 0, score: 0, amount: tb.pot || 0, winners: flat }];
       } else {
         layers = mergeSameWinner(raw);
@@ -2466,6 +2474,7 @@ export function holdemPage(user: WebUser): string {
         }, first ? POT_WAIT_FIRST_MS : POT_WAIT_NEXT_MS);
       }
       step();
+      return true;
     }
 
     /* 인접한 층의 승자가 같으면 하나로 합친다.
