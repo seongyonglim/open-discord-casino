@@ -41,7 +41,9 @@ import type { WebUser } from '../../db/queries';
    모자라면 증상이 고약하다 — 연출 도중에 서버가 table을 거둬 가면서 핸드 공개도
    팟 이동도 통째로 사라지고 결과 팝업만 남는다. 12초였을 때 6인 올인 판에서
    실제로 그렇게 보였다("연출이 스킵된다"는 제보의 정체다). */
-export const FINISH_LINGER_SEC = 30;
+/* 값과 이유는 services/tournament.ts 에 있다 — db 계층도 같은 값을 봐야 하기 때문이다.
+   여기서 다시 내보내는 것은 이 모듈을 쓰는 쪽의 import 를 바꾸지 않기 위해서다. */
+export const FINISH_LINGER_SEC = T.FINISH_LINGER_SEC;
 
 /* ── 상태 응답 ────────────────────────────────────────────────────── */
 
@@ -263,7 +265,11 @@ function statePayload(st: HoldemStatus, userId: string) {
 export async function handleState(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
-  const st = advanceHoldem();
+  /* 화면에 무엇을 보여줄지는 "이 사람이 어디에 앉아 있었나"에서 나온다 — 시계가 아니다.
+     방금 끝난 판을 붙들어 두는 것이 이 인자의 목적이다(db/holdem 의 seatedTournament).
+     등록·액션 경로는 반대로 시계에서 유도해야 하므로 인자를 넘기지 않는다 —
+     "지금 등록할 수 있는 판"은 사람이 앉았던 자리와 무관하다. */
+  const st = advanceHoldem(userId);
   // 폴링 자체가 "접속 중" 신호다. SIT_OUT은 여기서 풀지 않는다 — 본인이 복귀를 눌러야 한다.
   const table = getTable(st.tournament.id);
   if (table) touchHoldemPresence(userId, table.id);

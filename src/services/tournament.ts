@@ -58,6 +58,16 @@ export const STARTING_STACK = 10_000;
 export const WEEKDAY_MULTIPLIER = 1_000;
 export const WEEKEND_MULTIPLIER = 2_000;
 
+/* 판이 끝난 뒤에도 테이블을 계속 보여 주는 시간.
+   마지막 판의 쇼다운을 끝까지 보여주고, 그 다음 우승 화면을 띄우기 위한 창이다.
+   우승 화면은 정산 연출이 끝나야 뜨는데(칩이 승자에게 흡수되기 전에 띄우면 결과를
+   먼저 알려 주는 스포일러가 된다), 9인 다인 올인 쇼다운의 정산은 30초를 넘길 수 있다:
+   패 공개 5.1초 + 보드 12.02초 + 정산 꼬리 6.35초 + 사이드 팟마다 2.9초.
+   그래서 30초로는 연출이 창을 다 먹고 우승 화면이 나올 자리가 없었다. 넉넉히 준다 —
+   이 시간이 지나면 화면이 대회를 떠난다. 여기가 db 계층과 web 계층이 함께 쓰는 값이라
+   순수 계산 쪽에 둔다(db가 web을 가져오는 방향은 만들지 않는다). */
+export const FINISH_LINGER_SEC = 120;
+
 export interface TournamentSchedule {
   /** KST 날짜 — 하루 하나라는 규칙의 키가 된다 */
   dateStr: string;
