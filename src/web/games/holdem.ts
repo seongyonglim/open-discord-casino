@@ -1833,16 +1833,24 @@ export function holdemPage(user: WebUser): string {
        그대로 그리면 프리플랍이 끝난 순간 세 장이 뿅 나타난다.
        그래서 클라이언트가 "지금 몇 장까지 보여줄지"를 따로 들고, 남은 장을
        한 장씩 늘려가며 깐다. 서버는 초 단위 해상도라 이 박자는 클라이언트 몫이다. */
-    var BOARD_FIRST_MS = 420;     // 이번에 깔 첫 장까지
-    var BOARD_STEP_MS = 300;      // 같은 스트리트 안(플랍 세 장) 사이
+    var BOARD_FIRST_MS = 560;     // 이번에 깔 첫 장까지
+    var BOARD_STEP_MS = 330;      // 같은 스트리트 안(플랍 세 장) 사이
     /* 한 번에 여러 스트리트를 여는 경우(올인·전원 콜로 쇼다운이 확정된 판)의 스트리트 사이.
        여기가 이 판의 긴장이 만들어지는 유일한 구간이다 — 결과는 이미 정해져 있고
        사람이 할 수 있는 건 기다리는 것뿐이라, 빠르게 넘기면 판이 그냥 스킵된 것처럼 느껴진다.
-       500ms였을 때 "플랍 턴 리버가 너무 빨리 지나간다"는 말이 나왔다.
+       500ms였을 때 "플랍 턴 리버가 너무 빨리 지나간다"는 말이 나왔고, 1,500ms로 올린
+       뒤에도 같은 말이 나왔다.
 
+       그리고 세 구간을 같은 값으로 두면 안 된다. 남은 카드가 줄어들수록 한 장의 무게가
+       커지기 때문이다 — 플랍은 세 장이 한꺼번에 나와 아직 판이 열리는 중이고,
+       턴은 "이 한 장으로 뒤집힐 수 있다"가 처음 성립하는 지점이며, 리버는 마지막이다.
+       실제 중계도 리버 앞에서 가장 오래 뜸을 들인다. 그래서 뒤로 갈수록 길게 잡는다.
+         프리플랍 → 플랍  1.6초
+         플랍 → 턴        2.2초
+         턴 → 리버        2.6초
        한 스트리트씩 정상 진행할 때는 이 값을 쓰지 않는다 — 그때는 이미 ACTION_HOLD_MS로
-       한 박자 쉬고 있고, 거기에 1.5초를 더하면 진행이 늘어진다. */
-    var BOARD_RUNOUT_MS = 1500;
+       한 박자 쉬고 있고, 거기에 또 얹으면 진행이 늘어진다. */
+    var BOARD_RUNOUT_MS = { 1: 1600, 2: 2200, 3: 2600 };
     // 몇 번째 카드가 어느 스트리트인지 (0~2 플랍 · 3 턴 · 4 리버)
     function streetOfCard(i){ return i <= 2 ? 0 : i - 2; }
     /* 스트리트가 넘어갈 때 카드를 깔기 전에 두는 정지.
@@ -1895,7 +1903,9 @@ export function holdemPage(user: WebUser): string {
        스트리트 간격을 받았다. */
     function boardGap(i, from){
       if (i === from) return BOARD_FIRST_MS;
-      return streetOfCard(i) !== streetOfCard(i - 1) ? BOARD_RUNOUT_MS : BOARD_STEP_MS;
+      var st1 = streetOfCard(i), st0 = streetOfCard(i - 1);
+      // 스트리트가 넘어가는 자리에만 긴 정지를 둔다. 어느 스트리트로 넘어가느냐로 길이가 다르다
+      return st1 !== st0 ? (BOARD_RUNOUT_MS[st1] || 1600) : BOARD_STEP_MS;
     }
     function syncBoard(tb){
       var cards = tb.board || [];
