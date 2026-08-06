@@ -387,7 +387,8 @@ const HELP_BODY = `
   </ul>
 
   <h4>베팅 버튼</h4>
-  <p>빠른 금액 버튼(1/3 팟, 1/2 팟, 팟, 2BB, 3BB, 올인)은 <b>금액만 채워 넣습니다.</b>
+  <p>빠른 금액 버튼(1BB, 2BB, 1/3 팟, 1/2 팟, 팟, 올인 — 왼쪽일수록 작습니다)은
+     <b>금액만 채워 넣습니다.</b>
      실제로 나가려면 <b>베팅 / 레이즈</b> 확인 버튼을 눌러야 합니다 — 실수로 전 재산이
      나가는 일을 막기 위한 안전장치입니다.</p>
   <p>스택 표시는 <b>칩</b>과 <b>BB</b>(빅블라인드 배수) 중에서 고를 수 있습니다.</p>
@@ -490,12 +491,19 @@ export function holdemPage(user: WebUser): string {
 
         <div class="ht-controls" id="htControls" hidden>
           <div class="ht-ctop" id="htCtop">
+            <!-- 왼쪽에서 오른쪽으로 갈수록 금액이 커진다.
+                 예전 순서는 1/3 팟 · 1/2 팟 · 팟 · 2BB · 3BB · 올인이었다. 팟 기준
+                 셋과 BB 기준 둘을 각각 묶어 놓은 것인데, 화면에서는 그냥 여섯 개가
+                 한 줄로 보이므로 "팟 다음에 2BB가 더 작다"가 눈에 걸렸다.
+                 손이 가는 방향이 곧 금액의 방향이면 크기를 읽지 않아도 고를 수 있다.
+                 3BB를 1BB로 바꾼 것도 같은 이유다 — 최소 단위가 줄의 맨 앞에 있어야
+                 "여기서부터 커진다"가 성립한다(3BB는 1/3 팟과 자주 겹쳤다). -->
             <div class="ht-quick" id="htQuick">
+              <button type="button" class="ht-q" data-q="bb1">1BB</button>
+              <button type="button" class="ht-q" data-q="bb2">2BB</button>
               <button type="button" class="ht-q" data-q="third">1/3 팟</button>
               <button type="button" class="ht-q" data-q="half">1/2 팟</button>
               <button type="button" class="ht-q" data-q="pot">팟</button>
-              <button type="button" class="ht-q" data-q="bb2">2BB</button>
-              <button type="button" class="ht-q" data-q="bb3">3BB</button>
               <button type="button" class="ht-q" data-q="allin">올인</button>
             </div>
             <div class="ht-slider">
@@ -2507,11 +2515,9 @@ export function holdemPage(user: WebUser): string {
         showWinBadges(tb, pa);
         /* 층마다 다시 낸다 — 첫 층에서만 울리면 뒤 층은 조용히 지나가서
            "이게 아직 정산 중인가, 끝난 건가"가 소리로는 안 잡힌다.
-           첫 층은 위쪽 chipWin/potWin이 이미 울렸으므로 두 번째 층부터다. */
-        if (!first && window.casinoSfx) {
-          if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
-          if (window.casinoSfx.potWin) window.casinoSfx.potWin();
-        }
+           첫 층은 renderTable이 이미 울렸으므로 두 번째 층부터다.
+           칩 소리는 여기가 아니라 payLayer에서 낸다(칩이 실제로 움직이는 순간). */
+        if (!first && window.casinoSfx && window.casinoSfx.potWin) window.casinoSfx.potWin();
         setTimeout(function(){
           if (!st || !st.table || st.table.handNo !== forHand) return;
           var landed = payLayer(tb, pa, last);
@@ -2629,24 +2635,33 @@ export function holdemPage(user: WebUser): string {
       // 층 정보가 없는 옛 기록이나 폴드 종료는 더미가 하나뿐이라 그것이 곧 전부다
       if (!mine.length) mine = boxes;
       var winners = pa.winners;
-      var n = 0;
+      var n = 0, sent = 0;
       /* 더미를 통째로 옮긴다 — 칩과 금액 배지가 한 상자(.ht-pg) 안에 있으므로
          그 상자를 복제해 날리면 둘이 같이 움직이고 같이 흡수된다.
          예전에는 칩만 낱장으로 복제해 보냈다. 그래서 칩은 승자에게 가는데 금액 배지는
          중앙에 홀로 남아 있다가 따로 사라졌다 — 같은 물건이 두 조각으로 갈라졌다.
 
-         승자가 여럿이면(분할 팟) 상자를 사람 수만큼 복제하고, 칩을 번갈아 나눠 담고,
-         배지에는 각자 몫을 적는다. 같은 금액을 두 번 보여주면 팟이 두 배로 나간
-         것처럼 보인다. */
-      mine.forEach(function(b){
+         ── 무승부(분할 팟)
+         승자가 N명이면 상자를 N개로 복제하고, 칩을 번갈아 나눠 담고, 배지에 각자
+         실수령액을 적는다. 같은 금액을 N번 보여주면 팟이 N배로 나간 것처럼 보인다.
+
+         N개는 동시에 출발한다 — 시차를 주면 "먼저 한 명에게 갔다가 다시 나눠 준다"로
+         읽혀서, 정작 알려야 할 "동시에 나눠 가졌다"가 사라진다. 시차는 층(사이드 팟)
+         사이에만 준다. 그쪽은 순서 자체가 정보다. */
+      mine.forEach(function(b, bi){
         winners.forEach(function(w, k){
           // 위 seatOf와 반드시 같은 요소여야 한다 (다르면 문은 통과하고 목표가 null이 된다)
           var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-avbox');
           if (!target) return;
-          flyPileGroup(b, target.getBoundingClientRect(), (n++) * 90,
+          flyPileGroup(b, target.getBoundingClientRect(), bi * 90,
             winners.length, k, w.amount || 0);
+          sent++;
         });
+        n = Math.max(n, bi);
       });
+      /* 칩이 실제로 움직이는 이 순간에 소리를 낸다 — 승자 발표 때가 아니라.
+         분할 팟이어도 한 번이다. 사람 수만큼 겹쳐 울리면 소리가 뭉개진다. */
+      if (sent && window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
       /* 더미가 비어 있으면(판 도중 합류 등) 최소한 칩 몇 개는 날아가게 한다 */
       if (!mine.length) {
         winners.forEach(function(w){
@@ -2666,8 +2681,8 @@ export function holdemPage(user: WebUser): string {
          쇼다운 카드가 열리기도 전에 숫자가 먼저 올라 누가 이겼는지 알려 버린다 —
          올인 판에서 특히 심했다. 그래서 화면은 "아직 안 받은 상금"을 빼고 그리다가
          (renderSeats의 stackOf), 그 층의 칩이 실제로 날아가 닿는 시점에 풀어 준다.
-         칩 비행은 flyPileChip이 45ms씩 시차를 두고 띄우므로 마지막 칩까지 기다린다. */
-      var landed = PILE_FLY_MS + n * 45;
+         더미가 여럿이면 90ms씩 시차를 두고 띄우므로 마지막 더미까지 기다린다. */
+      var landed = PILE_FLY_MS + n * 90;
       setTimeout(function(){
         if (!st || !st.table || st.table.handNo !== payHand) return;
         winners.forEach(function(w){
@@ -2898,14 +2913,13 @@ export function holdemPage(user: WebUser): string {
       /* 카드를 다 깐 뒤에만 울린다. 이 문을 안 지키면 올인 판에서 플랍이 깔리기도 전에,
          또는 쇼다운에서 마지막 사람 핸드가 열리기도 전에 승리 칩 소리가 나서 결과를
          미리 알려준다. 소리는 눈보다 빠르다 — 화면을 안 보고 있어도 들린다. */
+      /* 여기서 내는 것은 "이겼다"(potWin) 하나다. 칩이 밀려가는 소리(chipWin)는
+         payLayer로 옮겼다 — 예전에는 둘을 같이 냈는데, 승자가 발표되는 시점과 칩이
+         실제로 움직이는 시점 사이가 2.5초라서 소리가 먼저 나고 정작 칩이 갈 때는
+         조용했다. 소리는 그 소리가 가리키는 움직임과 같은 순간에 나야 한다. */
       if (tb.ended && resultReady() && paidHandNo !== tb.handNo) {
         paidHandNo = tb.handNo;
-        /* 두 소리를 같이 낸다. 칩이 밀려가는 소리는 "돈이 움직였다"는 촉감이고,
-           팟 음악은 "이겼다"는 뜻이다 — 하나로 갈음하면 한쪽이 사라진다. */
-        if (window.casinoSfx) {
-          if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
-          if (window.casinoSfx.potWin) window.casinoSfx.potWin();
-        }
+        if (window.casinoSfx && window.casinoSfx.potWin) window.casinoSfx.potWin();
       }
 
       /* 내 조합은 이제 글자로 쓰지 않고 카드로만 보여준다 — 내 등급을 만든 카드에
@@ -3156,8 +3170,8 @@ export function holdemPage(user: WebUser): string {
       var v = q === 'third' ? la.myBet + Math.floor(tb.pot / 3)
         : q === 'half' ? la.myBet + Math.floor(tb.pot / 2)
         : q === 'pot' ? la.myBet + tb.pot
+        : q === 'bb1' ? bb
         : q === 'bb2' ? bb * 2
-        : q === 'bb3' ? bb * 3
         : la.maxRaiseTo;
       setAmount(v);
       renderControls();
