@@ -798,10 +798,28 @@ export function holdemPage(user: WebUser): string {
       var v = chips / bb;
       return (v >= 10 ? Math.floor(v) : Math.floor(v * 10) / 10) + 'BB';
     }
+    /* avatar 는 이미 완성된 이미지 주소다 — 해시가 아니다.
+       users.avatar 에는 로그인할 때(web/auth.ts) CDN 주소를 통째로 만들어 넣는다.
+       여기서 그 값을 해시로 보고 주소를 한 번 더 조립하고 있었다:
+
+         https://cdn.discordapp.com/avatars/{id}/https://cdn.discordapp.com/avatars/{id}/{hash}.png?size=64.png?size=64
+
+       두 번 감싼 주소라 언제나 404였고, 화면에는 깨진 이미지 아이콘이 남았다.
+       헤더 프로필(views.ts)은 저장값을 그대로 src 에 넣어서 멀쩡했다 —
+       그래서 "홀덤에서만 프로필이 안 나온다"로 보였다.
+
+       onerror 폴백을 함께 둔다. 아바타를 바꾸면 예전 해시로 만든 주소는 404가 되는데,
+       그때 깨진 아이콘 대신 이니셜이 나와야 한다. 한 번만 갈아끼우고 스스로 해제한다
+       (폴백 이미지가 또 실패하면 무한 루프가 된다). */
     function avatarHtml(userId, avatar, username, cls){
-      if (avatar) return '<img class="' + cls + '" src="https://cdn.discordapp.com/avatars/' +
-        esc(userId) + '/' + esc(avatar) + '.png?size=64" alt="">';
-      return '<span class="' + cls + ' ph">' + esc((username||'?').slice(0,1)) + '</span>';
+      var ini = esc((username || '?').slice(0, 1));
+      var ph = '<span class="' + cls + ' ph">' + ini + '<\/span>';
+      if (!avatar) return ph;
+      /* referrerpolicy="no-referrer" — 다른 화면(views.ts·바카라·블랙잭·포커)이 이미
+         쓰는 것과 맞춘다. 리퍼러를 보내면 CDN이 우리 주소를 알게 되고, 일부 환경에서는
+         그것 때문에 이미지가 거부된다. */
+      return '<img class="' + cls + '" src="' + esc(avatar) + '" alt="" referrerpolicy="no-referrer"' +
+        ' onerror="this.onerror=null;this.outerHTML=' + esc(JSON.stringify(ph)) + '">';
     }
     function cardImg(code, cls){
       var k = 'pcard' + (cls ? ' ' + cls : '');

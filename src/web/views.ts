@@ -60,9 +60,13 @@ export const ROSTER_JS = `
           __rosterSig = sig;
           el.innerHTML = rows.length ? rows.map(function(r){
             var ini = esc((String(r.username||'?').trim()[0] || '?').toUpperCase());
+            /* 이미지가 실패하면 이니셜로 되돌린다 — 프로필을 바꾸면 저장된 주소가
+               404가 되는데(갱신은 다시 로그인할 때뿐이다) 폴백이 없으면 빈 원이 남는다. */
+            var ph = '<span class="rw-av">' + ini + '</span>';
             var av = r.avatar
-              ? '<img class="rw-av" src="' + esc(r.avatar) + '" alt="" referrerpolicy="no-referrer">'
-              : '<span class="rw-av">' + ini + '</span>';
+              ? '<img class="rw-av" src="' + esc(r.avatar) + '" alt="" referrerpolicy="no-referrer"'
+                + ' onerror="this.onerror=null;this.outerHTML=' + esc(JSON.stringify(ph)) + '">'
+              : ph;
             return '<div class="rw' + (r.user_id===meId ? ' me' : '') + '" data-uid="' + esc(r.user_id) + '">' + av +
               '<span class="rw-mid"><span class="rw-name">' + esc(r.username) + '</span>' +
               '<span class="rw-bal" id="rbal-' + esc(r.user_id) + '">' + fmt(r.balance) + '</span></span>' +
@@ -278,8 +282,16 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
   const u = _reqUser;
   // 아바타는 디스코드 프로필 사진을 쓰고, 없으면 이름 첫 글자로 대체한다
   const ini = u ? esc((u.username.trim()[0] ?? '?').toUpperCase()) : '';
+  /* 헤더 아바타. 이미지가 실패하면 이니셜로 되돌린다 — 프로필을 바꾸면 저장된 주소가
+     404가 되는데(갱신은 다시 로그인할 때뿐이고 세션은 60일 슬라이딩이라 그 사이 내내
+     죽은 주소다), 폴백이 없으면 헤더에 빈 자리가 남는다.
+     이쪽은 서버에서 찍는 HTML이라 onerror 안의 따옴표를 &quot;로 직접 적는다. */
+  const phAva = `<span class="ava">${ini}</span>`;
   const ava = u
-    ? (u.avatar ? `<img class="ava" src="${esc(u.avatar)}" alt="" width="24" height="24">` : `<span class="ava">${ini}</span>`)
+    ? (u.avatar
+      ? `<img class="ava" src="${esc(u.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer"`
+        + ` onerror="this.onerror=null;this.outerHTML=${esc(JSON.stringify(phAva))}">`
+      : phAva)
     : '';
   // 효과음 켜기/끄기 — 프로필 메뉴 안이 아니라 헤더에 그대로 둔다.
   // 소리를 끄는 건 "지금 당장" 하는 동작이라 두 번 눌러 들어가면 이미 늦고,

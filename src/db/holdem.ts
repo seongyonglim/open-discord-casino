@@ -283,7 +283,10 @@ export function showHoldemCards(userId: string): { ok: boolean } {
   return { ok: one<{ n: number }>(`SELECT changes() AS n`)!.n > 0 };
 }
 
-/** 등록자들의 디스코드 아바타 해시. 결과·우승 축하 화면에 프로필로 쓴다. */
+/* 등록자들의 디스코드 아바타 — 해시가 아니라 완성된 이미지 URL이다.
+   users.avatar 에는 로그인할 때(web/auth.ts) CDN 주소를 통째로 만들어 넣는다.
+   "해시"라고 적어 뒀던 이 주석 때문에 홀덤 화면이 값을 해시로 알고 주소를 한 번 더
+   조립했고, 프로필이 전부 깨져 보였다. 주석이 틀리면 코드도 따라 틀린다. */
 export function getEntryAvatars(tournamentId: number): Map<string, string | null> {
   const rows = all<{ user_id: string; avatar: string | null }>(
     `SELECT e.user_id, u.avatar FROM holdem_entries e JOIN users u ON u.id = e.user_id
@@ -291,7 +294,7 @@ export function getEntryAvatars(tournamentId: number): Map<string, string | null
   return new Map(rows.map(r => [r.user_id, r.avatar]));
 }
 
-/** 자리에 앉은 사람들의 디스코드 아바타 해시 (화면에 원형 프로필로 쓴다) */
+/** 자리에 앉은 사람들의 디스코드 아바타 URL (화면에 원형 프로필로 쓴다) */
 export function getSeatAvatars(tableId: number): Map<string, string | null> {
   const rows = all<{ user_id: string; avatar: string | null }>(
     `SELECT s.user_id, u.avatar FROM holdem_seats s JOIN users u ON u.id = s.user_id
