@@ -1404,6 +1404,11 @@
   .ht-seats{position:absolute;inset:0;z-index:2}
   .ht-seat{position:absolute;transform:translate(-50%,-50%);transition:opacity .18s;
     width:var(--htAv);height:var(--htAv)}
+  /* 승률 말풍선이 떠 있는 좌석은 형제들 위로 올린다.
+     말풍선은 좌석 밖으로 뻗어 나가는데 좌석끼리는 형제라, 나중에 그려진 좌석이 이긴다 —
+     6시 자리의 말풍선이 옆 좌석의 프로필·카드 뒤로 묻혔다. 좌석 안에서 z-index를
+     올려 봐야 소용없다(다른 좌석은 다른 쌓임 문맥이다). 올려야 하는 것은 좌석 자체다. */
+  .ht-seat.eqon{z-index:12}
 
   /* 아바타 — 좌석 박스를 그대로 채운다. 시계 고리·행동 배지가 이 원을 기준으로 붙는다.
 
@@ -1864,64 +1869,73 @@
        앞선 쪽: 둥근 초록 말풍선 + 승률 하나
        쫓는 쪽: 각진 붉은 말풍선 + 역전 카드 + 붉은 승률
      각진 쪽이 시각적으로 불안정해서 그 자체로 "위태롭다"를 말한다. */
-  .ht-eq{position:absolute;top:42%;z-index:6;white-space:nowrap;
+  /* z-index 10 — 좌석 안의 WIN 배지(9)보다도 위다. 말풍선은 판이 끝나기 전에만 뜨고
+     WIN은 끝난 뒤에 뜨므로 둘이 겹치지는 않지만, 이 자리에서 가장 위여야 어떤 요소도
+     말풍선을 가리지 않는다. 좌석끼리의 겹침은 .ht-seat.eqon이 따로 해결한다. */
+  .ht-eq{position:absolute;top:42%;z-index:10;white-space:nowrap;
     display:flex;flex-direction:column;align-items:center;gap:2px;
     padding:3px 8px;
     box-shadow:0 3px 10px rgba(0,0,0,.6)}
   .ht-eq[hidden]{display:none}
-  /* 좌석이 테이블 왼쪽이면 판의 왼쪽(바깥)으로, 오른쪽이면 오른쪽으로 */
   .ht-eq.l{right:100%;transform:translate(-9px,-50%)}
   .ht-eq.r{left:100%;transform:translate(9px,-50%)}
   .ht-eq-p{font-family:var(--mono);font-size:12px;font-weight:800;line-height:1.15}
-  /* 앞선 쪽 — 부드러운 초록 */
-  .ht-eq.lead{border-radius:11px;
-    background:linear-gradient(180deg,rgba(38,110,78,.96),rgba(20,68,47,.96));
-    border:1px solid rgba(120,225,170,.55)}
-  .ht-eq.lead .ht-eq-p{color:#b6f2d3}
-  /* 앞선 쪽에만 말풍선 꼬리 — 좌석 쪽을 가리킨다. 없으면 그냥 옆에 놓인 상자다. */
-  .ht-eq.lead::after{content:"";position:absolute;top:50%;width:0;height:0;
-    border:5px solid transparent;transform:translateY(-50%)}
-  .ht-eq.lead.l::after{left:100%;border-left-color:rgba(120,225,170,.55)}
-  .ht-eq.lead.r::after{right:100%;border-right-color:rgba(120,225,170,.55)}
+  /* ── 앞선 쪽 — 초록 말풍선 ────────────────────────────────────────
+     쫓는 쪽이 폭발이라면 이쪽은 안정이다. 알약 모양에 꼬리 하나.
+     속은 반투명이라 뒤의 펠트가 비친다 — 붉은 쪽과 같은 규칙이다. */
+  .ht-eq.lead{border-radius:999px;padding:4px 11px;
+    background:linear-gradient(180deg,rgba(44,124,88,.46),rgba(18,62,43,.46));
+    border:1px solid rgba(130,235,180,.7)}
+  .ht-eq.lead .ht-eq-p{color:#c8f7dd;text-shadow:0 1px 3px rgba(0,0,0,.75)}
+  /* 꼬리는 아래 모서리에서 말한 사람 쪽으로 내려간다.
+     말풍선이 그 사람의 오른쪽에 있으면 꼬리는 왼쪽 아래(7시), 왼쪽에 있으면
+     오른쪽 아래(5시)다 — 꼬리가 언제나 주인을 가리켜야 누가 말하는지 헷갈리지 않는다.
+     옆구리에 붙이던 삼각형은 말풍선이 위아래로 어긋나 있을 때 엉뚱한 데를 가리켰다. */
+  .ht-eq.lead::after{content:"";position:absolute;bottom:-6px;width:0;height:0;
+    border:5px solid transparent;border-top-color:rgba(130,235,180,.7)}
+  .ht-eq.lead.r::after{left:11px;transform:skewX(-20deg)}
+  .ht-eq.lead.l::after{right:11px;transform:skewX(20deg)}
 
   /* ── 쫓는 쪽 — 붉은 폭발 ──────────────────────────────────────────
      상자가 아니라 터진 모양이다. 둥근 말풍선은 "알려 드립니다"인데, 여기서 말하려는
      것은 "한 장만 나오면 뒤집힌다"라서 형태 자체가 불안정해야 한다.
      각진 사각형으로는 안 됐다 — 모서리를 조금 어긋나게 잘라 봐야 여전히 상자다.
 
-     별 모양은 clip-path로 자른다. 다만 자르면 자식(미니 카드)까지 같이 잘리므로,
-     자르는 것은 배경 한 겹(::before)이고 카드는 그 위에 얹는다. 뾰족한 끝이 카드
-     바깥으로 나가야 폭발로 보이므로 배경을 inset 음수로 넓혀 둔다.
-
      속은 붉게 채우지 않는다. 채웠더니 흰 미니 카드가 붉은 판 위의 작은 얼룩이 되어,
      정작 읽어야 할 것(어떤 카드가 나와야 하나)이 안 읽혔다. 지금은
        바깥 테두리만 강한 빨강 — "위험하다"를 말하는 것은 윤곽이면 충분하다
-       속은 짙은 반투명 검정 — 카드가 그 위에서 또렷하게 뜬다
-     두 겹으로 만든다: ::before가 빨간 별, ::after가 그보다 3px 작은 검은 별.
-     둘 다 같은 clip-path를 쓰므로 테두리 두께가 뾰족한 끝까지 일정하다. */
+       속은 반투명 — 뒤의 펠트가 비쳐서 말풍선이 테이블 위에 떠 있는 것으로 읽힌다.
+                     불투명한 검정 판이면 화면에 뚫린 구멍처럼 보인다.
+
+     ── 왜 clip-path가 아니라 SVG인가
+     처음에는 clip-path:polygon()으로 별을 잘랐다. 그런데 polygon은 직선만 그린다 —
+     스파이크가 자로 그은 삼각형이 되어 기하 도형처럼 딱딱했다. 폭발은 곡선이다.
+     곡선을 쓰려면 path()여야 하는데 path()는 퍼센트를 못 받는다(절대 픽셀뿐이다).
+     말풍선 크기는 카드 장수에 따라 달라지므로 고정 픽셀로는 맞출 수 없다.
+
+     그래서 SVG를 배경 이미지로 깐다. viewBox 0~100에 preserveAspectRatio='none'이라
+     어떤 상자 크기에도 늘어나 맞는다 — polygon이 하던 일을 그대로 하면서 곡선이 된다.
+     스파이크마다 골 → 끝 → 골 두 변을 2차 베지에로 긋고, 제어점을 직선보다 바깥
+     반지름(1.16배)에 두어 옆구리를 볼록하게 만들었다.
+     한 장에 두 겹이 들어 있다: evenodd로 가운데를 뚫은 빨간 테두리 + 그 안의 반투명 검정.
+     겹을 CSS로 나누지 않은 이유는 그래야 테두리가 진짜 "구멍 뚫린 링"이 되어
+     속 반투명이 빨강이 아니라 펠트와 섞이기 때문이다.
+     도형을 고치려면 scratchpad의 생성 스크립트가 아니라 이 값을 다시 만들어야 한다 —
+     N=13 · rIn 36 · rOut 50 · bow 1.16, 안쪽은 30.5/42. */
   .ht-eq.chase{background:none;border:none;box-shadow:none;padding:0;gap:0}
-  .ht-eq.chase .ht-eq-outs{position:relative;padding:12px 15px;z-index:0}
-  .ht-eq.chase .ht-eq-outs::before,
-  .ht-eq.chase .ht-eq-outs::after{content:"";position:absolute;z-index:-1;
-    clip-path:polygon(50.0% 0.0%,58.6% 15.0%,73.2% 5.7%,73.9% 23.1%,91.1% 21.6%,
-      83.7% 37.2%,99.6% 44.0%,85.7% 54.3%,96.8% 67.7%,79.6% 70.5%,83.2% 87.4%,
-      66.7% 81.9%,62.0% 98.5%,50.0% 86.0%,38.0% 98.5%,33.3% 81.9%,16.8% 87.4%,
-      20.4% 70.5%,3.2% 67.7%,14.3% 54.3%,0.4% 44.0%,16.3% 37.2%,8.9% 21.6%,
-      26.1% 23.1%,26.8% 5.7%,41.4% 15.0%)}
-  .ht-eq.chase .ht-eq-outs::before{inset:-11px -13px;
-    background:linear-gradient(180deg,#ff4a3c,#c81c12);
+  .ht-eq.chase .ht-eq-outs{position:relative;z-index:0;
+    display:flex;flex-direction:column;align-items:center;gap:5px;padding:13px 16px 12px}
+  .ht-eq.chase .ht-eq-outs::before{content:"";position:absolute;z-index:-1;
+    inset:-12px -14px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpath d='M50.0 14.0 Q58.8 5.3 62.0 1.5 Q63.0 6.3 66.7 18.1 Q78.5 14.5 83.2 12.6 Q81.8 17.4 79.6 29.5 Q91.8 31.8 96.8 32.3 Q93.3 35.9 85.7 45.7 Q95.5 53.3 99.6 56.0 Q94.9 57.7 83.7 62.8 Q88.7 74.0 91.1 78.4 Q86.2 77.7 73.9 76.9 Q73.1 89.3 73.2 94.3 Q69.2 91.3 58.6 85.0 Q52.2 95.5 50.0 100.0 Q47.8 95.5 41.4 85.0 Q30.8 91.3 26.8 94.3 Q26.9 89.3 26.1 76.9 Q13.8 77.7 8.9 78.4 Q11.3 74.0 16.3 62.8 Q5.1 57.7 0.4 56.0 Q4.5 53.3 14.3 45.7 Q6.7 35.9 3.2 32.3 Q8.2 31.8 20.4 29.5 Q18.2 17.4 16.8 12.6 Q21.5 14.5 33.3 18.1 Q37.0 6.3 38.0 1.5 Q41.2 5.3 50.0 14.0 Z M50.0 19.5 Q57.4 12.3 60.1 9.2 Q61.0 13.2 64.2 23.0 Q74.1 20.0 77.9 18.6 Q76.8 22.5 75.1 32.7 Q85.2 34.7 89.3 35.1 Q86.5 38.1 80.3 46.3 Q88.3 52.8 91.7 55.1 Q87.9 56.5 78.5 60.8 Q82.6 70.3 84.6 73.9 Q80.5 73.3 70.2 72.8 Q69.5 83.1 69.5 87.2 Q66.2 84.8 57.3 79.6 Q51.9 88.4 50.0 92.0 Q48.1 88.4 42.7 79.6 Q33.8 84.8 30.5 87.2 Q30.5 83.1 29.8 72.8 Q19.5 73.3 15.4 73.9 Q17.4 70.3 21.5 60.8 Q12.1 56.5 8.3 55.1 Q11.7 52.8 19.7 46.3 Q13.5 38.1 10.7 35.1 Q14.8 34.7 24.9 32.7 Q23.2 22.5 22.1 18.6 Q25.9 20.0 35.8 23.0 Q39.0 13.2 39.9 9.2 Q42.6 12.3 50.0 19.5 Z' fill-rule='evenodd' fill='%23e8341f'/%3E%3Cpath d='M50.0 19.5 Q57.4 12.3 60.1 9.2 Q61.0 13.2 64.2 23.0 Q74.1 20.0 77.9 18.6 Q76.8 22.5 75.1 32.7 Q85.2 34.7 89.3 35.1 Q86.5 38.1 80.3 46.3 Q88.3 52.8 91.7 55.1 Q87.9 56.5 78.5 60.8 Q82.6 70.3 84.6 73.9 Q80.5 73.3 70.2 72.8 Q69.5 83.1 69.5 87.2 Q66.2 84.8 57.3 79.6 Q51.9 88.4 50.0 92.0 Q48.1 88.4 42.7 79.6 Q33.8 84.8 30.5 87.2 Q30.5 83.1 29.8 72.8 Q19.5 73.3 15.4 73.9 Q17.4 70.3 21.5 60.8 Q12.1 56.5 8.3 55.1 Q11.7 52.8 19.7 46.3 Q13.5 38.1 10.7 35.1 Q14.8 34.7 24.9 32.7 Q23.2 22.5 22.1 18.6 Q25.9 20.0 35.8 23.0 Q39.0 13.2 39.9 9.2 Q42.6 12.3 50.0 19.5 Z' fill='%230c0909' fill-opacity='.45'/%3E%3C/svg%3E");
+    background-size:100% 100%;background-repeat:no-repeat;
     filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))}
-  .ht-eq.chase .ht-eq-outs::after{inset:-8px -10px;
-    background:rgba(10,8,8,.86)}
-  /* 승률은 폭발 아래에 빨강으로. 금색이었는데, 이 말풍선이 말하려는 것은 "위험"이고
-     색은 그 하나로 몰아야 한다 — 빨강 윤곽 + 빨강 숫자.
-     margin-top이 필요한 이유: 배경을 inset 음수로 넓혀 아래쪽 뾰족한 끝이 카드 줄
-     밖으로 11px 나가 있어서, 붙여 두면 그 끝이 숫자를 덮는다.
-     position/z-index도 필요하다 — .ht-eq-outs가 z-index:0인 위치 지정 요소라
-     흐름 속의 이 줄보다 나중에 그려진다(실제로 그렇게 가려졌다). */
-  .ht-eq.chase .ht-eq-p{position:relative;z-index:1;margin-top:10px;
-    color:#ff5a4c;font-size:12px;font-weight:900;
-    text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 7px rgba(0,0,0,.9)}
+  /* 승률은 폭발 "안" 아래 가운데다. 밖에 두었더니 말풍선과 숫자가 서로 다른 두 물체로
+     보였고, 좌석이 몰린 곳에서는 옆 사람 말풍선의 숫자와 헷갈렸다.
+     색은 빨강 — 이 말풍선이 말하려는 것은 "위험"이고 색은 거기 하나로 몰아야 한다. */
+  .ht-eq.chase .ht-eq-p{position:relative;z-index:1;
+    color:#ff6152;font-size:12px;font-weight:900;
+    text-shadow:0 1px 3px rgba(0,0,0,.9)}
   .ht-eq.chase .ht-eq-dead{position:relative;z-index:1}
   /* ── 역전 카드 미니 아이콘 ────────────────────────────────────────
      "아웃 8장 · A K"라고 글자로 적던 것을 카드 그림으로 바꿨다. 카드 게임인데
@@ -1930,21 +1944,36 @@
      "이 무늬만 나오면 된다"는 사실이 오히려 안 보인다.
 
      카드는 실제 카드처럼 세로로 길고, 숫자를 위·무늬를 아래에 둔다. 한 줄에 나란히
-     적었을 때는 13px 폭에 숫자와 무늬가 끼어 둘 다 뭉갰다. 두 줄로 나누면 같은 폭에서
-     글자를 키울 수 있다. */
+     적었을 때는 13px 폭에 숫자와 무늬가 끼어 둘 다 뭉갰다.
+
+     둘을 space-between으로 양 끝에 밀어 붙이고 위아래에 패딩을 준다. 가운데 정렬에
+     margin 1px만 두었더니 숫자 아래에 무늬가 바로 붙어 두 글자가 한 덩어리로 보였다 —
+     실제 카드도 숫자와 무늬 사이가 비어 있다. */
   .ht-eq-outs{display:flex;align-items:center;gap:3px}
-  .ht-oc{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
-    width:15px;height:21px;border-radius:3px;
-    background:linear-gradient(180deg,#fffefb,#e6e2d8);color:#16181a;
+  /* 다섯 장까지 한 줄. 여섯 장부터는 다음 줄로 넘긴다 — 한 줄로 늘어나면 말풍선이
+     옆자리까지 뻗어 나가고, 그때부터는 카드가 몇 장인지도 안 읽힌다.
+     max-width가 곧 줄바꿈 규칙이다: 카드 17 × 5 + 간격 3 × 4 = 97px. */
+  /* width:max-content가 반드시 필요하다. 이것 없이 max-width만 두면 줄이 부모의
+     남는 폭에 맞춰 줄어드는데, 그 부모의 폭은 아래 승률 글자가 정한다 —
+     "42px"짜리 숫자 때문에 카드 세 장이 2+1로 접혔다(실측 rowW 42.2px).
+     max-content로 "안 접었을 때의 폭"을 먼저 잡고, 그 위에 97px 상한을 씌워야
+     상한을 넘을 때만 접힌다. */
+  .ht-oc-row{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;
+    width:max-content;max-width:97px}
+  .ht-oc{display:inline-flex;flex-direction:column;align-items:center;
+    justify-content:space-between;
+    width:17px;height:24px;padding:2.5px 0 2px;border-radius:3px;
+    background:linear-gradient(180deg,#fffefb,#e8e4da);color:#16181a;
     font-family:var(--mono);font-size:10px;font-weight:900;line-height:1;
     border:1px solid rgba(0,0,0,.5);box-shadow:0 1px 3px rgba(0,0,0,.6)}
-  .ht-oc b{font-size:9px;font-weight:900;line-height:1;margin-top:1px}
+  .ht-oc b{font-size:9.5px;font-weight:900;line-height:1}
   /* 하트·다이아는 붉게 (무늬 순서 s h d c) */
   .ht-oc.s1,.ht-oc.s2{color:#c8322a}
-  /* 무늬 하나로 줄인 것 — 랭크 없이 무늬만 크게 */
-  .ht-oc.suit{width:19px;font-size:15px}
-  .ht-oc.more{background:rgba(255,255,255,.12);color:#ffd9d4;border-color:rgba(255,255,255,.22);
-    font-size:9px;width:17px}
+  /* 무늬 하나로 줄인 것 — 랭크 없이 무늬만 크게. 가운데 정렬로 되돌린다 */
+  .ht-oc.suit{justify-content:center;font-size:16px}
+  .ht-oc.more{justify-content:center;
+    background:rgba(255,255,255,.12);color:#ffd9d4;border-color:rgba(255,255,255,.22);
+    font-size:9px}
   /* 역전할 카드가 한 장도 없다 — 포커에는 이미 이름이 있는 상태다.
      폭발 안에 들어가므로 붉은 바탕 위에서 읽히는 색이어야 한다. */
   .ht-eq-dead{font-family:var(--mono);font-size:9px;font-weight:900;letter-spacing:.6px;

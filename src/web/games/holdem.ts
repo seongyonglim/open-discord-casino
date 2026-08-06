@@ -963,6 +963,20 @@ export function holdemPage(user: WebUser): string {
        거리 = |nx|·X + |ny|·(위로 밀면 U, 아래로 밀면 D)
        이걸 법선 방향으로 뿌리면 각 축의 계수가 나온다. px 값은 CSS가 알고 방향은
        JS가 아니까, 곱셈만 calc에 맡긴다. */
+    /* 승률 말풍선이 붙는 쪽. 'l'이면 좌석의 왼쪽, 'r'이면 오른쪽이다.
+       규칙은 하나다 — 화면이 남아 있는 쪽으로 붙인다. 좌석의 가로 위치만 보면 된다.
+         가운데 무리(26~74%)  → 바깥으로 벌린다. 12시 두 자리를 둘 다 안쪽으로 보내면
+                                가운데에서 서로 포개진다(실측: 완전히 겹쳤다).
+         좌우 끝(26% 밖)      → 안쪽. 여기서 바깥은 곧 화면 밖이다 —
+                                12%에 앉은 자리를 바깥으로 보냈더니 23px 잘렸다(실측).
+       법선(|ny|)으로 직선/반원을 갈라 봤지만 그것으로는 부족했다. 직선 구간이라도
+       끝에 가까운 자리는 바깥에 자리가 없다. 결국 기준은 "구간"이 아니라 "여유"다. */
+    function eqSide(p){
+      var x = p.plate[0];
+      if (x < 26) return 'r';
+      if (x > 74) return 'l';
+      return x < 50 ? 'l' : 'r';
+    }
     function seatPos(pt){
       var nx = pt.nx, ny = pt.ny;
       var ax = Math.abs(nx), ay = Math.abs(ny);
@@ -978,6 +992,8 @@ export function holdemPage(user: WebUser): string {
         left: expr(pt.x, nx),
         top:  expr(pt.y, ny),
         bet:  pt.bet,
+        // 법선도 함께 넘긴다 — 말풍선을 어느 쪽에 붙일지가 여기서 갈린다(eqSide)
+        nx: nx, ny: ny,
       };
     }
 
@@ -1096,12 +1112,13 @@ export function holdemPage(user: WebUser): string {
             /* 무엇으로 이겼나. 예전에는 펠트 한가운데 노란 캡슐이었는데,
                "누가"와 "무엇으로"가 화면의 서로 다른 곳에 있어 눈이 두 번 움직였다. */
             '<span class="ht-win-h" hidden></span>' +
-            /* 쇼다운 승률 말풍선 — 테이블 안쪽(가운데 쪽)을 향해 붙인다.
-               예전에는 바깥쪽이었다. 좌석이 펠트 안에 있던 시절에는 그게 맞았지만,
-               지금은 좌석이 경계 밖에 서 있어서 바깥쪽이 곧 화면 밖이다 —
-               9시 자리의 말풍선이 통째로 잘려 나갔다(실측).
-               좌석이 나가면서 펠트 안쪽은 오히려 비었으므로 그쪽이 제자리다. */
-            '<span class="ht-eq ' + (p.plate[0] < 50 ? 'r' : 'l') + '" hidden></span>' +
+            /* 쇼다운 승률 말풍선을 어느 쪽에 붙일지는 좌석이 테이블의 어디에 앉았느냐로 갈린다.
+                 직선 구간(위·아래 변)  → 바깥쪽. 12시 두 자리를 둘 다 안쪽으로 보내면
+                                          가운데에서 서로 겹친다(실측: 완전히 포개졌다).
+                 반원 구간(좌·우 끝)    → 안쪽. 여기서는 바깥쪽이 곧 화면 밖이라
+                                          9시 자리의 말풍선이 통째로 잘려 나갔다.
+               |ny|가 큰 자리가 직선 구간이다 — 법선이 거의 수직이라는 뜻이다. */
+            '<span class="ht-eq ' + eqSide(p) + '" hidden></span>' +
           '</div>';
 
         /* 골격 서명은 "누가 어느 자리에 앉았나"만 본다.
@@ -1246,9 +1263,15 @@ export function holdemPage(user: WebUser): string {
       Object.keys(byS).forEach(function(k){ if (byS[k].equity > top) top = byS[k].equity; });
 
       (tb.seats || []).forEach(function(s){
-        var el = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"] .ht-eq');
+        var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
+        var el = seatEl && seatEl.querySelector('.ht-eq');
         if (!el) return;
         var e = byS[s.seat];
+        /* 말풍선이 떠 있는 동안에는 좌석 전체를 위로 올린다.
+           말풍선은 좌석 밖으로 뻗어 나가는데, 좌석끼리는 형제라서 나중에 그려진 좌석이
+           이깁니다 — 6시 자리(내 자리)의 말풍선이 옆 좌석의 프로필·카드 뒤로 묻혔다.
+           좌석 안에서 z-index를 아무리 올려도 소용없다. 올려야 하는 것은 좌석 자체다. */
+        seatEl.classList.toggle('eqon', !!e);
         if (!e) { el.hidden = true; return; }
         var pct = Math.round(e.equity * 1000) / 10;
         var lead = e.equity >= top - 1e-9;
@@ -1270,18 +1293,28 @@ export function holdemPage(user: WebUser): string {
              한 무늬가 통째로 아웃이면(플러시 드로우) 무늬 하나로 줄인다. */
           var mini = '';
           (o && o.bySuit || []).forEach(function(su){
-            mini += '<i class="ht-oc suit s' + su + '">' + SUIT_CH[su] + '</i>';
+            mini += '<i class="ht-oc suit s' + su + '">' + SUIT_CH[su] + '<\/i>';
           });
           var cards = (o && o.cards) || [];
-          var room = 6 - ((o && o.bySuit) || []).length * 2;
+          /* 열 장까지 그린다 — 다섯 장씩 두 줄이다(줄바꿈은 .ht-oc-row의 max-width가 정한다).
+             그보다 많으면 마지막 칸을 +N으로 접는다. 한 줄로 계속 늘리면 말풍선이 옆자리까지
+             뻗고, 줄이 셋이 되면 좌석을 통째로 덮어서 카드가 몇 장인지도 안 읽힌다.
+             무늬로 묶인 것은 카드 여러 장을 대신하므로 두 칸을 쓴 것으로 친다. */
+          var room = 10 - ((o && o.bySuit) || []).length * 2;
           cards.slice(0, Math.max(0, room)).forEach(function(c){
             var su = c & 3;
             mini += '<i class="ht-oc s' + su + '">' + RANK_CH[c >> 2] +
-              '<b>' + SUIT_CH[su] + '<\b></i>';
+              '<b>' + SUIT_CH[su] + '<\/b><\/i>';
           });
-          if (cards.length > room && room > 0) mini += '<i class="ht-oc more">+' + (cards.length - room) + '</i>';
-          body = '<span class="ht-eq-outs">' + mini + '</span>'
-            + '<span class="ht-eq-p">' + pct.toFixed(1) + '%</span>';
+          if (cards.length > room && room > 0) {
+            mini += '<i class="ht-oc more">+' + (cards.length - room) + '<\/i>';
+          }
+          /* 승률은 폭발 안, 카드 아래 가운데다. 밖에 두었더니 말풍선과 숫자가 서로 다른
+             두 물체로 보였고, 좌석이 몰린 곳에서는 옆 사람 말풍선의 숫자와 헷갈렸다. */
+          body = '<span class="ht-eq-outs">'
+            + '<span class="ht-oc-row">' + mini + '<\/span>'
+            + '<span class="ht-eq-p">' + pct.toFixed(1) + '%<\/span>'
+            + '<\/span>';
         }
         el.hidden = false;
         // 좌우 위치 클래스는 골격이 정해 준 것이니 건드리지 않고 상태만 토글한다
