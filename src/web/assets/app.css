@@ -1822,19 +1822,34 @@
   /* ── 좌석판 위 행동 배지 ──────────────────────────────────────────
      행동한 순간 떠올라 스스로 사라진다. 예전에는 베팅 자리에 계속 남아서 이미 지나간
      "체크"가 판이 끝날 때까지 붙어 있었다 — 지금 무슨 일이 일어났는지가 흐려졌다.
-
-     색은 행동의 성격으로 가른다: 돈을 더 넣으면 붉게(베팅·레이즈), 맞춰 가면 파랗게(콜),
-     안 넣으면 초록(체크), 접으면 회색(폴드). 올인은 등급이 달라 따로 둔다. */
+     (색 규칙은 아래 "── 색" 항목에 있다.) */
   /* 행동 배지 — 프로필 사진 위에 겹친다.
      예전에는 좌석판 아래에 붙였는데, 얼굴에서 시선이 한 번 내려가야 읽혔다.
      사진 위에 있으면 "누가" 와 "무엇을" 이 한 점에서 읽힌다(참고 클라이언트도 그렇게 한다).
      아바타보다 넓어도 좋다 — 1.7초만 있다 사라지므로 옆자리를 가리지 않는다.
      z는 태그(5)보다 위, WIN(9)보다 아래. */
+  /* ── 생김새 ────────────────────────────────────────────────────────
+     알약에 밝은 색을 꽉 채운 입체 배지였다. 아바타 사진 위에 얹히는 물건인데
+     불투명하고 채도가 높아서, 1.7초 동안 그 자리가 통째로 스티커로 덮였다.
+
+     지금은 반대다. 판은 어둡고 반투명해서 밑의 얼굴이 비치고, 색은 테두리와 글자에만
+     남는다. 어느 행동인지는 색 하나로 읽히고 사진은 계속 보인다 —
+     WIN 배지와 아웃츠 말풍선이 이미 같은 규칙을 쓰고 있어 테이블의 문법도 하나가 된다.
+
+     모서리는 알약(999px)이 아니라 4px다. 알약은 좌우 끝이 반원이라 글자 수에 따라
+     생김새가 달라진다 — "콜"과 "레이즈"가 다른 물건처럼 보였다.
+
+     너비 64px는 이 화면에서 가장 긴 말("자리 비움" 실측 63px)이 들어가는 값이다.
+     min-width라 그보다 긴 말이 생기면 늘어난다 — 고정 width로 잘라 두면 언젠가
+     글자가 잘리는데, 잘린 상태 라벨은 없는 것보다 나쁘다. 지금 쓰는 여섯 가지는
+     모두 이 안에 들어와서 실제로는 전부 같은 크기다(실측 64 × 23). */
   .ht-abadge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     z-index:7;pointer-events:none;white-space:nowrap;
-    padding:2px 9px;border-radius:999px;
-    font-size:10.5px;font-weight:900;letter-spacing:.3px;
-    border:1px solid rgba(0,0,0,.35);box-shadow:0 2px 8px rgba(0,0,0,.55)}
+    box-sizing:border-box;min-width:64px;text-align:center;
+    padding:2.5px 8px;border-radius:4px;
+    font-size:10.5px;font-weight:800;letter-spacing:.3px;
+    background:rgba(15,15,15,.85);
+    border:1px solid currentColor;box-shadow:0 2px 8px rgba(0,0,0,.55)}
   .ht-abadge[hidden]{display:none}
   /* 자리 비움 — 행동 배지와 같은 생김새의 회색 태그지만 스스로 사라지지 않는다.
      행동은 "방금 일어난 일"이라 1.7초면 되고, 자리 비움은 "지금 이 사람의 상태"라
@@ -1847,17 +1862,24 @@
      상태 표시까지 함께 지운다. 둘로 나누면 행동 배지(z7)가 잠깐 위에 떴다 물러나고
      그 아래에서 상태(z6)가 그대로 드러난다.
      그래서 행동 배지를 찾는 코드는 반드시 :not(.away)로 걸러야 한다. */
-  .ht-abadge.away{z-index:6;
-    background:linear-gradient(180deg,#b8b2a4,#7d786c);color:#171512;
-    letter-spacing:-.2px}
-  .ht-abadge.a-check{background:linear-gradient(180deg,#5fd39a,#2f9d6b);color:#06251a}
-  .ht-abadge.a-call{background:linear-gradient(180deg,#78c2f0,#2f7fbd);color:#04202f}
-  .ht-abadge.a-bet,.ht-abadge.a-raise{background:linear-gradient(180deg,#f0894b,#c8521c);color:#2a1004}
-  .ht-abadge.a-fold{background:linear-gradient(180deg,#9a9a9a,#6a6a6a);color:#141414}
+  /* ── 색 ────────────────────────────────────────────────────────────
+     테두리와 글자가 같은 색이다(border-color:currentColor라 color 한 줄이면 된다).
+     한 배지 안에서 색이 두 가지면 그 중 무엇이 신호인지 매번 고르게 된다.
+
+     행동을 "돈을 넣는가"로 갈랐던 예전 배색(체크=초록 · 콜=파랑)은 버린다.
+     체크와 콜은 둘 다 "받아 준다"라서 판을 읽을 때 같은 무게이고, 갈라 두면
+     초록이 두 곳(체크 배지·앞선 쪽 승률 말풍선)에서 서로 다른 뜻을 갖는다.
+     지금은 세 단계다 — 접으면 빨강, 받으면 노랑, 올리면 청록. 올인만 주황이다.
+
+     자리 비움은 무채색이라 행동 셋 어디에도 안 걸린다. 상태이지 행동이 아니라는
+     것이 색으로 먼저 읽힌다. */
+  .ht-abadge.away{z-index:6;color:#9e9e9e;letter-spacing:-.2px}
+  .ht-abadge.a-fold{color:#e53935}
+  .ht-abadge.a-check,.ht-abadge.a-call{color:#ffc107}
+  .ht-abadge.a-bet,.ht-abadge.a-raise{color:#00e5ff}
   /* 올인도 다른 액션과 같이 잠깐 떴다 사라진다 — 색만 다르게 둔다.
      "지금 올인 상태다"는 스택 자리의 ALL IN 문구가 따로 말한다(.ht-stk.allin). */
-  .ht-abadge.a-allin{background:linear-gradient(180deg,#e2483f,#a81f18);color:#fff;
-    font-family:var(--mono);letter-spacing:1px}
+  .ht-abadge.a-allin{color:#ff9800;font-family:var(--mono);letter-spacing:1px}
   /* ── WIN 배지 ────────────────────────────────────────────────────
      이 판(또는 이 팟 층)을 가져간 사람. 칩이 움직이기 전에 먼저 뜬다 —
      칩부터 날아가면 이미 정산이 끝난 뒤에 누가 이겼는지 알게 된다.
