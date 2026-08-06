@@ -1503,12 +1503,34 @@ export function holdemPage(user: WebUser): string {
        누구 차례든 울린다. 예전에는 내 차례에만 초당 한 번 카드 소리를 냈는데, 남이
        시간에 쫓기는 것도 판의 긴장이라 보여주는 게 맞다 — 그리고 그 사람이 자동으로
        넘어가면 내 차례가 곧 온다는 신호이기도 하다. */
+    /* ── 차례를 가르는 열쇠 ────────────────────────────────────────────
+       "한 차례"(누군가에게 행동권이 열려 있는 구간)를 유일하게 가리키는 값이 필요하다.
+       시간 바의 기준점과 베팅 슬라이더 초기화가 둘 다 이것으로 "새 차례인가"를 판단한다.
+
+       그 값은 서버가 차례를 열 때 적는 마감 시각이다 — setToAct 이 차례마다
+       now + 최소간격 + 20 으로 새로 쓰고, 다음 차례는 최소간격이 지난 뒤에야 열리므로
+       두 차례가 같은 값을 가질 수 없다. payload 에 직접 담겨 있지는 않지만
+       actionLeft + actOpenIn 으로 정확히 복원된다 — actionLeft 에 씌운 20초 상한이
+       깎아낸 몫이 바로 actOpenIn 이기 때문이다(열리는 시각 = 마감 - 20 이 불변식이다).
+       서버가 준 값만 더하므로 브라우저 시계 오차가 섞이지 않는다.
+       여기는 화면만 다룬다 — 실제 마감 판정은 서버의 action_deadline 이 한다. */
+    function turnLeft(tb){
+      // 마감까지 남은 초. 상한이 벗겨진 값이라 차례가 열리기 전 구간에서는 20을 넘는다.
+      if (!tb || tb.actionLeft == null) return null;
+      return tb.actionLeft + (tb.actOpenIn || 0);
+    }
+    function turnStamp(tb){
+      // 마감 시각 자체(서버 초). 한 차례 안에서는 상수다 — serverNow 가 1 늘면 남은 초가
+      // 1 줄어 합이 보존된다. 그래서 드래그 중에 열쇠가 바뀌어 초기화되는 일이 없다.
+      var left = turnLeft(tb);
+      return left == null ? null : st.serverNow + left;
+    }
     var CLOCK_WARN_SEC = 5;    // 바가 붉어지고 점멸하는 시점
     var CLOCK_TICK_SEC = 4.5;  // 똑딱 소리가 시작되는 시점 (음원 길이에 맞춘 값)
-    var clockBase = null;      // { key, seat, left, at, total, hand, street }
+    var clockBase = null;      // { key, dl, seat, left, at, total }
     // 화면에 그린 마지막 게이지 비율과 그것이 어느 차례의 것인지 (단조 감소 보장용)
     var fracKey = null, fracLast = 1;
-    var clockWarned = null;    // 이미 경고를 낸 (판:스트리트:자리) — 한 차례에 한 번만 울린다
+    var clockWarned = null;    // 이미 경고를 낸 차례의 열쇠 — 한 차례에 한 번만 울린다
     function noteClock(tb){
       if (!tb || tb.toActSeat == null || tb.actionLeft == null || tb.ended) {
         clockBase = null;
@@ -1525,26 +1547,38 @@ export function holdemPage(user: WebUser): string {
 
          제보된 "잠깐 다시 차올랐다 줄어든다"가 정확히 이것이다.
 
-         이제 차례가 바뀔 때만 새로 잡는다. 차례는 (자리 · 판 · 스트리트)로 가른다 —
-         자리만 보면 같은 사람이 플랍·턴에서 연달아 말할 때 기준점이 안 바뀌어
-         새 차례인데도 지난 차례의 남은 시간이 이어진다.
+         이제 차례가 바뀔 때만 새로 잡는다. 차례는 마감 시각으로 가른다 — turnStamp 를
+         보라. (자리 · 판 · 스트리트)로는 부족하다. 한 자리가 같은 스트리트에서 두 번 이상
+         말하기 때문이다(베팅 → 상대 리레이즈 → 콜). 그 사이 행동자의 차례를 폴링이 못 보면
+         (advanceHoldem 이 내 폴링 안에서 봇의 액션을 처리해 버리므로 실제로 못 볼 수 있다)
+         열쇠가 그대로여서 새 차례의 20초가 "늘어나는 값"으로 버려지고, 게이지는 지난 차례의
+         남은 시간에서 계속 줄어든다 — 살아 있는 차례에 빈 바가 서 있게 된다.
 
          같은 차례 안에서는 서버 값을 "더 줄일 때만" 받아들인다. 늦게 도착한 응답이나
          시계 차이로 화면이 실제보다 느긋해질 수는 있는데, 그건 서버가 마감을 판정하는
          순간과 어긋나므로 따라잡아야 한다. 반대로 늘리는 것은 받지 않는다 —
          한 차례 안에서 게이지는 단조 감소여야 한다.
          (실제 마감 판정은 서버의 action_deadline 이 하고, 여기는 화면만 다룬다.) */
-      var key = tb.toActSeat + ':' + tb.handNo + ':' + tb.street;
+      var full = turnLeft(tb), dl = turnStamp(tb);
+      var key = tb.toActSeat + ':' + dl;
       if (clockBase && clockBase.key === key) {
         var shown = clockBase.left - (Date.now() - clockBase.at) / 1000;
-        if (tb.actionLeft < shown) { clockBase.left = tb.actionLeft; clockBase.at = Date.now(); }
+        if (full < shown) { clockBase.left = full; clockBase.at = Date.now(); }
         return;
       }
+      /* 지나간 차례로 되돌아가지 않는다. 정산 연출 잠금(settleBusy)이 붙잡아 둔 응답은
+         최대 LOCK_MAX_MS(20초) 묵은 것이라 이미 끝난 차례의 마감을 들고 올 수 있다. */
+      if (clockBase && dl < clockBase.dl) return;
+      /* 기준점은 상한이 벗겨진 값(full)으로 잡는다.
+         스트리트가 열리는 구간에서 actionLeft 는 STREET_OPEN_SEC(3초) 동안 20에 붙어 있다.
+         그 20을 기준점으로 잡으면 마감이 3초 더 남았는데도 바가 비고, 그 뒤 3초를 빈 채로
+         서 있으며, 경고색과 똑딱 소리도 3초 일찍 난다 — 게다가 그 구간에서는 서버 값이
+         화면값보다 항상 3 크므로 위의 "줄일 때만 수용"이 영원히 성립하지 않아 교정될
+         기회조차 없다. full 로 잡으면 이 구간의 비율이 1을 넘고 paintClock 이 1로 자른다:
+         차례가 열릴 때까지 바는 꽉 찬 채로 서 있다가 열리는 순간부터 정확히 20초를 줄어든다. */
       clockBase = {
-        key: key, seat: tb.toActSeat, left: tb.actionLeft, at: Date.now(),
+        key: key, dl: dl, seat: tb.toActSeat, left: full, at: Date.now(),
         total: tb.actionSec || 20,
-        // 경고음을 "한 차례에 한 번"으로 묶는 열쇠의 재료다
-        hand: tb.handNo, street: tb.street,
       };
     }
     function paintClock(){
@@ -1584,12 +1618,12 @@ export function holdemPage(user: WebUser): string {
         b.classList.toggle('warn', warn);
       });
       /* 경고음은 한 차례에 한 번. 매초 다시 부르면 겹겹이 깔려 무슨 소리인지 알 수 없다.
-         "한 차례"는 (판 · 스트리트 · 자리)로 가른다. 자리 하나만 쓰면 같은 사람이
-         플랍·턴·리버에서 다시 시간에 쫓길 때 첫 번째만 울린다. */
+         "한 차례"는 기준점의 열쇠(자리 · 마감 시각)를 그대로 쓴다. 예전에는
+         (판 · 스트리트 · 자리)였는데 그건 같은 사람이 한 스트리트에서 두 번 말할 때
+         두 번째를 삼킨다 — 베팅하고 리레이즈를 받아 다시 시간에 쫓기는 그 순간이다. */
       if (tick && left > 0) {
-        var key = clockBase.hand + ':' + clockBase.street + ':' + clockBase.seat;
-        if (clockWarned !== key) {
-          clockWarned = key;
+        if (clockWarned !== clockBase.key) {
+          clockWarned = clockBase.key;
           if (window.casinoSfx && window.casinoSfx.clockWarn) window.casinoSfx.clockWarn();
         }
       }
@@ -1651,7 +1685,12 @@ export function holdemPage(user: WebUser): string {
       seats.forEach(function(seat){
         var wait = holeOpenAt[seat] - now;
         holeTimers.push(setTimeout(function(){
-          if (st && st.table && st.table.handNo === holeRevealHand && !tableEl.hidden) renderSeats();
+          if (st && st.table && st.table.handNo === holeRevealHand && !tableEl.hidden) {
+            /* 좌석을 다시 그리면 시간 바가 상태 없이 새로 생기고 --frac 이 비어 있다.
+               CSS 기본값이 var(--frac,1) = 100% 라서, 다음 80ms 틱이 오기 전까지 꽉 찬
+               바가 한 번 번쩍인다. 그려낸 자리에서 바로 값을 얹는다. */
+            renderSeats(); paintClock();
+          }
         }, wait + 20));
       });
       /* 마지막 장이 뒤집힌 직후 한 번 더, 이번엔 화면 전체를 다시 그린다.
@@ -2342,7 +2381,7 @@ export function holdemPage(user: WebUser): string {
                 boardRevealed = true;
                 clearBoardReveal();
                 if (st && st.table) syncEquity(st.table);
-                if (st && st.table && !tableEl.hidden) { renderSeats(); renderControls(); }
+                if (st && st.table && !tableEl.hidden) { renderSeats(); paintClock(); renderControls(); }
               }, SQUEEZE_MS));
               return;
             }
@@ -2356,7 +2395,7 @@ export function holdemPage(user: WebUser): string {
               clearBoardReveal();
               /* 폴링(1초)을 기다리지 않고 바로 다시 그린다 — 액션 버튼이 이 값에 걸려
                  있어서, 기다리면 카드가 다 깔린 뒤에도 최대 1초는 누를 수 없다. */
-              if (st && st.table && !tableEl.hidden) { renderSeats(); renderControls(); }
+              if (st && st.table && !tableEl.hidden) { renderSeats(); paintClock(); renderControls(); }
             }
           }, at));
         })(i + 1, t, squeeze);
@@ -2775,7 +2814,7 @@ export function holdemPage(user: WebUser): string {
         winners.forEach(function(w){
           paidSeat[w.seat] = (paidSeat[w.seat] || 0) + (w.amount || 0);
         });
-        renderSeats();
+        renderSeats(); paintClock();
       }, landed);
       /* 마지막 층까지 보냈으면 중앙을 완전히 비운다 — 칩도 금액 배지도 남기지 않는다.
          비우는 시점은 마지막 칩이 승자 안으로 흡수된 뒤다. 예전처럼 0.9초에 지우면
@@ -3255,13 +3294,18 @@ export function holdemPage(user: WebUser): string {
          꽂혀 있다. 슬라이더는 "이번에 얼마를 낼까"를 정하는 도구라 판이 바뀌면 백지여야
          한다. 남아 있는 숫자는 도움이 아니라 오조작의 씨앗이다.
 
-         차례는 (판 · 스트리트 · 콜 금액)으로 가른다. 앞의 둘만 보면 같은 스트리트에서
-         상대가 올려 내 차례가 다시 왔을 때 초기화되지 않는다 — 그때가 오히려 이전 값이
-         가장 위험한 순간이다(상대 베팅이 커졌는데 내 슬라이더는 옛 금액에 있다).
+         차례는 시간 바와 같은 열쇠로 가른다 — 서버의 마감 시각(turnStamp).
+         (판 · 스트리트 · 콜 금액)으로는 갈리지 않는 차례가 있다. 콜 100 을 낸 뒤 상대가
+         200 으로 올리면 콜 금액이 다시 100 이라(hb 200 - 내 베팅 100) 같은 열쇠가 나온다 —
+         노리밋에서 가장 흔한 미니 레이즈 모양이고, 하필 이전 값이 가장 위험한 순간이다.
+         마감 시각은 차례마다 새로 쓰이므로 그런 충돌이 없다.
 
          범위 검사는 남긴다. 같은 차례 안에서도 최대치는 바뀔 수 있다(다른 사람이
          올리면 내 maxRaiseTo 가 줄어든다). 그때 밖으로 나간 값은 끌어와야 한다. */
-      var betKey = st.table.handNo + ':' + st.table.street + ':' + (la.callAmount || 0);
+      var stamp = turnStamp(st.table);
+      var betKey = stamp == null
+        ? st.table.handNo + ':' + st.table.street + ':' + (la.callAmount || 0)
+        : 'd' + stamp;
       if (betKey !== betTurnKey) { betTurnKey = betKey; setAmount(lo); }
       else if (currentTarget() < lo || currentTarget() > la.maxRaiseTo) setAmount(lo);
       /* 체크할 수 있을 때는 폴드를 내린다.
@@ -3282,6 +3326,12 @@ export function holdemPage(user: WebUser): string {
       raise.textContent = (currentTarget() >= la.maxRaiseTo ? '올인 '
         : la.raiseIsBet ? '베팅 ' : '레이즈 ') + stackText(currentTarget());
       unitTag.textContent = unit === 'chip' ? '칩' : 'BB';
+      /* 태그를 바꿨으면 숫자도 그 단위로 다시 쓴다. 값 쓰기가 초기화(setAmount) 때만
+         일어나서, 칩 3,000 을 BB 로 토글하면 태그만 'BB'로 바뀌고 숫자는 3,000 으로
+         남았다 — 3,000BB 로 읽히는 화면이다.
+         입력 중일 때는 건드리지 않는다. change 는 포커스를 잃을 때 오므로 타이핑
+         도중에 폴링이 끼어들면 쓰던 글자가 지워진다. */
+      if (document.activeElement !== amountEl) amountEl.value = String(fromChips(currentTarget()));
     }
 
     document.getElementById('htQuick').addEventListener('click', function(e){
