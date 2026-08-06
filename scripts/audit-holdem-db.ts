@@ -520,6 +520,58 @@ console.log('\n[6b] 자정을 넘겨도 진행 중인 판이 유지된다');
     || fresh.status === 'CANCELLED', fresh.status);
 }
 
+/* 실제로 이렇게 터졌다: 2026-08-06 판이 23:49 에 시작해 다음 날 01:13 에 끝났다.
+   끝나는 순간 [6b]의 자정 방어가 풀리고(그 조건이 finished_at IS NULL 이다) "오늘 판"이
+   08-07 판으로 바뀌면서, 우승 화면을 띄울 유예가 아예 적용되지 않았다 — 이긴 사람이
+   결과를 못 보고 튕겼다. 그래서 "무엇을 보여줄지"를 사람이 앉은 자리에서 유도한다. */
+console.log('\n[6c] 자정을 넘겨 끝난 판도 앉아 있던 사람에게는 유예 동안 유지된다');
+{
+  for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+    'holdem_tables', 'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${tb}`).run();
+  HD.advanceHoldem();
+  setWindow(-60, 600, 1800);
+  for (let i = 0; i < 3; i++) { mkUser('f' + i); HD.registerHoldem('f' + i, 'f' + i); }
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  const live = HD.advanceHoldem();
+  ck('판이 시작됐다', live.status === 'RUNNING', live.status);
+  const oldId = live.tournament.id;
+
+  // 자정을 넘겨 방금 끝난 상태를 만든다 (날짜는 어제 · 종료는 조금 전)
+  db.prepare(`UPDATE holdem_tournaments SET date_str = '2000-01-01', finished_at = ? WHERE id = ?`)
+    .run(nowSec() - 5, oldId);
+  // 오늘 판 행을 만들되 등록은 아직 안 열린 상태로 (실행 시각에 따라 갈리지 않게)
+  HD.advanceHoldem();
+  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
+    .run(nowSec() + 3600, oldId);
+  db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL WHERE id = ?`).run(oldId);
+
+  // 시계에서 유도하면(로비) 오늘 판으로 넘어간다 — 이 동작은 그대로여야 한다
+  const byClock = HD.advanceHoldem();
+  ck('시계로 유도하면 오늘 판을 본다 (로비 동작은 그대로)',
+    byClock.tournament.id !== oldId, `id ${byClock.tournament.id} (끝난 판 ${oldId})`);
+
+  // 앉아 있던 사람에게는 끝난 판이 유지된다 — 우승 화면이 뜰 자리를 준다
+  const mine = HD.advanceHoldem('f0');
+  ck('앉아 있던 사람은 끝난 판을 계속 본다',
+    mine.tournament.id === oldId, `id ${mine.tournament.id} (기대 ${oldId})`);
+  ck('그 판의 상태가 FINISHED 다 (유예 판정의 전제)',
+    mine.status === 'FINISHED', mine.status);
+  ck('끝난 판에 테이블이 남아 있다 (쇼다운을 그릴 근거)',
+    HD.getTable(mine.tournament.id) != null);
+
+  // 앉지 않았던 사람은 영향이 없다
+  mkUser('outsider');
+  ck('앉지 않았던 사람은 오늘 판을 본다',
+    HD.advanceHoldem('outsider').tournament.id !== oldId);
+
+  // 유예가 지나면 창이 닫힌다 — 다음 날 어제의 시체를 보지 않는다
+  db.prepare(`UPDATE holdem_tournaments SET finished_at = ? WHERE id = ?`)
+    .run(nowSec() - T.FINISH_LINGER_SEC - 5, oldId);
+  ck('유예가 지나면 끝난 판을 더 보여주지 않는다',
+    HD.advanceHoldem('f0').tournament.id !== oldId,
+    `id ${HD.advanceHoldem('f0').tournament.id}`);
+}
+
 console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');
 {
   db.prepare(`DELETE FROM holdem_tournaments`).run();

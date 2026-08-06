@@ -402,15 +402,59 @@ function facts(t: HtRow): T.TournamentFacts {
   return { startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at };
 }
 
+/**
+ * 이 사람이 앉아 있던 판. 방금 끝난 판을 화면에 붙들어 두기 위한 조회다.
+ *
+ * activeTournament 는 "지금 몇 시인가"에서 판을 유도한다. 그 방식은 판이 끝나는 순간
+ * 무너진다 — 위의 자정 방어는 `finished_at IS NULL` 이 조건이라 종료와 동시에 풀리고,
+ * 자정을 넘겨 끝난 판은 그 순간 "오늘 판"이 다음 날 판으로 바뀌어 버린다. 그러면
+ * 우승 화면을 띄울 유예(FINISH_LINGER_SEC)가 아예 적용되지 않아, 이긴 사람이 결과를
+ * 못 보고 로비로 튕긴다. 실제로 그랬다 — 2026-08-06 판이 23:49 에 시작해
+ * 다음 날 01:13 에 끝나면서 이 일이 일어났다.
+ *
+ * 그래서 "무엇을 보여줄지"는 시계에서 떼어 낸다. 사람이 앉은 자리가 근거다 —
+ * 자정이든 다음 판이 생겼든 상관이 없어진다. 시계는 "이제 등록할 수 있는 판"에만 쓴다.
+ *
+ * 유예 시간으로 창을 닫는다. 안 닫으면 어제 판에 앉았던 사람이 다음 날에도 그 시체를
+ * 계속 보게 된다.
+ */
+function seatedTournament(userId: string, now: number): HtRow | undefined {
+  return one<HtRow>(
+    `SELECT t.* FROM holdem_tournaments t
+       JOIN holdem_tables tb ON tb.tournament_id = t.id
+       JOIN holdem_seats s   ON s.table_id = tb.id
+      WHERE s.user_id = ? AND t.cancelled_at IS NULL
+        AND t.finished_at IS NOT NULL AND t.finished_at > ?
+      ORDER BY t.finished_at DESC LIMIT 1`,
+    userId, now - T.FINISH_LINGER_SEC);
+}
+
 /* ── 진행 ─────────────────────────────────────────────────────────── */
 
 /**
  * 오늘 토너먼트를 "지금" 기준으로 최신 상태로 만든다. 모든 요청의 첫 줄에서 부른다.
  * 여기서 하는 일: 시작 판정 → 취소 판정 → 진행 중이면 테이블 전진 → 종료 판정.
  */
-export function advanceHoldem(): HoldemStatus {
+export function advanceHoldem(userId?: string): HoldemStatus {
   return tx(() => {
     const now = nowSec();
+    /* 방금 끝난 판에 앉아 있던 사람에게는 그 판을 돌려준다 — seatedTournament 를 보라.
+       전진시킬 것은 없다(끝난 판이다). 여기서 바로 돌아가는 이유는 아래에서
+       activeTournament 가 "오늘 판"으로 갈아치우는 것을 막기 위해서다.
+       userId 가 없는 호출(로비)은 예전과 똑같이 시계에서 유도한다. */
+    if (userId != null) {
+      const mine = seatedTournament(userId, now);
+      if (mine != null) {
+        const ms = scheduleOf(mine);
+        return {
+          tournament: mine,
+          schedule: ms,
+          status: T.statusAt(now, ms, facts(mine), getEntries(mine.id).length),
+          registered: getEntries(mine.id).length,
+          seated: 0,   // 끝난 판이라 살아 있는 자리가 없다 — 화면은 shownSeats로 그린다
+        };
+      }
+    }
     let t = activeTournament(now);
     const s = scheduleOf(t);
     let regs = getEntries(t.id);
