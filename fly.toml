@@ -25,9 +25,12 @@ primary_region = "nrt"
   # stop이 아니라 suspend를 쓴다. stop에서 깨우는 데 실측 9.05초가 걸려
   # 디스코드 인터랙션 3초 제한을 넘겼다(출석체크 버튼이 실패한다).
   # suspend는 램 스냅샷에서 재개하므로 훨씬 빠르고, 256MB는 suspend 자격 한도(2GiB) 안에 든다.
-  auto_stop_machines = "suspend"
+  # 절전을 껐다. 홀덤 테이블은 "요청이 올 때 판이 전진하는" 구조라 머신이 자는 동안
+  # 시간이 흐르면 그 사이의 진행이 한 요청에 몰려서 풀린다 — 깨어나는 순간 여러 판이
+  # 한꺼번에 처리되면서 화면이 멈춘 것처럼 보인다. 상시 가동이면 그 구간이 없다.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
 # 헬스체크(http_service.checks)는 의도적으로 넣지 않았다.
 # fly 문서상 헬스체크는 사설망으로 돌고 autostop은 프록시 트래픽으로 판단한다고 각각 적혀 있으나,
