@@ -425,8 +425,16 @@ export function holdemPage(user: WebUser): string {
 
 
               <div class="ht-center">
-                <div class="ht-pot"><span class="ht-pot-k">POT</span><span id="htPot">0</span></div>
-                <div class="ht-board" id="htBoard"></div>
+                <!-- "POT"이라는 세 글자는 이 화면을 처음 보는 사람에게 약어다.
+                     "Total Pot"이면 그 자체로 문장이라 설명이 필요 없다. -->
+                <div class="ht-pot"><span class="ht-pot-k">Total Pot</span><span id="htPot">0</span></div>
+                <!-- 보드를 감싸는 이유는 리버 스퀴즈 때문이다. 마지막 장 위에 뒷면을
+                     덮고 왼쪽부터 벗겨내는데, 그 덮개를 #htBoard 안에 넣으면 paintBoard가
+                     "카드 수보다 자식이 많다"고 보고 지워 버린다. -->
+                <div class="ht-board-hold">
+                  <div class="ht-board" id="htBoard"></div>
+                  <div class="ht-squeeze" id="htSqueeze" hidden></div>
+                </div>
                 <!-- 중앙에 쌓이는 팟 칩 더미. 팟이 갈라지면 층마다 더미가 따로 선다 —
                      하나로 뭉쳐 있으면 어느 팟을 누가 가져가는지 보여줄 방법이 없다.
                      이름표(MAIN / SIDE 1…)도 각 더미가 직접 달고 있다. -->
@@ -436,7 +444,10 @@ export function holdemPage(user: WebUser): string {
                      글자 줄이 뜨면 그것이 커뮤니티 카드보다 먼저 눈에 들어온다.
                      족보는 이제 이긴 사람의 좌석 위(.ht-win-h)에 붙는다 — 누가 무엇으로
                      이겼는지가 한 점에서 읽힌다. -->
-                <div class="ht-read" id="htRead" hidden></div>
+                <!-- 내 족보를 알리던 줄(.ht-read)도 없앴다. "플러시를 만들어 놓고 모르고
+                     폴드하는 걸 막는다"는 목적으로 넣었는데, 자리가 틀렸다 — 펠트 한가운데는
+                     앤티와 베팅 칩이 모이는 곳이라 프리플랍에는 그 위에 "QTo"가 겹쳐 앉아
+                     칩 금액을 가렸다. 내 카드는 이미 6시 자리에 크게 펼쳐져 있다. -->
                 <!-- 래빗 카드가 몇 장인지 글자로도 알려준다 (색만으로는 부족하다) -->
                 <div class="ht-rnote" id="htRNote" hidden></div>
                 <!-- 래빗 헌트 · 패 공개 버튼은 아래 액션 버튼 줄에 있다 (ht-acts) -->
@@ -567,13 +578,13 @@ export function holdemPage(user: WebUser): string {
     var boardEl = document.getElementById('htBoard');
     var potEl = document.getElementById('htPot');
     var msgEl = document.getElementById('htMsg');
-    var readEl = document.getElementById('htRead');
     var rabbitBtn = document.getElementById('htRabbit');
     var showBtn = document.getElementById('htShow');
     var rnoteEl = document.getElementById('htRNote');
     var sideNote = document.getElementById('htSideNote');
     var lvEl = document.getElementById('htLvUp');
     var pileEl = document.getElementById('htPotPile');
+    var squeezeEl = document.getElementById('htSqueeze');
     var winEl = document.getElementById('htWin');
 
     /* ── 우승 축하 ───────────────────────────────────────────────────
@@ -946,6 +957,14 @@ export function holdemPage(user: WebUser): string {
         var inX = W * 0.15, inY = H * 0.11;
         var bx = x - nx * (Math.abs(nx) * inX + Math.abs(ny) * inY);
         var by = y - ny * (Math.abs(nx) * inX + Math.abs(ny) * inY);
+        /* 아래쪽 자리만 한 번 더 올린다. 홀 카드는 어느 자리에서나 아바타 위로 자라는데,
+           위쪽 자리에서는 그게 테이블 밖(위)이라 걸릴 것이 없고 아래쪽 자리에서만
+           테이블 안쪽으로 뻗는다. 그래서 6시 자리에서만 칩 기둥과 금액 배지가 카드
+           윗부분(숫자·문양이 있는 자리)에 얹혔다 — 실측 10px 겹침.
+           22px 올리면 11px 여백이 남는다. ny로 비례를 주어 아래쪽 반원도 같이 따라온다.
+           픽셀이 아니라 H 비율로 적는다 — 좁은 화면에서는 카드도 같이 작아지므로
+           고정 픽셀이면 그쪽에서만 과하게 올라간다(0.067 × 326 = 22). */
+        by -= Math.max(0, ny) * H * 0.067;
         out.push({
           x: +(x / W * 100).toFixed(2), y: +(y / H * 100).toFixed(2),
           nx: nx, ny: ny,
@@ -1476,17 +1495,93 @@ export function holdemPage(user: WebUser): string {
        카드마다 cardFlip 애니메이션이 걸려 있어서, 같은 카드인데 요소를 새로 만들면
        애니메이션이 다시 재생되고 위치도 흔들린다. src가 실제로 달라진 칸만 교체한다
        (다른 게임의 syncCards와 같은 방식). */
+    /* ── 쇼다운 핸드를 한 사람씩 연다 ────────────────────────────────
+       서버는 판이 끝나는 순간 모두의 홀 카드를 한꺼번에 내려보낸다. 그대로 그리면
+       네 사람의 패가 동시에 뒤집혀서 무엇과 무엇이 붙었는지 읽을 틈이 없다.
+       실제 딜러는 한 사람씩 연다 — 순서는 스몰블라인드에 가까운 쪽부터다
+       (그 사람이 이 스트리트에서 먼저 말할 차례였다).
+
+       여기서 정하는 것은 "언제부터 이 자리의 카드를 앞면으로 그릴 수 있는가"뿐이다.
+       실제 그리기는 syncHole이 하고, 이 시각이 지나지 않은 자리는 뒷면으로 남는다.
+       holeDoneAt은 보드가 언제 열리기 시작할지의 기준이 된다(마지막 핸드 + 2.5초). */
+    /* 타이머를 boardTimers와 섞으면 안 된다. syncBoard가 "이미 깔고 있는 중"을
+       boardTimers.length로 판단하는데, 핸드 공개 타이머가 거기 들어가 있으면 보드가
+       영영 예약되지 않거나 엉뚱한 시점에 예약된다 — 실제로 보드가 먼저 다 열리고
+       핸드가 10초 뒤에 열렸다(실측). 배열을 나눈다. */
+    var holeOpenAt = {}, holeRevealHand = null, holeDoneAt = 0, holeTimers = [];
+    function clearHoleReveal(){
+      holeTimers.forEach(clearTimeout);
+      holeTimers = [];
+    }
+    function noteHoleReveal(tb){
+      if (tb.handNo === holeRevealHand) return;
+      var reveal = (tb.ended && tb.result && tb.result.reveal) || [];
+      if (!reveal.length) {
+        // 아직 쇼다운이 아니다 — 판이 바뀌었으면 지난 판의 예약을 버린다
+        if (tb.handNo !== holeRevealHand) {
+          holeOpenAt = {}; holeDoneAt = 0; clearHoleReveal();
+        }
+        return;
+      }
+      holeRevealHand = tb.handNo;
+      holeOpenAt = {};
+      /* 스몰블라인드부터 시계방향(자리 번호 오름차순)으로 줄을 세운다.
+         sb가 이 판에 없으면(폴드·탈락) 그다음 번호부터 도는 것과 같으므로
+         자리 번호를 sb 기준으로 회전시키기만 하면 된다. */
+      var sb = blindSeatsOf(tb).sb;
+      var seats = reveal.map(function(r){ return r.seat; }).sort(function(a, b){ return a - b; });
+      if (sb != null) {
+        var at = 0;
+        for (var i = 0; i < seats.length; i++) if (seats[i] >= sb) { at = i; break; }
+        seats = seats.slice(at).concat(seats.slice(0, at));
+      }
+      var now = Date.now();
+      seats.forEach(function(seat, i){
+        holeOpenAt[seat] = now + ACTION_HOLD_MS + i * HOLE_STEP_MS;
+      });
+      holeDoneAt = now + ACTION_HOLD_MS + Math.max(0, seats.length - 1) * HOLE_STEP_MS;
+      // 예약해 둔 시각마다 한 번씩 다시 그린다 — 폴링(1초)에만 맡기면 박자가 흔들린다
+      clearHoleReveal();
+      seats.forEach(function(seat){
+        var wait = holeOpenAt[seat] - now;
+        holeTimers.push(setTimeout(function(){
+          if (st && st.table && st.table.handNo === holeRevealHand && !tableEl.hidden) renderSeats();
+        }, wait + 20));
+      });
+      /* 마지막 장이 뒤집힌 직후 한 번 더, 이번엔 화면 전체를 다시 그린다.
+         결과 연출(보드 하이라이트·팟 이동·효과음)이 resultReady()에 걸려 있는데,
+         그 문이 열리는 순간은 어떤 서버 응답과도 무관한 이쪽 타이머다. 폴링(1초)에만
+         맡기면 카드가 다 열리고도 최대 1초는 아무 일도 안 일어난 채로 멈춰 있다. */
+      holeTimers.push(setTimeout(function(){
+        if (st && st.table && st.table.handNo === holeRevealHand && !tableEl.hidden) renderTable();
+      }, holeDoneAt - now + 30));
+    }
+    /* 아직 열리지 않은 핸드가 남았나.
+       "보드를 다 깔았나"(boardRevealed)와는 다른 질문이다. 리버까지 이미 깔린 판이
+       쇼다운으로 끝나면 보드는 처음부터 완성돼 있고 boardRevealed가 곧바로 true다 —
+       그 사이 핸드는 한 사람씩 열리는 중인데, 그 문 하나만 보던 결과 연출(보드 하이라이트·
+       팟 이동·승리 효과음)이 먼저 터졌다. 마지막 사람 카드가 뒤집히기도 전에 어느 5장이
+       빛나는지 보이니 순서가 통째로 무의미해진다.
+       두 조건을 모두 넘겨야 결과를 보여준다. */
+    function holesRevealed(){
+      return !holeDoneAt || Date.now() >= holeDoneAt;
+    }
     function syncHole(hole, s){
       if (!hole) return;
       var cls = s.userId === MEID ? 'hero' : 'sm';
-      var want = (s.cards && s.cards.length) ? s.cards.slice()
+      /* 아직 이 자리를 열 시각이 안 됐으면 서버가 준 카드를 무시하고 뒷면으로 둔다.
+         내 카드는 예외다 — 내 패는 언제나 내가 보고 있던 것이다. */
+      var mine = s.userId === MEID;
+      var due = !holeOpenAt[s.seat] || Date.now() >= holeOpenAt[s.seat];
+      var cards = (mine || due) ? s.cards : null;
+      var want = (cards && cards.length) ? cards.slice()
         : (s.inHand ? [null, null] : []);
       /* 공개 여부가 카드의 배치를 바꾼다.
            비공개 — 두 장을 겹치고 기울여 아바타 뒤에 둔다
            공개   — 나란히 펼치고 커져서 아바타 앞으로 나온다
          CSS의 .up 하나가 크기·간격·기울기·z를 함께 바꾼다(전환도 CSS가 맡는다).
          내 카드는 언제나 보이므로 항상 펼친 상태다. */
-      var open = !!(s.cards && s.cards.length);
+      var open = !!(cards && cards.length);
       hole.classList.toggle('up', open);
       while (hole.children.length > want.length) hole.removeChild(hole.lastChild);
       for (var i = 0; i < want.length; i++) {
@@ -1680,52 +1775,87 @@ export function holdemPage(user: WebUser): string {
        총액을 층마다 다시 쪼개지 않는 이유는 예전과 같다 — 500 두 개가 1000 한 개로
        합쳐져 보이면 얼마가 어떻게 모였는지가 사라진다. */
     var potPile = { hand: null, total: 0, list: [], n: 0, sig: '' };
-    /* 지금 층 구성. 서버가 준 pots를 쓰고, 없으면 층 하나로 본다. */
+    /* 지금 중앙에 실제로 모여 있는 돈을 층별로.
+       서버의 pots는 committed 기준이라 "각자 앞에 놓인 이번 스트리트 베팅"까지 들어 있다.
+       그대로 그리면 같은 칩이 두 곳에 보인다 — 앞에는 콜한 칩이 놓여 있는데 중앙에도
+       그만큼 쌓이고, 사이드 팟이 갈리는 판에서는 SIDE 1·SIDE 2 이름표까지 미리 뜬다.
+
+       그래서 앞에 놓인 몫을 층에서 덜어낸다. 위 층부터 덜어낸다 — 이번 스트리트의
+       베팅은 언제나 가장 위 층으로 들어가기 때문이다. 덜어내다 0이 된 층은 사라지고,
+       라운드가 닫혀 칩이 중앙으로 날아오면 그 층이 칩과 함께 다시 나타난다.
+       "수거가 끝난 뒤에 중앙 팟을 만든다"가 규칙 하나로 저절로 나온다.
+
+       판이 끝나면 마지막 스트리트까지 전부 중앙으로 모이므로 덜 것이 없다 —
+       그때는 서버의 층 구성과 정확히 같아진다(정산 연출이 그 번호에 걸려 있다). */
     function pileLayers(tb){
-      var ps = (tb && tb.pots) || [];
-      if (ps.length > 1) return ps.map(function(p){ return p.amount || 0; });
-      return [tb ? (tb.pot || 0) : 0];
+      if (!tb) return [0];
+      var live = 0;
+      if (!tb.ended) (tb.seats || []).forEach(function(s){ live += s.bet || 0; });
+      var ps = (tb.pots || []).map(function(p){ return p.amount || 0; });
+      if (ps.length < 2) return [Math.max(0, (tb.pot || 0) - live)];
+      for (var i = ps.length - 1; i >= 0 && live > 0; i--) {
+        var cut = Math.min(ps[i], live);
+        ps[i] -= cut; live -= cut;
+      }
+      var out = ps.filter(function(a){ return a > 0; });
+      return out.length ? out : [0];
     }
+    /* 금액 배지는 층이 하나여도 붙인다.
+       예전에는 층이 갈라졌을 때만 붙였다. "하나뿐이면 위쪽 Total Pot이 이미 말한다"고
+       봤는데, 실제 화면에서는 보드 아래에 칩 한 장만 덩그러니 놓여 있고 그것이 얼마인지
+       옆에 아무것도 없었다 — 위쪽 숫자와 이 칩이 같은 것이라는 연결이 안 잡힌다.
+       이름표(MAIN/SIDE)만 층이 갈릴 때 붙는다. 하나뿐인 팟에 "MAIN"은 군더더기다. */
     function pileLabel(i, n, amount){
-      if (n < 2) return '';
-      return '<span class="ht-pg-k">' + (i === 0 ? 'MAIN' : 'SIDE ' + i) + '</span>' +
-        '<span class="ht-pg-v">' + stackText(amount) + '</span>';
+      if (amount <= 0) return '';
+      return (n < 2 ? '' : '<span class="ht-pg-k">' + (i === 0 ? 'MAIN' : 'SIDE ' + i) + '</span>') +
+        /* 단위 표기는 potEl과 같은 규칙이다 — stackText가 BB일 때는 이미 'BB'를 붙여
+           돌려주므로 여기서 또 붙이면 "12.9BB BB"가 된다. */
+        '<span class="ht-pg-v">' + stackText(amount) + (unit === 'chip' ? ' P' : '') + '</span>';
     }
-    /* 더미를 다시 그린다. 층 금액의 누적 경계로 칩 목록을 잘라 넣는다. */
-    function paintPotPile(tb){
+    /* 더미를 다시 그린다. 층마다 자기 금액을 직접 액면으로 분해한다.
+
+       예전에는 쌓인 칩 목록 하나를 층 금액의 누적 비율로 잘라 나눠 줬다. 그 방식은
+       금액 차이가 크면 작은 층이 통째로 굶는다 — MAIN 39,000 · SIDE 450 · SIDE 200에서
+       비율 반올림이 서른 장을 전부 MAIN에 주고 사이드 두 층은 0장이 됐다(실측:
+       금액 배지만 뜨고 칩이 하나도 없었다).
+
+       층 금액을 각각 분해하면 그 문제가 아예 생기지 않고, 덤으로 각 층의 칩 색이
+       그 층의 실제 금액과 맞는다 — 450짜리 사이드 팟에 검정 5,000칩이 놓이지 않는다. */
+    var PILE_LAYER_MAX = 14;   // 한 층에 그리는 최대 장수
+    /* prev는 "직전 그림에서 각 층에 있던 칩 수"다. 그보다 뒤에 오는 칩은 이번에 새로
+       도착하는 칩이므로 pending으로 숨겨 두고, 좌석 앞 칩이 날아와 닿을 때 드러낸다.
+       칩이 하나도 없던 층(새로 갈라진 사이드 팟)은 이름표까지 통째로 숨긴다 —
+       칩은 아직 날아오는 중인데 "SIDE 1 · 450"만 먼저 떠 있으면 그 순간 화면에는
+       같은 돈이 두 곳에 적혀 있게 된다.
+       prev를 안 넘기면(리셋·복원) 아무것도 숨기지 않는다. */
+    function paintPotPile(tb, prev){
       var amts = pileLayers(tb);
-      var sum = amts.reduce(function(a, b){ return a + b; }, 0) || 1;
-      var chips = potPile.list;
       pileEl.style.opacity = '';
       pileEl.className = 'ht-piles' + (amts.length > 1 ? ' split' : '');
-      var html = '', used = 0, acc = 0;
+      var html = '', counts = [];
       for (var i = 0; i < amts.length; i++) {
-        acc += amts[i];
-        // 이 층까지 들어가야 할 칩 개수 (마지막 층은 남은 것 전부)
-        var upto = i === amts.length - 1 ? chips.length
-          : Math.min(chips.length, Math.round(chips.length * acc / sum));
-        var inner = '', cols = pileLayout(chips.slice(used, upto));
-        var ci = 0;
+        var ds = htDecompose(amts[i]).slice(0, PILE_LAYER_MAX);
+        var have = prev ? (prev[i] || 0) : -1;    // -1이면 숨기지 않는다
+        var inner = '', cols = pileLayout(ds.map(function(d){ return { d: d }; })), k = 0;
         cols.forEach(function(c, cx){
-          for (var rw = 0; rw < c.n; rw++) inner += htChipSprite(c.d, cx, rw, cols.length, false);
-          ci += c.n;
+          for (var rw = 0; rw < c.n; rw++) inner += htChipSprite(c.d, cx, rw, cols.length, have >= 0 && k++ >= have);
         });
-        void ci;
-        used = upto;
-        html += '<div class="ht-pg" data-layer="' + i + '">' +
+        counts.push(ds.length);
+        html += '<div class="ht-pg' + (have === 0 ? ' pending' : '') + '" data-layer="' + i + '">' +
           '<span class="ht-pg-chips">' + inner + '</span>' +
           pileLabel(i, amts.length, amts[i]) + '</div>';
       }
       pileEl.innerHTML = html;
+      return counts;
     }
     function resetPotPile(tb, settled){
-      potPile = { hand: tb.handNo, total: 0, list: [], n: 0, sig: '' };
+      potPile = { hand: tb.handNo, total: 0, list: [], n: 0, sig: '', cnt: null };
       if (settled > 0) { potPile.total = settled; potPile.list = htDecompose(settled).map(function(d, i){
         return { d: d, i: i % HT_MAX_CHIPS };
       }); }
       potPile.n = potPile.list.length;
       potPile.sig = pileLayers(tb).join(',');
-      paintPotPile(tb);
+      potPile.cnt = paintPotPile(tb);
     }
     function syncPotPile(tb){
       /* 지금 이 스트리트에 각자 앞에 놓인 칩은 아직 중앙에 온 것이 아니다.
@@ -1748,27 +1878,31 @@ export function holdemPage(user: WebUser): string {
           potPile.list.push({ d: denoms[i], i: potPile.n++ % HT_MAX_CHIPS });
         }
         potPile.sig = sig;
-        paintPotPile(tb);
         /* 각자 앞의 칩 기둥이 중앙으로 미끄러지는 연출(flyStack)이 620ms다.
            그것이 도착하는 바로 그 순간 더미에 나타나야 "모여서 쌓였다"로 읽힌다 —
            일찍 켜면 칩이 두 벌 보이고, 늦게 켜면 사라졌다가 다시 생긴 것처럼 보인다.
-           새로 들어온 만큼만 뒤에서부터 순서대로 켠다. */
-        if (!firstTablePaint) {
-          var all = pileEl.querySelectorAll('.ht-pchip');
-          var from = Math.max(0, all.length - denoms.length);
-          for (var j = from; j < all.length; j++) {
-            (function(el, k){
-              el.classList.add('pending');
-              setTimeout(function(){ el.classList.remove('pending'); }, STACK_FLY_MS - 60 + k * 40);
-            })(all[j], j - from);
-          }
+
+           숨길 대상은 "직전 그림보다 늘어난 칩"이다. 예전에는 DOM 순서로 뒤에서부터
+           delta 장수만큼 셌는데, 층이 갈라지는 판에서는 늘어난 칩이 여러 층에 흩어져서
+           엉뚱한 칩이 숨겨졌다. 층별 장수를 기억해 두고 층마다 따로 센다.
+           칩이 하나도 없던 층은 이름표까지 같이 숨는다(paintPotPile). */
+        var before = firstTablePaint ? null : potPile.cnt;
+        potPile.cnt = paintPotPile(tb, before);
+        if (before) {
+          var k = 0;
+          pileEl.querySelectorAll('.ht-pchip.pending').forEach(function(el){
+            setTimeout(function(){ el.classList.remove('pending'); }, STACK_FLY_MS - 60 + (k++) * 40);
+          });
+          pileEl.querySelectorAll('.ht-pg.pending').forEach(function(el){
+            setTimeout(function(){ el.classList.remove('pending'); }, STACK_FLY_MS - 60);
+          });
         }
         return;
       }
       // 층 구성이 바뀌었거나 골격이 다시 그려졌다면 기록대로 복원한다
       if (sig !== potPile.sig || !pileEl.querySelector('.ht-pg')) {
         potPile.sig = sig;
-        paintPotPile(tb);
+        potPile.cnt = paintPotPile(tb);
       }
     }
 
@@ -1784,27 +1918,17 @@ export function holdemPage(user: WebUser): string {
        8장에서 끊는다. 그 위로는 높이가 화면 밖으로 자라기만 하고 정보는 늘지 않는다
        (정확한 금액은 바로 옆 숫자가 말한다). */
     var BET_MAX_CHIPS = 12;
-    var BET_COL_W = 24;        // 기둥 사이 가로 간격 (칩 폭 22 + 여유)
     function chipStack(amount){
       var ds = htDecompose(amount).slice(0, BET_MAX_CHIPS);
-      /* 액면별로 기둥을 세우고 기둥끼리 옆으로 나란히 둔다 — 중앙 팟 더미와 같은 규칙이다.
-         예전에는 한 기둥에 여러 액면을 섞어 쌓았다. 큰 액면이 아래로 가니 자릿수는
-         읽혔지만, "무엇이 몇 장인가"는 색 띠를 세어야 알 수 있었다.
-         실제 딜러도 액면을 섞어 쌓지 않는다.
-
-         기둥마다 맨 위 한 장만 윗면(타원 탑뷰)이고 나머지는 옆면 띠다. 전부 윗면으로
-         그리면 원반을 부채처럼 늘어놓은 것이 되어 기둥으로 안 읽힌다. */
+      /* 좌석 앞 베팅 칩도 중앙 팟과 똑같은 부품(htChipSprite)으로 그린다.
+         예전에는 베팅 전용으로 "옆면 띠 + 맨 위 한 장만 윗면"인 다른 부품을 썼다.
+         같은 물건인데 테이블 위 두 곳에서 생김새가 달랐고, 팟 칩을 3D로 고칠 때
+         이쪽은 따라오지 않아 한 화면에 구형과 신형이 같이 보였다.
+         부품이 하나면 그런 어긋남이 생길 자리가 없다. */
       var cols = pileLayout(ds.map(function(d){ return { d: d }; }));
       var out = '';
       cols.forEach(function(c, cx){
-        var x = Math.round((cx - (cols.length - 1) / 2) * BET_COL_W);
-        out += '<i class="ht-chip-sh" style="left:calc(50% + ' + (x - 10) + 'px)"></i>';
-        for (var rw = 0; rw < c.n; rw++) {
-          var top = rw === c.n - 1 ? ' top pkchip' : '';
-          out += '<i class="ht-chip' + top + ' ' + htDenomClass(c.d) +
-            '" style="left:calc(50% + ' + (x - 11) + 'px);bottom:' + (rw * 4) +
-            'px;z-index:' + (10 + rw) + '"></i>';
-        }
+        for (var rw = 0; rw < c.n; rw++) out += htChipSprite(c.d, cx, rw, cols.length, false);
       });
       return out;
     }
@@ -1911,12 +2035,21 @@ export function holdemPage(user: WebUser): string {
        커지기 때문이다 — 플랍은 세 장이 한꺼번에 나와 아직 판이 열리는 중이고,
        턴은 "이 한 장으로 뒤집힐 수 있다"가 처음 성립하는 지점이며, 리버는 마지막이다.
        실제 중계도 리버 앞에서 가장 오래 뜸을 들인다. 그래서 뒤로 갈수록 길게 잡는다.
-         프리플랍 → 플랍  1.6초
-         플랍 → 턴        2.2초
-         턴 → 리버        2.6초
+         핸드 공개 → 플랍  2.5초 (SHOWDOWN_FLOP_MS)
+         플랍 → 턴         2.8초
+         턴 → 리버         3.0초  그리고 리버는 뒷면으로 놓였다가 2.5초에 걸쳐 벗겨진다
+       키는 "들어가는 스트리트"다 — streetOfCard가 0(플랍)·1(턴)·2(리버)를 준다.
        한 스트리트씩 정상 진행할 때는 이 값을 쓰지 않는다 — 그때는 이미 ACTION_HOLD_MS로
        한 박자 쉬고 있고, 거기에 또 얹으면 진행이 늘어진다. */
-    var BOARD_RUNOUT_MS = { 1: 1600, 2: 2200, 3: 2600 };
+    var BOARD_RUNOUT_MS = { 1: 2800, 2: 3000 };
+    /* 쇼다운에서 마지막 핸드가 공개되고 플랍이 열리기까지. 그 사이가 "이제 카드만
+       남았다"를 알아차리는 시간이다 — 곧바로 플랍을 깔면 핸드를 읽을 틈이 없다. */
+    var SHOWDOWN_FLOP_MS = 2500;
+    var SQUEEZE_MS = 2500;      // 리버 덮개가 벗겨지는 시간 (CSS htSqueeze와 같아야 한다)
+    /* 핸드를 한 사람씩 여는 간격. 1초였는데 "체감상 느리다"는 말이 나왔다 —
+       읽어야 할 것은 두 장뿐이고, 그 사이 화면에는 다른 변화가 없어서 기다림이 그대로
+       비어 있는 시간이 된다. 0.5초면 순서는 그대로 보이면서 늘어지지 않는다. */
+    var HOLE_STEP_MS = 500;
     // 몇 번째 카드가 어느 스트리트인지 (0~2 플랍 · 3 턴 · 4 리버)
     function streetOfCard(i){ return i <= 2 ? 0 : i - 2; }
     /* 스트리트가 넘어갈 때 카드를 깔기 전에 두는 정지.
@@ -1935,10 +2068,21 @@ export function holdemPage(user: WebUser): string {
        ended만 보고 전부 그리면 플랍도 못 보고 결과가 뜬다. 결과를 아는 것과
        보여주는 속도는 별개다. 이 값이 false인 동안 결과 표시·칩 회수를 미룬다. */
     var boardRevealed = true;
+    /* 결과를 보여줘도 되는 시점.
+       쇼다운 연출은 [핸드 순차 공개] → [남은 보드] 두 구간이고, 둘 다 끝나야 한다.
+       한쪽만 보면 반대쪽 구간에서 결과가 샌다:
+         boardRevealed만 → 리버까지 깔린 판에서 핸드를 여는 동안 승자가 먼저 뜬다
+         holesRevealed만 → 올인 판에서 플랍도 안 깔렸는데 이긴 5장이 빛난다 */
+    function resultReady(){ return boardRevealed && holesRevealed(); }
 
     function clearBoardReveal(){
       boardTimers.forEach(clearTimeout);
       boardTimers = [];
+    }
+    /* 연출이 끊겨도 덮개가 남지 않게 한다 — 남으면 다음 판 보드의 마지막 장이
+       영원히 뒷면으로 덮여 있다. */
+    function clearSqueeze(){
+      if (squeezeEl) squeezeEl.hidden = true;
     }
     /* 보드도 "바뀐 칸만" 갈아 끼운다.
        innerHTML을 통째로 쓰면 턴 한 장을 열 때 이미 깔려 있던 플랍 3장까지 새로 만들어져
@@ -1990,6 +2134,7 @@ export function holdemPage(user: WebUser): string {
       if (tb.handNo !== boardHandNo) {
         boardHandNo = tb.handNo;
         clearBoardReveal();
+        clearSqueeze();
         shownBoard = 0;
         boardEl.innerHTML = '';
       }
@@ -1997,6 +2142,11 @@ export function holdemPage(user: WebUser): string {
          끝난 판이어도 연출은 그대로 돈다 — 올인 판에서 플랍·턴·리버를 한 장씩 봐야 한다. */
       if (firstTablePaint) {
         clearBoardReveal();
+        clearSqueeze();
+        /* 진행 중인 판에 들어온 순간에는 핸드도 예약 없이 바로 보여준다 —
+           예약을 남겨 두면 이미 끝난 판의 카드가 몇 초 뒤에 다시 뒤집힌다. */
+        clearHoleReveal();
+        holeOpenAt = {}; holeDoneAt = 0;
         shownBoard = cards.length;
         boardRevealed = true;
         paintBoard(cards, shownBoard);
@@ -2011,14 +2161,42 @@ export function holdemPage(user: WebUser): string {
       if (boardTimers.length) return;          // 이미 깔고 있는 중
       /* 첫 장 앞에만 정지를 둔다. 한 번에 여러 스트리트를 여는 올인 판에서도
          정지는 맨 앞에 한 번이고, 그 뒤 스트리트 사이는 BOARD_STREET_MS로 이어진다. */
+      /* 첫 장까지의 정지. 쇼다운이라면 마지막 핸드가 열린 뒤 2.5초다 —
+         핸드를 다 보기도 전에 플랍이 깔리면 무엇과 무엇이 붙었는지 읽을 틈이 없다.
+         정상 진행(한 스트리트씩)에서는 예전처럼 마지막 액션을 읽을 시간만 둔다. */
       var t = ACTION_HOLD_MS, from = shownBoard;
+      if (holeDoneAt) {
+        t = Math.max(t, holeDoneAt - Date.now() + SHOWDOWN_FLOP_MS);
+      }
       for (var i = from; i < cards.length; i++) {
         t += boardGap(i, from);
-        (function(upto, at){
+        /* 리버(다섯 번째)는 앞면으로 열지 않는다. 뒷면 덮개를 씌운 채로 놓고
+           2.5초에 걸쳐 왼쪽부터 벗긴다. 그동안 shownBoard는 4에 머문다 —
+           승률 말풍선이 그 값을 보므로, 카드가 다 까지기 전에 결과가 새는 것을 막는다. */
+        var squeeze = tb.ended && i === 4 && cards.length === 5;
+        (function(upto, at, sq){
           boardTimers.push(setTimeout(function(){
-            shownBoard = upto;
             var now = (st.table && st.table.board) || [];
             paintBoard(now, upto);
+            if (sq) {
+              /* 앞면은 이미 그려졌고 그 위를 덮개가 가린다. 덮개가 다 걷히는
+                 시점에야 shownBoard를 5로 올리고 승률을 최종값으로 바꾼다. */
+              squeezeEl.hidden = false;
+              squeezeEl.style.animation = 'none';
+              void squeezeEl.offsetWidth;
+              squeezeEl.style.animation = '';
+              if (window.casinoSfx && window.casinoSfx.card) window.casinoSfx.card();
+              boardTimers.push(setTimeout(function(){
+                squeezeEl.hidden = true;
+                shownBoard = upto;
+                boardRevealed = true;
+                clearBoardReveal();
+                if (st && st.table) syncEquity(st.table);
+                if (st && st.table && !tableEl.hidden) { renderSeats(); renderControls(); }
+              }, SQUEEZE_MS));
+              return;
+            }
+            shownBoard = upto;
             /* 승률은 "지금 깔린 보드"에 맞는 단계를 보여준다. 폴링(1초)에만 맡기면
                플랍이 다 깔린 뒤에도 최대 1초는 이전 단계가 떠 있고, 런아웃이 빠르면
                플랍 단계를 아예 못 보고 지나간다. 카드를 열 때마다 여기서 갱신한다. */
@@ -2031,7 +2209,8 @@ export function holdemPage(user: WebUser): string {
               if (st && st.table && !tableEl.hidden) { renderSeats(); renderControls(); }
             }
           }, at));
-        })(i + 1, t);
+        })(i + 1, t, squeeze);
+        if (squeeze) t += SQUEEZE_MS;
       }
     }
 
@@ -2052,9 +2231,9 @@ export function holdemPage(user: WebUser): string {
     }
     function flyChip(fromRect, toRect, delay, cls){
       var c = document.createElement('i');
-      c.className = 'ht-chip top pkchip fly' + (cls ? ' ' + cls : '');
+      c.className = 'ht-pchip pkchip fly' + (cls ? ' ' + cls : '');
       c.style.cssText = 'position:fixed;left:' + fromRect.left + 'px;top:' + fromRect.top + 'px;' +
-        'width:20px;height:10px;';
+        'margin:0;width:20px;height:11px;';
       c.style.setProperty('--tx', Math.round((toRect.left + toRect.width/2) - fromRect.left) + 'px');
       c.style.setProperty('--ty', Math.round((toRect.top + toRect.height/2) - fromRect.top) + 'px');
       c.style.animationDelay = delay + 'ms';
@@ -2176,8 +2355,6 @@ export function holdemPage(user: WebUser): string {
        (SIDE_POT_STEP_SEC)으로 다음 판 시작을 미룬다 — 한쪽만 바꾸면 마지막 층을
        보여주다가 판이 넘어간다. */
     var POT_STEP_MS = 2500;
-    // 층 이름표를 띄워 둔 동안에는 syncOutro가 그 줄을 건드리지 않는다
-    var potLabelUntil = 0;
     function pushPotToWinners(tb, forHand){
       /* 칩이 도착하는 곳은 아바타다 — "사람이 앉아 있는 자리"다.
          예전에는 좌석판이었고 그때는 그것이 좌석의 몸통이었다. 지금 좌석판은 아바타 아래에
@@ -2212,7 +2389,6 @@ export function holdemPage(user: WebUser): string {
         var at = i * POT_STEP_MS;
         setTimeout(function(){
           if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
-          showPotLabel(tb, pa, layers.length);
           showWinBadges(tb, pa);
           /* 층마다 다시 낸다 — 첫 층에서만 울리면 뒤 층은 조용히 지나가서
              "이게 아직 정산 중인가, 끝난 건가"가 소리로는 안 잡힌다.
@@ -2543,6 +2719,8 @@ export function holdemPage(user: WebUser): string {
     function renderTable(){
       var tb = st.table;
       noteRabbitScope();      // 대회가 바뀌면 래빗 열림 상태를 버린다
+      // 핸드 순차 공개 예약이 먼저다 — 보드 시작 시각이 그 마지막 장에 걸려 있다
+      noteHoleReveal(tb);
       syncBoard(tb);
       /* 팟 금액은 다음 판이 시작될 때까지 그대로 둔다.
          한때는 칩이 승자에게 날아간 순간 0으로 바꿨다. 총 칩을 세는 사람에게는 그게 맞다 —
@@ -2559,8 +2737,8 @@ export function holdemPage(user: WebUser): string {
       // 칩이 중앙으로 밀려가 더미로 쌓이고, 판이 끝나면 그 더미가 승자에게 넘어간다
       rememberSpots(tb);
       syncPotPile(tb);
-      // 팟 회수와 래빗 버튼은 보드를 다 깐 뒤에 — 결과가 카드보다 먼저 오면 안 된다
-      if (boardRevealed) { flyPotToWinners(tb); syncRabbit(tb); syncShow(tb); }
+      // 팟 회수와 래빗 버튼은 카드를 다 깐 뒤에 — 결과가 카드보다 먼저 오면 안 된다
+      if (resultReady()) { flyPotToWinners(tb); syncRabbit(tb); syncShow(tb); }
       else { showBtn.hidden = true; rabbitBtn.hidden = true; rnoteEl.hidden = true; }
 
       /* 중앙에는 이제 보드와 팟만 둔다.
@@ -2579,10 +2757,10 @@ export function holdemPage(user: WebUser): string {
          · 팟이 승자에게 밀려갈 때 — 한 판에 딱 한 번. 폴링이 같은 종료 상태를 계속
            보내오므로 핸드 번호로 이미 울렸는지 표시해 둔다. */
       playBetSounds();
-      /* 보드를 다 깐 뒤에만 울린다. boardRevealed를 안 보면 올인 판에서 플랍이
-         깔리기도 전에 승리 칩 소리가 나서 결과를 미리 알려준다 — 결과 표시·팟 회수는
-         이미 이 가드를 지키는데 소리만 통과하고 있었다. */
-      if (tb.ended && boardRevealed && paidHandNo !== tb.handNo) {
+      /* 카드를 다 깐 뒤에만 울린다. 이 문을 안 지키면 올인 판에서 플랍이 깔리기도 전에,
+         또는 쇼다운에서 마지막 사람 핸드가 열리기도 전에 승리 칩 소리가 나서 결과를
+         미리 알려준다. 소리는 눈보다 빠르다 — 화면을 안 보고 있어도 들린다. */
+      if (tb.ended && resultReady() && paidHandNo !== tb.handNo) {
         paidHandNo = tb.handNo;
         /* 두 소리를 같이 낸다. 칩이 밀려가는 소리는 "돈이 움직였다"는 촉감이고,
            팟 음악은 "이겼다"는 뜻이다 — 하나로 갈음하면 한쪽이 사라진다. */
@@ -2592,14 +2770,11 @@ export function holdemPage(user: WebUser): string {
         }
       }
 
-      /* 내 조합 — 초심자가 플러시를 완성해 놓고도 모르고 폴드하는 걸 막는다.
-         내 카드로 계산한 내 정보라 남에게 새지 않는다. */
+      /* 내 조합은 이제 글자로 쓰지 않고 카드로만 보여준다 — 내 등급을 만든 카드에
+         테두리를 준다(syncHighlight의 'made'). 펠트 한가운데의 글자 줄은 없앴다:
+         그 자리는 앤티와 베팅 칩이 모이는 곳이라 프리플랍에는 "QTo"가 칩 금액 위에
+         겹쳐 앉았고, 칩에 붙은 라벨처럼 읽혔다. */
       var mh = boardRevealed ? tb.myHand : null;
-      readEl.hidden = !mh || !mh.text;
-      if (mh && mh.text) {
-        readEl.textContent = mh.text;
-        readEl.className = 'ht-read' + (mh.category != null && mh.category >= 2 ? ' strong' : '');
-      }
       syncHighlight(tb, mh);
       syncOutro(tb);
       noteClock(tb);
@@ -2714,8 +2889,8 @@ export function holdemPage(user: WebUser): string {
       /* 판이 끝나면 "이긴 5장"으로 넘어간다. 진행 중에는 "내 등급을 만든 카드"다 —
          목적이 다르다. 진행 중에 5장을 다 밝히면 플랍에서는 전부가 밝아져 아무
          신호가 되지 않고, 쇼다운에서 등급 카드만 밝히면 킥커로 갈린 판을 설명하지 못한다. */
-      var reveal = (tb.ended && boardRevealed && tb.result && tb.result.reveal) || [];
-      var awards = (tb.ended && boardRevealed && tb.result && tb.result.awards) || [];
+      var reveal = (tb.ended && resultReady() && tb.result && tb.result.reveal) || [];
+      var awards = (tb.ended && resultReady() && tb.result && tb.result.awards) || [];
       if (reveal.length && awards.length) {
         // 팟을 받은 자리 중 공개된 사람 = 이긴 손. 분할 팟이면 여럿일 수 있다.
         var wonSeats = {};
@@ -2750,8 +2925,8 @@ export function holdemPage(user: WebUser): string {
        "누가"는 좌석에, "무엇으로"는 중앙에 있어서 눈이 두 번 움직였고, 무엇보다
        커뮤니티 카드를 보는 자리에 글자가 떴다. 이제 이긴 사람 위에 직접 붙인다. */
     function syncOutro(tb){
-      var reveal = (tb.ended && boardRevealed && tb.result && tb.result.reveal) || [];
-      var awards = (tb.ended && boardRevealed && tb.result && tb.result.awards) || [];
+      var reveal = (tb.ended && resultReady() && tb.result && tb.result.reveal) || [];
+      var awards = (tb.ended && resultReady() && tb.result && tb.result.awards) || [];
       /* 정산이 시작되면 showWinBadges가 층마다 주인이 된다 — 여기서 덮어쓰면
          층별 족보가 1초 폴링에 지워진다. */
       if (potPaidHand === tb.handNo) return;
