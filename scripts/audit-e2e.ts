@@ -307,7 +307,7 @@ async function main(): Promise<void> {
     ck('상태 응답 정상', s0?.ok === true && s0.tournament != null, JSON.stringify(s0?.tournament?.status));
 
     /* 등록 창을 연다. cancelled_at·finished_at·started_at 도 같이 비워야 한다 —
-       감사를 22:20(KST) 이후에 돌리면 첫 state() 호출에서 이미 인원 미달 취소가
+       감사를 23:00(KST) 이후에 돌리면 첫 state() 호출에서 이미 인원 미달 취소가
        기록돼 버려서, 시각만 되돌려도 CANCELLED에 머문다. 실제로 이 검사가
        밤에만 실패했다. 검사는 하루 중 언제 돌려도 같아야 한다. */
     db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,

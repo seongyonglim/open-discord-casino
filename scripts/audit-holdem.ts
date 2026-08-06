@@ -381,9 +381,9 @@ section('[10] 일정 (KST)');
   }).format(new Date(u * 1000));
   ck('등록 오픈 = KST 21:00', fmt(mon.regOpenAt) === '21:00', fmt(mon.regOpenAt));
   ck('예정 시작 = KST 22:00', fmt(mon.scheduledStartAt) === '22:00', fmt(mon.scheduledStartAt));
-  ck('대기 마감 = KST 22:20', fmt(mon.graceEndsAt) === '22:20', fmt(mon.graceEndsAt));
+  ck('대기 마감 = KST 23:00', fmt(mon.graceEndsAt) === '23:00', fmt(mon.graceEndsAt));
   ck('등록→시작 정확히 1시간', mon.scheduledStartAt - mon.regOpenAt === 3600);
-  ck('대기 20분', mon.graceEndsAt - mon.scheduledStartAt === 1200);
+  ck('대기 1시간', mon.graceEndsAt - mon.scheduledStartAt === 3600);
   ck('KST 요일 판정 (2026-08-03 = 월)', T.kstWeekday(mon.scheduledStartAt * 1000) === 1,
     String(T.kstWeekday(mon.scheduledStartAt * 1000)));
 }
@@ -404,7 +404,7 @@ section('[11] 토너먼트 상태 판정');
     T.statusAt(s.scheduledStartAt + 600, s, none, 2) === 'WAITING_MIN_PLAYERS');
   ck('22:10 · 3명 채워짐 → 즉시 RUNNING',
     T.statusAt(s.scheduledStartAt + 600, s, none, 3) === 'RUNNING');
-  ck('22:20 · 2명 → CANCELLED', T.statusAt(s.graceEndsAt, s, none, 2) === 'CANCELLED');
+  ck('23:00 · 2명 → CANCELLED', T.statusAt(s.graceEndsAt, s, none, 2) === 'CANCELLED');
   ck('22:25 · 2명 → CANCELLED', T.statusAt(s.graceEndsAt + 300, s, none, 2) === 'CANCELLED');
 
   // 저장된 "되돌릴 수 없는 사실"이 계산보다 우선한다
