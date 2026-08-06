@@ -34,7 +34,7 @@ import type { WebUser } from '../../db/queries';
    것을 보고 스스로 판단한다(celebrate의 settleDone). 여기는 그동안 테이블이 살아
    있게 하는 상한일 뿐이다. 그래서 최악의 경우에 맞춘다:
      프리플랍 9인 올인 → 핸드 공개 5.1초 + 플랍·턴·리버·스퀴즈 12.1초
-                       + 결과 지연 1.5초 + 정산 6.6초 + 팝업 0.5초 ≈ 25.8초
+                       + 결과 지연 1.5초 + 정산 6.1초 + 팝업 0.5초 ≈ 25.3초
    30초면 그 끝까지 덮는다. 대부분의 판은 그 한참 전에 축하로 넘어가므로,
    이 숫자가 커진다고 해서 기다리는 시간이 늘지는 않는다.
 
@@ -1309,11 +1309,18 @@ export function holdemPage(user: WebUser): string {
     function syncEquity(tb){
       var stages = (tb.ended && tb.result && tb.result.equity) || [];
       var stage = null;
-      /* 정산이 시작되기 전까지만. potPaidHand는 팟을 밀기 시작할 때 세워진다.
+      /* 언제까지 띄우나 — WIN 배지가 뜨는 순간까지다.
+         예전에는 정산이 시작될 때(potPaidHand) 내렸는데, 그보다 앞서 리버가 열리는
+         순간 이미 사라졌다. boardLen 5 단계가 없어서 "지금 깔린 장수에 맞는 단계"를
+         못 찾았기 때문이다. 마지막 카드를 보고 "그래서 누가 이겼나"를 스스로 계산해야
+         하는 몇 초가 거기서 생겼다 — 답은 이미 나와 있는데 화면이 먼저 치운 것이다.
+         이제 100.00%와 DRAWING DEAD가 남아 있다가, 승자 표시(WIN)가 그 자리를
+         이어받을 때 내려간다. 말풍선의 수명이 "승률 계산"이 아니라 "승자 연출"에
+         묶인다.
+
          핸드가 다 열린 뒤부터다 — 프리플랍 올인에는 boardLen 0 단계가 있어서,
-         이 문이 없으면 아직 뒷면인 패의 승률이 카드보다 먼저 뜬다.
-         플랍·턴 단계는 어차피 핸드 공개가 끝난 뒤에야 보드가 열리므로 영향이 없다. */
-      if (stages.length && potPaidHand !== tb.handNo && holesRevealed()) {
+         이 문이 없으면 아직 뒷면인 패의 승률이 카드보다 먼저 뜬다. */
+      if (stages.length && badgeShownHand !== tb.handNo && holesRevealed()) {
         for (var i = 0; i < stages.length; i++) {
           if (stages[i].boardLen === shownBoard) { stage = stages[i]; break; }
         }
@@ -2485,7 +2492,11 @@ export function holdemPage(user: WebUser): string {
        주면 늘어지기만 한다. 그래서 1초다. */
     var POT_WAIT_FIRST_MS = 2500;   // 승자 판정 → 첫 팟이 움직이기까지
     var POT_WAIT_NEXT_MS = 1000;    // 사이드 팟 사이
-    var POT_AFTER_MS = 1750;        // 마지막 흡수 → 판이 끝났다고 보는 시점
+    /* 마지막 흡수 → 판이 끝났다고 보는 시점.
+       1.75초였는데 "다음 판까지 답답하다"는 말이 나왔다. 이 구간에 남아 있는 정보는
+       승자 스택이 오른 숫자 하나뿐이라, 길게 잡아도 더 읽을 것이 생기지 않는다.
+       1.25초면 결과를 확인하고 바로 다음 판으로 넘어간다. */
+    var POT_AFTER_MS = 1250;
     function pushPotToWinners(tb, forHand){
       /* 칩이 도착하는 곳은 아바타다 — "사람이 앉아 있는 자리"다.
          예전에는 좌석판이었고 그때는 그것이 좌석의 몸통이었다. 지금 좌석판은 아바타 아래에
@@ -2584,9 +2595,18 @@ export function holdemPage(user: WebUser): string {
        칩부터 날아가면 이미 끝난 뒤에 누가 이겼는지 알게 된다.
        배지가 떠 있고 칩이 아직 안 움직이는 시간은 pushPotToWinners가 정한다
        (첫 층 POT_WAIT_FIRST_MS · 그 뒤 POT_WAIT_NEXT_MS). */
+    /* 이 판에서 WIN 배지가 이미 떴나. 승률 말풍선이 이 값을 보고 물러난다 —
+       배지와 말풍선은 같은 자리를 놓고 다투는 것이 아니라 바통을 주고받는 관계다. */
+    var badgeShownHand = null;
     function showWinBadges(tb, pa){
       var win = {};
       pa.winners.forEach(function(w){ win[w.seat] = 1; });
+      /* 배지가 뜨는 이 순간에 말풍선을 내린다. syncEquity는 renderSeats 안에서만
+         도는데 이 함수는 팟 사슬에서 불리므로, 여기서 직접 한 번 걷어 준다.
+         (안 그러면 다음 폴링까지 최대 1초 동안 배지와 말풍선이 같이 떠 있다.) */
+      var first = badgeShownHand !== tb.handNo;
+      badgeShownHand = tb.handNo;
+      if (first) syncEquity(tb);
       /* 족보는 층 정보(pa.hand)가 있으면 그걸, 없으면 공개된 패에서 찾는다.
          폴드로 끝난 판은 둘 다 없다 — 보여줄 족보가 실제로 없는 것이다. */
       var reveal = (tb.result && tb.result.reveal) || [];

@@ -510,7 +510,43 @@ export function equityStages(
     }
     stages.push(stage);
   }
+  /* 리버까지 다 깔린 뒤의 "승률"은 더 이상 확률이 아니라 사실이다 — 이긴 쪽 100%,
+     진 쪽 0%. 그래도 같은 말풍선으로 한 단계 더 만든다.
+
+     리버가 열리는 순간 말풍선이 통째로 사라지면, 마지막 카드를 보고 "그래서 누가
+     이겼나"를 스스로 계산해야 한다. 그 답은 이미 나와 있는데 화면이 먼저 치워 버리는
+     꼴이다. 100.00%와 DRAWING DEAD를 남겨 두면 카드와 결론이 한 화면에 같이 있다.
+     (이 단계를 언제 내릴지는 클라이언트가 정한다 — WIN 배지가 뜨는 순간이다.) */
+  if (finalBoard.length >= 5) {
+    const s5 = showdownEquity(hands, finalBoard);
+    if (s5) stages.push({ boardLen: 5, seats: s5 });
+  }
   return stages;
+}
+
+/** 보드가 다 깔린 뒤의 확정 결과를 승률 형태로. 이긴 쪽 1, 나눠 가지면 1/n, 나머지 0. */
+function showdownEquity(
+  hands: { seat: number; hole: number[] }[], board: number[]
+): SeatEquity[] | null {
+  if (hands.length < 2 || board.length < 5) return null;
+  let best = -1;
+  let winners: number[] = [];
+  for (let i = 0; i < hands.length; i++) {
+    const s = evaluate7(hands[i].hole[0], hands[i].hole[1],
+      board[0], board[1], board[2], board[3], board[4]);
+    if (s > best) { best = s; winners = [i]; }
+    else if (s === best) winners.push(i);
+  }
+  const share = 1 / winners.length;
+  return hands.map((h, i) => {
+    const won = winners.indexOf(i) >= 0;
+    return {
+      seat: h.seat,
+      win: won && winners.length === 1 ? 1 : 0,
+      tie: won && winners.length > 1 ? 1 : 0,
+      equity: won ? share : 0,
+    };
+  });
 }
 
 /** 팟 하나의 정산 결과 — 화면에서 팟을 하나씩 넘겨 보여주기 위해 층 단위로 남긴다 */

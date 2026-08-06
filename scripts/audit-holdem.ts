@@ -987,21 +987,28 @@ section('[19] 쇼다운 승률 (equityAt · outsAt · equityStages)');
     /* 프리플랍 올인은 프리플랍 단계까지 만든다. 한동안 플랍부터였는데, 화면에서는
        핸드가 다 열린 뒤 플랍까지 2.5초가 비어 있고 그 구간이야말로 승률이 가장
        궁금한 자리다(카드 다섯 장이 통째로 남아 있다). */
-    ck('프리플랍 올인 → 프리플랍·플랍·턴 세 단계',
-      H.equityStages(ak77, fb, 0, randomInt).map(s => s.boardLen).join(',') === '0,3,4');
-    ck('플랍 올인 → 플랍·턴 두 단계',
-      H.equityStages(ak77, fb, 3, randomInt).map(s => s.boardLen).join(',') === '3,4');
-    ck('턴 올인 → 턴 한 단계',
-      H.equityStages(ak77, fb, 4, randomInt).map(s => s.boardLen).join(',') === '4');
-    ck('리버 쇼다운 → 단계 없음 (보여줄 확률이 없다)',
+    /* 마지막 단계(5)는 확률이 아니라 확정된 결과다 — 이긴 쪽 100%, 진 쪽 0%.
+       리버가 열리는 순간 말풍선이 사라지지 않고 결론을 이어 보여주기 위한 것이다.
+       (내리는 시점은 클라이언트가 정한다 — WIN 배지가 뜨는 순간이다.) */
+    ck('프리플랍 올인 → 프리플랍·플랍·턴·리버 네 단계',
+      H.equityStages(ak77, fb, 0, randomInt).map(s => s.boardLen).join(',') === '0,3,4,5');
+    ck('플랍 올인 → 플랍·턴·리버 세 단계',
+      H.equityStages(ak77, fb, 3, randomInt).map(s => s.boardLen).join(',') === '3,4,5');
+    ck('턴 올인 → 턴·리버 두 단계',
+      H.equityStages(ak77, fb, 4, randomInt).map(s => s.boardLen).join(',') === '4,5');
+    ck('리버 쇼다운 → 단계 없음 (기다릴 카드가 없던 판이다)',
       H.equityStages(ak77, fb, 5, randomInt).length === 0);
     ck('한 명만 남았으면 단계 없음',
       H.equityStages([ak77[0]], fb, 0, randomInt).length === 0);
-    /* 아웃츠는 "한 장만 나오면 뒤집힌다"라서 남은 카드가 정확히 한 장인 턴에만 뜻이 있다.
-       프리플랍·플랍 단계에는 붙지 않는다. */
+    /* 아웃츠는 "한 장만 나오면 뒤집힌다"라서 남은 카드가 정확히 한 장인 턴에만 뜻이 있다. */
     const st = H.equityStages(ak77, fb, 0, randomInt);
     ck('아웃츠는 턴 단계에만 붙는다',
-      st.map(s => (s.boardLen + ':' + (s.outs ? 'Y' : 'N'))).join(' ') === '0:N 3:N 4:Y');
+      st.map(s => (s.boardLen + ':' + (s.outs ? 'Y' : 'N'))).join(' ') === '0:N 3:N 4:Y 5:N');
+    /* Ah Kd 2c 3s 9h 에 AK는 원페어 A, 77은 원페어 7 — AK가 이긴다. 확률이 아니라 결과다. */
+    const last = st[st.length - 1];
+    ck('리버 단계는 이긴 쪽 100% · 진 쪽 0%',
+      last.boardLen === 5 && last.seats[0].equity === 1 && last.seats[1].equity === 0,
+      last.seats.map(s => (s.equity * 100).toFixed(0) + '%').join(' / '));
   }
 }
 
