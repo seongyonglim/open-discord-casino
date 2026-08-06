@@ -6,3 +6,4 @@ data-snapshot.db
 .claude/
 *.log
 *.tmp.*
+.golden/
