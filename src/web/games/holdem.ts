@@ -2468,9 +2468,14 @@ export function holdemPage(user: WebUser): string {
           /* 마지막 층까지 흡수됐다. 여기가 "이 판의 연출이 다 끝난" 시점이다 —
              우승 팝업이 이 신호를 기다린다(potDoneAt). */
           potDoneAt = Date.now() + landed + POT_AFTER_MS;
+          /* 폴링(1초)을 기다리지 않고 그 시각에 직접 깨운다. 대회를 끝낸 판이라면
+             여기가 곧 축하 팝업이 뜨는 시점이라(potDoneAt + 0.5초), 폴링에 맡기면
+             같은 판인데도 최대 1초씩 들쭉날쭉해진다. */
           setTimeout(function(){
-            if (st && st.table && st.table.handNo === forHand && !tableEl.hidden) renderTable();
-          }, landed + POT_AFTER_MS + 20);
+            if (!st || !st.table || st.table.handNo !== forHand) return;
+            if (!tableEl.hidden) renderTable();
+            celebrate();
+          }, landed + POT_AFTER_MS + WIN_POPUP_AFTER_MS + 20);
         }, first ? POT_WAIT_FIRST_MS : POT_WAIT_NEXT_MS);
       }
       step();
