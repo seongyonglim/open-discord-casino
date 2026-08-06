@@ -40,6 +40,15 @@ primary_region = "nrt"
 #   2) checks 를 넣고 다시 10분 대기 → 여전히 suspended 인지 재확인
 
 [[vm]]
-  memory = "256mb"
+  # 256MB에서 올렸다. 실측으로 그 크기에서는 여유가 없었다 —
+  #   MemTotal 212MB · MemFree 2.8MB · MemAvailable 22MB
+  # 홀덤 대회가 실제로 돌기 시작하니 그 22MB를 넘어서면서 커널이 node를 죽였다
+  # (2026-08-06 14:00:13 "Out of memory: Killed process 651 (node)").
+  # 죽으면 재시작까지 10초가 걸리고 그동안 모든 요청이 pending으로 쌓인다.
+  #
+  # 기저 사용량이 큰 이유는 프로덕션에서도 tsx로 TypeScript를 런타임 변환하기 때문이다
+  # (`node --require tsx/cjs`). esbuild가 상주한다. 빌드 단계를 두어 순수 JS를 돌리면
+  # 이 몫을 줄일 수 있지만, 그건 별도 작업이다 — 지금은 죽지 않는 것이 먼저다.
+  memory = "512mb"
   cpu_kind = "shared"
   cpus = 1

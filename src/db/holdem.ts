@@ -476,6 +476,61 @@ function startTournament(t: HtRow, regs: HtEntryRow[], now: number): void {
 }
 
 /**
+ * 진행 중인 대회를 "방금 시작한 상태"로 되돌린다. 관리자용이다.
+ *
+ * 앉아 있는 사람은 그대로 두고 전원 시작 스택으로, 블라인드는 1레벨로,
+ * 판 번호는 0으로 돌린 뒤 첫 판을 새로 돌린다.
+ *
+ * 왜 필요한가: 서버가 죽거나 심하게 느려서 판이 제대로 진행되지 못한 대회를
+ * 그대로 두면 칩만 엉킨 채 남는다. 취소하고 새로 열면 그날 대회가 사라지고
+ * 모인 사람이 흩어진다 — 사람은 그대로 두고 판만 되감는 쪽이 낫다.
+ *
+ * 블라인드 레벨은 저장된 값이 아니라 started_at 으로부터 흐른 시간으로 계산된다
+ * (levelAt). 그래서 started_at 을 지금으로 옮기는 것이 곧 1레벨로 되돌리는 것이다.
+ *
+ * 이 함수는 앱 자신의 DB 연결로 돈다. 예전에 같은 일을 외부 프로세스로 sqlite 파일을
+ * 열어서 처리했다가 쓰기 락이 남아 서버가 통째로 멎었다 — 그래서 앱 안에 둔다.
+ */
+export function adminResetRunningTournament(): {
+  ok: boolean; reason?: string; tournamentId?: number; seats?: number;
+} {
+  const now = nowSec();
+  const t = one<HtRow>(
+    `SELECT * FROM holdem_tournaments
+      WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
+      ORDER BY id DESC LIMIT 1`);
+  if (!t) return { ok: false, reason: 'no_running_tournament' };
+  const table = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE tournament_id = ?`, t.id);
+  if (!table) return { ok: false, reason: 'no_table' };
+
+  /* 진행 중이던 판을 통째로 버린다. hand_seats 를 먼저 지운다 — 핸드가 먼저 사라지면
+     어느 핸드에 딸린 줄인지 알 수 없어 고아 행이 남는다. */
+  run(`DELETE FROM holdem_hand_seats WHERE hand_id IN
+         (SELECT id FROM holdem_hands WHERE table_id = ?)`, table.id);
+  run(`DELETE FROM holdem_hands WHERE table_id = ?`, table.id);
+
+  // 앉아 있는 사람은 그대로. 스택만 되돌리고 탈락 표시를 푼다
+  run(`UPDATE holdem_seats SET stack = ?, presence = 'ACTIVE', last_seen_at = ?
+        WHERE table_id = ?`, T.STARTING_STACK, now, table.id);
+  run(`UPDATE holdem_entries SET finish_place = NULL, elim_seq = NULL,
+         eliminated_at = NULL, prize = 0 WHERE tournament_id = ?`, t.id);
+
+  // 블라인드 1레벨 = 시작 시각을 지금으로
+  run(`UPDATE holdem_tournaments SET started_at = ?, finished_at = NULL, cancelled_at = NULL
+        WHERE id = ?`, now, t.id);
+  run(`UPDATE holdem_tables SET hand_no = 0, button_seat = 0, next_hand_at = NULL
+        WHERE id = ?`, table.id);
+
+  const fresh = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
+  const tb = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE id = ?`, table.id)!;
+  startHand(fresh, tb, now);
+
+  const seats = one<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM holdem_seats WHERE table_id = ?`, table.id)!.c;
+  return { ok: true, tournamentId: t.id, seats };
+}
+
+/**
  * 테이블을 전진시킨다. 밀린 일을 다 처리할 때까지 도는 루프다.
  *
  * 한 바퀴에서 하는 일 중 하나:
