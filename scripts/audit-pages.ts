@@ -96,17 +96,28 @@ async function main(): Promise<void> {
     });
     ck(`${p} — 인라인 스크립트 파싱 성공`, bad === '', bad);
 
-    /* 태그 이름 자리에 제어문자가 들어간 흔적.
+    /* 닫는 태그의 슬래시가 이스케이프로 먹힌 흔적.
        파싱 검사로는 절대 못 잡는 종류다 — '<\tbody>'는 완벽하게 유효한 JS 문자열이고
        (\t가 탭 이스케이프다) new Function도 통과한다. 그런데 브라우저에는
        "< body>"라는 글자로 찍힌다. 실제로 '<\/tbody>'를 옮겨 적다가 슬래시를 빠뜨려
-       결과 표 아래에 "< body>< able>"이 인쇄된 적이 있다.
+       결과 표 아래에 "< body>< able>"이 인쇄된 적이 있고, '<\b>'(백스페이스)로
+       </b>가 사라진 적도 있다.
        이 코드베이스는 스크립트 안에서 닫는 태그를 <\/x> 로 쓰는 관례라 오타가 나기 쉽다.
-       '<' 바로 뒤의 탭·줄바꿈은 정상 HTML에 나올 이유가 없으므로 그대로 실패로 본다. */
-    const ctrl = [...r.text.matchAll(/<[\t\n\r]\/?[a-z]/gi)]
+
+       두 가지를 본다.
+         1) '<' 바로 뒤의 제어문자 — 정상 HTML에 나올 이유가 없다.
+            \t \n \r 만 보면 안 된다. \b(백스페이스) \f \v 도 모두 유효한 JS 이스케이프라
+            같은 사고가 난다.
+         2) 렌더된 HTML 어디에든 남아 있는 제어문자 — 위 1)에 안 걸리는 형태
+            (예: '<\v/i>')도 결국 본문에 제어문자를 남긴다. 탭·개행은 정상이므로 뺀다. */
+    const ctrl = [...r.text.matchAll(/<[\x00-\x1f]/g)]
       .slice(0, 3)
       .map(m => JSON.stringify(r.text.slice(Math.max(0, m.index! - 24), m.index! + 12)));
     ck(`${p} — 태그 자리에 제어문자 없음`, ctrl.length === 0, ctrl.join(' | '));
+    const stray = [...r.text.matchAll(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g)]
+      .slice(0, 3)
+      .map(m => JSON.stringify(r.text.slice(Math.max(0, m.index! - 24), m.index! + 12)));
+    ck(`${p} — 본문에 떠도는 제어문자 없음`, stray.length === 0, stray.join(' | '));
   }
 
   /* ── [2] 카드에 적힌 수치가 실제 게임 코드와 같은가 ──────────────────
