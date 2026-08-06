@@ -1342,8 +1342,9 @@
   /* span이므로 display:block을 줘야 width·height가 먹는다 — 인라인은 둘 다 무시한다.
      기둥이 최대 6장까지 자라므로(6 × 4px + 칩 11px) 높이를 그만큼 잡는다. */
   .ht-pg-chips{display:block;position:relative;width:100%;height:34px;flex:none}
-  .ht-pg-k{font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.7px;
-    color:var(--muted);line-height:1.1}
+  /* 층 이름표(.ht-pg-k = MAIN / SIDE 1)는 없앴다. 층이 몇 개인지는 더미가 몇 덩이인지로
+     보이고, 어느 층이 누구에게 가는지는 그 더미가 날아가는 것으로 보인다.
+     펠트 한가운데의 다른 글자들을 걷어낸 것과 같은 이유다. */
   /* 금액은 반투명 알약 안에. 펠트 위에 맨 글자로 띄우면 초록 위의 흰 글씨라 배경에
      따라 읽힘이 들쭉날쭉하고, 칩 더미와 한 덩어리로도 안 읽힌다.
      알약이 있으면 "이 더미의 금액"이라는 소속이 생긴다. */
@@ -1406,10 +1407,33 @@
       0 6px 6px rgba(0,0,0,.5)}
   .ht-pchip.pending{opacity:0}
   /* 승자에게 갈 때는 실제로 쌓여 있던 칩을 복제해 날린다 */
-  .ht-pchip.flyout{animation:htPileFly .7s cubic-bezier(.45,.02,.3,1) forwards}
+  /* ── 팟이 승자에게 가는 두 단계 ──────────────────────────────────
+     한 번에 빨려 들어가 사라졌다. 0.7초 동안 중앙에서 좌석까지 직행하니, 큰 판이든
+     작은 판이든 칩이 그냥 지나가 버려서 "가져갔다"는 순간이 없었다.
+
+     실제 딜러는 팟을 승자 앞까지 밀어 놓고 손을 뗀다. 그 정지가 "이건 네 것"이라는
+     신호다. 그래서 둘로 나눈다.
+       1단계 (0 → 34%)  승자 HUD 바로 앞(78% 지점)까지 부드럽게 민다 (0.62초)
+       정지  (34 → 73%) 그 자리에 0.7초 머문다 — 승자를 확인하는 시간이다
+       2단계 (73 → 100%) 프로필 안으로 줄어들며 빨려 든다 (0.48초)
+
+     구간마다 가속을 다르게 준다. 미는 동안은 끝에서 감속(도착이 부드럽다),
+     정지 구간은 linear(어차피 값이 같다), 흡수는 가속(빨려 든다는 느낌은 속도가 만든다).
+     78%에서 멈추는 이유는 좌석판 앞이 거기이기 때문이다 — 100%는 아바타 한가운데라
+     거기서 멈추면 얼굴 위에 칩이 올라가 있다.
+
+     길이 1.8초는 JS의 PILE_FLY_MS와 같아야 한다. 그 값이 "칩이 도착했다"의 기준이라
+     (도착해야 승자 스택 숫자가 오르고, 그 뒤에 다음 사이드 팟이 걸린다) 어긋나면
+     숫자가 칩보다 먼저 오르거나 층끼리 겹친다. */
+  .ht-pchip.flyout{animation:htPileFly 1.8s forwards}
   @keyframes htPileFly{
-    0%{opacity:1;transform:translate(0,0) scale(1)}
-    100%{opacity:.1;transform:translate(var(--tx),var(--ty)) scale(.7)}
+    0%   {opacity:1;transform:translate(0,0) scale(1);
+          animation-timing-function:cubic-bezier(.22,.75,.3,1)}
+    34%  {opacity:1;transform:translate(calc(var(--tx) * .78),calc(var(--ty) * .78)) scale(1);
+          animation-timing-function:linear}
+    73%  {opacity:1;transform:translate(calc(var(--tx) * .78),calc(var(--ty) * .78)) scale(1);
+          animation-timing-function:cubic-bezier(.55,0,.85,.35)}
+    100% {opacity:0;transform:translate(var(--tx),var(--ty)) scale(.18)}
   }
   /* 오류 메시지 전용. min-height를 두지 않는다 — 결과 요약을 없앤 뒤로 이 줄은
      거의 늘 비어 있는데, 높이를 잡아 두면 빈 줄이 중앙 블록을 16px씩 늘려

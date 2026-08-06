@@ -491,8 +491,13 @@ export function equityStages(
 ): EquityStage[] {
   if (hands.length < 2 || boardAtEnd >= 5) return [];
   const stages: EquityStage[] = [];
-  // 플랍(3) · 턴(4)에서의 승률. 프리플랍(0)은 보여줄 자리가 없어 건너뛴다
-  for (const len of [3, 4]) {
+  /* 프리플랍(0) · 플랍(3) · 턴(4)에서의 승률.
+     프리플랍은 한동안 건너뛰었다 — "보여줄 자리가 없다"고 봤는데 틀렸다.
+     프리플랍 올인이야말로 카드 다섯 장이 통째로 남아 있어서 승률이 가장 궁금한
+     구간이고, 화면에서는 핸드가 다 열린 뒤 플랍까지 2.5초가 비어 있다.
+     그 2.5초에 아무것도 없으면 두 패를 눈으로 비교하는 수밖에 없다.
+     (그 시간에 말풍선을 띄우는 쪽은 클라이언트가 정한다 — 여기서는 값만 만든다.) */
+  for (const len of [0, 3, 4]) {
     if (len < boardAtEnd) continue;            // 이미 액션이 있던 스트리트다
     if (len >= 5) continue;
     const board = finalBoard.slice(0, len);

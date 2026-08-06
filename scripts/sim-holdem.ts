@@ -346,7 +346,7 @@ async function main(): Promise<void> {
     note(`보드 ${board.length}장에서 종료 → 래빗으로 볼 카드 ${HD.rabbitBoard(h).length}장`);
     if (board.length >= 5) note('※ 리버까지 갔으므로 이번 판에는 래빗이 없습니다 (다음 판에 다시 시도)');
     /* 다음 판 시작을 미뤄 화면을 붙잡아 둔다.
-       래빗 버튼은 "판이 끝났고 보드가 5장 미만"인 동안만 뜨는데, 그 창이 FOLD_END_SEC(5초)뿐이고
+       래빗 버튼은 "판이 끝났고 보드가 5장 미만"인 동안만 뜨는데, 그 창이 FOLD_END_SEC뿐이고
        1초 폴링과 보드 오픈 연출이 그 안에서 시간을 먹는다. 실제로 눌러볼 시간이 거의 없다.
        advanceTable은 now < next_hand_at 이면 그냥 빠져나오므로(지연 진행 구조) 이 한 줄로 멈춘다. */
     db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() + PAUSE_SEC, TABLE.id);
