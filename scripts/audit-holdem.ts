@@ -984,8 +984,11 @@ section('[19] 쇼다운 승률 (equityAt · outsAt · equityStages)');
      액션이 있던 스트리트의 단계를 만들면 안 된다 (그때는 결과가 카드에만 달려 있지 않았다). */
   {
     const fb = cs('Ah Kd 2c 3s 9h');
-    ck('프리플랍 올인 → 플랍·턴 두 단계',
-      H.equityStages(ak77, fb, 0, randomInt).map(s => s.boardLen).join(',') === '3,4');
+    /* 프리플랍 올인은 프리플랍 단계까지 만든다. 한동안 플랍부터였는데, 화면에서는
+       핸드가 다 열린 뒤 플랍까지 2.5초가 비어 있고 그 구간이야말로 승률이 가장
+       궁금한 자리다(카드 다섯 장이 통째로 남아 있다). */
+    ck('프리플랍 올인 → 프리플랍·플랍·턴 세 단계',
+      H.equityStages(ak77, fb, 0, randomInt).map(s => s.boardLen).join(',') === '0,3,4');
     ck('플랍 올인 → 플랍·턴 두 단계',
       H.equityStages(ak77, fb, 3, randomInt).map(s => s.boardLen).join(',') === '3,4');
     ck('턴 올인 → 턴 한 단계',
@@ -994,8 +997,11 @@ section('[19] 쇼다운 승률 (equityAt · outsAt · equityStages)');
       H.equityStages(ak77, fb, 5, randomInt).length === 0);
     ck('한 명만 남았으면 단계 없음',
       H.equityStages([ak77[0]], fb, 0, randomInt).length === 0);
+    /* 아웃츠는 "한 장만 나오면 뒤집힌다"라서 남은 카드가 정확히 한 장인 턴에만 뜻이 있다.
+       프리플랍·플랍 단계에는 붙지 않는다. */
     const st = H.equityStages(ak77, fb, 0, randomInt);
-    ck('아웃츠는 턴 단계에만 붙는다', !st[0].outs && !!st[1].outs);
+    ck('아웃츠는 턴 단계에만 붙는다',
+      st.map(s => (s.boardLen + ':' + (s.outs ? 'Y' : 'N'))).join(' ') === '0:N 3:N 4:Y');
   }
 }
 

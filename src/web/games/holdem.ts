@@ -29,8 +29,14 @@ import type { WebUser } from '../../db/queries';
    null이 되고, 화면이 그 자리에서 로비로 갈아치워진다 — 대회를 결정지은 그 판의
    쇼다운을 아무도 못 본다. 우승자가 무엇으로 이겼는지도, 팟이 넘어가는 것도 못 본다.
    그래서 마지막 판을 끝까지 보여주고 나서 축하로 넘어가게 이 창을 둔다.
-   (다른 포커 클라이언트도 결과를 10초 남짓 띄워 두고 테이블을 정리한다) */
-export const FINISH_LINGER_SEC = 12;
+
+   이 값은 이제 "축하가 언제 뜨는가"를 정하지 않는다 — 그건 화면이 정산 연출이 끝난
+   것을 보고 스스로 판단한다(celebrate의 settleDone). 여기는 그동안 테이블이 살아
+   있게 하는 상한일 뿐이다. 그래서 최악의 경우에 맞춘다:
+     프리플랍 9인 올인 → 핸드 공개 5초 + 플랍·턴·리버·스퀴즈 12초 + 정산 7.3초
+   30초면 그 끝까지 덮는다. 대부분의 판은 그 한참 전에 축하로 넘어가므로,
+   이 숫자가 커진다고 해서 기다리는 시간이 늘지는 않는다. */
+export const FINISH_LINGER_SEC = 30;
 
 /* ── 상태 응답 ────────────────────────────────────────────────────── */
 
@@ -596,13 +602,27 @@ export function holdemPage(user: WebUser): string {
        서버를 다시 띄우면 그날 대회가 같은 id로 초기화된다) 축하가 영구히 억제된다.
        실제로 이 때문에 "우승 연출이 안 뜬다"는 제보가 나왔다. */
     function celebrateKey(t){ return 'od_ht_win_' + t.id + ':' + (t.finishedAt || 0); }
+    /* 마지막 판의 정산 연출이 100% 끝났나.
+       예전에는 서버가 준 링거(고정 초)만 보고 넘어갔다. 고정 시간이라 판마다 어긋난다 —
+       폴드로 끝난 판에서는 한참 남아 빈 테이블을 보고 있었고, 프리플랍 올인으로 끝난
+       판에서는 보드가 아직 깔리는 중에 팝업이 그 위를 덮었다.
+       이제 연출이 스스로 "끝났다"고 말한다(potDoneAt). 링거는 그 사이 테이블을
+       살려 두는 상한일 뿐이고, 축하 시점을 정하지 않는다.
+
+       정산이 시작조차 안 했으면(진행 중인 대회에 뒤늦게 들어온 경우) 기다릴 연출이
+       없으므로 링거에 맡긴다. */
+    var WIN_POPUP_AFTER_MS = 500;
+    function settleDone(tb){
+      if (potPaidHand !== tb.handNo) return true;
+      return !!potDoneAt && Date.now() >= potDoneAt + WIN_POPUP_AFTER_MS;
+    }
     function celebrate(){
       var t = st.tournament;
       if (t.status !== 'FINISHED') return;
       var results = st.results || [];
       if (!results.length) return;
-      // 마지막 판을 보여주는 중이면 아직이다 — 링거가 끝나고 나서 축하한다
-      if (st.table && st.table.tournamentOver) return;
+      // 마지막 판의 팟이 승자에게 다 들어간 뒤에 축하한다
+      if (st.table && st.table.tournamentOver && !settleDone(st.table)) return;
       var key = celebrateKey(t);
       try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); }
       catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }
@@ -1265,8 +1285,11 @@ export function holdemPage(user: WebUser): string {
     function syncEquity(tb){
       var stages = (tb.ended && tb.result && tb.result.equity) || [];
       var stage = null;
-      // 정산이 시작되기 전까지만. potPaidHand는 팟을 밀기 시작할 때 세워진다
-      if (stages.length && potPaidHand !== tb.handNo) {
+      /* 정산이 시작되기 전까지만. potPaidHand는 팟을 밀기 시작할 때 세워진다.
+         핸드가 다 열린 뒤부터다 — 프리플랍 올인에는 boardLen 0 단계가 있어서,
+         이 문이 없으면 아직 뒷면인 패의 승률이 카드보다 먼저 뜬다.
+         플랍·턴 단계는 어차피 핸드 공개가 끝난 뒤에야 보드가 열리므로 영향이 없다. */
+      if (stages.length && potPaidHand !== tb.handNo && holesRevealed()) {
         for (var i = 0; i < stages.length; i++) {
           if (stages[i].boardLen === shownBoard) { stage = stages[i]; break; }
         }
@@ -1774,7 +1797,9 @@ export function holdemPage(user: WebUser): string {
        그대로 두고, 그 목록을 층 금액의 누적 경계로 잘라 각 더미에 넣는다.
        총액을 층마다 다시 쪼개지 않는 이유는 예전과 같다 — 500 두 개가 1000 한 개로
        합쳐져 보이면 얼마가 어떻게 모였는지가 사라진다. */
-    var potPile = { hand: null, total: 0, list: [], n: 0, sig: '' };
+    var potPile = { hand: null, total: 0, list: [], n: 0, sig: '', cnt: null };
+    // 이 판의 중앙 더미를 이미 승자에게 다 보냈다 — 다시 그리지 않는다
+    var potClearedHand = null;
     /* 지금 중앙에 실제로 모여 있는 돈을 층별로.
        서버의 pots는 committed 기준이라 "각자 앞에 놓인 이번 스트리트 베팅"까지 들어 있다.
        그대로 그리면 같은 칩이 두 곳에 보인다 — 앞에는 콜한 칩이 놓여 있는데 중앙에도
@@ -1800,17 +1825,20 @@ export function holdemPage(user: WebUser): string {
       var out = ps.filter(function(a){ return a > 0; });
       return out.length ? out : [0];
     }
-    /* 금액 배지는 층이 하나여도 붙인다.
-       예전에는 층이 갈라졌을 때만 붙였다. "하나뿐이면 위쪽 Total Pot이 이미 말한다"고
+    /* 더미에는 금액만 적는다.
+       예전에는 층이 갈라지면 위에 MAIN / SIDE 1 이름표를 얹었다. 층이 몇 개인지는
+       더미가 몇 덩이인지로 이미 보이고, 어느 층이 누구에게 가는지는 정산할 때
+       그 더미가 실제로 날아가는 것으로 보인다 — 글자는 그 위에 한 겹 더 얹은 설명이었다.
+       펠트 한가운데에서 걷어낸 다른 글자들과 같은 이유다.
+
+       금액 배지는 층이 하나여도 붙인다. "하나뿐이면 위쪽 Total Pot이 이미 말한다"고
        봤는데, 실제 화면에서는 보드 아래에 칩 한 장만 덩그러니 놓여 있고 그것이 얼마인지
-       옆에 아무것도 없었다 — 위쪽 숫자와 이 칩이 같은 것이라는 연결이 안 잡힌다.
-       이름표(MAIN/SIDE)만 층이 갈릴 때 붙는다. 하나뿐인 팟에 "MAIN"은 군더더기다. */
-    function pileLabel(i, n, amount){
+       옆에 아무것도 없었다 — 위쪽 숫자와 이 칩이 같은 것이라는 연결이 안 잡힌다. */
+    /* 단위 표기는 potEl과 같은 규칙이다 — stackText가 BB일 때는 이미 'BB'를 붙여
+       돌려주므로 여기서 또 붙이면 "12.9BB BB"가 된다. */
+    function pileLabel(amount){
       if (amount <= 0) return '';
-      return (n < 2 ? '' : '<span class="ht-pg-k">' + (i === 0 ? 'MAIN' : 'SIDE ' + i) + '</span>') +
-        /* 단위 표기는 potEl과 같은 규칙이다 — stackText가 BB일 때는 이미 'BB'를 붙여
-           돌려주므로 여기서 또 붙이면 "12.9BB BB"가 된다. */
-        '<span class="ht-pg-v">' + stackText(amount) + (unit === 'chip' ? ' P' : '') + '</span>';
+      return '<span class="ht-pg-v">' + stackText(amount) + (unit === 'chip' ? ' P' : '') + '</span>';
     }
     /* 더미를 다시 그린다. 층마다 자기 금액을 직접 액면으로 분해한다.
 
@@ -1843,7 +1871,7 @@ export function holdemPage(user: WebUser): string {
         counts.push(ds.length);
         html += '<div class="ht-pg' + (have === 0 ? ' pending' : '') + '" data-layer="' + i + '">' +
           '<span class="ht-pg-chips">' + inner + '</span>' +
-          pileLabel(i, amts.length, amts[i]) + '</div>';
+          pileLabel(amts[i]) + '</div>';
       }
       pileEl.innerHTML = html;
       return counts;
@@ -1866,6 +1894,12 @@ export function holdemPage(user: WebUser): string {
       (tb.seats || []).forEach(function(s){ live += s.bet || 0; });
       var settled = tb.ended ? (tb.pot || 0) : Math.max(0, (tb.pot || 0) - live);
       if (potPile.hand !== tb.handNo) return resetPotPile(tb, settled);
+      /* 이미 승자에게 다 보낸 판이면 여기서 끝이다.
+         이것이 "정산이 끝났는데 칩이 다시 나타나는" 잔상의 원인이었다. payLayer가
+         중앙을 비우고 나면 아래 복원 분기가 "더미가 하나도 없네"로 읽고 tb.pot을
+         기준으로 통째로 다시 그렸다 — 서버 pot은 다음 판이 열릴 때까지 그대로라서
+         칩과 금액 배지가 1초 뒤에 되살아났다. 상단 Total Pot만 남기는 것이 맞다. */
+      if (potClearedHand === tb.handNo) return;
       // 콜되지 않은 초과 베팅을 돌려주면 팟이 줄어든다 — 그때는 연출 없이 다시 그린다
       if (settled < potPile.total) return resetPotPile(tb, settled);
       var sig = pileLayers(tb).join(',');
@@ -1962,10 +1996,12 @@ export function holdemPage(user: WebUser): string {
       /* 대회 종료 안내는 오른쪽 패널 머리에 붙인다. 예전에는 펠트 한가운데에
          "대회 종료 · 결과 8초"라고 찍었는데, 테이블 바닥에 시스템 문구가 인쇄된 꼴이라
          마지막 판의 쇼다운 위로 글자가 겹쳤다. 테이블은 게임만 그리는 자리다. */
+      /* 남은 초는 적지 않는다. 축하 팝업은 이제 이 카운트다운이 아니라 정산 연출이
+         끝나는 시점에 뜨므로(celebrate의 settleDone), 숫자를 적어 두면 그것과
+         상관없는 시각을 세는 셈이 된다 — 30초라고 적어 놓고 8초 만에 뜬다. */
       if (tb.tournamentOver) {
         sideNote.hidden = false;
-        sideNote.textContent = '대회 종료'
-          + (tb.finishLeft != null && tb.finishLeft > 0 ? ' · 결과 ' + tb.finishLeft + '초' : '');
+        sideNote.textContent = '대회 종료';
       } else {
         sideNote.hidden = true;
       }
@@ -2307,8 +2343,11 @@ export function holdemPage(user: WebUser): string {
     /* 중앙 더미에 실제로 쌓여 있는 칩 하나를 그대로 복제해 날린다.
        예전에는 팟 라벨 위치에서 익명의 작은 칩을 날렸는데, 그러면 쌓인 더미와
        무관한 것이 지나가서 "대충 넣은 애니메이션"으로 보인다. */
-    // .ht-pchip.flyout 애니메이션 길이와 같아야 한다 (CSS htPileFly .7s)
-    var PILE_FLY_MS = 700;
+    /* .ht-pchip.flyout 애니메이션 길이와 같아야 한다 (CSS htPileFly 1.8s).
+       두 단계짜리다 — 승자 앞까지 밀고(0.62초) · 0.7초 멈추고 · 흡수(0.48초).
+       이 값이 곧 "칩이 도착했다"의 기준이라(도착해야 승자 스택 숫자가 오르고
+       그 뒤에 다음 사이드 팟이 걸린다) CSS와 어긋나면 순서가 통째로 밀린다. */
+    var PILE_FLY_MS = 1800;
     function flyPileChip(chipEl, toRect, delay){
       var r = chipEl.getBoundingClientRect();
       if (!r.width) return;
@@ -2321,14 +2360,20 @@ export function holdemPage(user: WebUser): string {
       c.style.setProperty('--ty', Math.round((toRect.top + toRect.height/2) - (r.top + r.height/2)) + 'px');
       c.style.animationDelay = delay + 'ms';
       getFx().appendChild(c);
-      setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); }, 760 + delay);
+      setTimeout(function(){ if (c.parentNode) c.parentNode.removeChild(c); },
+        PILE_FLY_MS + 60 + delay);
     }
     /* 핸드가 끝나면 팟이 승자에게 밀려간다. 한 판에 한 번만.
        중앙에 쌓인 칩을 지분대로 나눠 각 승자에게 보낸다. */
     var potPaidHand = null;
+    /* 마지막 층까지 흡수가 끝나는 시각(절대). 0이면 아직 진행 중이다.
+       우승 축하 팝업이 이 값을 기다린다 — 연출을 덮지 않으려면 시간이 아니라
+       연출 자체가 신호여야 한다. */
+    var potDoneAt = 0;
     function flyPotToWinners(tb){
       if (!tb.ended || !tb.result || potPaidHand === tb.handNo) return;
       potPaidHand = tb.handNo;
+      potDoneAt = 0;
       /* 판이 끝나는 순간에는 마지막 스트리트 베팅이 아직 중앙으로 모이는 중이다
          (칩이 날아오고 더미에 나타나기까지 약 420ms). 그게 끝난 뒤에 밀어야
          "모아서 넘겨준다"로 읽힌다 — 실제 딜러도 걷어서 한 박자 쉬고 넘긴다. */
@@ -2350,11 +2395,21 @@ export function holdemPage(user: WebUser): string {
        도착할 때까지 기다렸다가 다음 층으로. 서버가 이긴 손이 강한 층부터 담아 주므로
        가장 센 손이 먼저 자기 몫을 가져간다(실제 딜러의 순서다).
 
-       한 층의 순서는 [WIN 배지 → WIN_HOLD_MS 대기 → 칩 이동(약 0.9초)]이다.
-       그래서 층 간격은 1.4 + 0.9에 여유를 더한 2.5초다. 서버도 같은 값
-       (SIDE_POT_STEP_SEC)으로 다음 판 시작을 미룬다 — 한쪽만 바꾸면 마지막 층을
-       보여주다가 판이 넘어간다. */
-    var POT_STEP_MS = 2500;
+       한 층의 순서는 [WIN 배지 → 대기 → 칩이 승자 앞까지 → 0.7초 정지 → 흡수]다.
+
+       ── 왜 고정 격자가 아니라 사슬인가
+       예전에는 층 i를 i × 2.5초에 예약했다. 격자는 예약이 간단한 대신 실제 소요를
+       모른다 — 칩이 많은 층은 시차(45ms씩) 때문에 2.5초를 넘겨서 다음 층이 그 위로
+       올라탔고, 칩이 두 장뿐인 층은 1초 만에 끝나고 1.5초를 그냥 서 있었다.
+       지금은 payLayer가 "마지막 칩이 도착하는 시각"을 돌려주고 그 뒤에 다음 층을 건다.
+       빈 시간도 겹침도 생기지 않는다.
+
+       대기 시간은 첫 층과 그 뒤가 다르다. 첫 층의 2.5초는 "누가 무엇으로 이겼나"를
+       읽는 시간이라 넉넉해야 하고, 두 번째부터는 그 답을 이미 알고 있어서 같은 길이를
+       주면 늘어지기만 한다. 그래서 1초다. */
+    var POT_WAIT_FIRST_MS = 2500;   // 승자 판정 → 첫 팟이 움직이기까지
+    var POT_WAIT_NEXT_MS = 1000;    // 사이드 팟 사이
+    var POT_AFTER_MS = 1750;        // 마지막 흡수 → 판이 끝났다고 보는 시점
     function pushPotToWinners(tb, forHand){
       /* 칩이 도착하는 곳은 아바타다 — "사람이 앉아 있는 자리"다.
          예전에는 좌석판이었고 그때는 그것이 좌석의 몸통이었다. 지금 좌석판은 아바타 아래에
@@ -2383,26 +2438,34 @@ export function holdemPage(user: WebUser): string {
         layers = mergeSameWinner(raw);
       }
       /* WIN 배지를 먼저 띄우고 한 박자 쉰 뒤에 칩을 옮긴다.
-         칩이 곧바로 날아가면 "누가 이겼나"를 읽기 전에 정산이 끝나 버린다.
-         참고 클라이언트도 배지가 1.5초쯤 떠 있고 그 다음에 칩이 움직인다. */
-      layers.forEach(function(pa, i){
-        var at = i * POT_STEP_MS;
-        setTimeout(function(){
-          if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
-          showWinBadges(tb, pa);
-          /* 층마다 다시 낸다 — 첫 층에서만 울리면 뒤 층은 조용히 지나가서
-             "이게 아직 정산 중인가, 끝난 건가"가 소리로는 안 잡힌다.
-             첫 층은 위쪽 chipWin/potWin이 이미 울렸으므로 두 번째 층부터다. */
-          if (i > 0 && window.casinoSfx) {
-            if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
-            if (window.casinoSfx.potWin) window.casinoSfx.potWin();
-          }
-        }, at);
+         칩이 곧바로 날아가면 "누가 이겼나"를 읽기 전에 정산이 끝나 버린다. */
+      var idx = 0;
+      function step(){
+        if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
+        if (idx >= layers.length) return;
+        var pa = layers[idx], first = idx === 0, last = idx === layers.length - 1;
+        showWinBadges(tb, pa);
+        /* 층마다 다시 낸다 — 첫 층에서만 울리면 뒤 층은 조용히 지나가서
+           "이게 아직 정산 중인가, 끝난 건가"가 소리로는 안 잡힌다.
+           첫 층은 위쪽 chipWin/potWin이 이미 울렸으므로 두 번째 층부터다. */
+        if (!first && window.casinoSfx) {
+          if (window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+          if (window.casinoSfx.potWin) window.casinoSfx.potWin();
+        }
         setTimeout(function(){
           if (!st || !st.table || st.table.handNo !== forHand) return;
-          payLayer(tb, pa, i === layers.length - 1);
-        }, at + WIN_HOLD_MS);
-      });
+          var landed = payLayer(tb, pa, last);
+          idx++;
+          if (!last) { setTimeout(step, landed); return; }
+          /* 마지막 층까지 흡수됐다. 여기가 "이 판의 연출이 다 끝난" 시점이다 —
+             우승 팝업이 이 신호를 기다린다(potDoneAt). */
+          potDoneAt = Date.now() + landed + POT_AFTER_MS;
+          setTimeout(function(){
+            if (st && st.table && st.table.handNo === forHand && !tableEl.hidden) renderTable();
+          }, landed + POT_AFTER_MS + 20);
+        }, first ? POT_WAIT_FIRST_MS : POT_WAIT_NEXT_MS);
+      }
+      step();
     }
 
     /* 인접한 층의 승자가 같으면 하나로 합친다.
@@ -2438,8 +2501,9 @@ export function holdemPage(user: WebUser): string {
 
     /* ── WIN 배지 ────────────────────────────────────────────────────
        이 층을 가져가는 사람의 좌석판 위에 WIN을 띄운다. 칩이 움직이기 전에 먼저 뜬다 —
-       칩부터 날아가면 이미 끝난 뒤에 누가 이겼는지 알게 된다. */
-    var WIN_HOLD_MS = 1400;
+       칩부터 날아가면 이미 끝난 뒤에 누가 이겼는지 알게 된다.
+       배지가 떠 있고 칩이 아직 안 움직이는 시간은 pushPotToWinners가 정한다
+       (첫 층 POT_WAIT_FIRST_MS · 그 뒤 POT_WAIT_NEXT_MS). */
     function showWinBadges(tb, pa){
       var win = {};
       pa.winners.forEach(function(w){ win[w.seat] = 1; });
@@ -2549,9 +2613,21 @@ export function holdemPage(user: WebUser): string {
         });
         renderSeats();
       }, landed);
+      /* 마지막 층까지 보냈으면 중앙을 완전히 비운다 — 칩도 금액 배지도 남기지 않는다.
+         비우는 시점은 마지막 칩이 승자 안으로 흡수된 뒤다. 예전처럼 0.9초에 지우면
+         아직 1단계(승자 앞으로 미는 중)인 칩들의 출발지가 먼저 사라져, 중앙이 빈
+         상태에서 칩만 허공을 날아간다.
+         potClearedHand를 세워 두는 것이 핵심이다 — 이게 없으면 다음 폴링의
+         syncPotPile이 "더미가 없네" 하고 tb.pot 기준으로 통째로 되살린다. */
       if (last) {
-        setTimeout(function(){ pileEl.innerHTML = ''; potPile.list = []; }, 900);
+        potClearedHand = payHand;
+        setTimeout(function(){
+          if (!st || !st.table || st.table.handNo !== payHand) return;
+          pileEl.innerHTML = ''; potPile.list = []; potPile.cnt = null;
+        }, landed + 120);
       }
+      // 호출한 쪽(pushPotToWinners)이 다음 층을 언제 걸지 정하는 기준
+      return landed;
     }
 
     /* ── 딜링 연출 ───────────────────────────────────────────────────
