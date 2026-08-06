@@ -1309,11 +1309,17 @@
   .ht-piles.split .ht-pg{width:88px}
   /* 그 층을 이미 보냈다 — 빈 상자가 이름표만 남아 서 있지 않게 접는다 */
   .ht-pg.paid{opacity:0;transform:scale(.9)}
-  /* span이므로 display:block을 줘야 width·height가 먹는다 — 인라인은 둘 다 무시한다 */
-  .ht-pg-chips{display:block;position:relative;width:100%;height:18px;flex:none}
+  /* span이므로 display:block을 줘야 width·height가 먹는다 — 인라인은 둘 다 무시한다.
+     기둥이 최대 6장까지 자라므로(6 × 4px + 칩 11px) 높이를 그만큼 잡는다. */
+  .ht-pg-chips{display:block;position:relative;width:100%;height:34px;flex:none}
   .ht-pg-k{font-family:var(--mono);font-size:8px;font-weight:900;letter-spacing:.7px;
     color:var(--muted);line-height:1.1}
-  .ht-pg-v{font-family:var(--mono);font-size:9.5px;font-weight:800;color:#cbd8cf;line-height:1.1}
+  /* 금액은 반투명 알약 안에. 펠트 위에 맨 글자로 띄우면 초록 위의 흰 글씨라 배경에
+     따라 읽힘이 들쭉날쭉하고, 칩 더미와 한 덩어리로도 안 읽힌다.
+     알약이 있으면 "이 더미의 금액"이라는 소속이 생긴다. */
+  .ht-pg-v{font-family:var(--mono);font-size:9.5px;font-weight:800;color:#e6f0ea;
+    line-height:1.1;padding:2px 7px;border-radius:999px;
+    background:rgba(6,14,10,.62);border:1px solid rgba(255,255,255,.1)}
   /* ── 포커 칩 ────────────────────────────────────────────────────
      액면마다 색이 다르다 — 흰 100 · 빨강 500 · 초록 1,000 · 검정 5,000 · 보라 10,000.
      실제 카지노의 색 규약이라 포커를 아는 사람은 숫자를 안 읽어도 금액을 안다.
@@ -1355,15 +1361,19 @@
   .d5k {--c1:#24272c;--c2:#d8b34a;--c3:#15171a;--cd:#0a0b0d}
   .d10k{--c1:#6f3fa8;--c2:#f0e3ff;--c3:#572f86;--cd:#3a1d5c}
 
-  /* 중앙 팟 더미의 칩 — 위에서 내려다본 원형.
-     box-shadow를 1px씩 겹쳐 쌓아 옆면을 만든다. 한 줄짜리 그림자는 "바닥에 그림자가
+  /* 중앙 팟 더미의 칩 — 비스듬히 내려다본 원기둥.
+     정원(正圓)으로 그리면 "위에서 수직으로 내려다본" 시점이 되어, 옆에서 본 좌석 앞
+     칩 기둥과 시점이 어긋난다. 한 화면에 두 시점이 섞이면 어느 쪽도 입체로 안 읽힌다.
+     윗면을 타원으로 눌러(20×11) 45~60도에서 본 것으로 맞추고, 그 아래에 옆면을 세운다.
+
+     옆면은 box-shadow를 1px씩 겹쳐 쌓아 만든다. 한 줄짜리 그림자는 "바닥에 그림자가
      졌다"이지 "두께가 있다"가 아니다 — 같은 색을 여러 단으로 내려 깔아야 원기둥의
      옆면이 된다. 아래로 갈수록 어둡게 해서 빛이 위에서 온다는 것과 맞춘다. */
-  .ht-pchip{position:absolute;width:18px;height:18px;margin-left:-9px;border-radius:50%;
+  .ht-pchip{position:absolute;width:20px;height:11px;margin-left:-10px;border-radius:50%;
     box-shadow:
       0 1px 0 var(--cd),0 2px 0 var(--cd),0 3px 0 var(--cd),
-      0 4px 0 rgba(0,0,0,.55),
-      0 6px 7px rgba(0,0,0,.55)}
+      0 4px 0 rgba(0,0,0,.5),
+      0 6px 6px rgba(0,0,0,.5)}
   .ht-pchip.pending{opacity:0}
   /* 승자에게 갈 때는 실제로 쌓여 있던 칩을 복제해 날린다 */
   .ht-pchip.flyout{animation:htPileFly .7s cubic-bezier(.45,.02,.3,1) forwards}
@@ -1990,14 +2000,20 @@
   }
 
   /* 베팅 칩 — 좌석과 중앙 사이. 좌석판과 별개 요소라 서로 겹치지 않는다. */
+  /* 금액을 칩 옆이 아니라 아래에 둔다. 옆에 두면 좌석마다 가로로 뻗는 방향이 달라서
+     (왼쪽 자리는 왼쪽으로, 오른쪽 자리는 오른쪽으로) 같은 물건이 판마다 다른 모양이
+     됐다. 아래 가운데는 어느 자리에서나 같다. */
   .ht-spot{position:absolute;transform:translate(-50%,-50%);z-index:2;
-    display:flex;align-items:center;gap:6px;white-space:nowrap}
+    display:flex;flex-direction:column;align-items:center;gap:3px;white-space:nowrap}
   /* ── 좌석 앞 베팅 칩 기둥 ────────────────────────────────────────
      비스듬히 내려다본 칩 더미다. 맨 위 한 장만 윗면(타원 탑뷰)이고 아래는 옆면 띠다 —
      전부 윗면으로 그리면 원반을 부채처럼 늘어놓은 것이 되어 기둥으로 안 읽힌다.
      옆면 띠에는 세로 줄무늬를 넣는다(실제 칩의 에지 무늬가 옆에서 보면 그렇다).
      바닥에는 반투명 타원 그림자를 깔아 펠트 위에 놓인 느낌을 만든다. */
-  .ht-spot-chips{position:relative;width:22px;height:40px;flex:none}
+  /* 기둥이 여러 개 설 수 있으므로 폭은 내용이 정하게 두고(가로 좌표는 인라인으로
+     계산해 넣는다), 높이만 기둥 최대치(6 × 4 + 11 + 여유)에 맞춘다. */
+  .ht-spot-chips{position:relative;width:100%;height:40px;flex:none;align-self:stretch;
+    min-width:22px}
   .ht-chip{position:absolute;left:0;width:22px;height:7px;border-radius:4px / 3.5px;
     border:1px solid rgba(0,0,0,.5)}
   /* 옆면 — 위쪽에 빛, 아래쪽에 그늘. 줄무늬는 아주 옅게만 (진하면 지저분해진다).
@@ -2022,11 +2038,12 @@
       0 1px 0 var(--cd),0 2px 0 var(--cd),0 3px 0 var(--cd),
       0 4px 0 rgba(0,0,0,.5),
       0 6px 6px rgba(0,0,0,.5)}
-  /* 바닥 그림자 — 기둥이 두꺼워진 만큼 아래로 내린다 */
-  .ht-chip-sh{position:absolute;left:1px;bottom:-5px;width:20px;height:6px;border-radius:50%;
+  /* 바닥 그림자 — 기둥마다 하나씩. 가로 좌표는 인라인으로 들어온다 */
+  .ht-chip-sh{position:absolute;bottom:-5px;width:20px;height:6px;border-radius:50%;
     background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,.55),rgba(0,0,0,0) 72%)}
-  .ht-spot-amt{font-family:var(--mono);font-size:11px;font-weight:800;color:#fff;
-    text-shadow:0 1px 3px rgba(0,0,0,.75)}
+  .ht-spot-amt{font-family:var(--mono);font-size:10.5px;font-weight:800;color:#eef5f0;
+    padding:2px 8px;border-radius:999px;
+    background:rgba(6,14,10,.62);border:1px solid rgba(255,255,255,.1)}
   /* 베팅 자리에는 칩과 금액만 남긴다 — 행동 이름은 좌석판 위 배지(.ht-abadge)가 맡는다.
      예전에는 여기 이름을 같이 붙였는데, 그러면 이미 지나간 행동이 판이 끝날 때까지
      테이블에 널려 있었다. */
@@ -2035,10 +2052,11 @@
      서버는 앤티를 committed에만 더해서(bet이 아니다) 좌석 앞에 칩이 안 보인다.
      그래서 이 순간을 화면이 직접 만든다. 레벨 6부터 매 판 스택이 줄어드는 이유다. */
   .ht-ante{position:absolute;transform:translate(-50%,-50%);z-index:2;
-    display:flex;align-items:center;gap:5px;white-space:nowrap;
+    display:flex;flex-direction:column;align-items:center;gap:3px;white-space:nowrap;
     animation:antePut .22s ease-out}
-  .ht-ante-a{font-family:var(--mono);font-size:10px;font-weight:800;color:#f0d89a;
-    text-shadow:0 1px 3px rgba(0,0,0,.8)}
+  .ht-ante-a{font-family:var(--mono);font-size:9.5px;font-weight:800;color:#f0d89a;
+    padding:1px 7px;border-radius:999px;
+    background:rgba(6,14,10,.62);border:1px solid rgba(240,205,110,.22)}
   @keyframes antePut{from{opacity:0;transform:translate(-50%,-90%) scale(.8)}to{opacity:1}}
 
   /* 액션 컨트롤 */

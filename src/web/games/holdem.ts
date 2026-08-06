@@ -1636,17 +1636,39 @@ export function holdemPage(user: WebUser): string {
       if (amount > 0 && out.length < HT_MAX_CHIPS) out.push(HT_DENOMS[HT_DENOMS.length - 1]);
       return out;
     }
-    function htJit(i, span){ return ((i * 2654435761) % 1000) / 1000 * span - span / 2; }
-    function htChipSprite(denom, idx, pending){
-      var col = idx % 6, row = Math.floor(idx / 6);
-      var x = Math.round((col - 2.5) * 13 + htJit(idx, 7));
-      var y = Math.round(2 + row * 4 + htJit(idx + 7, 2));
-      /* 칩 위에 숫자를 적지 않는다. 실제 칩은 액면을 색과 무늬로 말하고, 지름 17px에
-         들어가는 6.5px 글자는 어차피 안 읽힌다 — 무늬만 흐려질 뿐이었다.
-         금액은 더미마다 붙는 이름표(.ht-pg-v)가 적는다. */
+    /* ── 중앙 더미를 액면별 기둥으로 세운다 ─────────────────────────
+       예전에는 6열 격자에 난수 지터를 얹어 흩뿌렸다. "많이 쌓였다"는 느껴졌지만
+       무엇이 얼마나 쌓였는지는 안 보였다 — 실제 딜러는 팟을 액면별로 세워 정리한다.
+
+       규칙은 둘이다.
+         같은 액면 → 위로 쌓아 기둥 하나 (Y축)
+         다른 액면 → 옆으로 나란히      (X축, 큰 액면이 왼쪽)
+       기둥 하나가 너무 높아지면(6장) 같은 액면이라도 옆에 새 기둥을 세운다.
+       칩 위에 숫자는 적지 않는다 — 액면은 색이 말하고 금액은 아래 배지가 말한다. */
+    var PILE_COL_MAX = 6;      // 기둥 하나에 쌓는 최대 장수
+    var PILE_COL_W = 15;       // 기둥 사이 가로 간격
+    var PILE_LIFT = 4;         // 한 장 올라갈 때의 세로 간격
+    function pileLayout(chips){
+      /* 액면 순서를 HT_DENOMS(큰 것부터)로 고정한다. 등장 순서로 세우면 같은 금액인데
+         판마다 기둥 순서가 달라져서 "무엇이 쌓였나"를 눈이 다시 읽어야 한다. */
+      var byD = {};
+      chips.forEach(function(c){ (byD[c.d] = byD[c.d] || []).push(c); });
+      var cols = [];
+      HT_DENOMS.forEach(function(d){
+        var list = byD[d]; if (!list) return;
+        for (var i = 0; i < list.length; i += PILE_COL_MAX) {
+          cols.push({ d: d, n: Math.min(PILE_COL_MAX, list.length - i) });
+        }
+      });
+      return cols;
+    }
+    function htChipSprite(denom, col, row, nCols, pending){
+      // 기둥 묶음을 가운데 정렬한다
+      var x = Math.round((col - (nCols - 1) / 2) * PILE_COL_W);
+      var y = row * PILE_LIFT;
       return '<span class="ht-pchip pkchip ' + htDenomClass(denom) +
         (pending ? ' pending' : '') + '" data-d="' + denom + '"' +
-        ' style="left:calc(50% + ' + x + 'px);bottom:' + y + 'px;z-index:' + (10 + idx) + '">' +
+        ' style="left:calc(50% + ' + x + 'px);bottom:' + y + 'px;z-index:' + (10 + row) + '">' +
         '</span>';
     }
     /* ── 층별 칩 더미 ───────────────────────────────────────────────
@@ -1682,8 +1704,13 @@ export function holdemPage(user: WebUser): string {
         // 이 층까지 들어가야 할 칩 개수 (마지막 층은 남은 것 전부)
         var upto = i === amts.length - 1 ? chips.length
           : Math.min(chips.length, Math.round(chips.length * acc / sum));
-        var inner = '';
-        for (var k = used; k < upto; k++) inner += htChipSprite(chips[k].d, k - used, false);
+        var inner = '', cols = pileLayout(chips.slice(used, upto));
+        var ci = 0;
+        cols.forEach(function(c, cx){
+          for (var rw = 0; rw < c.n; rw++) inner += htChipSprite(c.d, cx, rw, cols.length, false);
+          ci += c.n;
+        });
+        void ci;
         used = upto;
         html += '<div class="ht-pg" data-layer="' + i + '">' +
           '<span class="ht-pg-chips">' + inner + '</span>' +
@@ -1756,24 +1783,30 @@ export function holdemPage(user: WebUser): string {
 
        8장에서 끊는다. 그 위로는 높이가 화면 밖으로 자라기만 하고 정보는 늘지 않는다
        (정확한 금액은 바로 옆 숫자가 말한다). */
-    var BET_MAX_CHIPS = 8;
+    var BET_MAX_CHIPS = 12;
+    var BET_COL_W = 24;        // 기둥 사이 가로 간격 (칩 폭 22 + 여유)
     function chipStack(amount){
       var ds = htDecompose(amount).slice(0, BET_MAX_CHIPS);
-      var out = '';
-      /* 큰 액면이 아래로 가야 하므로 뒤에서부터 쌓는다 —
-         htDecompose는 큰 액면부터 담는데, 나중에 그린 것이 위에 온다.
+      /* 액면별로 기둥을 세우고 기둥끼리 옆으로 나란히 둔다 — 중앙 팟 더미와 같은 규칙이다.
+         예전에는 한 기둥에 여러 액면을 섞어 쌓았다. 큰 액면이 아래로 가니 자릿수는
+         읽혔지만, "무엇이 몇 장인가"는 색 띠를 세어야 알 수 있었다.
+         실제 딜러도 액면을 섞어 쌓지 않는다.
 
-         맨 위 한 장만 윗면(타원 탑뷰)이고 나머지는 옆면 띠다. 실제로 칩을 쌓아
-         비스듬히 내려다보면 그렇게 보인다 — 전부 윗면으로 그리면 원반을 부채처럼
-         늘어놓은 것이 되어 기둥으로 안 읽힌다. */
-      for (var i = ds.length - 1; i >= 0; i--) {
-        var lvl = ds.length - 1 - i;      // 0이 맨 아래
-        // 윗면만 pkchip(탑뷰 무늬)을 쓴다. 옆면은 .ht-chip 자체의 줄무늬다.
-        var top = i === 0 ? ' top pkchip' : '';
-        out += '<i class="ht-chip' + top + ' ' + htDenomClass(ds[i]) +
-          '" style="bottom:' + (lvl * 4) + 'px;z-index:' + (10 + lvl) + '"></i>';
-      }
-      return '<i class="ht-chip-sh"></i>' + out;
+         기둥마다 맨 위 한 장만 윗면(타원 탑뷰)이고 나머지는 옆면 띠다. 전부 윗면으로
+         그리면 원반을 부채처럼 늘어놓은 것이 되어 기둥으로 안 읽힌다. */
+      var cols = pileLayout(ds.map(function(d){ return { d: d }; }));
+      var out = '';
+      cols.forEach(function(c, cx){
+        var x = Math.round((cx - (cols.length - 1) / 2) * BET_COL_W);
+        out += '<i class="ht-chip-sh" style="left:calc(50% + ' + (x - 10) + 'px)"></i>';
+        for (var rw = 0; rw < c.n; rw++) {
+          var top = rw === c.n - 1 ? ' top pkchip' : '';
+          out += '<i class="ht-chip' + top + ' ' + htDenomClass(c.d) +
+            '" style="left:calc(50% + ' + (x - 11) + 'px);bottom:' + (rw * 4) +
+            'px;z-index:' + (10 + rw) + '"></i>';
+        }
+      });
+      return out;
     }
     /* 태그 안에는 칩 그림을 넣지 않는다. 한때 스택 숫자 앞에 액면 세 종을 겹쳐
        규모를 색으로 보였는데, 아홉 자리에 작은 색점이 스물일곱 개 붙으니 테이블 위에서
