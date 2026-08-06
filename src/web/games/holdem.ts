@@ -33,9 +33,14 @@ import type { WebUser } from '../../db/queries';
    이 값은 이제 "축하가 언제 뜨는가"를 정하지 않는다 — 그건 화면이 정산 연출이 끝난
    것을 보고 스스로 판단한다(celebrate의 settleDone). 여기는 그동안 테이블이 살아
    있게 하는 상한일 뿐이다. 그래서 최악의 경우에 맞춘다:
-     프리플랍 9인 올인 → 핸드 공개 5초 + 플랍·턴·리버·스퀴즈 12초 + 정산 7.3초
+     프리플랍 9인 올인 → 핸드 공개 5.1초 + 플랍·턴·리버·스퀴즈 12.1초
+                       + 결과 지연 1.5초 + 정산 6.6초 + 팝업 0.5초 ≈ 25.8초
    30초면 그 끝까지 덮는다. 대부분의 판은 그 한참 전에 축하로 넘어가므로,
-   이 숫자가 커진다고 해서 기다리는 시간이 늘지는 않는다. */
+   이 숫자가 커진다고 해서 기다리는 시간이 늘지는 않는다.
+
+   모자라면 증상이 고약하다 — 연출 도중에 서버가 table을 거둬 가면서 핸드 공개도
+   팟 이동도 통째로 사라지고 결과 팝업만 남는다. 12초였을 때 6인 올인 판에서
+   실제로 그렇게 보였다("연출이 스킵된다"는 제보의 정체다). */
 export const FINISH_LINGER_SEC = 30;
 
 /* ── 상태 응답 ────────────────────────────────────────────────────── */
@@ -1839,11 +1844,13 @@ export function holdemPage(user: WebUser): string {
        금액 배지는 층이 하나여도 붙인다. "하나뿐이면 위쪽 Total Pot이 이미 말한다"고
        봤는데, 실제 화면에서는 보드 아래에 칩 한 장만 덩그러니 놓여 있고 그것이 얼마인지
        옆에 아무것도 없었다 — 위쪽 숫자와 이 칩이 같은 것이라는 연결이 안 잡힌다. */
-    /* 단위 표기는 potEl과 같은 규칙이다 — stackText가 BB일 때는 이미 'BB'를 붙여
-       돌려주므로 여기서 또 붙이면 "12.9BB BB"가 된다. */
+    /* 칩 단위일 때 'P'는 붙이지 않는다. 테이블 위의 모든 숫자가 같은 단위라 매번
+       적으면 그 글자만 다섯 군데에 반복된다 — 스택에도, 베팅에도, 팟에도 안 붙는다.
+       BB 표기는 남긴다. 그건 단위가 아니라 "블라인드 몇 배"라는 다른 척도라서,
+       빼면 5,000과 5BB를 구분할 방법이 사라진다(stackText가 직접 붙인다). */
     function pileLabel(amount){
       if (amount <= 0) return '';
-      return '<span class="ht-pg-v">' + stackText(amount) + (unit === 'chip' ? ' P' : '') + '</span>';
+      return '<span class="ht-pg-v">' + stackText(amount) + '</span>';
     }
     /* 더미를 다시 그린다. 층마다 자기 금액을 직접 액면으로 분해한다.
 
@@ -1887,7 +1894,7 @@ export function holdemPage(user: WebUser): string {
         return { d: d, i: i % HT_MAX_CHIPS };
       }); }
       potPile.n = potPile.list.length;
-      potPile.sig = pileLayers(tb).join(',');
+      potPile.sig = pileLayers(tb).join(',') + '/' + unit;
       potPile.cnt = paintPotPile(tb);
     }
     function syncPotPile(tb){
@@ -1907,7 +1914,10 @@ export function holdemPage(user: WebUser): string {
       if (potClearedHand === tb.handNo) return;
       // 콜되지 않은 초과 베팅을 돌려주면 팟이 줄어든다 — 그때는 연출 없이 다시 그린다
       if (settled < potPile.total) return resetPotPile(tb, settled);
-      var sig = pileLayers(tb).join(',');
+      /* 시그니처에 표시 단위를 함께 넣는다. 층 금액만 보면 칩↔BB 토글이 아무것도
+         바꾸지 않은 것으로 보여서 다시 그리지 않았고, 스택과 Total Pot은 BB로 바뀌는데
+         팟 더미 배지만 "2,500 P"로 남아 있었다(실측). 단위도 그리기의 입력이다. */
+      var sig = pileLayers(tb).join(',') + '/' + unit;
       var delta = settled - potPile.total;
       if (delta > 0) {
         potPile.total = settled;
@@ -2114,7 +2124,33 @@ export function holdemPage(user: WebUser): string {
        한쪽만 보면 반대쪽 구간에서 결과가 샌다:
          boardRevealed만 → 리버까지 깔린 판에서 핸드를 여는 동안 승자가 먼저 뜬다
          holesRevealed만 → 올인 판에서 플랍도 안 깔렸는데 이긴 5장이 빛난다 */
-    function resultReady(){ return boardRevealed && holesRevealed(); }
+    /* 둘 다 끝나고도 1.5초를 더 기다린다.
+       마지막 카드가 뒤집히는 그 프레임에 이긴 5장이 빛나고 족보가 뜨면, 카드를 본
+       사람과 결과가 동시에 도착해서 "내가 읽은" 것이 아니라 "화면이 알려 준" 것이 된다.
+       한 박자 비워 두면 그 사이에 스스로 판을 읽게 된다 — 쇼다운의 재미가 거기 있다.
+
+       readyAt은 판마다 한 번만 잡는다. resultReady()는 한 번 그릴 때 여러 번 불리므로
+       매번 다시 잡으면 시각이 계속 뒤로 밀려 영영 열리지 않는다.
+       진행 중인 판에는 아예 false다 — 예전에는 프리플랍(보드 0장 = boardRevealed true,
+       holeDoneAt 0 = holesRevealed true)에서도 true였고, 그 상태로 readyAt을 잡으면
+       판이 끝나기 한참 전에 1.5초가 지나 버려 지연이 통째로 사라진다. */
+    var RESULT_HOLD_MS = 1500;
+    var readyHand = null, readyAt = 0;
+    function resultReady(){
+      var tb = st && st.table;
+      if (!tb || !tb.ended) return false;
+      if (!(boardRevealed && holesRevealed())) return false;
+      if (readyHand !== tb.handNo) {
+        readyHand = tb.handNo;
+        readyAt = Date.now() + RESULT_HOLD_MS;
+        // 폴링(1초)에 맡기면 1.5초가 1.5~2.5초로 흔들린다 — 그 시각에 직접 깨운다
+        var forHand = tb.handNo;
+        setTimeout(function(){
+          if (st && st.table && st.table.handNo === forHand && !tableEl.hidden) renderTable();
+        }, RESULT_HOLD_MS + 20);
+      }
+      return Date.now() >= readyAt;
+    }
 
     function clearBoardReveal(){
       boardTimers.forEach(clearTimeout);
@@ -2345,20 +2381,36 @@ export function holdemPage(user: WebUser): string {
       spotStreet = tb.street; spotHand = tb.handNo;
     }
 
-    /* 중앙 더미에 실제로 쌓여 있는 칩 하나를 그대로 복제해 날린다.
-       예전에는 팟 라벨 위치에서 익명의 작은 칩을 날렸는데, 그러면 쌓인 더미와
-       무관한 것이 지나가서 "대충 넣은 애니메이션"으로 보인다. */
-    /* .ht-pchip.flyout 애니메이션 길이와 같아야 한다 (CSS htPileFly 1.8s).
+    /* 중앙 더미를 통째로 복제해 승자에게 보낸다.
+       예전에는 칩을 낱장으로 복제해 45ms씩 흩뿌렸다. 흐름은 좋았지만 금액 배지가
+       따라가지 않았다 — 배지는 칩과 같은 상자(.ht-pg) 안의 형제인데 복제 대상이
+       칩뿐이라, 칩은 승자에게 가고 배지는 중앙에 홀로 남아 따로 사라졌다.
+       상자째 옮기면 그럴 자리가 없다. "얼마가 누구에게" 가 한 덩어리로 움직인다.
+
+       shareOf/shareIdx는 분할 팟용이다. 승자가 둘이면 같은 상자를 두 개 만들되
+       칩을 번갈아 나눠 담고 배지에 각자 몫을 적는다 — 안 그러면 같은 금액이 두 번
+       날아가 팟이 두 배로 나간 것처럼 보인다.
+
+       .ht-pchip.flyout 애니메이션 길이와 같아야 한다 (CSS htPileFly 1.8s).
        두 단계짜리다 — 승자 앞까지 밀고(0.62초) · 0.7초 멈추고 · 흡수(0.48초).
-       이 값이 곧 "칩이 도착했다"의 기준이라(도착해야 승자 스택 숫자가 오르고
-       그 뒤에 다음 사이드 팟이 걸린다) CSS와 어긋나면 순서가 통째로 밀린다. */
+       이 값이 곧 "도착했다"의 기준이라(도착해야 승자 스택 숫자가 오르고 그 뒤에
+       다음 사이드 팟이 걸린다) CSS와 어긋나면 순서가 통째로 밀린다. */
     var PILE_FLY_MS = 1800;
-    function flyPileChip(chipEl, toRect, delay){
-      var r = chipEl.getBoundingClientRect();
+    function flyPileGroup(boxEl, toRect, delay, shareOf, shareIdx, amount){
+      var r = boxEl.getBoundingClientRect();
       if (!r.width) return;
-      var c = chipEl.cloneNode(true);
-      c.classList.remove('pending');
+      var c = boxEl.cloneNode(true);
+      c.classList.remove('pending', 'paid');
       c.className += ' flyout';
+      // 분할 팟 — 칩을 번갈아 나누고 배지에 이 사람 몫을 적는다
+      if (shareOf > 1) {
+        var chips = Array.prototype.slice.call(c.querySelectorAll('.ht-pchip'));
+        chips.forEach(function(ch, i){
+          if (i % shareOf !== shareIdx && ch.parentNode) ch.parentNode.removeChild(ch);
+        });
+        var v = c.querySelector('.ht-pg-v');
+        if (v) v.textContent = stackText(amount);
+      }
       c.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;' +
         'margin:0;width:' + r.width + 'px;height:' + r.height + 'px;z-index:70;';
       c.style.setProperty('--tx', Math.round((toRect.left + toRect.width/2) - (r.left + r.width/2)) + 'px');
@@ -2576,40 +2628,36 @@ export function holdemPage(user: WebUser): string {
       });
       // 층 정보가 없는 옛 기록이나 폴드 종료는 더미가 하나뿐이라 그것이 곧 전부다
       if (!mine.length) mine = boxes;
-      var chips = [];
+      var winners = pa.winners;
+      var n = 0;
+      /* 더미를 통째로 옮긴다 — 칩과 금액 배지가 한 상자(.ht-pg) 안에 있으므로
+         그 상자를 복제해 날리면 둘이 같이 움직이고 같이 흡수된다.
+         예전에는 칩만 낱장으로 복제해 보냈다. 그래서 칩은 승자에게 가는데 금액 배지는
+         중앙에 홀로 남아 있다가 따로 사라졌다 — 같은 물건이 두 조각으로 갈라졌다.
+
+         승자가 여럿이면(분할 팟) 상자를 사람 수만큼 복제하고, 칩을 번갈아 나눠 담고,
+         배지에는 각자 몫을 적는다. 같은 금액을 두 번 보여주면 팟이 두 배로 나간
+         것처럼 보인다. */
       mine.forEach(function(b){
-        Array.prototype.slice.call(b.querySelectorAll('.ht-pchip')).forEach(function(c){
-          if (!c.dataset || c.dataset.sent !== '1') chips.push(c);
+        winners.forEach(function(w, k){
+          // 위 seatOf와 반드시 같은 요소여야 한다 (다르면 문은 통과하고 목표가 null이 된다)
+          var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-avbox');
+          if (!target) return;
+          flyPileGroup(b, target.getBoundingClientRect(), (n++) * 90,
+            winners.length, k, w.amount || 0);
         });
       });
-      var winners = pa.winners;
-      var total = winners.reduce(function(a, x){ return a + (x.amount || 0); }, 0) || 1;
-      var quota = chips.length;
-      var n = 0, used = 0;
-      winners.forEach(function(w, k){
-        // 위 seatOf와 반드시 같은 요소여야 한다 (다르면 문은 통과하고 목표가 null이 된다)
-        var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-avbox');
-        if (!target) return;
-        var tr = target.getBoundingClientRect();
-        var take = k === winners.length - 1
-          ? quota - used
-          : Math.max(1, Math.round(quota * (w.amount || 0) / total));
-        take = Math.min(take, quota - used);
-        for (var i = 0; i < take; i++) {
-          var c = chips[used + i];
-          if (!c) break;
-          if (c.dataset) c.dataset.sent = '1';
-          flyPileChip(c, tr, (n++) * 45);
-        }
-        used += take;
-        // 더미가 비어 있으면(판 도중 합류 등) 최소한 칩 몇 개는 날아가게 한다
-        if (!chips.length) {
-          var pot = potEl.getBoundingClientRect();
+      /* 더미가 비어 있으면(판 도중 합류 등) 최소한 칩 몇 개는 날아가게 한다 */
+      if (!mine.length) {
+        winners.forEach(function(w){
+          var target = seatsEl.querySelector('.ht-seat[data-seat="' + w.seat + '"] .ht-avbox');
+          if (!target) return;
+          var pot = potEl.getBoundingClientRect(), tr = target.getBoundingClientRect();
           var amt = w.amount || 0;
           var cnt = amt >= tb.level.bb * 20 ? 5 : amt >= tb.level.bb * 5 ? 3 : 2;
           for (var j = 0; j < cnt; j++) flyChip(pot, tr, (n++) * 45, 'towin');
-        }
-      });
+        });
+      }
       /* 보낸 더미는 그 자리에서 접는다 — 마지막 층에서만 전부 접으면 앞 층의 빈 상자가
          이름표만 남아 계속 서 있다. 층이 비워지는 것이 보여야 "이 팟은 끝났다"가 읽힌다. */
       mine.forEach(function(b){ b.classList.add('paid'); });
@@ -2820,7 +2868,7 @@ export function holdemPage(user: WebUser): string {
          칩은 이미 날아갔고 숫자도 없어져서 판의 크기를 되짚을 데가 없다.
          중앙 칩 더미는 정산과 함께 사라지므로 "칩은 갔고 금액만 기록으로 남았다"로 읽힌다.
          서버 pot은 다음 판이 열리면 그 판의 블라인드·앤티로 저절로 바뀐다. */
-      potEl.textContent = stackText(tb.pot) + (unit === 'chip' ? ' P' : '');
+      potEl.textContent = stackText(tb.pot);
       renderSeats();
       dealSequence(tb);
       renderSide();
