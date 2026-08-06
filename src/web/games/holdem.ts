@@ -1505,17 +1505,43 @@ export function holdemPage(user: WebUser): string {
        넘어가면 내 차례가 곧 온다는 신호이기도 하다. */
     var CLOCK_WARN_SEC = 5;    // 바가 붉어지고 점멸하는 시점
     var CLOCK_TICK_SEC = 4.5;  // 똑딱 소리가 시작되는 시점 (음원 길이에 맞춘 값)
-    var clockBase = null;      // { seat, left, at, total, hand, street }
+    var clockBase = null;      // { key, seat, left, at, total, hand, street }
+    // 화면에 그린 마지막 게이지 비율과 그것이 어느 차례의 것인지 (단조 감소 보장용)
+    var fracKey = null, fracLast = 1;
     var clockWarned = null;    // 이미 경고를 낸 (판:스트리트:자리) — 한 차례에 한 번만 울린다
     function noteClock(tb){
       if (!tb || tb.toActSeat == null || tb.actionLeft == null || tb.ended) {
         clockBase = null;
         return;
       }
-      // 같은 자리·같은 남은 초가 계속 오는 동안에는 기준점을 흔들지 않는다
-      if (clockBase && clockBase.seat === tb.toActSeat && clockBase.left === tb.actionLeft) return;
+      /* ── 왜 기준점을 쉽게 다시 잡지 않는가 ─────────────────────────
+         서버가 주는 actionLeft 는 초 단위 정수다(deadline - Math.floor(now)).
+         예전에는 그 값이 바뀔 때마다 기준점을 다시 잡았다 — 남은 초가 매초 줄어드니
+         사실상 매 폴링마다 다시 잡은 셈이다. 그런데 정수로 자른 값은 화면이 보간해
+         내려온 실수값보다 최대 1초까지 클 수 있다. 그 순간 게이지가 뒤로 튄다:
+
+           화면 12.4초 진행 중 → 서버가 13 을 주면 기준점이 13 으로 올라간다
+           → 게이지가 0.6초분 다시 차오르고 나서 또 줄어든다
+
+         제보된 "잠깐 다시 차올랐다 줄어든다"가 정확히 이것이다.
+
+         이제 차례가 바뀔 때만 새로 잡는다. 차례는 (자리 · 판 · 스트리트)로 가른다 —
+         자리만 보면 같은 사람이 플랍·턴에서 연달아 말할 때 기준점이 안 바뀌어
+         새 차례인데도 지난 차례의 남은 시간이 이어진다.
+
+         같은 차례 안에서는 서버 값을 "더 줄일 때만" 받아들인다. 늦게 도착한 응답이나
+         시계 차이로 화면이 실제보다 느긋해질 수는 있는데, 그건 서버가 마감을 판정하는
+         순간과 어긋나므로 따라잡아야 한다. 반대로 늘리는 것은 받지 않는다 —
+         한 차례 안에서 게이지는 단조 감소여야 한다.
+         (실제 마감 판정은 서버의 action_deadline 이 하고, 여기는 화면만 다룬다.) */
+      var key = tb.toActSeat + ':' + tb.handNo + ':' + tb.street;
+      if (clockBase && clockBase.key === key) {
+        var shown = clockBase.left - (Date.now() - clockBase.at) / 1000;
+        if (tb.actionLeft < shown) { clockBase.left = tb.actionLeft; clockBase.at = Date.now(); }
+        return;
+      }
       clockBase = {
-        seat: tb.toActSeat, left: tb.actionLeft, at: Date.now(),
+        key: key, seat: tb.toActSeat, left: tb.actionLeft, at: Date.now(),
         total: tb.actionSec || 20,
         // 경고음을 "한 차례에 한 번"으로 묶는 열쇠의 재료다
         hand: tb.handNo, street: tb.street,
@@ -1533,6 +1559,14 @@ export function holdemPage(user: WebUser): string {
       if (left < 0) left = 0;
       var frac = clockBase.total > 0 ? left / clockBase.total : 0;
       if (frac > 1) frac = 1;
+      /* 한 차례 안에서 게이지는 절대 늘지 않는다.
+         위 noteClock 이 기준점을 함부로 안 흔들도록 고쳤지만, 여기서 한 겹 더 막는다 —
+         계산이 어디서 튀든(늦게 온 응답·시계 보정·탭이 백그라운드에서 돌아온 직후)
+         화면에 그리는 값은 내려가기만 한다. 눈에 보이는 것을 보장하는 쪽이 여기다.
+         차례가 바뀌면 열쇠가 달라지므로 다시 100%에서 시작한다. */
+      if (fracKey === clockBase.key) { if (frac > fracLast) frac = fracLast; }
+      else { fracKey = clockBase.key; }
+      fracLast = frac;
       /* 색과 소리의 시점을 따로 둔다.
          색은 5초부터 — 눈으로 먼저 알아채는 게 낫다.
          소리는 4.5초부터 — 음원의 들리는 길이가 3.75초라(4.63초 파일에서 앞뒤 무음을
@@ -3170,6 +3204,9 @@ export function holdemPage(user: WebUser): string {
     function fromChips(c){
       return unit === 'chip' ? Math.floor(c) : Math.floor(c / (st.table.level.bb || 1) * 10) / 10;
     }
+    /* 슬라이더 금액을 마지막으로 되돌린 차례. (판 · 스트리트 · 콜 금액)으로 가른다.
+       차례가 바뀌면 금액을 최소값으로 되돌린다 — renderControls 를 보라. */
+    var betTurnKey = null;
     function setAmount(chips){
       var la = st.table.legal; if (!la) return;
       var lo = la.minRaiseTo == null ? la.maxRaiseTo : la.minRaiseTo;
@@ -3211,7 +3248,22 @@ export function holdemPage(user: WebUser): string {
       var lo = la.minRaiseTo == null ? la.maxRaiseTo : la.minRaiseTo;
       rangeEl.min = String(lo);
       rangeEl.max = String(la.maxRaiseTo);
-      if (currentTarget() < lo || currentTarget() > la.maxRaiseTo) setAmount(lo);
+      /* 차례가 새로 열리면 금액을 최소값으로 되돌린다.
+         예전에는 "범위를 벗어났을 때만" 되돌렸다. 그런데 판이 넘어가도 최소·최대는
+         비슷하게 유지되므로 대개 범위 안에 들어가고, 그러면 지난 판에 맞춰 둔 금액이
+         그대로 남는다 — 플랍에서 팟 사이즈로 올려 두면 다음 판 프리플랍에도 그 숫자가
+         꽂혀 있다. 슬라이더는 "이번에 얼마를 낼까"를 정하는 도구라 판이 바뀌면 백지여야
+         한다. 남아 있는 숫자는 도움이 아니라 오조작의 씨앗이다.
+
+         차례는 (판 · 스트리트 · 콜 금액)으로 가른다. 앞의 둘만 보면 같은 스트리트에서
+         상대가 올려 내 차례가 다시 왔을 때 초기화되지 않는다 — 그때가 오히려 이전 값이
+         가장 위험한 순간이다(상대 베팅이 커졌는데 내 슬라이더는 옛 금액에 있다).
+
+         범위 검사는 남긴다. 같은 차례 안에서도 최대치는 바뀔 수 있다(다른 사람이
+         올리면 내 maxRaiseTo 가 줄어든다). 그때 밖으로 나간 값은 끌어와야 한다. */
+      var betKey = st.table.handNo + ':' + st.table.street + ':' + (la.callAmount || 0);
+      if (betKey !== betTurnKey) { betTurnKey = betKey; setAmount(lo); }
+      else if (currentTarget() < lo || currentTarget() > la.maxRaiseTo) setAmount(lo);
       /* 체크할 수 있을 때는 폴드를 내린다.
          낼 금액이 없는 상황에서 폴드는 공짜로 받을 수 있는 패를 버리는 것이라 어떤 패에서도
          이득이 될 수 없다 — 이길 확률이 0이어도 체크가 같거나 낫다. 남는 건 오조작 위험뿐이다.
