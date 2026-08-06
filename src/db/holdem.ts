@@ -40,67 +40,58 @@ export const STREET_OPEN_SEC = 3;
 export function actOpenAt(hand: { action_deadline: number | null }): number | null {
   return hand.action_deadline == null ? null : hand.action_deadline - ACTION_SEC;
 }
-/* 다음 핸드까지의 지연은 두 조각을 더해서 만든다.
-     SHOWDOWN_SEC     — 카드를 다 보여준 뒤의 정산 꼬리. 어느 판에나 똑같이 붙는다.
-     revealExtraSec() — 그 앞의 카드 공개 시간. 판마다 다르다(핸드 수·남은 보드).
+/* ── 다음 판이 시작되는 시각 ──────────────────────────────────────────
+   이 게임에는 서버 타이머가 없다. 판이 끝나면 "다음 판은 이 시각 이후"만 적어 두고
+   (next_hand_at) 실제 진행은 요청이 올 때 일어난다. 그래서 이 값이 곧 화면 연출의
+   길이여야 한다 — 짧으면 연출 중에 판이 넘어가고, 길면 끝난 화면을 보고 앉아 있는다.
 
-   ── 왜 나누나
-   정산 꼬리는 화면 연출의 길이라 상수다. 카드 공개는 그 판이 어디서 끝났느냐에
-   달려 있어 계산해야 한다. 한 덩어리로 두면 최악의 경우에 맞춘 상수 하나가 되고,
-   짧게 끝난 판에서 몇 초씩 빈 화면을 보게 된다.
+   화면(web/games/holdem.ts)이 재생하는 순서를 그대로 더한다:
 
-   ── SHOWDOWN_SEC = 7 의 근거
-     결과 지연      1.50초   (마지막 카드가 열리고 나서 하이라이트까지)
-     팟 정산 지연   0.55초
-     승자 판정 대기 2.50초   (WIN 배지를 읽는 시간)
-     칩 이동        1.80초   (승자 앞까지 → 0.7초 정지 → 흡수)
-                    ─────
-                    6.35초  ← 여기까지가 "칩이 승자 안으로 사라지는" 시점
-     흡수 뒤 여유   1.00초
-                    ─────
-                    7.35초  → 7 (모자란 0.35초는 revealExtraSec의 올림이 메운다)
+     [카드]  첫 핸드까지 1.10초 + 사람당 0.50초
+             남은 보드 — 마지막 핸드가 열린 시점부터
+               리버까지 깔림  0
+               턴까지 깔림    5.56초  2.5(핸드→보드) + 0.56(첫 장) + 2.5(스퀴즈)
+               플랍까지 깔림  8.56초  위 + 3.0(턴 → 리버)
+               그 이전       12.02초  2.5 + 0.56 + 0.33 + 0.33 + 2.8 + 3.0 + 2.5
 
-   흡수 뒤 여유를 1초로 잡는 이유: 폴링이 1초 간격이라 다음 판이 실제로 시작되는
-   시점은 여기서 0~1초 더 밀린다. 체감은 1~2초가 되고, 그게 "결과를 확인하고 바로
-   다음 판"의 범위다. 여유를 1.75초로 잡았을 때는 체감 2~3초라 늘어졌다.
+     [정산]  결과 지연 1.50 + 팟 지연 0.55 + 배지 대기 2.50 + 칩 이동 1.80 = 6.35초
+             ← 여기까지가 "마지막 칩이 승자 안으로 사라지는" 시점
 
-   한때 이 값이 6초였다(연출이 짧던 시절). 그 뒤 연출을 늘리면서 9~10초까지 갔는데,
-   그때는 revealExtraSec에도 여유를 1초씩 따로 얹어서 두 곳의 여유가 겹쳤다.
-   여유는 한 곳에만 있어야 한다. */
-export const SHOWDOWN_SEC = 7;
-/* 카드를 다 여는 데 드는 시간. 클라이언트(web/games/holdem.ts)의 박자를 그대로
-   옮긴 것이다 — 두 곳이 어긋나면 마지막 카드를 열다가 다음 판이 시작된다.
+     [여유]  1.25초 — 승자 스택이 오른 것을 확인하는 시간
 
-     핸드: 첫 장까지 1.1초(ACTION_HOLD_MS) + 사람당 0.5초(HOLE_STEP_MS)
-     보드: 마지막 핸드부터 재는 값이다.
-       리버까지 깔림  0        열 것이 없다
-       턴까지 깔림    5.56초   2.5(핸드→보드) + 0.56(첫 장) + 2.5(스퀴즈)
-       플랍까지 깔림  8.56초   위 + 3.0(턴 → 리버)
-       그 이전        12.02초  2.5 + 0.56 + 0.33 + 0.33 + 2.8 + 3.0 + 2.5
+   ── 왜 한 번에 반올림하나
+   한때 [정산]과 [카드]를 각각 정수 초로 만들어 더했다. 반올림이 두 번 일어나면서
+   오차가 최대 1초까지 쌓였고, 실측 간격이 1.5~2.05초로 벌어졌다.
+   합을 구하고 마지막에 한 번만 반올림하면 ±0.5초 안에 들어온다.
 
-   여유는 얹지 않는다 — SHOWDOWN_SEC이 이미 들고 있다. 여기서는 올림만 한다
-   (서버 지연은 정수 초로만 잡는다). 0.35를 더해 올리는 것은 SHOWDOWN_SEC을
-   7.35에서 7로 내린 몫을 되돌려 놓는 것이다. */
-export function revealExtraSec(boardAtEnd: number, liveCount = 2): number {
+   ── 왜 폴링 몫을 안 더하나
+   예전에는 여기에 "폴링 1초"를 얹었다. 다음 판을 1초 간격 폴링이 발견할 때까지
+   기다린다는 전제였는데, 지금은 화면이 그 시각에 직접 폴을 한 번 쏜다
+   (holdem.ts의 nextHandPoke). 그 몫을 여기서 또 세면 이중이다. */
+const SETTLE_TAIL_SEC = 6.35;   // 카드가 다 열린 뒤 마지막 칩이 흡수될 때까지
+const NEXT_HAND_GAP_SEC = 1.25; // 흡수 → 다음 판
+/* 사이드 팟 한 층을 더 보여주는 데 드는 시간.
+   층마다 [WIN 배지 → 1.0초 대기 → 칩 이동 1.8초 → 더미 시차]를 재생한다. */
+const SIDE_POT_STEP_SEC = 2.9;
+
+/** 카드를 다 여는 데 드는 시간(초, 실수). 화면의 박자를 그대로 옮긴 것이다. */
+export function revealSec(boardAtEnd: number, liveCount = 2): number {
   const holes = 1.1 + Math.max(0, liveCount - 1) * 0.5;
   const board = boardAtEnd >= 5 ? 0
     : boardAtEnd === 4 ? 5.56
     : boardAtEnd === 3 ? 8.56
     : 12.02;
-  return Math.ceil(holes + board + 0.35);
+  return holes + board;
 }
-/* 폴드로 끝난 판. 열 카드가 없으므로 SHOWDOWN_SEC의 정산 꼬리만 흐른다 —
-   결과 지연 1.5 + 정산 지연 0.55 + 배지 대기 2.5 + 칩 이동 1.8 + 여유 1.0 = 7.35초.
-   쇼다운과 같은 값인 이유가 이것이다. 예전에는 "읽을 것이 승자 이름뿐"이라 짧게
-   뒀는데, 지금은 읽는 시간이 아니라 연출 길이가 이 값을 정한다.
-   (3초였을 때 "급하다", 5초로 늘려 2초쯤 남았고, 연출이 길어지며 여기까지 왔다.) */
-export const FOLD_END_SEC = 7;
-/* 사이드 팟을 하나 더 보여주는 데 드는 시간.
-   화면은 층마다 [WIN 배지 → 1.0초 대기 → 칩 이동 1.8초 → 더미 시차]를 재생한다.
-   2.9초쯤이라 3초다. 더 끌면 판이 늘어지고, 더 줄이면 칩이 도착하기 전에 다음 판이
-   시작돼 마지막 사이드 팟을 놓친다.
-   (첫 층의 대기 2.5초는 SHOWDOWN_SEC 쪽에 이미 들어 있다.) */
-export const SIDE_POT_STEP_SEC = 3;
+
+/** 판이 끝난 시점부터 다음 판이 시작되기까지 (초, 정수). */
+export function nextHandDelaySec(o: {
+  showdown: boolean; boardAtEnd: number; liveCount: number; extraPots: number;
+}): number {
+  const reveal = o.showdown && o.liveCount > 1 ? revealSec(o.boardAtEnd, o.liveCount) : 0;
+  const sides = Math.max(0, o.extraPots) * SIDE_POT_STEP_SEC;
+  return Math.round(reveal + SETTLE_TAIL_SEC + sides + NEXT_HAND_GAP_SEC);
+}
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
 
@@ -848,9 +839,10 @@ function endHand(
     return key(pa) === key(potAwards[i - 1]) ? n : n + 1;
   }, 0);
   const extraPots = showdown && live.length > 1 ? Math.max(0, shownLayers - 1) : 0;
-  const delay = showdown && live.length > 1
-    ? SHOWDOWN_SEC + revealExtraSec(boardAtEnd, live.length) + extraPots * SIDE_POT_STEP_SEC
-    : FOLD_END_SEC;
+  const delay = nextHandDelaySec({
+    showdown: showdown && live.length > 1,
+    boardAtEnd, liveCount: live.length, extraPots,
+  });
   run(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`, now + delay, table.id);
 }
 
