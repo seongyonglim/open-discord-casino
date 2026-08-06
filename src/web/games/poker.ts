@@ -763,9 +763,16 @@ export function pokerPage(user: WebUser): string {
           } else {
             rosterEl.innerHTML = players.map(function(p){
               var ini = esc((String(p.username||'?').trim()[0] || '?').toUpperCase());
+              /* 이미지가 실패하면 이니셜로 되돌린다. 디스코드에서 프로필을 바꾸면
+                 저장해 둔 주소는 404가 되는데(아바타 갱신은 다시 로그인할 때뿐이고
+                 세션이 60일 슬라이딩이라 그 사이 내내 죽은 주소다), 폴백이 없으면
+                 그 자리에 빈 원이 남는다. 클래스는 그대로 두어야 칩 연출이 이 자리를
+                 계속 찾는다(rosterAvatar가 .rw-av로 찾는다). */
+              var ph = '<span class="rw-av">'+ini+'</span>';
               var av = p.avatar
-                ? '<img class="rw-av" src="'+esc(p.avatar)+'" alt="" referrerpolicy="no-referrer">'
-                : '<span class="rw-av">'+ini+'</span>';
+                ? '<img class="rw-av" src="'+esc(p.avatar)+'" alt="" referrerpolicy="no-referrer"'
+                  + ' onerror="this.onerror=null;this.outerHTML='+esc(JSON.stringify(ph))+'">'
+                : ph;
               return '<div class="rw'+(p.user_id===st.me?' me':'')+'" data-uid="'+esc(p.user_id)+'">' +
                 av +
                 '<span class="rw-mid"><span class="rw-name">'+esc(p.username)+'</span>' +

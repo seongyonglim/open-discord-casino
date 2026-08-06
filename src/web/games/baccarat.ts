@@ -766,9 +766,14 @@ export function baccaratPage(user: WebUser): string {
           } else {
             rosterEl.innerHTML = players.map(function(p){
               var ini = esc((String(p.username||'?').trim()[0] || '?').toUpperCase());
+              /* 이미지가 실패하면 이니셜로 되돌린다 — 프로필을 바꾸면 저장된 주소가
+                 404가 되는데(갱신은 다시 로그인할 때뿐이다) 폴백이 없으면 빈 원이 남는다.
+                 클래스는 그대로 둔다: 칩 연출이 .rw-av로 이 자리를 찾는다. */
+              var ph = '<span class="rw-av">'+ini+'</span>';
               var av = p.avatar
-                ? '<img class="rw-av" src="'+esc(p.avatar)+'" alt="" referrerpolicy="no-referrer">'
-                : '<span class="rw-av">'+ini+'</span>';
+                ? '<img class="rw-av" src="'+esc(p.avatar)+'" alt="" referrerpolicy="no-referrer"'
+                  + ' onerror="this.onerror=null;this.outerHTML='+esc(JSON.stringify(ph))+'">'
+                : ph;
               return '<div class="rw'+(p.user_id===st.me?' me':'')+'" data-uid="'+esc(p.user_id)+'">' +
                 av +
                 '<span class="rw-mid"><span class="rw-name">'+esc(p.username)+'</span>' +
