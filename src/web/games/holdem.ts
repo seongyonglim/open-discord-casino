@@ -629,7 +629,12 @@ export function holdemPage(user: WebUser): string {
        그래서 판 자체를 본다: 상금이 걸린 판이면 아직 시작 전이어도 기다린다. */
     var WIN_POPUP_AFTER_MS = 500;
     function settleDone(tb){
-      if (potDoneAt) return Date.now() >= potDoneAt + WIN_POPUP_AFTER_MS;
+      /* potDoneAt은 반드시 이 판의 것이어야 한다. 판 번호를 같이 안 보면 직전 판에서
+         남은 값(이미 지난 시각)이 "이 판도 끝났다"로 읽힌다 — 실제로 그래서 마지막
+         판의 카드가 열리기도 전에 팝업이 떴다(실측 t=176.9초 팝업, t=178.0초 첫 핸드). */
+      if (potDoneHand === tb.handNo && potDoneAt) {
+        return Date.now() >= potDoneAt + WIN_POPUP_AFTER_MS;
+      }
       var r = tb.ended && tb.result;
       var payable = !!r && (((r.awards || []).length > 0) || ((r.potAwards || []).length > 0));
       return !payable;
@@ -1141,7 +1146,10 @@ export function holdemPage(user: WebUser): string {
               /* 방금 한 행동 — 프로필 사진 위에 잠깐 떴다 사라진다.
                  "누가"와 "무엇을"이 한 점에서 읽힌다. */
               '<span class="ht-abadge" hidden></span>' +
-              '<span class="ht-fold-b" title="폴드" hidden>F</span>' +
+              /* 폴드 F 배지는 없앴다. 접은 사람은 좌석이 통째로 흐려지고 아바타가
+                 흑백이 되며 카드도 어두워진다 — 세 겹으로 이미 말하고 있는 것을
+                 네 번째로 말하는 표시였고, 태그 오른쪽 위에 동그라미가 하나 더
+                 붙으면서 딜러 버튼·블라인드 배지와 같은 자리를 놓고 다퉜다. */
             '</div>' +
             '<div class="ht-plate">' +
               /* 배경을 따로 둔다 — 사다리꼴은 clip-path로 자르는데, 그걸 태그 자체에
@@ -1272,8 +1280,6 @@ export function holdemPage(user: WebUser): string {
           blind.textContent = role;
           blind.classList.toggle('bb', role === 'BB');
         }
-        var foldB = seatEl.querySelector('.ht-fold-b');
-        if (foldB) foldB.hidden = s.state !== 'folded';
         /* 자리 비움은 행동이 아니라 상태다 — 복귀할 때까지 계속 보여야 한다.
            예전에는 폴드하지 않은 사람에게만 띄웠다. 그런데 자리 비움이 되는 계기가
            "시간 초과로 자동 폴드"라서, 붙는 순간 폴드도 함께 붙어 표시가 곧바로 사라졌다.
@@ -2431,14 +2437,16 @@ export function holdemPage(user: WebUser): string {
     /* 핸드가 끝나면 팟이 승자에게 밀려간다. 한 판에 한 번만.
        중앙에 쌓인 칩을 지분대로 나눠 각 승자에게 보낸다. */
     var potPaidHand = null;
-    /* 마지막 층까지 흡수가 끝나는 시각(절대). 0이면 아직 진행 중이다.
+    /* 마지막 층까지 흡수가 끝나는 시각(절대)과 그게 어느 판의 것인지.
        우승 축하 팝업이 이 값을 기다린다 — 연출을 덮지 않으려면 시간이 아니라
-       연출 자체가 신호여야 한다. */
-    var potDoneAt = 0;
+       연출 자체가 신호여야 한다.
+       판 번호를 함께 두는 것이 중요하다. 시각만 보면 직전 판에서 남은 값(이미 지난
+       시각)이 다음 판에서도 "끝났다"로 읽힌다. */
+    var potDoneAt = 0, potDoneHand = null;
     function flyPotToWinners(tb){
       if (!tb.ended || !tb.result || potPaidHand === tb.handNo) return;
       potPaidHand = tb.handNo;
-      potDoneAt = 0;
+      potDoneAt = 0; potDoneHand = null;
       /* 판이 끝나는 순간에는 마지막 스트리트 베팅이 아직 중앙으로 모이는 중이다
          (칩이 날아오고 더미에 나타나기까지 약 420ms). 그게 끝난 뒤에 밀어야
          "모아서 넘겨준다"로 읽힌다 — 실제 딜러도 걷어서 한 박자 쉬고 넘긴다. */
@@ -2451,7 +2459,7 @@ export function holdemPage(user: WebUser): string {
         /* 보여줄 층이 하나도 없으면(승자가 화면 밖에 있는 등) 연출도 없다.
            그때는 여기서 끝났다고 표시해 둔다 — 안 그러면 potDoneAt이 영원히 0이라
            우승 축하 팝업이 링거가 끝날 때까지 붙들려 있는다. */
-        if (!pushPotToWinners(tb, forHand)) potDoneAt = Date.now();
+        if (!pushPotToWinners(tb, forHand)) { potDoneAt = Date.now(); potDoneHand = forHand; }
       }, 550);
     }
 
@@ -2525,7 +2533,7 @@ export function holdemPage(user: WebUser): string {
           if (!last) { setTimeout(step, landed); return; }
           /* 마지막 층까지 흡수됐다. 여기가 "이 판의 연출이 다 끝난" 시점이다 —
              우승 팝업이 이 신호를 기다린다(potDoneAt). */
-          potDoneAt = Date.now() + landed + POT_AFTER_MS;
+          potDoneAt = Date.now() + landed + POT_AFTER_MS; potDoneHand = forHand;
           /* 폴링(1초)을 기다리지 않고 그 시각에 직접 깨운다. 대회를 끝낸 판이라면
              여기가 곧 축하 팝업이 뜨는 시점이라(potDoneAt + 0.5초), 폴링에 맡기면
              같은 판인데도 최대 1초씩 들쭉날쭉해진다. */

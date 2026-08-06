@@ -1570,11 +1570,10 @@
   .ht-seat.folded .ht-nm,.ht-seat.folded .ht-stk{color:#8b8b8b}
   .ht-seat.folded .ht-hole{transform:translateX(-50%) scale(.8);transform-origin:bottom center}
   .ht-shell .pcard.mucked{filter:grayscale(1) brightness(.55);opacity:.5}
-  .ht-fold-b{position:absolute;left:auto;right:-3px;bottom:-1px;top:auto;z-index:6;
-    width:calc(var(--htAv) * .34);height:calc(var(--htAv) * .34);border-radius:50%;
-    background:#6b6b6b;color:#141414;font-size:calc(var(--htAv) * .2);font-weight:900;
-    display:flex;align-items:center;justify-content:center;
-    border:1.5px solid rgba(0,0,0,.4);box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  /* 폴드 F 배지(.ht-fold-b)는 없앴다. 접었다는 사실은 위 네 줄이 이미 말한다 —
+     좌석이 흐려지고, 아바타가 흑백이 되고, 태그가 어두워지고, 카드가 작아진다.
+     동그란 F를 하나 더 붙이면 다섯 번째 설명이고, 그 자리가 딜러 버튼·블라인드 배지와
+     겹치는 태그 모서리라 접은 사람 자리에만 동그라미가 두 개 붙었다. */
 
   /* ── 홀 카드 ────────────────────────────────────────────────────────
      카드는 두 상태 모두 아바타 앞이다(z 3 > 아바타 2). 카드를 가리는 것은 이름 태그뿐이다.
@@ -1700,7 +1699,7 @@
   .ht-puck::before{content:"";position:absolute;inset:13%;border-radius:50%;
     pointer-events:none;box-shadow:inset 0 0 0 1px rgba(120,112,94,.45)}
   /* display:flex가 있으면 hidden 속성이 무시된다 — 명시적으로 막아야 한다 */
-  .ht-puck[hidden],.ht-fold-b[hidden]{display:none}
+  .ht-puck[hidden]{display:none}
   .ht-puck.r{left:100%;transform:translate(3px,-50%)}
   .ht-puck.l{right:100%;transform:translate(-3px,-50%)}
   /* SB · BB 배지 — 딜러 버튼 반대쪽. 포지션이 보이지 않으면 프리플랍 행동 순서를 못 읽는다.
