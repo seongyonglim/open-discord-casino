@@ -48,16 +48,30 @@ export function actOpenAt(hand: { action_deadline: number | null }): number | nu
    보드가 덜 깔린 채로 끝난 판(올인)은 클라이언트가 남은 스트리트를 한 장씩 여는데,
    그 시간을 여기에 더해야 한다 — 아래 revealExtraSec가 그 몫이다. */
 export const SHOWDOWN_SEC = 6;
-/* 남은 보드를 한 장씩 여는 데 드는 추가 시간.
-   클라이언트(web/games/holdem.ts syncBoard)의 박자를 그대로 옮긴 것이다:
-     같은 스트리트 안 0.3초 · 스트리트가 바뀌면 1.5초.
-   두 곳이 어긋나면 마지막 카드를 열다가 다음 판이 시작된다.
-   그래서 스트리트 하나가 남을 때마다 2초를 준다(1.5초 + 카드 한 장 + 여유). */
-export function revealExtraSec(boardAtEnd: number): number {
-  if (boardAtEnd >= 5) return 0;   // 리버까지 이미 깔렸다 — 열 것이 없다
-  if (boardAtEnd === 4) return 2;  // 리버 한 장
-  if (boardAtEnd === 3) return 4;  // 턴 + 리버
-  return 6;                        // 플랍 세 장 + 턴 + 리버 (프리플랍 올인)
+/* 쇼다운 연출에 드는 추가 시간.
+   클라이언트(web/games/holdem.ts)의 박자를 그대로 옮긴 것이다. 두 곳이 어긋나면
+   마지막 카드를 열다가 다음 판이 시작된다 — 그래서 여기가 그 박자의 복사본이다.
+
+     첫 핸드까지     1.1초 (ACTION_HOLD_MS — 마지막 액션을 읽을 시간)
+     핸드 순차 공개  사람당 0.5초 (마지막 사람까지)
+     핸드 → 플랍     2.5초
+     플랍 → 턴       2.8초
+     턴 → 리버       3.0초
+     리버 스퀴즈     2.5초 (뒷면으로 놓고 왼쪽부터 벗긴다)
+
+   보드가 리버까지 이미 깔린 판에도 핸드 공개 시간이 든다. 예전에는 그 구간에서
+   승자 연출이 곧바로 시작됐기 때문에 이 값을 넉넉히 안 잡아도 티가 안 났는데,
+   이제는 마지막 핸드가 열린 뒤에야 정산이 시작하므로 그만큼 뒤로 밀린다.
+
+   여유 1초를 얹는다 — 폴링이 1초 간격이라 시작 자체가 최대 1초 늦을 수 있다. */
+export function revealExtraSec(boardAtEnd: number, liveCount = 2): number {
+  // 1.1초 + 사람당 0.5초. 초 단위로 올림한다 (서버 지연은 정수 초로만 잡는다)
+  const holes = 2 + Math.ceil(Math.max(0, liveCount - 1) * 0.5);
+  if (boardAtEnd >= 5) return holes + 1;             // 보드는 다 깔렸고 핸드만 연다
+  const squeeze = 3 + 3;                             // 턴 → 리버 3초 + 스퀴즈 2.5초(올림)
+  if (boardAtEnd === 4) return holes + squeeze + 1;
+  if (boardAtEnd === 3) return holes + 3 + squeeze + 1;          // 턴 2.8초(올림)
+  return holes + 3 + 3 + squeeze + 1;                            // 플랍 2.5초(올림)까지
 }
 /* 폴드로 끝난 판.
    3초였는데 다시 "급하다"는 말이 나왔다. 계산해 보면 실제로 3초가 남지 않는다:
@@ -822,7 +836,7 @@ function endHand(
   }, 0);
   const extraPots = showdown && live.length > 1 ? Math.max(0, shownLayers - 1) : 0;
   const delay = showdown && live.length > 1
-    ? SHOWDOWN_SEC + revealExtraSec(boardAtEnd) + extraPots * SIDE_POT_STEP_SEC
+    ? SHOWDOWN_SEC + revealExtraSec(boardAtEnd, live.length) + extraPots * SIDE_POT_STEP_SEC
     : FOLD_END_SEC;
   run(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`, now + delay, table.id);
 }

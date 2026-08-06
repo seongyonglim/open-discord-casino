@@ -44,6 +44,58 @@ function get(path: string, cookie: string): Promise<{ status: number; text: stri
   });
 }
 
+/* 문자열·주석·정규식 리터럴을 걷어낸다.
+   이 코드베이스의 인라인 스크립트는 HTML과 CSS를 문자열로 들고 있어서, 걷어내지 않으면
+   그 안의 CSS 함수(calc·var)와 셀렉터(:not)가 전부 JS 호출로 보인다.
+
+   정규식도 반드시 같이 걷어야 한다. 처음에는 "정규식 안의 괄호가 유령 이름을 만들
+   확률은 없다"고 보고 놔뒀는데, 문제는 괄호가 아니라 따옴표였다 —
+   /["\\]/g 의 " 가 문자열 시작으로 먹히면서 거기서 다음 " 까지가 통째로 지워졌고,
+   그 구간에 있던 function 선언들이 사라져 멀쩡한 함수가 유령으로 잡혔다.
+
+   나눗셈과 정규식은 직전 토큰으로 가른다: 값이 올 수 없는 자리(여는 괄호·연산자·
+   return 같은 키워드 뒤)에 오는 / 는 정규식이다. */
+function stripLits(s: string): string {
+  const KW = /(?:^|[^\w$])(return|typeof|case|in|of|delete|void|instanceof|do|else|yield|await|new)$/;
+  let out = '';
+  for (let i = 0; i < s.length; ) {
+    const c = s[i];
+    if (c === '/' && s[i + 1] === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
+    if (c === '/' && s[i + 1] === '*') {
+      i += 2;
+      while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++;
+      i += 2; continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      i++;
+      while (i < s.length && s[i] !== c) { if (s[i] === '\\') i++; i++; }
+      i++; out += '""'; continue;
+    }
+    if (c === '/') {
+      const t = out.replace(/\s+$/, '');
+      const isRe = t === '' || KW.test(t) || '(,=:[!&|?{};+-*%~^<'.indexOf(t.slice(-1)) >= 0;
+      if (isRe) {
+        i++;
+        let cls = false;
+        while (i < s.length) {
+          const d = s[i];
+          if (d === '\\') { i += 2; continue; }
+          if (d === '\n') break;
+          if (d === '[') cls = true;
+          else if (d === ']') cls = false;
+          else if (d === '/' && !cls) break;
+          i++;
+        }
+        i++;                                              // 닫는 /
+        while (i < s.length && /[gimsuyd]/.test(s[i])) i++;   // 플래그
+        out += '0'; continue;
+      }
+    }
+    out += c; i++;
+  }
+  return out;
+}
+
 /* 게임 화면은 전부 인라인 스크립트를 갖는다(needsJs). 로비·순위표·공지는 정적이라
    스크립트가 없는 게 정상이므로 "스크립트가 있는가"는 게임 쪽에만 묻는다.
    그래도 페이지는 다 받아본다 — 렌더 중 예외가 나면 여기서 잡힌다.
@@ -95,6 +147,52 @@ async function main(): Promise<void> {
       }
     });
     ck(`${p} — 인라인 스크립트 파싱 성공`, bad === '', bad);
+
+    /* 부르는 함수가 실제로 있는가.
+       파싱 검사로는 못 잡는다 — new Function은 본문을 컴파일만 하고 실행하지 않으므로
+       없는 이름을 부르는 코드도 멀쩡히 통과한다. 브라우저에서도 그 줄에 닿기 전까지는
+       조용하다. 실제로 함수를 지우면서 호출부 한 줄을 남긴 적이 있는데(showPotLabel),
+       그 호출이 setTimeout 콜백 안이라 ReferenceError가 콘솔 밖으로 나오지도 않고
+       뒤따르던 WIN 배지 표시가 통째로 죽었다. 칩은 다른 타이머라 그대로 날아갔고,
+       그래서 "배지만 안 뜨는" 증상으로 몇 주를 지나갔다.
+
+       선언으로 치는 것: function 이름 · var/let/const · 대입 · 함수 파라미터.
+       이만큼만 모아도 남는 것은 진짜로 아무 데도 없는 이름이다. */
+    const KNOWN = new Set(('if,for,while,switch,catch,return,typeof,function,new,do,else,' +
+      'delete,void,in,of,instanceof,case,throw,await,yield,try,with,' +
+      'Math,JSON,Number,String,Boolean,Array,Object,Date,RegExp,Error,Promise,Map,Set,' +
+      'Symbol,URL,URLSearchParams,Intl,AbortController,CustomEvent,Event,Audio,Image,' +
+      'parseInt,parseFloat,isNaN,isFinite,setTimeout,setInterval,clearTimeout,clearInterval,' +
+      'requestAnimationFrame,cancelAnimationFrame,queueMicrotask,structuredClone,fetch,' +
+      'encodeURIComponent,decodeURIComponent,encodeURI,decodeURI,escape,unescape,btoa,atob,' +
+      'alert,confirm,prompt,eval,console,document,window,navigator,location,history,' +
+      'localStorage,sessionStorage,performance,getComputedStyle,matchMedia,scrollTo').split(','));
+    let ghosts: string[] = [];
+    blocks.forEach(raw => {
+      /* 문자열과 주석을 먼저 걷어낸다. 안 걷어내면 CSS가 통째로 호출문으로 보인다 —
+         'calc(...)' 'var(--htAv)' ':not([hidden])' 이 전부 "이름 뒤에 여는 괄호"다.
+         (실제로 처음 돌렸을 때 calc·var·not·POT이 유령으로 잡혔다.) */
+      const b = stripLits(raw);
+      const declared = new Set<string>();
+      const add = (re: RegExp, g = 1) => {
+        for (const m of b.matchAll(re)) if (m[g]) declared.add(m[g]);
+      };
+      add(/function\s+([A-Za-z_$][\w$]*)/g);
+      add(/(?:var|let|const)\s+([A-Za-z_$][\w$]*)/g);
+      add(/,\s*([A-Za-z_$][\w$]*)\s*(?:=|[,;])/g);              // var a = 1, b = 2
+      add(/(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*=[^=]/gm);          // 대입도 선언으로 친다
+      for (const m of b.matchAll(/function\s*[\w$]*\s*\(([^)]*)\)/g))
+        for (const t of m[1].split(',')) {
+          const n = t.trim();
+          if (/^[A-Za-z_$][\w$]*$/.test(n)) declared.add(n);
+        }
+      for (const m of b.matchAll(/(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+        const n = m[1];
+        if (declared.has(n) || KNOWN.has(n)) continue;
+        if (ghosts.indexOf(n) < 0) ghosts.push(n);
+      }
+    });
+    ck(`${p} — 없는 함수를 부르지 않음`, ghosts.length === 0, ghosts.slice(0, 5).join(' '));
 
     /* 닫는 태그의 슬래시가 이스케이프로 먹힌 흔적.
        파싱 검사로는 절대 못 잡는 종류다 — '<\tbody>'는 완벽하게 유효한 JS 문자열이고
