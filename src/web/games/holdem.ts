@@ -2453,7 +2453,7 @@ export function holdemPage(user: WebUser): string {
     function flyPotToWinners(tb){
       if (!tb.ended || !tb.result || potPaidHand === tb.handNo) return;
       potPaidHand = tb.handNo;
-      potDoneAt = 0; potDoneHand = null;
+      potDoneAt = 0; potDoneHand = null; hiSeats = null;
       /* 판이 끝나는 순간에는 마지막 스트리트 베팅이 아직 중앙으로 모이는 중이다
          (칩이 날아오고 더미에 나타나기까지 약 420ms). 그게 끝난 뒤에 밀어야
          "모아서 넘겨준다"로 읽힌다 — 실제 딜러도 걷어서 한 박자 쉬고 넘긴다. */
@@ -2598,9 +2598,16 @@ export function holdemPage(user: WebUser): string {
     /* 이 판에서 WIN 배지가 이미 떴나. 승률 말풍선이 이 값을 보고 물러난다 —
        배지와 말풍선은 같은 자리를 놓고 다투는 것이 아니라 바통을 주고받는 관계다. */
     var badgeShownHand = null;
+    /* 지금 정산 중인 층의 승자들. syncHighlight가 이 자리들의 5장만 밝힌다 —
+       층과 칩이 1:1로 움직여야 "이 손이 이 팟을 가져갔다"가 읽힌다.
+       null이면 아직 층이 정해지기 전이라는 뜻이다(새 판마다 되돌린다). */
+    var hiSeats = null;
     function showWinBadges(tb, pa){
       var win = {};
       pa.winners.forEach(function(w){ win[w.seat] = 1; });
+      hiSeats = win;
+      // 이 층으로 하이라이트를 옮긴다 — 팟 사슬에서 불리므로 여기서 직접 다시 그린다
+      if (st && st.table) syncHighlight(st.table, boardRevealed ? st.table.myHand : null);
       /* 배지가 뜨는 이 순간에 말풍선을 내린다. syncEquity는 renderSeats 안에서만
          도는데 이 함수는 팟 사슬에서 불리므로, 여기서 직접 한 번 걷어 준다.
          (안 그러면 다음 폴링까지 최대 1초 동안 배지와 말풍선이 같이 떠 있다.) */
@@ -3072,9 +3079,28 @@ export function holdemPage(user: WebUser): string {
       var reveal = (tb.ended && resultReady() && tb.result && tb.result.reveal) || [];
       var awards = (tb.ended && resultReady() && tb.result && tb.result.awards) || [];
       if (reveal.length && awards.length) {
-        // 팟을 받은 자리 중 공개된 사람 = 이긴 손. 분할 팟이면 여럿일 수 있다.
-        var wonSeats = {};
-        awards.forEach(function(a){ if (a.amount > 0) wonSeats[a.seat] = 1; });
+        /* 팟을 받은 자리 중 공개된 사람 = 이긴 손. 분할 팟이면 여럿일 수 있다.
+
+           사이드 팟이 있으면 "지금 정산 중인 층"의 승자만 밝힌다. 예전에는 층과
+           무관하게 상금을 받은 사람을 전부 한꺼번에 밝혔다 — 세 층을 세 사람이
+           나눠 가지는 판에서 카드가 동시에 셋 빛나고, 그 뒤에 칩만 하나씩 날아갔다.
+           어느 5장이 어느 팟을 가져갔는지가 끊긴다.
+           이제 [이 층 승자의 5장 → 이 층 칩] 이 한 쌍으로 움직인다.
+
+           hiSeats는 showWinBadges가 층마다 갱신한다. 아직 정산 전이면(첫 하이라이트)
+           서버가 준 첫 층으로 시작한다 — 화면도 그 층부터 재생한다. */
+        var wonSeats = hiSeats;
+        if (!wonSeats) {
+          var pa0 = (tb.result.potAwards || [])[0];
+          if (pa0 && pa0.winners) {
+            wonSeats = {};
+            pa0.winners.forEach(function(w){ wonSeats[w.seat] = 1; });
+          }
+        }
+        if (!wonSeats) {
+          wonSeats = {};
+          awards.forEach(function(a){ if (a.amount > 0) wonSeats[a.seat] = 1; });
+        }
         var five = [], winnerCards = [];
         reveal.forEach(function(r){
           if (!wonSeats[r.seat]) return;
@@ -3361,15 +3387,76 @@ export function holdemPage(user: WebUser): string {
         .catch(function(){ return { ok: false, d: null }; });
     }
     var polling = false;
+    /* ── 다음 판을 제때 깨운다 ───────────────────────────────────────
+       이 게임에는 서버 타이머가 없다. 판이 끝나면 서버는 "다음 판은 이 시각 이후"만
+       적어 두고(next_hand_at), 실제 진행은 누군가 요청을 보낼 때 일어난다.
+       그래서 폴링이 1초 간격이면 그 시각이 지나도 최대 1초를 더 서 있게 된다 —
+       연출은 이미 끝나고 화면이 멈춘 구간이라 그 1초가 고스란히 "느리다"가 된다.
+
+       서버가 남은 시간(nextHandIn)을 같이 내려주므로, 그 시각에 한 번 직접 폴을 쏜다.
+       판마다 한 번만 건다(핸드 번호로 기억). 40ms를 얹는 것은 초 단위로 내려온 값이
+       올림·내림으로 아주 살짝 이를 수 있어서다 — 이르면 서버가 그냥 무시하고,
+       그러면 다음 1초 틱까지 또 기다리게 된다. */
+    var pokeHand = null, pokeTimer = null;
+    function nextHandPoke(){
+      var tb = st && st.table;
+      if (!tb || !tb.ended || tb.nextHandIn == null) return;
+      if (pokeHand === tb.handNo) return;
+      pokeHand = tb.handNo;
+      clearTimeout(pokeTimer);
+      pokeTimer = setTimeout(poll, tb.nextHandIn * 1000 + 40);
+    }
+
+    /* ── 정산 연출 잠금 ──────────────────────────────────────────────
+       다음 판이 서버에서 이미 시작됐더라도, 이쪽 화면의 정산 연출이 끝나기 전에는
+       그 상태를 그리지 않는다. 받아 두고(queued) 연출이 끝난 뒤에 한 번에 반영한다.
+
+       서버 지연은 연출 길이를 계산해서 잡지만 그건 예측이다. 탭이 백그라운드로
+       내려가 타이머가 눌리거나, 네트워크가 한 번 튀거나, 느린 기기에서 애니메이션이
+       밀리면 예측보다 늦게 끝난다. 그때 새 판이 그대로 그려지면 칩이 날아가던
+       중간에 테이블이 갈아엎어진다 — 정산이 통째로 사라진 것처럼 보인다.
+
+       잠금은 반드시 스스로 풀려야 한다. potDoneAt은 정산 사슬이 세우는 값이라
+       사슬이 어디선가 죽으면 영영 0으로 남는다. 그래서 잠긴 지 LOCK_MAX_MS가 지나면
+       무조건 놓아준다 — 연출이 잘리는 것보다 화면이 멈추는 쪽이 훨씬 나쁘다. */
+    var LOCK_MAX_MS = 20000;
+    var queued = null, lockedSince = 0;
+    function settleBusy(next){
+      var tb = st && st.table;
+      if (!tb || !tb.ended) return false;
+      if (!next || !next.table || next.table.handNo === tb.handNo) return false;
+      if (potPaidHand !== tb.handNo) return false;          // 정산이 시작도 안 했다
+      if (potDoneAt && Date.now() >= potDoneAt) return false; // 흡수 + 여유까지 끝났다
+      if (lockedSince && Date.now() - lockedSince > LOCK_MAX_MS) return false;
+      return true;
+    }
+    function apply(d){
+      st = d;
+      render();
+      nextHandPoke();
+      if (st.table && st.table.legal) runPreAction();
+    }
+    function flushQueued(){
+      if (!queued) return;
+      var d = queued; queued = null; lockedSince = 0;
+      apply(d);
+    }
     function poll(){
       if (polling) return Promise.resolve();
       polling = true;
       return fetch('/api/games/holdem/state').then(function(r){ return r.json(); })
         .then(function(d){
           if (!d || !d.ok) return;
-          st = d;
-          render();
-          if (st.table && st.table.legal) runPreAction();
+          if (settleBusy(d)) {
+            queued = d;
+            if (!lockedSince) lockedSince = Date.now();
+            /* 연출이 끝나는 시각에 맞춰 스스로 깨운다. potDoneAt이 아직 없으면
+               (사슬이 진행 중) 다음 폴링이 다시 들여다본다. */
+            if (potDoneAt) setTimeout(flushQueued, Math.max(0, potDoneAt - Date.now()) + 40);
+            return;
+          }
+          queued = null; lockedSince = 0;
+          apply(d);
         })
         .catch(function(){ /* 일시적 실패는 다음 폴링에서 회복된다 */ })
         .then(function(){ polling = false; });
