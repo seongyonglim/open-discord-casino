@@ -41,13 +41,16 @@ export function kstTimeToUnix(dateStr: string, hour: number, minute: number): nu
 
 /* ── 일정 ────────────────────────────────────────────────────────────
    하루에 토너먼트 하나. 평일은 배수 1,000P · 주말은 2,000P.
-   등록 21:00 · 예정 시작 22:00 · 최소 인원 대기 마감 22:20. */
+   등록 21:00 · 예정 시작 22:00 · 최소 인원 대기 마감 23:00. */
 export const REG_OPEN_HOUR = 21;
 export const START_HOUR = 22;
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 9;
-/** 최소 인원이 안 채워졌을 때 기다리는 시간 */
-export const GRACE_SEC = 20 * 60;
+/* 최소 인원이 안 채워졌을 때 기다리는 시간.
+   20분(22:20 마감)이었는데 너무 짧았다. 3명은 커뮤니티 규모에 비하면 낮은 문턱인데도
+   22시 정각에 모이지 못하면 20분 만에 판이 없어졌다 — 늦게 들어온 사람은 "오늘은
+   이미 끝났다"만 보게 된다. 한 시간을 주면 22시를 놓쳐도 그날 안에 합류할 수 있다. */
+export const GRACE_SEC = 60 * 60;
 /** 실제 시작 시각부터 이 시간까지 늦은 등록 허용 */
 export const LATE_REG_SEC = 24 * 60;
 export const STARTING_STACK = 10_000;
