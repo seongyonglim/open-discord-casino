@@ -8,6 +8,8 @@ import { findNotice } from './notices';
 import { setRequestUser, LOGO_SVG } from './views';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
+import { adminResetRunningTournament } from '../db/holdem';
+import { env } from '../env';
 import { handleInteractions } from '../discord/interactions';
 import { sendJson, sendBody, markEncoding, acceptsGzip } from './http';
 import { ASSET_V } from './assets';
@@ -351,6 +353,22 @@ export function startWebServer(): void {
       if (path === '/api/games/holdem/show' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await htShow(req, res, me.id);
+      }
+      /* 진행 중인 대회를 "방금 시작한 상태"로 되감는다. 관리자만.
+         서버가 죽거나 심하게 느려서 판이 제대로 굴러가지 못한 날을 구제하는 용도다 —
+         취소하고 새로 열면 모인 사람이 흩어지므로, 사람은 두고 판만 되감는다.
+
+         두 겹으로 잠근다: 로그인한 admin 이면서, 시크릿 ADMIN_TOKEN 과 맞는 헤더를
+         함께 보내야 한다. 실수로 눌러서 남의 대회를 되감는 일이 없어야 하고,
+         세션 하나가 새더라도 그것만으로는 못 쓰게 한다.
+         ADMIN_TOKEN 이 비어 있으면 아예 막는다 — 빈 값과 빈 헤더가 우연히 같아지는
+         경로를 남기지 않는다. */
+      if (path === '/api/admin/holdem/reset' && req.method === 'POST') {
+        const token = env('ADMIN_TOKEN');
+        const given = String(req.headers['x-admin-token'] ?? '');
+        if (!me || me.role !== 'admin') return sendJson(res, 404, { error: 'not found' });
+        if (!token || given !== token) return sendJson(res, 403, { error: '토큰이 필요합니다' });
+        return sendJson(res, 200, adminResetRunningTournament());
       }
 
       notFound(res);

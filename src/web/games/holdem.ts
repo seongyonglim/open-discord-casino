@@ -3459,10 +3459,19 @@ export function holdemPage(user: WebUser): string {
       var d = queued; queued = null; lockedSince = 0;
       apply(d);
     }
+    /* 응답이 안 오는 요청 하나가 폴링을 영영 잠그지 못하게 한다.
+       polling 자물쇠는 "앞 요청이 끝나기 전에는 다음 요청을 안 보낸다"는 뜻인데,
+       그 요청이 영원히 안 끝나면 자물쇠도 영원히 안 풀린다 — 서버가 잠깐 멈췄다가
+       돌아와도 화면은 계속 죽어 있게 된다. 서버가 OOM으로 죽었을 때 실제로 그랬다.
+       8초면 정상 응답(0.13초)의 60배다. 그보다 늦는 응답은 이미 쓸모가 없다. */
+    var POLL_TIMEOUT_MS = 8000;
     function poll(){
       if (polling) return Promise.resolve();
       polling = true;
-      return fetch('/api/games/holdem/state').then(function(r){ return r.json(); })
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var killer = ctl && setTimeout(function(){ ctl.abort(); }, POLL_TIMEOUT_MS);
+      return fetch('/api/games/holdem/state', ctl ? { signal: ctl.signal } : undefined)
+        .then(function(r){ clearTimeout(killer); return r.json(); })
         .then(function(d){
           if (!d || !d.ok) return;
           if (settleBusy(d)) {
