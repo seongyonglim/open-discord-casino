@@ -723,6 +723,99 @@ auditStats('블랙잭 후');
    운영 화면은 사람이 눌러서 데이터를 지우는 자리다. 위험한 조건을 화면이 아니라
    db/admin.ts 가 막는지 여기서 확인한다 — 화면에서만 막으면 API 를 직접 부르는
    순간 뚫린다. */
+/* ── 시즌별 보상 ────────────────────────────────────────────────────
+   8월 10일에 시즌 1이 열리면 보상이 오른다. 미리 넣어 둔 코드라, 두 가지가 동시에
+   참이어야 한다: 오늘(시즌 0)은 아무것도 달라지지 않을 것, 시즌이 넘어가는 순간
+   정확히 새 금액이 나올 것. 하나만 맞으면 예고보다 먼저 오르거나 당일에 안 오른다. */
+section('[8b] 시즌별 보상 금액');
+{
+  const R = require('../src/services/rewards') as typeof import('../src/services/rewards');
+  const E = require('../src/services/economy') as typeof import('../src/services/economy');
+  const RL = require('../src/services/relief') as typeof import('../src/services/relief');
+  const S = require('../src/db/settings') as typeof import('../src/db/settings');
+  const SE = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const db = getDb();
+
+  /* 표 자체 — 숫자를 직접 확인한다. 배수로 짜지 않고 금액을 그대로 적은 이유가
+     "보면 바로 안다"이므로, 검사도 그 금액을 그대로 적는다. */
+  const s0 = R.rewardsForSeason(0), s1 = R.rewardsForSeason(1);
+  ck('시즌 0 출석 1,000 / 2,000', s0.daily === 1000 && s0.dailyWeekend === 2000);
+  ck('시즌 0 개근 5,000 / 10,000', s0.weeklyStreak === 5000 && s0.monthlyStreak === 10_000);
+  ck('시즌 0 지원금 200', s0.relief === 200);
+  ck('시즌 0 프리롤 1,000 / 2,000',
+    s0.freerollPerHead === 1000 && s0.freerollPerHeadWeekend === 2000);
+
+  ck('시즌 1 출석 5,000 / 10,000', s1.daily === 5000 && s1.dailyWeekend === 10_000);
+  ck('시즌 1 개근 25,000 / 50,000', s1.weeklyStreak === 25_000 && s1.monthlyStreak === 50_000);
+  ck('시즌 1 지원금 1,000', s1.relief === 1000);
+  ck('시즌 1 프리롤 5,000 / 10,000',
+    s1.freerollPerHead === 5000 && s1.freerollPerHeadWeekend === 10_000);
+  ck('전부 정확히 다섯 배다 (공지한 그대로)',
+    s1.daily === s0.daily * 5 && s1.dailyWeekend === s0.dailyWeekend * 5
+    && s1.weeklyStreak === s0.weeklyStreak * 5 && s1.monthlyStreak === s0.monthlyStreak * 5
+    && s1.relief === s0.relief * 5 && s1.freerollPerHead === s0.freerollPerHead * 5
+    && s1.freerollPerHeadWeekend === s0.freerollPerHeadWeekend * 5);
+
+  /* 표에 없는 시즌은 앞의 값을 잇는다. 시즌 2가 열리는 순간 보상이 0이 되거나
+     오픈베타 값으로 되돌아가면 안 된다 — 표를 안 적었다고 서비스가 무너지면 곤란하다. */
+  ck('표에 없는 시즌 2는 시즌 1 값을 잇는다', R.rewardsForSeason(2).daily === s1.daily);
+  ck('표에 없는 시즌 9도 시즌 1 값을 잇는다', R.rewardsForSeason(9).relief === s1.relief);
+
+  /* 지금(시즌 0)은 아무것도 달라지지 않아야 한다 — 예고보다 먼저 오르면 안 된다. */
+  for (const t of ['season_stats', 'season_results', 'seasons']) db.prepare(`DELETE FROM ${t}`).run();
+  const cur = SE.currentSeason();
+  ck('지금은 시즌 0 이다', cur.number === 0, String(cur.number));
+  ck('출석이 아직 1,000 이다', E.dailyWeekday() === 1000, String(E.dailyWeekday()));
+  ck('지원금이 아직 200 이다', RL.reliefAmount() === 200, String(RL.reliefAmount()));
+  db.prepare(`DELETE FROM holdem_settings`).run();
+  ck('프리롤 기본 배수가 아직 1,000 이다', S.defaultConfig().weekdayMultiplier === 1000,
+    String(S.defaultConfig().weekdayMultiplier));
+
+  /* 시즌을 닫으면 그 순간부터 새 금액이 나온다 — 배포도, 값 수정도 필요 없다. */
+  ck('시즌을 닫는다', SE.closeSeason({ seed: 0 }).ok);
+  ck('이제 시즌 1 이다', SE.currentSeason().number === 1, String(SE.currentSeason().number));
+  ck('출석이 5,000 이 된다', E.dailyWeekday() === 5000, String(E.dailyWeekday()));
+  ck('주말 출석이 10,000 이 된다', E.dailyWeekend() === 10_000, String(E.dailyWeekend()));
+  ck('주간 개근이 25,000 이 된다', E.weeklyStreakBonus() === 25_000);
+  ck('월간 개근이 50,000 이 된다', E.monthlyStreakBonus() === 50_000);
+  ck('지원금이 1,000 이 된다', RL.reliefAmount() === 1000, String(RL.reliefAmount()));
+  ck('프리롤 기본 배수가 5,000 이 된다', S.defaultConfig().weekdayMultiplier === 5000,
+    String(S.defaultConfig().weekdayMultiplier));
+  // 안내 문구도 같은 숫자를 말해야 한다 — 여기가 갈리면 공지와 실제가 어긋난다
+  ck('안내 문구도 새 금액을 말한다', E.rewardSummary().indexOf('5,000P') >= 0, E.rewardSummary());
+
+  /* 운영자가 저장해 둔 값은 코드가 덮지 않는다. 다만 그 사실을 화면이 말해야 한다 —
+     조용히 옛 금액으로 대회가 열리면 공지와 어긋난 채로 굴러간다. */
+  S.saveConfig({ ...S.defaultConfig(), weekdayMultiplier: 1000, weekendMultiplier: 2000 });
+  ck('저장된 값이 기본값을 이긴다', S.getConfig().weekdayMultiplier === 1000);
+  const behind = S.multiplierBehindSeason();
+  ck('뒤처진 것을 알아챈다', behind != null && behind.now === 1000 && behind.expected === 5000,
+    JSON.stringify(behind));
+  S.saveConfig({ ...S.defaultConfig(), weekdayMultiplier: 5000, weekendMultiplier: 10_000 });
+  ck('맞춰 두면 더 이상 알리지 않는다', S.multiplierBehindSeason() == null);
+
+  /* [기본값으로]가 반복 개최까지 지우면 안 된다. 예전에는 표를 통째로 비워서
+     켜 둔 반복이 꺼지고, "이미 만든 차례" 표시가 사라져 지운 대회가 되살아났다. */
+  const RC = require('../src/db/recurrence') as typeof import('../src/db/recurrence');
+  RC.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+  db.prepare(`INSERT INTO holdem_settings (key, value, updated_at)
+              VALUES ('recurLastAt', '12345', unixepoch())
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run();
+  S.resetConfig();
+  ck('되돌려도 반복 개최는 그대로다', RC.getRecurrence().enabled === true);
+  ck('되돌려도 만든 차례 표시가 남는다',
+    (db.prepare(`SELECT value FROM holdem_settings WHERE key='recurLastAt'`)
+      .get() as { value: string } | undefined)?.value === '12345');
+  ck('되돌리면 템플릿 값은 지워진다', S.getConfig().weekdayMultiplier === 5000,
+    String(S.getConfig().weekdayMultiplier));
+
+  // 뒷정리 — 다음 검사가 시즌 1에서 시작하지 않게 되돌린다
+  for (const t of ['season_stats', 'season_results', 'seasons', 'holdem_settings']) {
+    db.prepare(`DELETE FROM ${t}`).run();
+  }
+  ck('뒷정리 후 다시 시즌 0', SE.currentSeason().number === 0);
+}
+
 section('[9] 운영자 동작');
 {
   const A = require('../src/db/admin') as typeof import('../src/db/admin');
@@ -888,7 +981,7 @@ section('[9] 운영자 동작');
     const got = relief.claim('ad_poor');
     ck('음수여도 지원금을 받을 수 있다 (막다른 길이 아니다)', got.ok, JSON.stringify(got));
     ck('받은 만큼 빚이 줄어든다 (0으로 지워지지 않는다)',
-      bal('ad_poor') === -500 + relief.RELIEF_AMOUNT, String(bal('ad_poor')));
+      bal('ad_poor') === -500 + relief.reliefAmount(), String(bal('ad_poor')));
     // 진행 중인 판은 회수도 거절한다
     db.prepare(`INSERT INTO holdem_tournaments
         (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier, started_at)

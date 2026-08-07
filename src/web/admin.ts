@@ -20,7 +20,7 @@ import {
   cancelRunningTournament, searchUsers, grantPoints, userLedger,
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
-import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
+import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason } from '../db/settings';
 import {
   getRecurrence, saveRecurrence, nextOccurrence, WEEKDAY_LABEL, MODE_LABEL,
   type RecurMode,
@@ -95,6 +95,10 @@ export function adminPage(user: WebUser): string {
 
   const cfg = getConfig();
   const d = defaultConfig();
+  /* 시즌이 올라 기본 상금이 커졌는데 저장된 값만 옛날에 머물러 있는 경우.
+     저장된 값을 코드가 덮지는 않지만(운영자가 명시한 값이다), 공지한 금액과 실제가
+     어긋난 채로 조용히 굴러가면 안 되므로 화면에서 말한다. */
+  const behind = multiplierBehindSeason();
   /* 잠그는 것은 "돌고 있는 판"이 있을 때뿐이다. 대기 중인 정규 판까지 막았더니 그 판이
      늘 앉아 있어서 임시 판을 영영 만들 수 없었다 — 지우면 1초 안에 되살아났다. */
   const live = ts.find(live2) ?? null;
@@ -314,6 +318,12 @@ export function adminPage(user: WebUser): string {
         <label>시작 칩<span class="ad-inx"><input type="number" id="cfStack" min="1" step="500" value="${cfg.startingStack}"><b>칩</b></span><i></i></label>
         <label>블라인드 주기<span class="ad-inx"><input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><b>분</b></span><i>마지막 레벨(16)까지 ${cfg.levelMin * 15}분</i></label>
       </div>
+      ${behind
+        ? `<p class="ad-warn"><b>시즌이 바뀌어 기본 상금이 올랐습니다.</b>
+             지금 저장된 평일 배수는 ${num(behind.now)}P인데, 이 시즌의 기본값은 ${num(behind.expected)}P입니다.
+             저장된 값이 우선하므로 <b>대회는 아직 ${num(behind.now)}P로 열립니다.</b>
+             공지한 금액과 맞추려면 아래에서 값을 고치거나 [기본값으로]를 누르세요.</p>`
+        : ''}
       <div class="ad-sub2">참가 방식과 상금 풀 <span>순위별 분배(ITM 비율)는 고정입니다 — 여기서는 풀의 크기만 정합니다</span></div>
       <div class="ad-grid">
         <label>참가 방식<select id="cfKind">

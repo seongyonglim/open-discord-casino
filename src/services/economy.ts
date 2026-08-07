@@ -1,17 +1,20 @@
 // 출석/포인트 이코노미 — KST(서울) 기준 날짜로 하루 1회 출석, 주말 2배, 연속출석 보너스
 import { getWebUser, performCheckIn, upsertUser, type PointsGrant } from '../db/queries';
+import { rewards } from './rewards';
 
-export const DAILY_WEEKDAY = 1000;
-export const DAILY_WEEKEND = 2000;
-export const WEEKLY_STREAK_BONUS = 5000;
-export const MONTHLY_STREAK_BONUS = 10000;
+/* 시즌마다 줄 금액은 services/rewards 의 표에 있다. 여기서 곱하거나 더하지 않는다 —
+   실제 지급액이 두 곳의 계산을 거치면 어느 쪽이 진짜인지 알 수 없게 된다. */
+export const dailyWeekday = () => rewards().daily;
+export const dailyWeekend = () => rewards().dailyWeekend;
+export const weeklyStreakBonus = () => rewards().weeklyStreak;
+export const monthlyStreakBonus = () => rewards().monthlyStreak;
 
 // 출석판·안내 문구는 반드시 이 함수로 만든다. 문자열에 숫자를 직접 적어두면
 // 보상을 조정할 때 한쪽만 고쳐서 실제 지급액과 안내가 어긋난다.
 export function rewardSummary(): string {
   const p = (n: number) => n.toLocaleString('ko-KR');
-  return `평일 ${p(DAILY_WEEKDAY)}P · 주말 ${p(DAILY_WEEKEND)}P · `
-    + `7일 연속 +${p(WEEKLY_STREAK_BONUS)}P · 30일 연속 +${p(MONTHLY_STREAK_BONUS)}P`;
+  return `평일 ${p(dailyWeekday())}P · 주말 ${p(dailyWeekend())}P · `
+    + `7일 연속 +${p(weeklyStreakBonus())}P · 30일 연속 +${p(monthlyStreakBonus())}P`;
 }
 
 function kstDateStr(ms: number): string {
@@ -48,14 +51,14 @@ export function checkIn(userId: string, username: string, avatar: string | null)
   const newStreak = user.last_checkin_date === yesterday ? user.current_streak + 1 : 1;
 
   const grants: PointsGrant[] = [
-    { reason: 'attendance', delta: isKstWeekend(now) ? DAILY_WEEKEND : DAILY_WEEKDAY },
+    { reason: 'attendance', delta: isKstWeekend(now) ? dailyWeekend() : dailyWeekday() },
   ];
   // 주간·월간 보너스는 서로 독립이다. 210일처럼 7과 30의 공배수인 날에는 둘 다 지급한다.
   if (newStreak % 7 === 0) {
-    grants.push({ reason: 'weekly_streak_bonus', delta: WEEKLY_STREAK_BONUS });
+    grants.push({ reason: 'weekly_streak_bonus', delta: weeklyStreakBonus() });
   }
   if (newStreak % 30 === 0) {
-    grants.push({ reason: 'monthly_streak_bonus', delta: MONTHLY_STREAK_BONUS });
+    grants.push({ reason: 'monthly_streak_bonus', delta: monthlyStreakBonus() });
   }
 
   const balance = performCheckIn(userId, newStreak, today, grants);
