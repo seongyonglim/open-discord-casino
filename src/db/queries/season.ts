@@ -234,6 +234,23 @@ export function backfillFirstSeason():
          rounds = excluded.rounds, rated = excluded.rated, wins = excluded.wins,
          pushes = excluded.pushes, staked = excluded.staked, returned = excluded.returned,
          profit = excluded.profit, updated_at = excluded.updated_at`, s.id);
+    /* 시작 시각을 기록이 실제로 시작된 시점까지 당긴다.
+       이걸 안 하면 첫 시즌이 자기 약속을 어긴다 — 게임 전적은 시점과 무관하게 전부
+       담으면서, 홀덤만 finished_at 이 시즌 구간 안이어야 세기 때문이다. 시즌 행이
+       만들어진 시각이 곧 시작이라, 그 전에 끝난 대회는 통째로 빠졌다(실제로 그랬다:
+       대회가 끝난 지 13시간 뒤에 시즌을 열었더니 홀덤 탭이 아예 안 떴다).
+
+       첫 시즌에서만 한다 — 위에서 이미 "닫힌 시즌이 없다"를 확인했다. 두 번째
+       시즌부터는 앞 시즌이 끝난 시각이 곧 시작이고, 그 경계를 뒤로 물리면 같은
+       기록이 두 시즌에 들어간다. */
+    const first = one<{ at: number | null }>(
+      `SELECT MIN(at) AS at FROM (
+         SELECT MIN(created_at) AS at FROM points_ledger
+         UNION ALL SELECT MIN(finished_at) FROM holdem_tournaments WHERE finished_at IS NOT NULL
+         UNION ALL SELECT MIN(created_at) FROM users)`)?.at ?? null;
+    if (first != null && first < s.started_at) {
+      run(`UPDATE seasons SET started_at = ? WHERE id = ?`, first, s.id);
+    }
     return { ok: true as const,
       rows: one<{ n: number }>(`SELECT COUNT(*) AS n FROM season_stats WHERE season_id = ?`, s.id)!.n };
   });
