@@ -163,8 +163,28 @@ function scheduleOf(t: HtRow): T.TournamentSchedule {
   };
 }
 
+/**
+ * 살아 있는 판. 아직 끝나지도 취소되지도 않은 것 — 시작 전(대기)도 포함한다.
+ *
+ * 하루에 여러 판을 열 수 있게 되면서 유니크 인덱스가 사라졌다. 대신 지켜야 할 규칙이
+ * 이것 하나 남는다: 살아 있는 판은 한 번에 하나뿐이다. 둘이 동시에 살아 있으면
+ * "지금 어느 판인가"가 사라지고, 등록이 어느 쪽으로 가는지도 알 수 없게 된다.
+ *
+ * 인덱스로는 표현할 수 없다 — 부분 유니크를 걸려면 조건이 NULL 세 개에 걸리고,
+ * SQLite 의 부분 인덱스로는 "여럿 중 하나만"을 못 만든다. 그래서 질의가 지킨다.
+ */
+export function liveTournament(): HtRow | undefined {
+  return one<HtRow>(
+    `SELECT * FROM holdem_tournaments
+      WHERE finished_at IS NULL AND cancelled_at IS NULL
+      ORDER BY id DESC LIMIT 1`);
+}
+
+/* 그 날짜의 판. 여러 개일 수 있으므로 "가장 최근에 만든 것"을 준다 —
+   자동 생성이 이미 있는 판을 못 보고 두 번째를 만드는 일을 막는 것이 이 함수의 몫이다. */
 function findTournament(dateStr: string): HtRow | undefined {
-  return one<HtRow>(`SELECT * FROM holdem_tournaments WHERE date_str = ?`, dateStr);
+  return one<HtRow>(
+    `SELECT * FROM holdem_tournaments WHERE date_str = ? ORDER BY id DESC LIMIT 1`, dateStr);
 }
 
 export function getTable(tournamentId: number): HtTableRow | undefined {
@@ -362,9 +382,16 @@ function ensureTournament(now: number): HtRow {
      바로 이것이다 — 운영자가 나중에 값을 바꿔도 이미 만들어진 행은 안 흔들린다. */
   const cfg = getConfig();
   const s = todaySchedule(now, cfg);
+  /* 오늘 판이 이미 있으면 그것을 쓴다 — 끝났든 취소됐든 마찬가지다.
+     여기서 상태를 따지면 오늘 판이 끝나는 순간 새 판이 저절로 열려서, 대회가 끝나자마자
+     다음 등록이 시작된다. 하루 여러 판은 운영자가 여는 것이지 저절로 열리는 게 아니다.
+     (여러 개 있으면 findTournament 가 가장 최근 것을 준다.) */
   const found = findTournament(s.dateStr);
   if (found) return found;
-  // 같은 날짜로 두 요청이 동시에 들어오면 유니크 인덱스가 한쪽을 막는다 → 무시하고 다시 읽는다
+  /* 어제 판이 아직 도는 중이어도 오늘 행은 만든다. activeTournament 가 "오늘 등록이
+     열리기 전까지는 어제 판을 쓴다"로 판단하고, 열리는 순간 어제 판을 버린다 —
+     그 판단이 성립하려면 오늘 행의 reg_open_at 이 있어야 한다.
+     여기서 만들기를 막았더니 그 자정 방어가 통째로 죽었다(감사 [6b]가 잡았다). */
   try {
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,

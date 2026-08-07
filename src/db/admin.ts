@@ -9,6 +9,7 @@
  */
 import { one, all, run, tx, adjustBalance } from './queries';
 import * as T from '../services/tournament';
+import { getConfig } from './settings';
 
 /* ── 대회 ─────────────────────────────────────────────────────────── */
 
@@ -78,39 +79,53 @@ export function purgeTournament(id: number): { ok: true; removed: number } | { o
 }
 
 /**
- * 오늘 자리에 테스트 대회를 연다 — 상금 배수를 0 으로 두어 포인트가 나가지 않게 한다.
+ * 대회를 하나 더 연다.
  *
- * 왜 오늘 자리를 쓰나: 스키마가 date_str 에 유니크 인덱스를 걸어 "하루에 하나"를 강제한다.
- * 그래서 별도의 테스트 대회를 나란히 만들 수 없다. 오늘 행을 테스트용으로 쓰고, 끝나면
- * purgeTournament 로 지우면 된다 — 지운 뒤 첫 요청에서 ensureTournament 가 올바른 일정과
- * 배수로 오늘 행을 다시 만든다.
+ * 하루 하나를 강제하던 유니크 인덱스는 걷어냈다. 대신 지켜야 할 규칙이 하나 남는다 —
+ * 살아 있는 판(끝나지도 취소되지도 않은 것)은 한 번에 하나뿐이다. 둘이 동시에 살아
+ * 있으면 "지금 어느 판인가"가 사라지고 등록이 어느 쪽으로 가는지도 알 수 없다.
+ * 아직 시작 안 한 대기 상태도 살아 있는 것으로 친다 — 등록을 받고 있기 때문이다.
  *
- * 이 제약이 불편하다면 고칠 곳은 여기가 아니라 그 유니크 인덱스다(다중 대회 전환).
+ * 시각은 "지금부터"로 잡는다. 오늘의 정규 판은 21시/22시라는 고정 일정이 있지만,
+ * 여기서 여는 판은 운영자가 지금 열려는 것이라 그 일정을 따를 이유가 없다.
  */
-export function openTestTournament(): { ok: true; id: number } | { ok: false; error: 'running' } {
+export function createTournament(o: { title?: string; prizeMultiplier?: number; regMin?: number }):
+  { ok: true; id: number } | { ok: false; error: 'live_exists' } {
   return tx(() => {
-    const now = Math.floor(Date.now() / 1000);
-    const live = one<{ id: number }>(
-      `SELECT id FROM holdem_tournaments
-        WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL`);
-    if (live) return { ok: false as const, error: 'running' as const };
+    const live = one<{ id: number; started_at: number | null }>(
+      `SELECT id, started_at FROM holdem_tournaments
+        WHERE finished_at IS NULL AND cancelled_at IS NULL LIMIT 1`);
+    if (live) return { ok: false as const, error: 'live_exists' as const };
 
-    const today = T.scheduleForDate(T.kstDateStr(now * 1000));
-    const row = one<{ id: number }>(`SELECT id FROM holdem_tournaments WHERE date_str = ?`, today.dateStr);
-    if (row) {
-      run(`UPDATE holdem_tournaments
-              SET title = ?, prize_multiplier = 0, reg_open_at = ?, scheduled_start_at = ?,
-                  grace_ends_at = ?, started_at = NULL, finished_at = NULL, cancelled_at = NULL
-            WHERE id = ?`,
-        '테스트 대회 (상금 없음)', now - 60, now, now + 3600, row.id);
-      return { ok: true as const, id: row.id };
-    }
+    const now = Math.floor(Date.now() / 1000);
+    const cfg = getConfig();
+    const regMin = Math.max(0, Math.floor(o.regMin ?? 10));
+    const mult = Math.max(0, Math.floor(o.prizeMultiplier ?? cfg.weekdayMultiplier));
     run(`INSERT INTO holdem_tournaments
-           (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier)
-         VALUES (?, ?, ?, ?, ?, 0)`,
-      today.dateStr, '테스트 대회 (상금 없음)', now - 60, now, now + 3600);
+           (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+            starting_stack, level_sec, late_reg_sec, prize_fixed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      T.kstDateStr(now * 1000), (o.title ?? '').trim() || '임시 프리롤',
+      now - 1, now + regMin * 60, now + regMin * 60 + cfg.graceMin * 60, mult,
+      cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, cfg.prizeFixed);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
+}
+
+/**
+ * 테스트 대회 — 상금 배수를 0 으로 두어 포인트가 한 푼도 나가지 않게 한다.
+ *
+ * 그래서 끝난 뒤 기록을 통째로 지울 수 있다(purgeTournament). 홀덤이 원장에 쓰는 곳은
+ * 상금 지급 한 곳뿐이고 그 앞에서 pool <= 0 이면 곧바로 돌아가므로, 이 판은 경제에
+ * 아무 흔적도 남기지 않는다. 실서버에서 시험하려고 스테이징 서버를 따로 두지 않아도
+ * 되는 이유가 이것이다.
+ *
+ * 예전에는 오늘 행을 덮어썼다 — 하루 하나라는 유니크 인덱스 때문에 나란히 만들 수가
+ * 없었다. 이제 인덱스가 없으니 그냥 새로 만든다. 대신 살아 있는 판이 있으면 거절한다.
+ */
+export function openTestTournament(): { ok: true; id: number } | { ok: false; error: 'running' } {
+  const r = createTournament({ title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0 });
+  return r.ok ? r : { ok: false, error: 'running' };
 }
 
 /* ── 사용자 · 포인트 ──────────────────────────────────────────────── */

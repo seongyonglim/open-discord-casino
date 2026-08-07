@@ -245,7 +245,12 @@ function initSchema(): void {
       created_at INTEGER DEFAULT (unixepoch())
     );
     -- 하루에 토너먼트 하나. 동시에 두 개가 생기는 것을 DB가 막는다.
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_ht_date ON holdem_tournaments(date_str);
+    /* 날짜는 더 이상 유일하지 않다. 하루에 여러 판을 열 수 있어야 하기 때문이다
+       (이미 끝난 날에 한 판 더 열거나, 운영자가 임시 판을 여는 경우).
+       대신 지켜야 할 규칙이 하나 남는다 — 살아 있는 판은 한 번에 하나뿐이다.
+       그건 인덱스로 표현할 수 없어서(부분 유니크는 조건이 NULL 세 개에 걸린다)
+       질의에서 막는다: db/holdem.ts 의 liveTournament, db/admin.ts 의 createTournament. */
+    CREATE INDEX IF NOT EXISTS idx_ht_date2 ON holdem_tournaments(date_str, id DESC);
 
     /* 등록자. 상금 풀의 근거는 "누적 참가자 수"이므로 탈락해도 행을 지우지 않는다.
        freezeout이라 재입장이 없으니 (tournament_id, user_id)가 유니크다 —
@@ -492,6 +497,10 @@ function initSchema(): void {
      코드 상수를 실시간으로 읽고 있었다 — 운영자가 값을 바꾸는 순간 진행 중인 대회의
      블라인드가 뛰거나 늦게 온 사람만 다른 스택을 받는다. 행에 박아 두면 그런 일이 없다.
      0 이면 "코드 기본값을 쓴다"는 뜻이라, 이미 있던 행도 그대로 동작한다. */
+  /* 하루 하나를 강제하던 유니크 인덱스를 걷어낸다. 이미 만들어진 DB 에도 남아 있으므로
+     여기서 지운다 — 안 지우면 두 번째 판을 만들 때 INSERT 가 조용히 실패한다. */
+  try { d.exec(`DROP INDEX IF EXISTS idx_ht_date`); } catch { /* 없으면 그만 */ }
+
   for (const col of [
     'starting_stack INTEGER NOT NULL DEFAULT 0',
     'level_sec INTEGER NOT NULL DEFAULT 0',
