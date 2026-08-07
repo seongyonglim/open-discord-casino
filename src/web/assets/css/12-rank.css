@@ -60,6 +60,17 @@
     padding-top:20px;padding-bottom:22px}
   .lb-pod.p2{border-color:rgba(200,200,210,.35)}
   .lb-pod.p3{border-color:rgba(196,138,86,.4)}
+  /* 내가 포디움에 있을 때. 등수 색(금·은·동)은 그대로 두고 테두리만 초록으로 두른다 —
+     등수와 "내 자리"는 다른 정보라 한쪽이 다른 쪽을 덮으면 안 된다.
+     1위 카드의 금색 테두리보다 뒤에 와야 이기므로 순서가 여기다. */
+  .lb-pod.mine,.lb-pod.p1.mine{border:2px solid var(--me);
+    box-shadow:0 0 0 3px rgba(16,185,129,.13),0 6px 22px rgba(16,185,129,.16)}
+  /* 테두리가 1px → 2px 가 되면 안쪽이 1px 좁아져 카드 높이가 어긋난다 */
+  .lb-pod.mine{padding:13px 9px 15px}
+  .lb-pod.p1.mine{padding:19px 9px 21px}
+  .lb-you{position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+    background:var(--me);color:#04231a;font-size:11px;font-weight:800;
+    padding:2px 10px;border-radius:999px;letter-spacing:.3px;white-space:nowrap}
   .lb-medal{font-size:22px;line-height:1;margin-bottom:8px}
   .lb-pod.p1 .lb-medal{font-size:28px}
   .lb-pav{width:48px;height:48px;border-radius:14px;object-fit:cover;display:block;margin:0 auto 8px;
@@ -84,7 +95,14 @@
   .lb-tbl .rk{color:var(--muted);font-family:var(--mono);width:52px}
   .lb-tbl .n.pos{color:var(--win)}
   .lb-tbl .n.neg{color:var(--lose)}
-  .lb-tbl tr.me{background:rgba(212,175,55,.07)}
+  /* 내 줄. 금색이던 것을 초록으로 바꿨다 — 이 표에서 금색은 이미 등수와 포인트가 쓴다.
+     왼쪽 선은 배경만으로는 훑을 때 놓치기 쉬워서 둔다. 첫 칸에만 그려야 줄 전체가
+     한 번 들여쓰기된 것처럼 보이지 않는다. */
+  .lb-tbl tr.me{background:var(--me-soft)}
+  .lb-tbl tr.me td:first-child{box-shadow:inset 3px 0 0 var(--me)}
+  .lb-tbl tr.me .rk{color:var(--me);font-weight:800}
+  /* 색만으로 알리지 않는다 — 색을 구별하기 어려운 사람에게도 글자가 남아야 한다 */
+  .lb-youtag{flex:none;font-size:11px;font-weight:800;color:var(--me);letter-spacing:.2px}
   .lb-who{display:flex;align-items:center;gap:8px;min-width:0}
   .lb-av{width:24px;height:24px;border-radius:7px;flex:none;object-fit:cover;
     background:#5865f2;color:#fff;align-items:center;justify-content:center;font-size:11px;font-weight:800}
@@ -95,13 +113,21 @@
   .lb-mebar{position:sticky;bottom:0;z-index:150;padding:10px 16px 14px;
     background:linear-gradient(180deg,rgba(5,5,6,0),var(--bg) 40%)}
   .lb-mebar[hidden]{display:none}
-  .lb-mebox{max-width:860px;margin:0 auto;display:flex;align-items:center;gap:12px;
-    background:var(--panel2);border:1px solid var(--gold-dim);border-radius:12px;
-    padding:10px 14px;box-shadow:0 -4px 24px rgba(0,0,0,.5)}
-  .lb-merk{font-family:var(--mono);font-size:16px;font-weight:800;color:var(--gold);flex:none}
+  /* 위 표의 마지막 줄이 그대로 이어진 것처럼 보이게 맞춘다 — 같은 순서(등수·아바타
+     이름·보조·점수), 같은 좌우 여백(12px), 같은 글자 크기. 예전에는 등수 뒤에 이름이
+     바로 붙고 아바타가 없어서, 표에서 눈이 내려오다가 이 줄에서 한 번 끊겼다.
+     색은 표의 내 줄과 같은 초록을 쓴다 — 둘이 같은 것을 가리키므로 같은 색이어야 한다. */
+  .lb-mebox{max-width:860px;margin:0 auto;display:flex;align-items:center;gap:8px;
+    background:linear-gradient(90deg,var(--me-soft),var(--panel2) 55%);
+    border:1px solid var(--me-dim);border-radius:12px;
+    padding:9px 12px;box-shadow:0 -4px 24px rgba(0,0,0,.5),inset 3px 0 0 var(--me)}
+  /* 표의 등수 칸(.rk)과 같은 폭이라 숫자가 세로로 맞아떨어진다 */
+  .lb-merk{font-family:var(--mono);font-size:15px;font-weight:800;color:var(--me);
+    flex:none;width:52px}
   .lb-merk span{font-size:11px;color:var(--muted);font-weight:600}
+  .lb-mewho{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
   .lb-mename{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .lb-mescore{margin-left:auto;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--gold);flex:none}
+  .lb-mescore{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--gold);flex:none}
   .lb-mesub{font-size:11.5px;color:var(--muted);font-family:var(--mono);flex:none}
 
   @media(max-width:560px){
