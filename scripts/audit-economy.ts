@@ -9,7 +9,18 @@ if (!process.env.DB_PATH) {
 }
 
 import { randomInt as rnd } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { getDb } from '../src/db/schema';
+
+/* 질의 코드 전체(배럴 + 도메인 모듈)를 한 덩어리로 읽는다.
+   "규칙이 코드에 이렇게 적혀 있는가"를 보는 검사들이 쓴다. 파일이 나뉜 뒤에도 검사가
+   전체를 보게 하려는 것이다 — 배럴만 읽으면 export 줄밖에 없어서 무엇을 찾든 못 찾는다. */
+function queriesSource(): string {
+  const dir = join('src', 'db', 'queries');
+  return readFileSync(join('src', 'db', 'queries.ts'), 'utf8')
+    + readdirSync(dir).map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
+}
 import {
   upsertUser, adjustBalance, getWebUser,
   placeLadderBet, advanceLadderRound, ladderParity, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
@@ -261,9 +272,10 @@ section('[3] 포커 플립');
   ck(`정산 지급 (승자 ${out.winner}) → ${expected}`, bal('p_a') === expected, String(bal('p_a')));
   ck('AA vs KK 보드 미스 → AA 승', out.winner === 'master', JSON.stringify(out));
 
-  // 무승부는 원금 환불이어야 한다 (승패 시장 기준)
-  ck('무승부 규칙이 원금 환불로 구현됨',
-    /무승부 → 원금 환불/.test(require('fs').readFileSync('src/db/queries.ts', 'utf8')));
+  /* 무승부는 원금 환불이어야 한다 (승패 시장 기준).
+     질의는 도메인별 모듈로 나뉘어 있으므로 배럴 한 파일만 읽으면 안 된다 —
+     읽을 것이 export 줄뿐이라 이 검사가 조용히 무의미해진다(실제로 나눈 직후 실패했다). */
+  ck('무승부 규칙이 원금 환불로 구현됨', /무승부 → 원금 환불/.test(queriesSource()));
 }
 auditLedger('포커 후');
 auditStats('포커 후');
