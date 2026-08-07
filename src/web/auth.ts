@@ -92,6 +92,11 @@ export function handlePreviewLogin(req: IncomingMessage, res: ServerResponse): v
   if (!previewLoginEnabled()) { res.writeHead(404); res.end(); return; }
   const id = 'preview-user';
   upsertUser(id, '미리보기', null);
+  /* 디스코드 경로와 같은 규칙을 여기에도 둔다 — 운영자 전용 화면을 로컬에서 열어 보려면
+     미리보기 사용자도 admin 이 될 수 있어야 한다:
+       SEED_ADMIN_DISCORD_ID=preview-user PREVIEW_LOGIN=1 npm run dev
+     이 문은 previewLoginEnabled() 안쪽이라 실서버에서는 아예 닿지 않는다. */
+  if (SEED_ADMIN && id === SEED_ADMIN) ensureSeedAdmin(id);
   if ((getWebUser(id)?.balance ?? 0) <= 0) adjustBalance(id, 200000, 'preview_seed');
   const token = crypto.randomBytes(24).toString('hex');
   createSession(token, id, Math.floor(Date.now() / 1000) + 86400 * 7);

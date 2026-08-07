@@ -1,0 +1,47 @@
+  /* ── 운영자 화면 ──────────────────────────────────────────────────
+     게임 화면과 결을 맞추되 장식은 뺀다. 여기는 보고 판단하는 화면이라
+     읽기 쉬운 표와 분명한 경고가 전부다. */
+  .ad-wrap{max-width:1000px;margin:0 auto;padding:4px 0 40px}
+  .ad-h{font-size:20px;font-weight:800;margin:0 0 4px}
+  .ad-sub{color:var(--muted);font-size:13px;margin:0 0 18px}
+  .ad-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;margin-bottom:14px}
+  .ad-card h2{font-size:15px;font-weight:800;margin:0 0 8px}
+  .ad-note{color:var(--muted);font-size:12.5px;line-height:1.6;margin:0 0 10px}
+  /* 막혀 있다는 사실은 회색으로 적으면 안 읽힌다 — 눌러도 안 되는 이유가 여기 있다 */
+  .ad-warn{color:var(--gold);font-size:12.5px;line-height:1.6;margin:0 0 10px;
+    background:rgba(212,175,55,.07);border:1px solid var(--gold-dim);border-radius:8px;padding:9px 11px}
+  .ad-warn code{font-family:var(--mono);font-size:12px;color:var(--txt)}
+  .ad-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .ad-row .ad-note{margin:0}
+  .ad-wrap input[type=password],.ad-wrap input[type=search]{
+    background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;color:var(--txt);font-family:inherit;font-size:13px;min-width:220px}
+  .ad-wrap input:focus{outline:none;border-color:var(--gold)}
+  .ad-wrap button{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:8px 13px;color:var(--txt);font-family:inherit;font-size:13px;font-weight:700;
+    cursor:pointer;transition:border-color .12s,background .12s}
+  .ad-wrap button:hover{border-color:var(--gold)}
+  .ad-wrap button.danger{color:var(--lose);border-color:rgba(229,72,77,.4)}
+  .ad-wrap button.danger:hover{background:rgba(229,72,77,.12);border-color:var(--lose)}
+  /* 표가 넓어지면 화면이 아니라 표 안쪽이 스크롤돼야 한다 */
+  .ad-scroll{overflow-x:auto}
+  .ad-tbl{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+  .ad-tbl th{text-align:left;color:var(--muted);font-size:11.5px;font-weight:700;
+    padding:6px 9px;border-bottom:1px solid var(--line)}
+  .ad-tbl td{padding:8px 9px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .ad-tbl .r{text-align:right;font-family:var(--mono)}
+  .ad-tbl .ad-id{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  /* 지급된 금액은 "지울 수 없는 이유"라서 눈에 띄어야 한다 */
+  .ad-tbl .paid{color:var(--gold);font-weight:700}
+  .ad-no{color:var(--muted);font-size:12px}
+  .ad-dlg{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;color:var(--txt);max-width:420px}
+  .ad-dlg::backdrop{background:rgba(0,0,0,.6)}
+  .ad-dlg h3{margin:0 0 8px;font-size:15px;font-weight:800}
+  .ad-dlg p{margin:0 0 14px;font-size:13px;line-height:1.65;color:var(--muted)}
+  .ad-dlg .ad-row{margin:0;justify-content:flex-end}
+  @media(max-width:600px){
+    .ad-card{padding:13px 14px}
+    .ad-wrap input[type=password],.ad-wrap input[type=search]{min-width:0;flex:1}
+  }

@@ -302,6 +302,15 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
       <svg class="off" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/></svg>
     </button>`;
 
+  /* 운영자에게만 보이는 항목. 조건을 마크업 안에 두면 권한이 없는 사람의 화면에도
+     빈 줄이 남는다 — 눈에는 안 보이지만 산출물이 달라져서, 화면을 바이트로 비교하는
+     검사(scripts/golden.ts)가 "바뀌었다"고 말한다. 여기서 미리 만들어 통째로 끼운다. */
+  const adminMenuItem = u?.role === 'admin' ? `
+          <a class="pm-item" href="/admin">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>DB 관리
+          </a>
+          <div class="pm-sep"></div>` : '';
+
   const authBox = u
     ? `<div class="profwrap">
         ${sfxBtn}
@@ -311,7 +320,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
           <span class="pbal">${esc(pts(u.balance))}</span>
           <svg class="caret" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
         </button>
-        <div class="profmenu" id="profMenu" hidden>
+        <div class="profmenu" id="profMenu" hidden>${adminMenuItem}
           <a class="pm-item danger" href="/auth/logout">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>로그아웃
           </a>

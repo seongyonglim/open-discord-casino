@@ -719,5 +719,89 @@ auditStats('서렌더 후');
 auditLedger('블랙잭 후');
 auditStats('블랙잭 후');
 
+/* ── 9. 운영자 동작 ───────────────────────────────────────────────
+   운영 화면은 사람이 눌러서 데이터를 지우는 자리다. 위험한 조건을 화면이 아니라
+   db/admin.ts 가 막는지 여기서 확인한다 — 화면에서만 막으면 API 를 직접 부르는
+   순간 뚫린다. */
+section('[9] 운영자 동작');
+{
+  const A = require('../src/db/admin') as typeof import('../src/db/admin');
+  const db = getDb();
+
+  // 포인트 — 원장을 함께 쓰는가, 음수 잔액을 막는가
+  mkUser('ad_u', 1000);
+  const up = A.grantPoints('ad_u', 500, '검증');
+  ck('지급하면 잔액이 오른다', up.ok && up.balance === 1500, JSON.stringify(up));
+  const led = db.prepare(
+    `SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE user_id = 'ad_u'`)
+    .get() as { n: number };
+  ck('지급이 원장에 남는다 (잔액 = 원장 누적합)', led.n === 1500, String(led.n));
+  ck('사유가 admin: 으로 남는다',
+    (db.prepare(`SELECT reason FROM points_ledger WHERE user_id='ad_u' ORDER BY id DESC LIMIT 1`)
+      .get() as { reason: string }).reason.startsWith('admin:'));
+  ck('잔액을 음수로 만드는 차감은 거절', !A.grantPoints('ad_u', -99999, '검증').ok);
+  ck('0 지급은 거절', !A.grantPoints('ad_u', 0, '검증').ok);
+  ck('없는 사용자는 거절', !A.grantPoints('no_such_user', 100, '검증').ok);
+
+  // 대회 — 상금이 나간 판은 지울 수 없어야 한다
+  for (const t of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+    'holdem_tables', 'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at)
+    VALUES (91, '1999-01-01', '상금판', ?, ?, ?, 1000, ?, ?)`).run(now, now, now, now, now);
+  db.prepare(`INSERT INTO holdem_entries
+      (tournament_id, user_id, username, registered_at, finish_place, prize)
+    VALUES (91, 'ad_u', 'ad_u', ?, 1, 2600)`).run(now);
+  const paid = A.purgeTournament(91);
+  ck('상금이 지급된 대회는 지울 수 없다',
+    !paid.ok && paid.error === 'paid', JSON.stringify(paid));
+  ck('거절된 뒤에도 대회가 남아 있다',
+    (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments WHERE id=91`)
+      .get() as { n: number }).n === 1);
+
+  // 진행 중인 판도 지울 수 없어야 한다
+  db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier, started_at)
+    VALUES (92, '1999-01-02', '진행판', ?, ?, ?, 0, ?)`).run(now, now, now, now);
+  const running = A.purgeTournament(92);
+  ck('진행 중인 대회는 지울 수 없다',
+    !running.ok && running.error === 'running', JSON.stringify(running));
+
+  /* 상금 0 인 테스트 판은 지워진다 — 원장을 한 번도 안 건드렸으므로 경제가 어긋나지 않는다.
+     딸린 행(테이블·좌석·핸드·참가)이 고아로 남지 않는지도 함께 본다. */
+  db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at)
+    VALUES (93, '1999-01-03', '테스트판', ?, ?, ?, 0, ?, ?)`).run(now, now, now, now, now);
+  db.prepare(`INSERT INTO holdem_tables (id, tournament_id, table_no, button_seat, hand_no)
+    VALUES (93, 93, 0, 0, 1)`).run();
+  db.prepare(`INSERT INTO holdem_seats (table_id, seat, user_id, username, stack, last_seen_at)
+    VALUES (93, 0, 'ad_u', 'ad_u', 10000, ?)`).run(now);
+  db.prepare(`INSERT INTO holdem_hands (id, table_id, hand_no, level, street, button_seat,
+      sb, bb, ante, deck_json, board_json, last_raise_size, started_at)
+    VALUES (93, 93, 1, 1, 'preflop', 0, 25, 50, 0, '[]', '[]', 50, ?)`).run(now);
+  db.prepare(`INSERT INTO holdem_hand_seats (hand_id, seat, user_id, hole_json, stack, bet,
+      committed, state, acted, won)
+    VALUES (93, 0, 'ad_u', '[]', 10000, 0, 0, 'active', 0, 0)`).run();
+  db.prepare(`INSERT INTO holdem_entries (tournament_id, user_id, username, registered_at, prize)
+    VALUES (93, 'ad_u', 'ad_u', ?, 0)`).run(now);
+
+  const before = bal('ad_u');
+  const gone = A.purgeTournament(93);
+  ck('상금 0 인 대회는 지워진다', gone.ok, JSON.stringify(gone));
+  const left = ['holdem_tournaments', 'holdem_entries', 'holdem_tables',
+    'holdem_seats', 'holdem_hands', 'holdem_hand_seats']
+    .map(t => (db.prepare(
+      `SELECT COUNT(*) AS n FROM ${t} WHERE ${t === 'holdem_tournaments' ? 'id' :
+        t === 'holdem_entries' ? 'tournament_id' :
+        t === 'holdem_tables' ? 'tournament_id' :
+        t === 'holdem_hand_seats' ? 'hand_id' : 'table_id'} = 93`).get() as { n: number }).n);
+  ck('딸린 행이 하나도 안 남는다 (고아 없음)', left.every(n => n === 0), JSON.stringify(left));
+  ck('지워도 잔액이 그대로다 (경제에 흔적 없음)', bal('ad_u') === before, String(bal('ad_u')));
+}
+auditLedger('운영자 동작 후');
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);
