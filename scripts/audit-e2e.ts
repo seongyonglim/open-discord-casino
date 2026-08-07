@@ -421,6 +421,45 @@ async function main(): Promise<void> {
       const chips = done.table.seats.reduce((a: number, x: any) => a + x.stack, 0);
       ck('칩 총량 = 10,000 × 3', chips === 30000, String(chips));
 
+      /* 탈락자 명단. 칩 순위에서 아예 지우지 않고 아래에 남기려면 서버가 줘야 한다.
+         아직 아무도 안 나갔으면 빈 배열이어야 하고, 열쇠 자체는 늘 있어야 한다 —
+         없으면 화면이 undefined 를 훑다가 조용히 아무것도 안 그린다. */
+      ck('아직 아무도 안 나갔으면 탈락자가 없다',
+        Array.isArray(done.table?.busted) && done.table.busted.length === 0,
+        JSON.stringify(done.table?.busted));
+
+      /* 실제로 탈락한 상태를 만들어 명단에 서는지 본다. 서버가 탈락시킬 때 쓰는 두 칸
+         (elim_seq · eliminated_at)을 그대로 채운다 — 빈 배열만 확인하고 넘어가면
+         "열쇠는 있는데 아무것도 안 담기는" 경우를 못 잡는다. */
+      db.prepare(`UPDATE holdem_entries SET elim_seq = 1, eliminated_at = unixepoch()
+                   WHERE user_id = 'h3'`).run();
+      db.prepare(`UPDATE holdem_entries SET elim_seq = 2, eliminated_at = unixepoch()
+                   WHERE user_id = 'h2'`).run();
+      const withOut = (await state(sessions[0].c)).body;
+      const bust = withOut.table?.busted ?? [];
+      ck('탈락자가 명단에 선다', bust.length === 2, JSON.stringify(bust.map((b: any) => b.userId)));
+      /* 늦게 나간 사람이 위다 — 오래 버틴 순서다. h2 가 나중에 나갔으므로 h2 가 먼저 온다. */
+      ck('늦게 탈락한 사람이 위에 온다', bust[0]?.userId === 'h2' && bust[1]?.userId === 'h3',
+        bust.map((b: any) => b.userId).join(','));
+      ck('탈락자에도 이름이 실린다', bust.every((b: any) => typeof b.username === 'string' && b.username));
+      /* 탈락자의 홀 카드는 담기지 않는다 — 명단에 필요한 것은 이름과 순서뿐이다. */
+      ck('탈락자 명단에 카드가 섞이지 않는다',
+        bust.every((b: any) => b.cards === undefined), JSON.stringify(bust[0]));
+      db.prepare(`UPDATE holdem_entries SET elim_seq = NULL, eliminated_at = NULL`).run();
+
+      /* 스포일러. 판이 끝나면 서버는 그 자리에서 스택을 정산하는데, 화면은 그 뒤로도
+         몇 초 동안 카드를 연다. 그 사이 오른쪽 순위가 서버 값을 그대로 쓰면 카드가
+         열리기 전에 숫자가 먼저 움직여 결과가 새어 나간다 — 제보로 들어온 그대로다.
+         막는 것은 화면이므로 여기서는 "화면이 그 판단을 하고 있는가"를 본다. */
+      const htPage = (await req('GET', '/games/holdem', sessions[0].c)).text;
+      ck('화면이 정산 전 스택을 기억해 둔다', htPage.includes('function noteStacks('));
+      ck('끝난 판에서는 기억해 둔 값을 쓴다', htPage.includes('function shownStack('));
+      ck('팟이 도착해야 진짜 값으로 바뀐다',
+        htPage.includes('if (potDoneHand === tb.handNo && potDoneAt && Date.now() >= potDoneAt) return s.stack;'));
+      ck('탈락자 줄을 그릴 줄 안다', htPage.includes("'<div class=\"ht-rw out'"));
+      ck('탈락자 스타일이 살아 있다',
+        (await req('GET', '/app.css', sessions[0].c)).text.includes('.ht-rw.out'));
+
       /* 한 장만 공개. 이 기능의 전부는 "안 깐 장이 정말로 안 나가는가"다 —
          화면에서 가리는 것으로는 안 된다. 응답에 들어 있으면 개발자 도구로 그대로 읽히고,
          그러면 "한 장만 깠다"가 성립하지 않는다. 그래서 남의 시점 raw 응답으로 확인한다. */

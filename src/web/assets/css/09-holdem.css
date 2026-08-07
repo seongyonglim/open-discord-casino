@@ -1213,6 +1213,15 @@
   .ht-rw-av.ph{font-size:11px;font-weight:700;color:#8fae9c}
   .ht-rw-nm{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ht-rw-st{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--gold);flex:none}
+  /* 탈락자 — 지우지 않고 아래에 남긴다. 누가 언제 나갔는지가 대회의 절반이라
+     명단에서 사라지면 그 기록이 없어진다. 살아 있는 사람과는 한눈에 갈려야 하므로
+     줄 전체를 가라앉히고 이름에 취소선을 긋는다(색만으로는 훑을 때 안 잡힌다). */
+  .ht-rw.out{opacity:.45}
+  .ht-rw.out .ht-rw-nm{text-decoration:line-through;color:#8b9a90}
+  .ht-rw.out .ht-rw-st{color:#7f8a83}
+  .ht-rw.out .ht-rw-av{filter:grayscale(1)}
+  /* 내 줄이어도 탈락했으면 강조하지 않는다 — 금색은 "살아 있다"는 뜻으로 쓰고 있다 */
+  .ht-rw.out.me{background:rgba(255,255,255,.03)}
   .ht-side .ht-back{margin:0 14px 14px;padding:8px 12px;font-size:12.5px}
   .ht-side .ht-back[hidden]{display:none}
 

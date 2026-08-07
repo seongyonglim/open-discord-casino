@@ -284,6 +284,17 @@ export interface AdminUserRow {
 }
 
 /** 이름이나 아이디로 찾는다. 빈 검색어는 최근 활동 순으로 보여 준다. */
+/**
+ * 이름이나 아이디로 찾는다. 빈 검색어는 최근 활동 순으로 보여 준다.
+ *
+ * 한글은 같은 글자를 두 가지로 적을 수 있다 — "태준"을 완성형 두 자로도, 자모 여섯 개로도
+ * 저장할 수 있다(NFC / NFD). 보기에는 같지만 바이트가 달라서 LIKE 로는 안 걸린다.
+ * 디스코드 이름이 어느 쪽으로 오는지는 그 사람이 쓴 기기와 입력기에 달렸으므로,
+ * 양쪽을 같은 모양으로 맞춰 놓고 비교한다.
+ *
+ * SQLite 에는 정규화 함수가 없어서 자바스크립트에서 거른다. 인원이 수십 명 규모라
+ * 전부 읽어 걸러도 부담이 없다 — 그 규모를 넘어가면 이름 정규화 열을 따로 두어야 한다.
+ */
 export function searchUsers(q: string, limit = 20): AdminUserRow[] {
   const term = q.trim();
   if (term === '') {
@@ -291,11 +302,13 @@ export function searchUsers(q: string, limit = 20): AdminUserRow[] {
       `SELECT id, username, avatar, balance, role, last_active FROM users
         ORDER BY last_active DESC, balance DESC LIMIT ?`, limit);
   }
-  const like = '%' + term.replace(/[%_\\]/g, m => '\\' + m) + '%';
+  const norm = (s: string) => s.normalize('NFC').toLowerCase();
+  const needle = norm(term);
   return all<AdminUserRow>(
     `SELECT id, username, avatar, balance, role, last_active FROM users
-      WHERE username LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'
-      ORDER BY balance DESC LIMIT ?`, like, like, limit);
+      ORDER BY balance DESC`)
+    .filter(u => norm(u.username ?? '').includes(needle) || u.id.includes(term))
+    .slice(0, limit);
 }
 
 export interface LedgerRow {

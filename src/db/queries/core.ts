@@ -59,10 +59,13 @@ export interface WebUser {
 
 // 로그인 또는 디스코드 인터랙션 시 유저 생성/표시이름·아바타 갱신 (balance/streak/role은 보존)
 export function upsertUser(id: string, username: string, avatar: string | null): void {
+  /* 이름을 한 가지 모양으로 맞춰 저장한다. 한글은 같은 글자를 완성형으로도 자모 조합으로도
+     적을 수 있어서(NFC / NFD), 들어온 대로 두면 보기에 같은 이름이 바이트로는 달라진다 —
+     그러면 검색에서 안 걸리고, 정렬도 엉뚱한 자리에 선다. 들어오는 문에서 한 번만 맞춘다. */
   run(
     `INSERT INTO users (id, username, avatar) VALUES (?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET username = excluded.username, avatar = excluded.avatar`,
-    id, username, avatar
+    id, username.normalize('NFC'), avatar
   );
 }
 

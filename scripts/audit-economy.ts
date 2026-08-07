@@ -744,6 +744,37 @@ section('[9] 운영자 동작');
   ck('0 지급은 거절', !A.grantPoints('ad_u', 0, '검증').ok);
   ck('없는 사용자는 거절', !A.grantPoints('no_such_user', 100, '검증').ok);
 
+  /* 한글 이름 검색. "우리 방에 있는 사람인데 검색하면 안 나온다"는 제보에서 온 검사다.
+     한글은 같은 글자를 완성형(NFC)으로도 자모 조합(NFD)으로도 적을 수 있다. 보기에는
+     똑같지만 바이트가 달라서 LIKE 로는 안 걸린다 — 쓰는 기기와 입력기에 따라 갈린다. */
+  {
+    const NFC = '태준';                     // 완성형 두 글자
+    const NFD = '태준'.normalize('NFD');    // 자모로 풀어 쓴 것
+    ck('두 표기가 실제로 다른 바이트다 (검사가 헛돌지 않는다)', NFC !== NFD,
+      `${[...NFC].length} vs ${[...NFD].length}`);
+
+    // 저장은 어느 쪽으로 들어와도 한 모양으로 맞춰진다
+    upsertUser('u_nfd', NFD, null);
+    const saved = db.prepare(`SELECT username FROM users WHERE id='u_nfd'`)
+      .get() as { username: string };
+    ck('자모로 들어온 이름도 완성형으로 저장된다', saved.username === NFC,
+      JSON.stringify(saved.username));
+
+    ck('완성형으로 검색하면 찾는다', A.searchUsers(NFC).some(u => u.id === 'u_nfd'));
+    ck('자모로 검색해도 찾는다', A.searchUsers(NFD).some(u => u.id === 'u_nfd'));
+    ck('일부만 쳐도 찾는다', A.searchUsers('태').some(u => u.id === 'u_nfd'));
+
+    /* 예전 데이터는 자모로 저장돼 있을 수 있다 — 저장 쪽을 고치기 전에 로그인한 사람이다.
+       그런 행도 검색에 걸려야 한다(검색이 양쪽을 맞춰 비교하기 때문이다). */
+    db.prepare(`UPDATE users SET username = ? WHERE id = 'u_nfd'`).run(NFD);
+    ck('이미 자모로 저장된 행도 완성형 검색에 걸린다',
+      A.searchUsers(NFC).some(u => u.id === 'u_nfd'));
+
+    // 아이디로도 찾을 수 있어야 한다 — 이름을 못 찾을 때의 마지막 길이다
+    ck('아이디로도 찾는다', A.searchUsers('u_nfd').some(u => u.id === 'u_nfd'));
+    ck('없는 이름은 안 나온다', A.searchUsers('없는이름xyz').length === 0);
+  }
+
   /* 하루 하나를 강제하던 유니크 인덱스를 걷어냈다. 대신 남은 규칙은 하나다 —
      살아 있는 판(끝나지도 취소되지도 않은 것)은 한 번에 하나뿐이다. */
   for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();

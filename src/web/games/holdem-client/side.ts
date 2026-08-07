@@ -20,6 +20,36 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
     }
 
     /* ── 오른쪽 패널 ─────────────────────────────────────────────── */
+    /* ── 칩 순위의 스포일러 막기 ──────────────────────────────────────
+       판이 끝나면 서버는 그 자리에서 스택을 정산한다. 화면은 그 뒤로도 몇 초 동안
+       카드를 한 장씩 열고 팟을 밀어 주는데, 오른쪽 순위가 서버 값을 그대로 쓰면
+       카드가 열리기 전에 숫자가 먼저 움직인다 — 누가 이겼는지 거기서 새어 나간다.
+       제보로 들어온 그대로다.
+
+       그래서 판이 도는 동안 본 스택을 기억해 두고, 끝난 뒤에는 팟이 승자에게 실제로
+       도착할 때까지(potDoneAt) 그 값을 계속 보여준다. 판 중의 스택은 이미 베팅한 만큼
+       빠져 있으므로, 그게 곧 "정산 전"의 정확한 값이다.
+
+       화면에 도중부터 들어온 사람은 기억이 없다 — 그때는 서버 값을 쓴다. 그 경우
+       스포일러가 될 수 있지만, 이미 결과가 나온 판에 들어온 것이라 숨길 것도 없다. */
+    var stackMemo = null;      // { handNo, map }
+    function noteStacks(tb){
+      if (!tb || tb.handNo == null) return;
+      if (tb.ended) return;                    // 끝난 뒤에는 갱신하지 않는다 — 그게 요점이다
+      var map = {};
+      (tb.seats || []).forEach(function(s){ map[s.seat] = s.stack; });
+      stackMemo = { handNo: tb.handNo, map: map };
+    }
+    function shownStack(tb, s){
+      if (!tb.ended) return s.stack;
+      // 팟이 승자에게 도착했으면 이제 진짜 값을 보여 준다
+      if (potDoneHand === tb.handNo && potDoneAt && Date.now() >= potDoneAt) return s.stack;
+      if (stackMemo && stackMemo.handNo === tb.handNo && stackMemo.map[s.seat] != null) {
+        return stackMemo.map[s.seat];
+      }
+      return s.stack;
+    }
+
     function renderSide(){
       var t = st.tournament, tb = st.table;
       sideTitle.textContent = t.title;
@@ -69,16 +99,39 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
         });
       }
 
-      // 칩 순위 — 스택 많은 순. 참고 디자인처럼 번호·아바타·이름·스택 한 줄.
-      var rows = (tb.seats||[]).slice().sort(function(a,b){ return b.stack - a.stack; });
+      /* 칩 순위 — 스택 많은 순. 번호·아바타·이름·스택 한 줄.
+         스택은 shownStack 을 쓴다: 판이 끝나고 팟이 아직 승자에게 안 갔으면 마지막으로
+         본 값을 그대로 둔다(아래 noteStacks 를 보라). 서버 값을 바로 쓰면 카드가 열리기
+         전에 숫자가 먼저 움직여서 누가 이겼는지 여기서 새어 나간다. */
+      noteStacks(tb);
+      /* 방금 탈락한 사람은 좌석 목록에도 남아 있다(끝난 판의 쇼다운을 그리려고 서버가
+         남겨 둔다). 그대로 두면 같은 사람이 위아래 두 번 나온다 — 아래 탈락자 줄에만
+         세운다. */
+      var outIds = {};
+      (tb.busted || []).forEach(function(b){ outIds[b.userId] = 1; });
+      var rows = (tb.seats||[]).filter(function(s){ return !outIds[s.userId]; })
+        .sort(function(a,b){ return shownStack(tb, b) - shownStack(tb, a); });
       var rankHtml = rows.map(function(s, i){
         return '<div class="ht-rw' + (s.userId === MEID ? ' me' : '') + '">' +
           '<span class="ht-rw-n">' + (i+1) + '</span>' +
           avatarHtml(s.userId, s.avatar, s.username, 'ht-rw-av') +
           '<span class="ht-rw-nm">' + esc(s.username) + '</span>' +
-          '<span class="ht-rw-st">' + stackText(s.stack) + '</span>' +
+          '<span class="ht-rw-st">' + stackText(shownStack(tb, s)) + '</span>' +
           '</div>';
-      }).join('') || '<div class="empty" style="padding:14px 0">아직 없습니다</div>';
+      }).join('');
+      /* 탈락자는 지우지 않고 아래에 남긴다 — 늦게 나간 사람이 위다(오래 버텼다).
+         칩은 0, 이름에 취소선, 줄 전체를 가라앉힌다. 살아 있는 사람과 한눈에 갈려야 하고,
+         동시에 "여기 있었다"는 사실은 남아야 한다. */
+      var out = tb.busted || [];
+      rankHtml += out.map(function(s, i){
+        return '<div class="ht-rw out' + (s.userId === MEID ? ' me' : '') + '">' +
+          '<span class="ht-rw-n">' + (rows.length + i + 1) + '</span>' +
+          avatarHtml(s.userId, s.avatar, s.username, 'ht-rw-av') +
+          '<span class="ht-rw-nm">' + esc(s.username) + '</span>' +
+          '<span class="ht-rw-st">' + stackText(0) + '</span>' +
+          '</div>';
+      }).join('');
+      if (!rankHtml) rankHtml = '<div class="empty" style="padding:14px 0">아직 없습니다</div>';
       if (rankEl.dataset.sig !== rankHtml) { rankEl.dataset.sig = rankHtml; rankEl.innerHTML = rankHtml; }
       backBtn.hidden = tb.myPresence !== 'SIT_OUT';
     }
