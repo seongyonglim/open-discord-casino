@@ -156,7 +156,7 @@ function gameCard(g: GameDef, override?: { badge?: string; desc?: string; cta?: 
 function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; cta?: string; hot?: boolean } {
   const t = st.tournament;
   const n = st.registered;
-  const pool = T.prizePool(n, t.prize_multiplier);
+  const pool = T.prizePool(n, t.prize_multiplier, t.prize_fixed > 0 ? t.prize_fixed : 0);
   const now = Math.floor(Date.now() / 1000);
   const left = (at: number) => {
     const s = Math.max(0, at - now);

@@ -45,3 +45,13 @@
     .ad-card{padding:13px 14px}
     .ad-wrap input[type=password],.ad-wrap input[type=search]{min-width:0;flex:1}
   }
+  /* 설정 폼 — 항목이 아홉이라 한 줄로 늘어놓으면 읽히지 않는다. 라벨 위, 값 아래,
+     단위는 작게 옆에. 좁아지면 한 칸씩 쌓인다. */
+  .ad-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px;margin-bottom:12px}
+  .ad-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--muted)}
+  .ad-grid input{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;color:var(--txt);font-family:var(--mono);font-size:13.5px;width:100%}
+  .ad-grid input:focus{outline:none;border-color:var(--gold)}
+  .ad-grid i{font-style:normal;font-size:11px;color:var(--muted);font-weight:600}
+  .ad-live{font-size:10px;font-weight:800;color:var(--win);
+    border:1px solid rgba(46,204,113,.4);border-radius:4px;padding:1px 5px;margin-left:6px}

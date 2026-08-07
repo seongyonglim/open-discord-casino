@@ -80,18 +80,26 @@ export interface TournamentSchedule {
   title: string;
 }
 
-export function scheduleForDate(dateStr: string): TournamentSchedule {
+/** 운영자가 고칠 수 있는 일정 값. 안 주면 이 파일의 기본값을 쓴다. */
+export interface ScheduleOverrides {
+  regOpenHour?: number; startHour?: number; graceSec?: number;
+  weekdayMultiplier?: number; weekendMultiplier?: number;
+}
+
+export function scheduleForDate(dateStr: string, o: ScheduleOverrides = {}): TournamentSchedule {
   // 요일 판정은 그 날짜의 정오를 기준으로 한다 — 자정 경계에서 흔들리지 않는다
   const noon = kstTimeToUnix(dateStr, 12, 0);
   const weekend = isKstWeekend(noon * 1000);
-  const scheduledStartAt = kstTimeToUnix(dateStr, START_HOUR, 0);
+  const scheduledStartAt = kstTimeToUnix(dateStr, o.startHour ?? START_HOUR, 0);
   return {
     dateStr,
-    regOpenAt: kstTimeToUnix(dateStr, REG_OPEN_HOUR, 0),
+    regOpenAt: kstTimeToUnix(dateStr, o.regOpenHour ?? REG_OPEN_HOUR, 0),
     scheduledStartAt,
-    graceEndsAt: scheduledStartAt + GRACE_SEC,
+    graceEndsAt: scheduledStartAt + (o.graceSec ?? GRACE_SEC),
     weekend,
-    prizeMultiplier: weekend ? WEEKEND_MULTIPLIER : WEEKDAY_MULTIPLIER,
+    prizeMultiplier: weekend
+      ? (o.weekendMultiplier ?? WEEKEND_MULTIPLIER)
+      : (o.weekdayMultiplier ?? WEEKDAY_MULTIPLIER),
     title: weekend ? '주말 더블 프리롤' : '데일리 프리롤',
   };
 }
@@ -127,7 +135,7 @@ export function statusAt(
 /** 지금 등록할 수 있나. 늦은 등록은 "빈자리가 있을 때만" 허용된다(스펙 3항). */
 export function canRegister(
   now: number, s: TournamentSchedule, f: TournamentFacts,
-  registeredCount: number, seatedCount: number
+  registeredCount: number, seatedCount: number, lateRegSec = LATE_REG_SEC
 ): { ok: true } | { ok: false; reason: 'not_open' | 'late_reg_closed' | 'table_full' | 'closed' } {
   const st = statusAt(now, s, f, registeredCount);
   if (st === 'FINISHED' || st === 'CANCELLED') return { ok: false, reason: 'closed' };
@@ -137,15 +145,17 @@ export function canRegister(
   }
   // RUNNING — 늦은 등록 창 안이고 자리가 남아 있어야 한다
   if (f.startedAt == null) return { ok: false, reason: 'closed' };
-  if (now >= f.startedAt + LATE_REG_SEC) return { ok: false, reason: 'late_reg_closed' };
+  if (now >= f.startedAt + lateRegSec) return { ok: false, reason: 'late_reg_closed' };
   if (seatedCount >= MAX_PLAYERS) return { ok: false, reason: 'table_full' };
   return { ok: true };
 }
 
 /** 늦은 등록 남은 시간(초). 창이 닫혔거나 아직 시작 전이면 null. */
-export function lateRegLeft(now: number, f: TournamentFacts): number | null {
+/* sec 인자는 그 대회가 만들어질 때 박아 둔 값이다. 안 주면 코드 기본값을 쓴다 —
+   설정이 없던 시절에 만들어진 대회도 예전과 똑같이 동작해야 한다. */
+export function lateRegLeft(now: number, f: TournamentFacts, sec = LATE_REG_SEC): number | null {
   if (f.startedAt == null) return null;
-  const left = f.startedAt + LATE_REG_SEC - now;
+  const left = f.startedAt + sec - now;
   return left > 0 ? left : null;
 }
 
@@ -174,16 +184,16 @@ export const BLIND_LEVELS: BlindLevel[] = [
 ];
 
 /** 시작 후 elapsedSec가 지난 시점의 블라인드 레벨 */
-export function levelAt(elapsedSec: number): BlindLevel {
-  const idx = Math.floor(Math.max(0, elapsedSec) / LEVEL_DURATION_SEC);
+export function levelAt(elapsedSec: number, levelSec = LEVEL_DURATION_SEC): BlindLevel {
+  const idx = Math.floor(Math.max(0, elapsedSec) / levelSec);
   return BLIND_LEVELS[Math.min(idx, BLIND_LEVELS.length - 1)];
 }
 
 /** 다음 레벨 상승까지 남은 초. 마지막 레벨이면 null. */
-export function nextLevelIn(elapsedSec: number): number | null {
-  const idx = Math.floor(Math.max(0, elapsedSec) / LEVEL_DURATION_SEC);
+export function nextLevelIn(elapsedSec: number, levelSec = LEVEL_DURATION_SEC): number | null {
+  const idx = Math.floor(Math.max(0, elapsedSec) / levelSec);
   if (idx >= BLIND_LEVELS.length - 1) return null;
-  return (idx + 1) * LEVEL_DURATION_SEC - Math.max(0, elapsedSec);
+  return (idx + 1) * levelSec - Math.max(0, elapsedSec);
 }
 
 /* ── 상금 정책 ───────────────────────────────────────────────────────
@@ -267,6 +277,9 @@ export function prizeAmounts(pool: number, players: number): number[] {
 }
 
 /** 총 상금 = 누적 참가자 수 × 배수 (동시 접속자가 아니다 — 스펙 3항) */
-export function prizePool(uniqueRegistered: number, multiplier: number): number {
+/* fixed 가 0보다 크면 인원과 무관하게 그 금액을 쓴다. 참가 인원이 적어도 상금이
+   보장되는 대회를 열 수 있게 하려는 것이다. 0 이면 예전처럼 인원 × 배수. */
+export function prizePool(uniqueRegistered: number, multiplier: number, fixed = 0): number {
+  if (fixed > 0) return Math.floor(fixed);
   return Math.max(0, Math.floor(uniqueRegistered) * multiplier);
 }
