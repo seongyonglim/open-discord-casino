@@ -1288,6 +1288,40 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
   ck('프리롤은 예전 그대로 (인원 × 배수)', T.prizePool(5, 1000, 0, 0) === 5000);
   ck('프리롤의 고정 상금도 그대로', T.prizePool(5, 1000, 7777, 0) === 7777);
 
+  /* ── 템플릿([기본 룰 템플릿])이 기본값으로 흘러가는가 ──────────────
+     대회를 열 때마다 참가비를 다시 입력하지 않으려고 둔 값이다. 여기가 안 이어지면
+     운영자는 템플릿을 바이인으로 바꿔 놓고 프리롤이 열리는 것을 보게 된다. */
+  {
+    const S = require('../src/db/settings') as typeof import('../src/db/settings');
+    const R = require('../src/db/recurrence') as typeof import('../src/db/recurrence');
+    wipe();
+    S.saveConfig({ ...S.defaultConfig(), buyIn: 700, prizeFixed: 3000 });
+    ck('템플릿에 참가비가 저장된다', S.getConfig().buyIn === 700, String(S.getConfig().buyIn));
+
+    const t = A.createTournament({ title: '템플릿 판', regOpenAt: nowSec() + 60, startAt: nowSec() + 7200 });
+    ck('참가비를 안 줘도 템플릿 값이 붙는다',
+      t.ok && HD.liveTournament()?.buy_in === 700, String(HD.liveTournament()?.buy_in));
+    ck('보장 상금도 템플릿에서 온다', HD.liveTournament()?.prize_fixed === 3000,
+      String(HD.liveTournament()?.prize_fixed));
+
+    /* 테스트 대회만은 예외다 — 참가비를 걷으면 원장이 움직여서 끝난 뒤 통째로 지울 수
+       없게 된다. 그 판의 존재 이유가 "경제에 흔적을 남기지 않는 것"이다. */
+    wipe();
+    S.saveConfig({ ...S.defaultConfig(), buyIn: 700 });
+    const test = A.openTestTournament();
+    ck('테스트 대회는 템플릿이 바이인이어도 프리롤이다',
+      test.ok && HD.liveTournament()?.buy_in === 0, String(HD.liveTournament()?.buy_in));
+
+    // 반복 개최로 열리는 판도 템플릿을 따른다
+    wipe();
+    S.saveConfig({ ...S.defaultConfig(), buyIn: 500 });
+    R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+    R.ensureRecurring();
+    ck('반복 개최로 열린 판에도 참가비가 붙는다', HD.liveTournament()?.buy_in === 500,
+      String(HD.liveTournament()?.buy_in));
+    db.prepare(`DELETE FROM holdem_settings`).run();
+  }
+
   /* ── 끝까지 돌려서 경제가 맞는지 ─────────────────────────────── */
   wipe();
   for (const u of users) {

@@ -24,6 +24,11 @@ export interface TournamentConfig {
   weekdayMultiplier: number;  // 상금 풀 = 등록자 수 × 배수
   weekendMultiplier: number;
   prizeFixed: number;       // 0보다 크면 인원과 무관하게 이 금액을 상금 풀로 쓴다
+  /* 참가비 기본값. 0 이면 프리롤이고 그것이 기본이다.
+     "참가 방식"을 따로 두지 않는 이유가 있다 — 방식과 금액을 각각 저장하면 둘이
+     어긋나는 상태(바이인인데 0원, 프리롤인데 500원)가 생기고, 그때 어느 쪽을 믿을지
+     아무도 모른다. 금액 하나만 두면 0 인가 아닌가로 방식이 저절로 정해진다. */
+  buyIn: number;
 }
 /* 순위별 분배 비율은 여기서 다루지 않는다. ITM 인원(참가자의 30%)과 순위별 비중은
    검증된 산식이라 그대로 둔다 — 운영자가 고치는 것은 "풀의 크기"까지다. */
@@ -40,6 +45,7 @@ export function defaultConfig(): TournamentConfig {
     weekdayMultiplier: T.WEEKDAY_MULTIPLIER,
     weekendMultiplier: T.WEEKEND_MULTIPLIER,
     prizeFixed: 0,
+    buyIn: 0,
   };
 }
 
@@ -69,6 +75,7 @@ export function getConfig(): TournamentConfig {
     weekdayMultiplier: numOf('weekdayMultiplier', d.weekdayMultiplier),
     weekendMultiplier: numOf('weekendMultiplier', d.weekendMultiplier),
     prizeFixed: numOf('prizeFixed', d.prizeFixed),
+    buyIn: numOf('buyIn', d.buyIn),
   };
 }
 
@@ -103,6 +110,9 @@ export function validateConfig(c: TournamentConfig): string[] {
     if (!int(n) || n < 0) bad.push(`${label}는 0 이상의 정수여야 합니다`);
   }
   if (!int(c.prizeFixed) || c.prizeFixed < 0) bad.push('고정 상금 풀은 0 이상의 정수여야 합니다');
+  /* 참가비는 사람 잔액에서 실제로 빠져나가는 돈이다. 음수·소수가 여기를 지나면
+     그대로 원장에 남는다. */
+  if (!int(c.buyIn) || c.buyIn < 0) bad.push('참가비는 0 이상의 정수여야 합니다');
   return bad;
 }
 
@@ -122,6 +132,7 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
     put('weekdayMultiplier', String(c.weekdayMultiplier));
     put('weekendMultiplier', String(c.weekendMultiplier));
     put('prizeFixed', String(c.prizeFixed));
+    put('buyIn', String(c.buyIn));
     return { ok: true as const };
   });
 }

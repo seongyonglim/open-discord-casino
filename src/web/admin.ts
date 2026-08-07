@@ -13,6 +13,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { layout, esc, jsonForScript } from './views';
+import * as T from '../services/tournament';
 import { readJson, sendJson } from './http';
 import {
   listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
@@ -68,13 +69,20 @@ export function adminPage(user: WebUser): string {
   const live2 = (t: { started_at: number | null; finished_at: number | null; cancelled_at: number | null }) =>
     t.started_at != null && t.finished_at == null && t.cancelled_at == null;
   const rows = ts.map(t => {
+    /* 상금 풀은 지금 기준으로 다시 잰다 — 아직 안 끝난 판은 지급액이 0이라
+       "이 판이 얼마짜리인가"를 지급액만 봐서는 알 수 없다. */
+    const pool = T.prizePool(t.entries, t.prize_multiplier, t.prize_fixed, t.buy_in);
+    const st = tournamentState(t);
     return `<tr>
       <td>${t.id}</td>
       <td>${esc(t.date_str)}</td>
       <td>${esc(t.title)}</td>
-      <td>${tournamentState(t)}</td>
+      <td>${t.buy_in > 0
+        ? `<span class="ad-tag buy">바이인 ${num(t.buy_in)}P</span>`
+        : `<span class="ad-tag free">프리롤</span>`}</td>
+      <td><span class="ad-st s-${st === '진행 중' ? 'run' : st === '종료' ? 'done' : st === '취소' ? 'cancel' : 'wait'}">${st}</span></td>
       <td class="r">${num(t.entries)}</td>
-      <td class="r">${num(t.prize_multiplier)}</td>
+      <td class="r">${num(pool)}P</td>
       <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P</td>
       <td>${live2(t)
         ? `<span class="ad-no">진행 중</span>`
@@ -195,16 +203,13 @@ export function adminPage(user: WebUser): string {
     </section>
 
     <section class="ad-card" data-pane="tour">
-      <h2>대회 기록</h2>
-      <p class="ad-note">상금이 나간 대회는 <b>[상금 회수 후 삭제]</b>로만 지울 수 있습니다 — 그냥 지우면
-        원장에 근거 없는 포인트가 남습니다. 회수는 역방향 원장으로 기록되고,
-        <b>이미 다 쓴 사람은 잔액이 음수가 됩니다</b>(지원금으로 갚아 나갈 수 있습니다).
-        되돌릴 수 없으니 테스트는 상금 배수 0으로 여세요.</p>
+      <h2>새 대회 열기</h2>
       <p class="ad-note">${rec.enabled
-        ? `<b>반복 개최가 켜져 있습니다</b> — ${recText}. 그 밖의 판은 아래에서 직접 여세요.`
-        : `<b>대회는 저절로 열리지 않습니다.</b> 아래에서 직접 여셔야 합니다 —
-           열지 않으면 그날은 대회가 없습니다. 정기적으로 열려면 [개최 방식]에서 반복을 켜세요.`}</p>
-      <div class="ad-sub2">새 대회 <span>${live
+        ? `<b>반복 개최가 켜져 있습니다</b> — ${recText}. 그 밖의 판을 여기서 직접 엽니다.`
+        : `<b>대회는 저절로 열리지 않습니다.</b> 여기서 직접 여셔야 합니다 —
+           열지 않으면 그날은 대회가 없습니다. 정기적으로 열려면 아래 [개최 방식]에서 반복을 켜세요.`}
+        칩·블라인드·대기·레이트 레지는 <b>[기본 룰 템플릿]</b>의 값을 그대로 씁니다.</p>
+      <div class="ad-sub2">지금 열 수 있는가 <span>${live
         ? '지금 돌고 있는 대회가 있어 만들 수 없습니다 — 끝난 뒤에 열립니다'
         : nextStart == null
           ? '예정된 대회가 없습니다 — 지금 열 수 있습니다'
@@ -213,16 +218,22 @@ export function adminPage(user: WebUser): string {
             : `다음 대회가 ${kst(nextStart)}에 시작해 만들 수 없습니다 —
                한 판이 두 시간까지 갈 수 있어서, 시작까지 두 시간 이상 남았을 때만 열립니다`}</span></div>
       <div class="ad-grid">
-        <label>제목<input type="text" id="ncTitle" placeholder="홀덤 프리롤" ${canMake ? '' : 'disabled'}><i>비우면 "홀덤 프리롤"</i></label>
+        <label>제목<input type="text" id="ncTitle" placeholder="${cfg.buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤'}" ${canMake ? '' : 'disabled'}><i>비우면 방식에 맞는 이름이 붙습니다</i></label>
+        <label>참가 방식<select id="ncKind" ${canMake ? '' : 'disabled'}>
+          <option value="free" ${cfg.buyIn > 0 ? '' : 'selected'}>프리롤 (참가비 없음)</option>
+          <option value="buyin" ${cfg.buyIn > 0 ? 'selected' : ''}>바이인 (참가비 있음)</option>
+        </select><i>템플릿의 방식이 기본으로 잡힙니다</i></label>
         <label>등록 시작<input type="datetime-local" id="ncRegAt" value="${localInput(defaultRegAt)}" ${canMake ? '' : 'disabled'}><i>KST · 이때부터 신청을 받습니다</i></label>
         <label>대회 시작<input type="datetime-local" id="ncStartAt" value="${localInput(defaultStartAt)}" ${canMake ? '' : 'disabled'}><i>KST · 3명 이상이면 이때 시작</i></label>
-        <label>참가 방식<select id="ncKind" ${canMake ? '' : 'disabled'}>
-          <option value="free" selected>프리롤 (참가비 없음)</option>
-          <option value="buyin">바이인 (참가비 있음)</option>
-        </select><i>바이인이면 걷은 돈이 곧 상금입니다</i></label>
-        <label>참가비<span class="ad-inx"><input type="number" id="ncBuyIn" min="0" step="100" value="0" ${canMake ? '' : 'disabled'}><b>P</b></span><i>바이인일 때만 · 취소되면 전액 환불</i></label>
-        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${canMake ? '' : 'disabled'}><b>×명</b></span><i>프리롤일 때만 · 0이면 상금 없음</i></label>
-        <label>보장 상금 (GTD)<span class="ad-inx"><input type="number" id="ncGtd" min="0" step="1000" value="0" ${canMake ? '' : 'disabled'}><b>P</b></span><i>바이인일 때 · 걷은 돈이 모자라면 채웁니다</i></label>
+      </div>
+      <!-- 방식에 따라 이 두 줄 중 하나만 보인다. 지금 쓰이지 않는 칸을 늘어놓으면
+           무엇이 상금을 정하는지가 흐려진다 — 실제로 배수와 참가비가 나란히 있었다. -->
+      <div class="ad-grid" id="ncFreeRow">
+        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${canMake ? '' : 'disabled'}><b>×명</b></span><i>인원 × 배수가 상금 풀 · 0이면 상금 없음</i></label>
+      </div>
+      <div class="ad-grid" id="ncBuyRow">
+        <label>참가비<span class="ad-inx"><input type="number" id="ncBuyIn" min="0" step="100" value="${cfg.buyIn}" ${canMake ? '' : 'disabled'}><b>P</b></span><i>걷은 돈이 그대로 상금 · 취소되면 전액 환불</i></label>
+        <label>보장 상금 (GTD)<span class="ad-inx"><input type="number" id="ncGtd" min="0" step="1000" value="${cfg.prizeFixed}" ${canMake ? '' : 'disabled'}><b>P</b></span><i>걷은 돈이 이보다 적으면 모자란 만큼 채웁니다</i></label>
       </div>
       <div class="ad-row">
         <button type="button" id="ncMake" class="primary" ${canMake ? '' : 'disabled'}>대회 열기</button>
@@ -230,12 +241,19 @@ export function adminPage(user: WebUser): string {
         ${live
           ? `<button type="button" id="adAbort" class="danger">진행 중 대회 중단</button>`
           : ''}
-        <span class="ad-note">칩·블라인드·대기·레이트 레지는 아래 [대회 설정]의 값을 씁니다.</span>
       </div>
+    </section>
+
+    <section class="ad-card" data-pane="tour">
+      <h2>대회 기록</h2>
+      <p class="ad-note">상금이 나간 대회는 <b>[상금 회수 후 삭제]</b>로만 지울 수 있습니다 — 그냥 지우면
+        원장에 근거 없는 포인트가 남습니다. 회수는 역방향 원장으로 기록되고,
+        <b>이미 다 쓴 사람은 잔액이 음수가 됩니다</b>(지원금으로 갚아 나갈 수 있습니다).
+        참가비를 걷은 판도 같습니다 — 지우려면 걷은 돈을 먼저 돌려줘야 합니다.</p>
       <div class="ad-scroll">
         <table class="ad-tbl">
-          <thead><tr><th>id</th><th>날짜</th><th>제목</th><th>상태</th><th class="r">참가</th>
-            <th class="r">배수</th><th class="r">지급</th><th></th></tr></thead>
+          <thead><tr><th>id</th><th>날짜</th><th>제목</th><th>방식</th><th>상태</th>
+            <th class="r">참가</th><th class="r">상금 풀</th><th class="r">지급</th><th></th></tr></thead>
           <tbody id="adTBody">${rows}</tbody>
         </table>
       </div>
@@ -273,10 +291,12 @@ export function adminPage(user: WebUser): string {
     </section>
 
     <section class="ad-card" data-pane="tour">
-      <h2>대회 설정</h2>
-      <p class="ad-note">바꾼 값은 <b>다음에 만들어질 대회부터</b> 적용됩니다. 진행 중인 대회는 만들어질 때의
-        값을 자기 행에 갖고 있어서 흔들리지 않습니다 — 블라인드가 갑자기 뛰거나 늦게 온 사람만
-        다른 스택을 받는 일이 없습니다. 순위별 분배(ITM 비율)는 검증된 산식이라 고정입니다.</p>
+      <h2>기본 룰 템플릿</h2>
+      <p class="ad-note">대회를 열 때마다 다시 입력하지 않도록 <b>기본값을 여기 한 번만</b> 정해 둡니다.
+        위 [새 대회 열기]와 [개최 방식]이 이 값을 그대로 불러 씁니다.
+        바꾼 값은 <b>다음에 만들어질 대회부터</b> 적용됩니다 — 진행 중인 대회는 만들어질 때의 값을
+        자기 행에 갖고 있어서 흔들리지 않습니다(블라인드가 갑자기 뛰거나 늦게 온 사람만 다른
+        스택을 받는 일이 없습니다). 순위별 분배(ITM 비율)는 검증된 산식이라 고정입니다.</p>
       <div class="ad-sub2">일정</div>
       <div class="ad-grid">
         <label>등록 시작<input type="time" id="cfRegAt" value="${hhmm(cfg.regOpenMin)}"><i>KST</i></label>
@@ -289,14 +309,26 @@ export function adminPage(user: WebUser): string {
         <label>시작 칩<span class="ad-inx"><input type="number" id="cfStack" min="1" step="500" value="${cfg.startingStack}"><b>칩</b></span><i></i></label>
         <label>블라인드 주기<span class="ad-inx"><input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><b>분</b></span><i>레벨 11까지 ${cfg.levelMin * 10}분</i></label>
       </div>
-      <div class="ad-sub2">상금 풀 <span>순위별 분배(ITM 비율)는 고정입니다 — 여기서는 풀의 크기만 정합니다</span></div>
+      <div class="ad-sub2">참가 방식과 상금 풀 <span>순위별 분배(ITM 비율)는 고정입니다 — 여기서는 풀의 크기만 정합니다</span></div>
       <div class="ad-grid">
+        <label>참가 방식<select id="cfKind">
+          <option value="free" ${cfg.buyIn > 0 ? '' : 'selected'}>프리롤 (참가비 없음)</option>
+          <option value="buyin" ${cfg.buyIn > 0 ? 'selected' : ''}>바이인 (참가비 있음)</option>
+        </select><i>고른 쪽의 설정만 아래에 나옵니다</i></label>
+      </div>
+      <!-- 방식에 따라 한 쪽만 보인다. 배수와 참가비는 상금 풀을 정하는 서로 다른 방법이라
+           나란히 두면 어느 것이 지금 쓰이는지 알 수 없다. -->
+      <div class="ad-grid" id="cfFreeRow">
         <label>평일 배수<span class="ad-inx"><input type="number" id="cfWd" min="0" step="100" value="${cfg.weekdayMultiplier}"><b>×명</b></span><i>5명이면 ${num(cfg.weekdayMultiplier * 5)}P</i></label>
         <label>주말 배수<span class="ad-inx"><input type="number" id="cfWe" min="0" step="100" value="${cfg.weekendMultiplier}"><b>×명</b></span><i>5명이면 ${num(cfg.weekendMultiplier * 5)}P</i></label>
         <label>고정 상금 풀<span class="ad-inx"><input type="number" id="cfFixed" min="0" step="1000" value="${cfg.prizeFixed}"><b>P</b></span><i>0이면 인원 × 배수를 씁니다</i></label>
       </div>
+      <div class="ad-grid" id="cfBuyRow">
+        <label>참가비<span class="ad-inx"><input type="number" id="cfBuyIn" min="0" step="100" value="${cfg.buyIn}"><b>P</b></span><i>5명이면 상금 ${num(Math.max(cfg.buyIn, 0) * 5)}P · 취소되면 전액 환불</i></label>
+        <label>보장 상금 (GTD)<span class="ad-inx"><input type="number" id="cfGtd" min="0" step="1000" value="${cfg.prizeFixed}"><b>P</b></span><i>걷은 돈이 이보다 적으면 모자란 만큼 채웁니다</i></label>
+      </div>
       <div class="ad-row">
-        <button type="button" id="cfSave" class="primary">설정 저장</button>
+        <button type="button" id="cfSave" class="primary">템플릿 저장</button>
         <button type="button" id="cfReset">기본값으로</button>
         <span class="ad-note">기본값 — 등록 ${hhmm(d.regOpenMin)} · 시작 ${hhmm(d.startMin)} · 대기 ${d.graceMin}분 ·
           레이트 ${d.lateRegMin}분 · 칩 ${num(d.startingStack)} · 블라인드 ${d.levelMin}분</span>
@@ -485,6 +517,17 @@ export function adminPage(user: WebUser): string {
       return false;
     }
 
+    /* 새 대회 폼도 참가 방식에 따라 한 줄만 보여준다 — 템플릿 카드와 같은 규칙이다.
+       버튼이 잠긴 상태(canMake=false)에서도 폼은 그려지므로 요소는 항상 있다. */
+    var ncKind = document.getElementById('ncKind');
+    function ncSyncRows(){
+      var buyin = ncKind.value === 'buyin';
+      document.getElementById('ncFreeRow').hidden = buyin;
+      document.getElementById('ncBuyRow').hidden = !buyin;
+    }
+    ncKind.addEventListener('change', ncSyncRows);
+    ncSyncRows();
+
     var ncMake = document.getElementById('ncMake');
     if (ncMake) ncMake.addEventListener('click', function(){
       /* datetime-local 은 'YYYY-MM-DDTHH:MM' 을 준다. 브라우저의 시간대로 해석되므로
@@ -494,7 +537,7 @@ export function adminPage(user: WebUser): string {
         var ms = v ? new Date(v).getTime() : NaN;
         return isFinite(ms) ? Math.floor(ms / 1000) : NaN;
       }
-      var buyin = document.getElementById('ncKind').value === 'buyin';
+      var buyin = ncKind.value === 'buyin';
       var body = {
         title: document.getElementById('ncTitle').value,
         regOpenAt: at('ncRegAt'),
@@ -661,13 +704,36 @@ export function adminPage(user: WebUser): string {
       if (!isFinite(h) || !isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return NaN;
       return h * 60 + m;
     }
+    /* 참가 방식에 따라 한 쪽 줄만 보인다. 안 보이는 칸의 값은 읽지 않는다 —
+       화면에 없는 숫자가 저장되면 무엇이 반영됐는지 알 수 없다.
+
+       고정 상금 칸이 둘(cfFixed·cfGtd)인데 저장되는 값은 하나다. 보이는 쪽을 읽고,
+       방식을 바꿀 때 값을 옮겨 둘이 벌어지지 않게 한다. */
+    var cfKind = document.getElementById('cfKind');
+    function cfBuyin(){ return cfKind.value === 'buyin'; }
+    function cfSyncRows(){
+      var buyin = cfBuyin();
+      document.getElementById('cfFreeRow').hidden = buyin;
+      document.getElementById('cfBuyRow').hidden = !buyin;
+      // 방금 감춰진 쪽의 고정 상금을 보이는 쪽으로 옮긴다
+      if (buyin) document.getElementById('cfGtd').value = document.getElementById('cfFixed').value;
+      else document.getElementById('cfFixed').value = document.getElementById('cfGtd').value;
+    }
+    cfKind.addEventListener('change', cfSyncRows);
+    cfSyncRows();
+
     function cfRead(){
+      var buyin = cfBuyin();
       return {
         regOpenMin: cfClock('cfRegAt'), startMin: cfClock('cfStartAt'),
         graceMin: cfNum('cfGrace'), lateRegMin: cfNum('cfLateReg'),
         startingStack: cfNum('cfStack'), levelMin: cfNum('cfLevel'),
-        weekdayMultiplier: cfNum('cfWd'), weekendMultiplier: cfNum('cfWe'),
-        prizeFixed: cfNum('cfFixed'),
+        /* 프리롤이면 참가비 0, 바이인이면 배수 0. 저장되는 값 하나로 방식이 정해지므로
+           둘이 어긋난 상태(바이인인데 0원)가 아예 생기지 않는다. */
+        buyIn: buyin ? cfNum('cfBuyIn') : 0,
+        weekdayMultiplier: buyin ? 0 : cfNum('cfWd'),
+        weekendMultiplier: buyin ? 0 : cfNum('cfWe'),
+        prizeFixed: buyin ? cfNum('cfGtd') : cfNum('cfFixed'),
       };
     }
     function cfCheck(c){
@@ -675,7 +741,8 @@ export function adminPage(user: WebUser): string {
       // 어느 칸이 잘못됐는지 적는다 — 같은 문장이 여러 줄 뜨면 무엇을 고쳐야 할지 알 수 없다
       var LABEL = { regOpenMin: '등록 시작', startMin: '대회 시작', graceMin: '최소 인원 대기',
         lateRegMin: '레이트 레지', startingStack: '시작 칩', levelMin: '블라인드 주기',
-        weekdayMultiplier: '평일 배수', weekendMultiplier: '주말 배수', prizeFixed: '고정 상금 풀' };
+        weekdayMultiplier: '평일 배수', weekendMultiplier: '주말 배수',
+        prizeFixed: '고정 상금 풀', buyIn: '참가비' };
       for (var k in c) if (!isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
       /* 분 단위로 바뀐 뒤에도 시(regOpenHour/startHour)를 보고 있었다 — 없는 값이라
          비교가 전부 false 가 되어 화면 검증이 조용히 아무것도 안 했다. 서버가 막아 주긴
@@ -689,8 +756,13 @@ export function adminPage(user: WebUser): string {
       if (c.graceMin <= 0 || c.lateRegMin <= 0 || c.startingStack <= 0 || c.levelMin <= 0) {
         bad.push('대기·레이트 레지·칩·블라인드 주기는 1 이상이어야 합니다');
       }
-      if (c.weekdayMultiplier < 0 || c.weekendMultiplier < 0 || c.prizeFixed < 0) {
-        bad.push('배수와 고정 상금은 0 이상이어야 합니다');
+      if (c.weekdayMultiplier < 0 || c.weekendMultiplier < 0 || c.prizeFixed < 0 || c.buyIn < 0) {
+        bad.push('배수 · 고정 상금 · 참가비는 0 이상이어야 합니다');
+      }
+      /* 바이인을 골라 놓고 0원이면 그냥 프리롤이다. 저장은 되지만 운영자가 기대한 것과
+         다르므로 여기서 말한다 — 조용히 프리롤이 되면 왜 참가비가 안 걷히는지 모른다. */
+      if (cfBuyin() && c.buyIn === 0) {
+        bad.push('바이인을 골랐으면 참가비를 1P 이상 넣어 주세요 (0원이면 프리롤입니다)');
       }
       return bad;
     }
@@ -929,6 +1001,7 @@ export async function handleAdminConfig(req: IncomingMessage, res: ServerRespons
     startingStack: n('startingStack'), levelMin: n('levelMin'),
     weekdayMultiplier: n('weekdayMultiplier'), weekendMultiplier: n('weekendMultiplier'),
     prizeFixed: n('prizeFixed'),
+    buyIn: n('buyIn'),
   });
   if (!r.ok) return sendJson(res, 400, { error: r.errors.join(' · ') });
   return sendJson(res, 200, { ok: true });
