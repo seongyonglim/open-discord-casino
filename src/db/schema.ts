@@ -485,6 +485,17 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 홀덤: 판이 끝난 뒤 자발적 패 공개
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN shown INTEGER NOT NULL DEFAULT 0`); } catch {}
+  /* 어느 장을 깠는가 — 1비트가 첫 장, 2비트가 둘째 장이다(0·1·2·3).
+     기본값은 0(아무것도 안 깜)이다. 새 행이 3으로 시작하면 "한 장만 깐다"가 성립하지
+     않는다 — 비트를 더해 나가는 방식이라 처음부터 3이면 무엇을 더해도 3이다.
+
+     대신 이미 있는 행은 한 번만 3으로 올린다. 예전에는 공개가 "두 장 전부"뿐이었으므로
+     shown=1 인 지난 판은 두 장을 깐 것이 맞다. 안 올리면 지난 판들이 조용히
+     "아무것도 안 깐" 것으로 바뀐다. 새로 추가한 직후에만 도는 문장이라 한 번만 돈다. */
+  try {
+    d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN shown_mask INTEGER NOT NULL DEFAULT 0`);
+    d.exec(`UPDATE holdem_hand_seats SET shown_mask = 3 WHERE shown = 1`);
+  } catch { /* 이미 있다 */ }
   // 랭킹: 승률을 계산할 수 있는 판수 (백필한 과거 판은 여기 들어가지 않는다)
   try { d.exec(`ALTER TABLE game_stats ADD COLUMN rated INTEGER NOT NULL DEFAULT 0`); } catch {}
   // 홀덤: 스트리트를 닫은 마지막 행동 (스트리트 초기화가 지우지 못하는 자리)

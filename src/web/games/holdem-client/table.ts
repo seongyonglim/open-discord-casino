@@ -31,7 +31,12 @@ export const TABLE = `    function renderTable(){
       syncPotPile(tb);
       // 팟 회수와 래빗 버튼은 카드를 다 깐 뒤에 — 결과가 카드보다 먼저 오면 안 된다
       if (resultReady()) { flyPotToWinners(tb); syncRabbit(tb); syncShow(tb); }
-      else { showBtn.hidden = true; rabbitBtn.hidden = true; rnoteEl.hidden = true; }
+      else {
+        /* 공개 버튼이 셋으로 늘었는데 여기서 하나만 내리고 있었다 — 그래서 왼쪽·오른쪽
+           버튼이 다음 판이 도는 중에도 화면에 남아 있었다. 결과가 아직이면 셋 다 내린다. */
+        showBtn.hidden = true; showLBtn.hidden = true; showRBtn.hidden = true;
+        rabbitBtn.hidden = true; rnoteEl.hidden = true;
+      }
 
       /* 중앙에는 이제 보드와 팟만 둔다.
          한때 이 자리에 "OO 차례 · N초"가 있었고, 그다음에는 "OO +12,500 (다음 판 8초)"가

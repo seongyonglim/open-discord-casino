@@ -72,7 +72,7 @@
                   'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3',
                   'tournament-win':'mp3',
                   'act-allin':'mp3', 'act-bet':'mp3', 'act-call':'mp3',
-                  'act-check':'mp3', 'act-raise':'mp3', 'act-fold':'mp3',
+                  'act-check':'mp3', 'act-raise':'mp3', 'act-fold':'mp3', 'fold-slide':'mp3',
                   'win-pot':'mp3', 'clock-warn':'mp3', 'allin-bgm':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
@@ -108,6 +108,14 @@
        보정 후 피크는 전부 -12dB 이하라 클리핑 여유가 넉넉하다. */
     'act-allin': 0.785, 'act-bet': 0.891, 'act-call': 1.012,
     'act-check': 1.072, 'act-raise': 0.989, 'act-fold': 0.881,
+    /* 카드가 미끄러지는 소리. 원본이 아주 조용하다 — 전체 RMS -50.6dB · 피크 -29.1dB.
+       파일 1.44초 가운데 실제로 소리가 나는 구간은 짧아서, 전체 RMS 로 맞추면 무음에
+       희석된 값을 기준 삼게 된다. 그래서 이 하나는 "가장 큰 100ms 구간"으로 잰다:
+         fold-slide -42.2dB · act-fold -23.2dB(보정 후 -24.3dB)
+       이 소리는 폴드 음성 위에 겹쳐 나는 촉감이므로 음성보다 4dB 아래(-28.3dB)에 둔다 —
+       같은 높이로 두면 목소리를 갉아먹고, 더 낮추면 아예 안 들린다.
+       보정 후 피크는 -15.2dB 라 클리핑 여유가 넉넉하다. */
+    'fold-slide': 4.9,
     /* 팟 획득 음악. 실측 RMS -33.5dB · 4.61초.
        칩이 밀려가는 소리(chips-to-winner, 실효 -31.0dB) 위에 겹쳐 깔린다. 지속음이라
        같은 RMS로 맞추면 짧은 칩 소리보다 훨씬 크게 느껴져서 3dB 아래(-34dB)에 둔다 —
@@ -200,6 +208,9 @@
     actcheck: ['act-check'],
     actraise: ['act-raise'],
     actfold: ['act-fold'],
+    /* 카드가 미끄러지는 소리 — 음성(act-fold) 위에 겹쳐 낸다. 음성은 '무슨 행동을
+       했다'이고 이건 카드가 실제로 밀려나는 그 순간의 촉감이다. */
+    foldslide: ['fold-slide'],
     /* 아래 셋은 "한 번에 하나만" 울려야 하는 소리다(VOICES에서 상한 1).
        겹쳐 울리면 음악이 두 겹으로 깔려 무슨 일이 일어났는지 오히려 흐려진다.
        상한이 1이면 playSample이 새로 시작할 때 이전 것을 끊는다 —
@@ -419,6 +430,10 @@
         : kind === 'raise' ? 'actraise'
         : kind === 'fold' ? 'actfold' : null;
       if (set) speak(set, 1);
+      /* 폴드에는 카드가 미끄러지는 소리를 겹쳐 낸다. 음성은 "무슨 행동을 했다"이고
+         이건 카드가 실제로 밀려나는 그 순간의 촉감이라 역할이 다르다.
+         음성보다 4dB 아래로 맞춰 뒀으므로 목소리를 덮지 않는다. */
+      if (kind === 'fold') playSample('foldslide', 1);
     },
     // 칩 올리기 — 동전 넣는 소리 (동전·골드바 공통)
     chip: function(){

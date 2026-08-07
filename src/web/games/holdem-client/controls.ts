@@ -41,11 +41,23 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       /* 판이 끝난 뒤의 두 버튼도 이 패널 안(ht-acts)에 있다. 그래서 내 차례가 아니라고
          패널 전체를 접으면 그 버튼이 뜨고 싶어도 보이지 않는다 — 실제로 그렇게 됐다.
          버튼이 하나라도 뜰 상황이면 패널은 열어두고, 베팅 금액 줄과 미리 지정 줄만 접는다. */
-      var post = !away && (!rabbitBtn.hidden || !showBtn.hidden);
-      if (away) { rabbitBtn.hidden = true; showBtn.hidden = true; rnoteEl.hidden = true; }
-      ctrlEl.hidden = !la && !post && !away;
+      /* 판이 끝난 뒤에만 뜨는 버튼들. 공개 버튼이 셋으로 늘었는데 여기서 showBtn 하나만
+         보고 있었다 — 그래서 왼쪽·오른쪽 버튼이 다음 판이 도는 중에도 남아 있었다.
+         "뜰 수 있는 버튼"의 목록을 한 곳에 두고 셋 다 같이 다룬다. */
+      var postBtns = [rabbitBtn, showBtn, showLBtn, showRBtn];
+      var post = !away && postBtns.some(function(b){ return !b.hidden; });
+      if (away) {
+        postBtns.forEach(function(b){ b.hidden = true; });
+        rnoteEl.hidden = true;
+      }
+      /* 사전 액션 상자는 내 차례가 "아닐 때" 액션 버튼 자리에 뜬다. 예전에는 la(내 차례)를
+         조건으로 두어 내 차례에만 보였는데, 그러면 미리 정해 둘 이유가 없다.
+         근거는 서버가 주는 pre 다 — 내 차례가 되면 서버가 그것을 비우고 진짜 버튼이 뜬다. */
+      var pre = st.table.pre;
+      preEl.hidden = !pre || away;
+      if (pre && !away) updatePreLabels();
+      ctrlEl.hidden = !la && !post && !away && !pre;
       ctopEl.hidden = !la || away;
-      preEl.hidden = !la || away;
       if (!la || away) {
         /* 행동할 수 없으면 네 버튼을 반드시 내린다. 전에는 패널이 통째로 닫혀서
            그냥 두어도 보이지 않았는데, 이제 판이 끝나도 패널이 열려 있으므로
@@ -182,7 +194,10 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       if (any && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
     }
 
-    function act(kind, amount){
+    /* maxCall — 사전 액션으로 콜할 때만 채운다. "내가 걸어 둘 때 본 콜 금액"이고,
+       서버가 지금 금액과 비교해 더 커졌으면 거절한다. amount 와 따로 두는 이유는
+       amount 가 레이즈 금액이라는 다른 뜻을 이미 갖고 있기 때문이다. */
+    function act(kind, amount, maxCall){
       // 칩이 실제로 나가는 액션에만 소리를 낸다 (폴드·체크는 칩이 안 나간다).
       // 서버 응답을 기다리지 않고 클릭 순간에 울려야 손맛이 난다.
       if (kind !== 'fold' && kind !== 'check') {
@@ -194,7 +209,8 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
          내 것을 여기서 울렸다고 폴링 쪽에 표시해 둔다(겹쳐 울리지 않게). */
       myVoiceAt = Date.now();
       if (window.casinoSfx && window.casinoSfx.action) window.casinoSfx.action(kind);
-      return post('/api/games/holdem/action', { action: kind, amount: amount || 0 })
+      return post('/api/games/holdem/action',
+        { action: kind, amount: amount || 0, maxCall: maxCall == null ? null : maxCall })
         .then(function(r){
           if (!r.ok && r.d && r.d.error) msgEl.textContent = r.d.error;
           return poll();
@@ -218,13 +234,18 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
        그대로 콜되는" 사고가 안 난다. */
     var preCF = document.getElementById('htPreCheckFold');
     var preC = document.getElementById('htPreCheck');
+    var preF = document.getElementById('htPreFold');
     var preCall = document.getElementById('htPreCall');
     var preCallAmount = null;
-    [preCF, preC, preCall].forEach(function(box){
+    var PRE_BOXES = [preCF, preC, preF, preCall];
+    PRE_BOXES.forEach(function(box){
       box.addEventListener('change', function(){
-        if (box.checked) [preCF, preC, preCall].forEach(function(o){ if (o !== box) o.checked = false; });
-        preCallAmount = (box === preCall && box.checked && st && st.table && st.table.legal)
-          ? st.table.legal.callAmount : null;
+        if (box.checked) PRE_BOXES.forEach(function(o){ if (o !== box) o.checked = false; });
+        /* 콜을 걸어 둔 순간의 금액을 적어 둔다. 그 뒤에 누가 올리면 이 값과 달라지고,
+           그때 자동으로 풀린다 — "콜 200을 걸어뒀는데 5000으로 올라 그대로 콜되는"
+           사고를 막는 유일한 장치다. 내 차례가 아닐 때는 legal 이 없으므로 pre 를 본다. */
+        var cur = st && st.table ? (st.table.legal || st.table.pre) : null;
+        preCallAmount = (box === preCall && box.checked && cur) ? cur.callAmount : null;
       });
     });
     function runPreAction(){
@@ -235,6 +256,7 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
          사라진 채로 제한 시간까지 흘러 자동 폴드된다. 다음 폴링에서 다시 본다. */
       if (st.table.actOpenIn > 0) return;
       if (preCF.checked) { preCF.checked = false; act(la.canCheck ? 'check' : 'fold'); return; }
+      if (preF.checked) { preF.checked = false; act('fold'); return; }
       if (preC.checked) {
         if (la.canCheck) { act('check'); return; }
         preC.checked = false;                 // 베팅이 들어왔다 — 자동 체크 해제
@@ -242,15 +264,30 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       }
       if (preCall.checked) {
         if (la.canCall && (preCallAmount == null || la.callAmount <= preCallAmount)) {
-          preCall.checked = false; act('call'); return;
+          /* 걸어 둘 때 본 금액을 함께 보낸다. 화면의 자동 해제는 폴링 사이에 상황이
+             바뀌면 늦을 수 있고, 그 틈에 내 차례가 오면 의도하지 않은 금액을 콜하게 된다.
+             서버가 같은 값을 다시 확인하고 다르면 거절한다 — 마지막 문은 서버다. */
+          preCall.checked = false; act('call', 0, preCallAmount); return;
         }
         preCall.checked = false;              // 레이즈가 들어왔다 — 자동 콜 해제
       }
     }
+    /* 상황에 맞는 둘만 보여준다. 베팅이 없으면 [체크/폴드][체크], 있으면 [폴드][콜 N].
+       내 차례가 아닐 때만 뜨므로 근거는 pre 다(내 차례에는 진짜 버튼이 뜬다). */
     function updatePreLabels(){
-      var la = st.table && st.table.legal;
+      var pre = st.table && st.table.pre;
+      if (!pre) return;                 // 내 차례이거나 판에 없다 — 상자가 애초에 안 뜬다
+      var canCheck = pre ? pre.canCheck : true;
+      document.getElementById('htPreCFBox').hidden = !canCheck;
+      document.getElementById('htPreCBox').hidden = !canCheck;
+      document.getElementById('htPreFBox').hidden = canCheck;
+      document.getElementById('htPreCallBox').hidden = canCheck;
+      /* 안 보이게 된 칸의 체크는 푼다. 남겨 두면 상황이 바뀐 뒤에도 예전 선택이
+         살아 있다가 내 차례에 그대로 실행된다. */
+      if (canCheck) { preF.checked = false; preCall.checked = false; }
+      else { preCF.checked = false; preC.checked = false; }
       document.getElementById('htPreCallLabel').textContent =
-        la && la.callAmount ? '자동 콜 ' + stackText(la.callAmount) : '자동 콜';
+        pre && pre.callAmount ? '콜 ' + stackText(pre.callAmount) : '콜';
     }
 
     /* ── 렌더 / 폴링 ─────────────────────────────────────────────── */
