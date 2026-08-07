@@ -1255,6 +1255,35 @@ section('[10b] 첫 시즌으로 지난 기록 가져오기');
   const g2 = S.seasonGameRanking(s.id, 'mines');
   ck('두 번 가져와도 불어나지 않는다 (더하기가 아니라 맞추기)',
     g2[0].rounds === 11 && g2[0].profit === 300, JSON.stringify(g2[0]));
+
+  /* 가져오기는 시작 시각도 함께 당긴다.
+     안 그러면 첫 시즌이 자기 약속을 어긴다 — 게임 전적은 시점과 무관하게 전부 담으면서
+     홀덤만 "시즌 구간 안에 끝난 대회"로 세기 때문이다. 실제로 그랬다: 대회가 끝난 지
+     13시간 뒤에 시즌을 열었더니 랭킹에 홀덤 탭이 아예 안 떴다. */
+  for (const t of ['season_stats', 'season_results', 'seasons', 'game_stats',
+    'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  {
+    const s2 = S.currentSeason();
+    const long = s2.started_at - 13 * 3600;      // 시즌보다 13시간 앞서 끝난 대회
+    db.prepare(`INSERT INTO holdem_tournaments
+        (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at,
+         prize_multiplier, started_at, finished_at)
+      VALUES (77, '1999-01-01', '옛 대회', ?, ?, ?, 1000, ?, ?)`)
+      .run(long, long, long, long, long);
+    db.prepare(`INSERT INTO holdem_entries
+        (tournament_id, user_id, username, registered_at, finish_place, prize)
+      VALUES (77, 'bf_a', 'bf_a', ?, 1, 3000)`).run(long);
+
+    ck('당기기 전에는 옛 대회가 시즌 밖이라 안 잡힌다', S.seasonHoldemCount(s2.id) === 0);
+    S.backfillFirstSeason();
+    ck('가져오면 시작 시각이 옛 기록까지 당겨진다',
+      S.currentSeason().started_at <= long, `${S.currentSeason().started_at} vs ${long}`);
+    ck('그래서 홀덤 카테고리가 뜬다', S.seasonHoldemCount(s2.id) === 1,
+      String(S.seasonHoldemCount(s2.id)));
+    const hr = S.seasonHoldemRanking(s2.id);
+    ck('홀덤 순위에 옛 대회가 들어온다',
+      hr.length === 1 && hr[0].prize === 3000 && hr[0].wins === 1, JSON.stringify(hr[0]));
+  }
 }
 auditLedger('시즌 후');
 
