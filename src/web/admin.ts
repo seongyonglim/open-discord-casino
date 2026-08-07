@@ -15,7 +15,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { layout, esc, jsonForScript } from './views';
 import { readJson, sendJson } from './http';
 import {
-  listTournaments, purgeTournament, openTestTournament, createTournament, searchUsers, grantPoints,
+  listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
+  searchUsers, grantPoints,
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
@@ -54,8 +55,10 @@ export function adminPage(user: WebUser): string {
   const ts = listTournaments(30);
   const tokenSet = (process.env.ADMIN_TOKEN ?? '') !== '';
 
+  /* 진행 중인 판은 어느 쪽으로도 손대지 않는다 — 사람이 앉아 카드를 보고 있다. */
+  const live2 = (t: { started_at: number | null; finished_at: number | null; cancelled_at: number | null }) =>
+    t.started_at != null && t.finished_at == null && t.cancelled_at == null;
   const rows = ts.map(t => {
-    const safe = t.paid === 0 && !(t.started_at != null && t.finished_at == null && t.cancelled_at == null);
     return `<tr>
       <td>${t.id}</td>
       <td>${esc(t.date_str)}</td>
@@ -64,16 +67,27 @@ export function adminPage(user: WebUser): string {
       <td class="r">${num(t.entries)}</td>
       <td class="r">${num(t.prize_multiplier)}</td>
       <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P</td>
-      <td>${safe
-        ? `<button type="button" class="ad-del" data-id="${t.id}" data-label="${esc(t.date_str)} · ${esc(t.title)}">지우기</button>`
-        : `<span class="ad-no">${t.paid > 0 ? '상금 지급됨' : '진행 중'}</span>`}</td>
+      <td>${live2(t)
+        ? `<span class="ad-no">진행 중</span>`
+        : t.paid > 0
+          ? `<button type="button" class="ad-revoke danger" data-id="${t.id}"
+               data-label="${esc(t.date_str)} · ${esc(t.title)}" data-paid="${t.paid}">상금 회수 후 삭제</button>`
+          : `<button type="button" class="ad-del" data-id="${t.id}" data-label="${esc(t.date_str)} · ${esc(t.title)}">지우기</button>`}</td>
     </tr>`;
   }).join('');
 
   const cfg = getConfig();
   const d = defaultConfig();
-  // 살아 있는 판이 있으면 새 대회 칸을 통째로 잠근다 — 눌러 보고 나서 거절당하는 것보다 낫다
-  const live = ts.find(t => t.finished_at == null && t.cancelled_at == null) ?? null;
+  /* 잠그는 것은 "돌고 있는 판"이 있을 때뿐이다. 대기 중인 정규 판까지 막았더니 그 판이
+     늘 앉아 있어서 임시 판을 영영 만들 수 없었다 — 지우면 1초 안에 되살아났다. */
+  const live = ts.find(live2) ?? null;
+  /* 다음 대회가 언제 시작하는지가 새 판을 열 수 있는지를 정한다 — 그 시각을 그대로 적는다.
+     "만들 수 없습니다"만 나오면 무엇을 기다려야 하는지 알 수 없다. */
+  const nowSec = Math.floor(Date.now() / 1000);
+  const pending = ts.filter(t => t.started_at == null && t.finished_at == null && t.cancelled_at == null);
+  const nextStart = pending.length
+    ? Math.min(...pending.map(t => t.scheduled_start_at)) : null;
+  const canMake = !live && (nextStart == null || nextStart - nowSec >= 2 * 3600);
   const notices = listNoticesAdmin();
   const noticeRows = notices.map(n => `<tr>
       <td class="n">${esc(n.date)}</td>
@@ -127,8 +141,10 @@ export function adminPage(user: WebUser): string {
 
     <section class="ad-card">
       <h2>대회 기록</h2>
-      <p class="ad-note">상금이 한 푼이라도 나간 대회는 지울 수 없습니다 — 상금은 원장에 이미 발행돼 있어서,
-        기록만 지우면 잔액과 원장이 어긋납니다. 테스트는 아래 [테스트 대회 열기]로 여세요(상금 배수 0).</p>
+      <p class="ad-note">상금이 나간 대회는 <b>[상금 회수 후 삭제]</b>로만 지울 수 있습니다 — 그냥 지우면
+        원장에 근거 없는 포인트가 남습니다. 회수는 역방향 원장으로 기록되고,
+        <b>이미 다 쓴 사람은 잔액이 음수가 됩니다</b>(지원금으로 갚아 나갈 수 있습니다).
+        되돌릴 수 없으니 테스트는 상금 배수 0으로 여세요.</p>
       <p class="ad-note"><b>오늘 날짜 대회는 지워도 곧바로 다시 만들어집니다.</b> 이 서버는 타이머 없이
         요청이 들어올 때마다 "오늘 대회가 있나"를 보고 없으면 그 자리에서 만들기 때문입니다(1초 안).
         그래서 오늘 것을 지우는 일은 <b>없애기가 아니라 지금 설정으로 다시 만들기</b>입니다 —
@@ -136,16 +152,22 @@ export function adminPage(user: WebUser): string {
         <b>등록한 사람이 있으면 그 등록도 함께 사라지니 등록 시작 이후에는 쓰지 마세요.</b>
         지난 날짜의 대회는 다시 만들어지지 않습니다(테스트 흔적 지우기는 그쪽입니다).</p>
       <div class="ad-sub2">새 대회 <span>${live
-        ? '지금 살아 있는 판이 있어 만들 수 없습니다 — 끝나거나 취소된 뒤에 열립니다'
-        : '하루에 여러 판을 열 수 있지만, 살아 있는 판은 한 번에 하나뿐입니다'}</span></div>
+        ? '지금 돌고 있는 판이 있어 만들 수 없습니다 — 끝난 뒤에 열립니다'
+        : nextStart == null
+          ? '대기 중인 대회가 없습니다'
+          : nextStart - nowSec >= 2 * 3600
+            ? `다음 대회는 ${hhmm(Math.floor(((nextStart + 9 * 3600) % 86400) / 60))} 시작 — 두 시간 넘게 남아 만들 수 있습니다.
+               임시 판이 끝나면 정규 판으로 저절로 돌아오니 지우지 마세요`
+            : `다음 대회가 ${hhmm(Math.floor(((nextStart + 9 * 3600) % 86400) / 60))}에 시작해 만들 수 없습니다 —
+               한 판이 두 시간까지 갈 수 있어서, 시작까지 두 시간 이상 남았을 때만 열립니다`}</span></div>
       <div class="ad-grid">
-        <label>제목<input type="text" id="ncTitle" placeholder="임시 프리롤" ${live ? 'disabled' : ''}><i></i></label>
-        <label>등록 시간<span class="ad-inx"><input type="number" id="ncReg" min="0" value="10" ${live ? 'disabled' : ''}><b>분</b></span><i>이 시간 뒤에 시작합니다</i></label>
-        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${live ? 'disabled' : ''}><b>×명</b></span><i>0이면 상금 없음(테스트용)</i></label>
+        <label>제목<input type="text" id="ncTitle" placeholder="임시 프리롤" ${canMake ? '' : 'disabled'}><i></i></label>
+        <label>등록 시간<span class="ad-inx"><input type="number" id="ncReg" min="0" value="10" ${canMake ? '' : 'disabled'}><b>분</b></span><i>이 시간 뒤에 시작합니다</i></label>
+        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${canMake ? '' : 'disabled'}><b>×명</b></span><i>0이면 상금 없음(테스트용)</i></label>
       </div>
       <div class="ad-row">
-        <button type="button" id="ncMake" ${live ? 'disabled' : ''}>새 대회 만들기</button>
-        <button type="button" id="adTest" ${live ? 'disabled' : ''}>테스트 대회 열기</button>
+        <button type="button" id="ncMake" ${canMake ? '' : 'disabled'}>새 대회 만들기</button>
+        <button type="button" id="adTest" ${canMake ? '' : 'disabled'}>테스트 대회 열기</button>
         <span class="ad-note">테스트 대회는 상금 배수 0이라 포인트가 한 푼도 안 나갑니다 — 끝나면 이 표에서 지울 수 있습니다.</span>
       </div>
       <div class="ad-scroll">
@@ -342,12 +364,30 @@ export function adminPage(user: WebUser): string {
 
     document.getElementById('adTBody').addEventListener('click', function(ev){
       var b = ev.target.closest ? ev.target.closest('.ad-del') : null;
-      if (!b) return;
-      confirmThen('대회 기록을 지울까요?',
-        b.getAttribute('data-label') + ' — 이 대회의 판·좌석·참가 기록이 모두 사라집니다. 되돌릴 수 없습니다.',
-        function(){
-          post('/api/admin/tournament/purge', { id: Number(b.getAttribute('data-id')) })
-            .then(function(r){ if (shout(r)) location.reload(); });
+      if (b) {
+        confirmThen('대회 기록을 지울까요?',
+          b.getAttribute('data-label') + ' — 이 대회의 판·좌석·참가 기록이 모두 사라집니다. 되돌릴 수 없습니다.',
+          function(){
+            post('/api/admin/tournament/purge', { id: Number(b.getAttribute('data-id')) })
+              .then(function(r){ if (shout(r)) location.reload(); });
+          });
+        return;
+      }
+      /* 상금 회수는 남의 포인트를 도로 가져오는 일이라 확인을 한 겹 더 둔다.
+         숫자를 직접 받아 적게 하는 이유: 목록을 훑다가 잘못 누르는 것과, 얼마를 회수하는지
+         읽지 않고 확인을 누르는 것은 다른 사고인데 확인 모달 하나로는 둘 다 못 막는다. */
+      var rv = ev.target.closest ? ev.target.closest('.ad-revoke') : null;
+      if (!rv) return;
+      var paid = rv.getAttribute('data-paid');
+      var typed = prompt(rv.getAttribute('data-label') + '\\n\\n'
+        + '이 대회가 지급한 ' + num(Number(paid)) + 'P 를 참가자에게서 도로 가져옵니다.\\n'
+        + '이미 다 쓴 사람은 잔액이 음수가 됩니다(지원금으로 갚아 나갈 수 있습니다).\\n\\n'
+        + '되돌릴 수 없습니다. 계속하려면 회수 금액 ' + paid + ' 을 그대로 적어 주세요.', '');
+      if (typed == null) return;
+      if (String(typed).trim() !== String(paid)) { alert('금액이 달라 취소했습니다.'); return; }
+      post('/api/admin/tournament/revoke', { id: Number(rv.getAttribute('data-id')) })
+        .then(function(r){
+          if (shout(r)) { alert(num(r.d.revoked) + 'P 를 ' + r.d.users + '명에게서 회수했습니다.'); location.reload(); }
         });
     });
 
@@ -426,10 +466,16 @@ export function adminPage(user: WebUser): string {
     function cfNum(id){ return Math.floor(Number(document.getElementById(id).value)); }
     /* time 입력은 'HH:MM' 문자열이다. 자정으로부터의 분으로 바꿔 보낸다 —
        서버도 DB도 분으로 다루므로 여기서 한 번만 변환한다. */
+    /* time 입력의 value 는 표시가 "오후 04:00"이어도 항상 24시간 "HH:MM"이다.
+       정규식으로 읽지 않는다 — 이 코드는 템플릿 문자열 안에 있어서 \\d 같은 이스케이프가
+       한 겹 더 먹힌다. 실제로 \\d 가 d 로 바뀌어 리터럴 'd'를 찾다가 항상 NaN 이 났다.
+       콜론으로 자르고 숫자로 바꾸면 그런 함정이 없다. */
     function cfClock(id){
-      var v = String(document.getElementById(id).value || '');
-      var m = v.match(/^(d{1,2}):(d{2})$/);
-      return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+      var parts = String(document.getElementById(id).value || '').split(':');
+      if (parts.length !== 2) return NaN;
+      var h = Number(parts[0]), m = Number(parts[1]);
+      if (!isFinite(h) || !isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return NaN;
+      return h * 60 + m;
     }
     function cfRead(){
       return {
@@ -442,7 +488,11 @@ export function adminPage(user: WebUser): string {
     }
     function cfCheck(c){
       var bad = [];
-      for (var k in c) if (!isFinite(c[k])) bad.push('숫자가 아닌 값이 있습니다');
+      // 어느 칸이 잘못됐는지 적는다 — 같은 문장이 여러 줄 뜨면 무엇을 고쳐야 할지 알 수 없다
+      var LABEL = { regOpenMin: '등록 시작', startMin: '대회 시작', graceMin: '최소 인원 대기',
+        lateRegMin: '레이트 레지', startingStack: '시작 칩', levelMin: '블라인드 주기',
+        weekdayMultiplier: '평일 배수', weekendMultiplier: '주말 배수', prizeFixed: '고정 상금 풀' };
+      for (var k in c) if (!isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
       if (c.regOpenHour < 0 || c.regOpenHour > 23 || c.startHour < 0 || c.startHour > 23) {
         bad.push('시각은 0~23 사이여야 합니다');
       }
@@ -705,10 +755,28 @@ export async function handleAdminTournamentCreate(
     regMin: Math.floor(Number(b?.regMin ?? 10)),
     prizeMultiplier: Math.floor(Number(b?.prizeMultiplier ?? 0)),
   });
+  if (!r.ok) return sendJson(res, 400, { error: createErrorText(r) });
+  return sendJson(res, 200, { ok: true, id: r.id });
+}
+
+/* 왜 안 되는지를 그대로 적는다. "만들 수 없습니다"만 나오면 운영자는 무엇을 기다려야
+   하는지 알 수 없다 — 곧 시작할 판 때문이라면 그 시각을 알려 주는 것이 답이다. */
+function createErrorText(r: { error: 'live_exists' } | { error: 'too_close'; startsAt: number }): string {
+  if (r.error === 'live_exists') return '지금 돌고 있는 대회가 있습니다 — 끝난 뒤에 만들 수 있습니다';
+  const at = new Date((r.startsAt + 9 * 3600) * 1000).toISOString().slice(11, 16);
+  return `곧 시작할 대회가 있습니다 (${at} 시작) — 한 판이 두 시간까지 갈 수 있어서,`
+    + ' 다음 대회 시작까지 두 시간 이상 남았을 때만 새로 만들 수 있습니다';
+}
+
+export async function handleAdminTournamentRevoke(
+  req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const b = await readJson(req) as { id?: unknown } | null;
+  const r = revokePrizesAndPurge(Number(b?.id ?? 0));
   if (!r.ok) {
     return sendJson(res, 400, {
-      error: '이미 살아 있는 대회가 있습니다 — 끝나거나 취소된 뒤에 만들 수 있습니다',
+      error: r.error === 'not_found' ? '없는 대회입니다' : '진행 중인 대회는 손댈 수 없습니다',
     });
   }
-  return sendJson(res, 200, { ok: true, id: r.id });
+  return sendJson(res, 200, { ok: true, revoked: r.revoked, users: r.users, removed: r.removed });
 }

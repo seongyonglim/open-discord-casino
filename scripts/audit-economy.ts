@@ -748,23 +748,49 @@ section('[9] 운영자 동작');
      살아 있는 판(끝나지도 취소되지도 않은 것)은 한 번에 하나뿐이다. */
   for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
   {
-    const a = A.createTournament({ title: '첫 판', regMin: 5 });
-    ck('대회를 만들 수 있다', a.ok, JSON.stringify(a));
+    /* 오늘의 정규 판이 대기 상태로 앉아 있는 상황을 만든다 — 실제로 늘 그렇다. */
+    const daily = HD.advanceHoldem().tournament;
+    ck('정규 판이 대기 상태로 있다', daily.started_at == null);
+
+    /* 대기 판이 있어도 임시 판을 만들 수 있어야 한다. 처음에는 이것도 막았는데,
+       정규 판이 늘 대기 중이라 임시 판을 영영 못 만들었다 — 지우면 1초 안에 되살아났다.
+       단 조건이 있다: 그 판의 시작까지 두 시간 이상 남아야 한다. 한 판이 아무리 길어도
+       두 시간을 넘지 않으므로, 그만큼 남아 있으면 임시 판이 먼저 끝난다. */
+    const now0 = Math.floor(Date.now() / 1000);
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ? WHERE id = ?`)
+      .run(now0 + 30 * 60, daily.id);
+    const near = A.createTournament({ title: '너무 가까움' });
+    ck('정규 판 시작이 가까우면 거절한다 (30분 뒤)',
+      !near.ok && near.error === 'too_close', JSON.stringify(near));
+
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ? WHERE id = ?`)
+      .run(now0 + A.CREATE_GAP_SEC - 60, daily.id);
+    ck('두 시간에서 1분 모자라도 거절', !A.createTournament({ title: 'x' }).ok);
+
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ? WHERE id = ?`)
+      .run(now0 + A.CREATE_GAP_SEC + 60, daily.id);
+    const a = A.createTournament({ title: '임시 판', regMin: 0 });
+    ck('두 시간 넘게 남았으면 만들 수 있다', a.ok, JSON.stringify(a));
+    ck('임시 판이 골라진다 (더 최근이다)',
+      HD.advanceHoldem().tournament.id === (a.ok ? a.id : -1));
+
+    // 돌고 있는 판이 있으면 막는다 — 카드가 도는 판이 둘일 수는 없다
+    if (a.ok) db.prepare(`UPDATE holdem_tournaments SET started_at = unixepoch() WHERE id = ?`).run(a.id);
     const b = A.createTournament({ title: '둘째 판' });
-    ck('살아 있는 판이 있으면 새로 못 만든다',
+    ck('돌고 있는 판이 있으면 새로 못 만든다',
       !b.ok && b.error === 'live_exists', JSON.stringify(b));
 
-    // 끝내면 다시 만들 수 있다 — 같은 날짜에 두 번째 판이 선다
+    /* 여기가 핵심이다 — 임시 판이 끝나면 대기 중이던 정규 판으로 돌아와야 한다.
+       "가장 최근 것"만 보면 끝난 임시 판이 계속 골라져 정규 판이 영영 안 열린다. */
     if (a.ok) db.prepare(`UPDATE holdem_tournaments SET finished_at = unixepoch() WHERE id = ?`).run(a.id);
-    const c = A.createTournament({ title: '둘째 판' });
-    ck('앞 판이 끝나면 같은 날에 또 만들 수 있다 (유니크 인덱스 제거)',
-      c.ok, JSON.stringify(c));
-    ck('같은 날짜 행이 둘이 된다',
+    ck('임시 판이 끝나면 정규 판으로 돌아온다',
+      HD.advanceHoldem().tournament.id === daily.id,
+      `${HD.advanceHoldem().tournament.id} (기대 ${daily.id})`);
+    ck('정규 판을 지우지 않아도 된다 (같은 날짜에 둘이 공존)',
       (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 2);
 
-    // 대기 상태도 살아 있는 것으로 친다 — 등록을 받고 있기 때문이다
-    const dd = A.createTournament({ title: '셋째 판' });
-    ck('아직 시작 안 한 판도 살아 있는 것으로 친다', !dd.ok && dd.error === 'live_exists');
+    const c = A.createTournament({ title: '셋째 판' });
+    ck('끝난 뒤에는 또 만들 수 있다', c.ok, JSON.stringify(c));
 
     // 자동 생성은 이미 있는 오늘 판을 다시 만들지 않는다
     const before = (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n;
@@ -786,6 +812,61 @@ section('[9] 운영자 동작');
   db.prepare(`INSERT INTO holdem_entries
       (tournament_id, user_id, username, registered_at, finish_place, prize)
     VALUES (91, 'ad_u', 'ad_u', ?, 1, 2600)`).run(now);
+  /* 상금 회수 후 삭제 — 이미 나간 포인트를 도로 가져온다.
+     잔액이 음수가 되는 것을 허용한다(다 쓴 사람이 있으면 그 방법뿐이다). 대신 음수가
+     막다른 길이 되면 안 되므로 지원금이 열려 있어야 한다 — 그것까지 여기서 본다. */
+  {
+    const before = bal('ad_u');
+    const rv = A.revokePrizesAndPurge(91);
+    ck('상금을 회수하고 지운다',
+      rv.ok && rv.revoked === 2600 && rv.users === 1, JSON.stringify(rv));
+    ck('회수한 만큼 잔액이 줄었다', bal('ad_u') === before - 2600, String(bal('ad_u')));
+    ck('회수가 원장에 남았다 (잔액 = 원장 누적합)',
+      (db.prepare(`SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE user_id='ad_u'`)
+        .get() as { n: number }).n === bal('ad_u'));
+    ck('사유가 tournament:revoke 로 남았다',
+      (db.prepare(`SELECT reason FROM points_ledger WHERE user_id='ad_u' ORDER BY id DESC LIMIT 1`)
+        .get() as { reason: string }).reason.startsWith('tournament:revoke:'));
+    ck('대회가 사라졌다',
+      (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments WHERE id=91`)
+        .get() as { n: number }).n === 0);
+
+    // 다 쓴 사람에게서 회수하면 음수가 된다 — 그리고 거기서 빠져나올 수 있어야 한다
+    mkUser('ad_poor', 0);
+    db.prepare(`INSERT INTO holdem_tournaments
+        (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+         started_at, finished_at)
+      VALUES (94, '1999-01-04', '상금판2', 0, 0, 0, 1000, 1, 1)`).run();
+    db.prepare(`INSERT INTO holdem_entries
+        (tournament_id, user_id, username, registered_at, finish_place, prize)
+      VALUES (94, 'ad_poor', 'ad_poor', 0, 1, 500)`).run();
+    ck('다 쓴 사람에게서도 회수된다', A.revokePrizesAndPurge(94).ok);
+    ck('잔액이 음수가 된다', bal('ad_poor') === -500, String(bal('ad_poor')));
+    ck('음수여도 원장과 맞는다',
+      (db.prepare(`SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE user_id='ad_poor'`)
+        .get() as { n: number }).n === -500);
+    /* 여기가 핵심이다 — 음수가 막다른 길이면 그 사람은 영영 못 논다.
+       베팅은 잔액이 모자라 안 되고, 남은 회복 경로는 지원금과 출석뿐이다. */
+    const relief = require('../src/services/relief') as typeof import('../src/services/relief');
+    const got = relief.claim('ad_poor');
+    ck('음수여도 지원금을 받을 수 있다 (막다른 길이 아니다)', got.ok, JSON.stringify(got));
+    ck('받은 만큼 빚이 줄어든다 (0으로 지워지지 않는다)',
+      bal('ad_poor') === -500 + relief.RELIEF_AMOUNT, String(bal('ad_poor')));
+    // 진행 중인 판은 회수도 거절한다
+    db.prepare(`INSERT INTO holdem_tournaments
+        (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier, started_at)
+      VALUES (95, '1999-01-05', '진행판2', 0, 0, 0, 1000, 1)`).run();
+    ck('진행 중인 대회는 회수도 거절', !A.revokePrizesAndPurge(95).ok);
+    db.prepare(`DELETE FROM holdem_tournaments WHERE id = 95`).run();
+  }
+
+  db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at)
+    VALUES (91, '1999-01-01', '상금판', 0, 0, 0, 1000, 1, 1)`).run();
+  db.prepare(`INSERT INTO holdem_entries
+      (tournament_id, user_id, username, registered_at, finish_place, prize)
+    VALUES (91, 'ad_u', 'ad_u', 0, 1, 2600)`).run();
   const paid = A.purgeTournament(91);
   ck('상금이 지급된 대회는 지울 수 없다',
     !paid.ok && paid.error === 'paid', JSON.stringify(paid));

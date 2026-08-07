@@ -221,7 +221,7 @@ export function claimRelief(
        밖에서 미리 확인만 하면 확인과 지급 사이에 베팅을 걸어 빠져나갈 수 있다. */
     run(
       `UPDATE users SET balance = balance + ?, last_relief_at = ?
-       WHERE id = ? AND balance = 0 AND (last_relief_at IS NULL OR last_relief_at <= ?)
+       WHERE id = ? AND balance <= 0 AND (last_relief_at IS NULL OR last_relief_at <= ?)
          AND NOT EXISTS (SELECT 1 FROM game_rounds     WHERE user_id = ? AND status = 'active')
          AND NOT EXISTS (SELECT 1 FROM ladder_bets     WHERE user_id = ? AND payout IS NULL)
          AND NOT EXISTS (SELECT 1 FROM crash_bets      WHERE user_id = ? AND payout IS NULL)
@@ -232,8 +232,12 @@ export function claimRelief(
       userId, userId, userId, userId, userId, userId
     );
     if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 0) {
-      // 어떤 조건에서 막혔는지 구분해 안내 문구를 정확히 낸다
-      if (before.balance !== 0) return { ok: false, error: 'not_broke' } as const;
+      /* 어떤 조건에서 막혔는지 구분해 안내 문구를 정확히 낸다.
+         조건이 balance = 0 이 아니라 <= 0 인 이유: 상금 회수로 잔액이 음수가 될 수 있다.
+         음수인 사람을 여기서 막으면 지원금을 영영 못 받아 회복 경로가 통째로 사라진다 —
+         베팅은 잔액이 모자라 안 되고, 남은 것은 출석뿐이다. 그래서 빚이 있어도 받게 하고,
+         받은 금액만큼 빚이 줄어든다(더하기라 음수가 0 으로 지워지지 않는다). */
+      if (before.balance > 0) return { ok: false, error: 'not_broke' } as const;
       const staked = lockedStake(userId);
       if (staked > 0) return { ok: false, error: 'has_stake', staked } as const;
       // 쿨다운이면 언제 다시 받을 수 있는지까지 알려 준다 (안내 문구에 그대로 쓴다)

@@ -180,11 +180,21 @@ export function liveTournament(): HtRow | undefined {
       ORDER BY id DESC LIMIT 1`);
 }
 
-/* 그 날짜의 판. 여러 개일 수 있으므로 "가장 최근에 만든 것"을 준다 —
-   자동 생성이 이미 있는 판을 못 보고 두 번째를 만드는 일을 막는 것이 이 함수의 몫이다. */
+/**
+ * 그 날짜의 판. 여러 개일 수 있다(운영자가 임시 판을 열 수 있으므로).
+ *
+ * 고르는 순서가 중요하다: 아직 살아 있는 판을 먼저 고르고, 그 다음이 최근 것이다.
+ * "최근 것"만 보면 임시 판이 끝나는 순간 그 판이 계속 골라져서, 같은 날 대기 중이던
+ * 정규 판이 영영 열리지 않는다. 살아 있는 쪽을 먼저 보면 임시 판이 끝난 뒤 정규 판으로
+ * 저절로 돌아온다 — 그래서 임시 판을 돌리려고 정규 판을 지울 필요가 없다.
+ *
+ * 살아 있는 판이 없으면 최근 것을 준다. 그래야 오늘 판이 끝난 뒤에 자동 생성이
+ * "오늘 판이 없다"고 보고 새로 만들어 버리는 일이 없다.
+ */
 function findTournament(dateStr: string): HtRow | undefined {
   return one<HtRow>(
-    `SELECT * FROM holdem_tournaments WHERE date_str = ? ORDER BY id DESC LIMIT 1`, dateStr);
+    `SELECT * FROM holdem_tournaments WHERE date_str = ?
+      ORDER BY (finished_at IS NULL AND cancelled_at IS NULL) DESC, id DESC LIMIT 1`, dateStr);
 }
 
 export function getTable(tournamentId: number): HtTableRow | undefined {
