@@ -432,6 +432,17 @@ function initSchema(): void {
       PRIMARY KEY (season_id, user_id)
     );
     CREATE INDEX IF NOT EXISTS idx_sres_rank ON season_results(season_id, rank);
+
+    /* 대회 운영 설정. 코드에 박혀 있던 값을 운영자가 고칠 수 있게 한다.
+       키-값으로 두는 이유: 항목이 늘 때마다 컬럼을 추가하고 마이그레이션을 쓰는 대신
+       한 줄만 더하면 되고, 값이 없으면 코드의 기본값이 그대로 쓰인다(폴백).
+       여기 값을 바꿔도 이미 만들어진 대회는 흔들리지 않는다 — 대회를 만들 때 그 시점의
+       설정을 대회 행에 박아 두고, 진행 중에는 행의 값만 본다. */
+    CREATE TABLE IF NOT EXISTS holdem_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)
@@ -451,4 +462,18 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_seat INTEGER`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
+
+  /* 대회를 만들 때의 설정을 그 대회 행에 박아 둔다.
+     일정과 상금 배수는 원래부터 행에 있었지만 스타팅 칩·블라인드 주기·레이트 레지는
+     코드 상수를 실시간으로 읽고 있었다 — 운영자가 값을 바꾸는 순간 진행 중인 대회의
+     블라인드가 뛰거나 늦게 온 사람만 다른 스택을 받는다. 행에 박아 두면 그런 일이 없다.
+     0 이면 "코드 기본값을 쓴다"는 뜻이라, 이미 있던 행도 그대로 동작한다. */
+  for (const col of [
+    'starting_stack INTEGER NOT NULL DEFAULT 0',
+    'level_sec INTEGER NOT NULL DEFAULT 0',
+    'late_reg_sec INTEGER NOT NULL DEFAULT 0',
+    'prize_fixed INTEGER NOT NULL DEFAULT 0',      // 0보다 크면 인원과 무관한 고정 상금 풀
+  ]) {
+    try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
+  }
 }

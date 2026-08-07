@@ -18,6 +18,7 @@ import {
   listTournaments, purgeTournament, openTestTournament, searchUsers, grantPoints,
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
+import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
 import type { WebUser } from '../db/queries';
 
 /** 바꾸는 동작의 두 번째 잠금. 토큰이 설정돼 있지 않으면 무조건 잠긴다. */
@@ -62,6 +63,8 @@ export function adminPage(user: WebUser): string {
     </tr>`;
   }).join('');
 
+  const cfg = getConfig();
+  const d = defaultConfig();
   const seasons = listSeasons();
   const cur = seasons.find(s => s.closed_at == null);
   const seasonRows = seasons.map(s => `<tr>
@@ -105,6 +108,30 @@ export function adminPage(user: WebUser): string {
             <th class="r">배수</th><th class="r">지급</th><th></th></tr></thead>
           <tbody id="adTBody">${rows}</tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="ad-card">
+      <h2>대회 설정</h2>
+      <p class="ad-note">바꾼 값은 <b>다음에 만들어질 대회부터</b> 적용됩니다. 진행 중인 대회는 만들어질 때의
+        값을 자기 행에 갖고 있어서 흔들리지 않습니다 — 블라인드가 갑자기 뛰거나 늦게 온 사람만
+        다른 스택을 받는 일이 없습니다. 순위별 분배(ITM 비율)는 검증된 산식이라 고정입니다.</p>
+      <div class="ad-grid">
+        <label>등록 시작 시각<input type="number" id="cfRegHour" min="0" max="23" value="${cfg.regOpenHour}"><i>시 (KST)</i></label>
+        <label>대회 시작 시각<input type="number" id="cfStartHour" min="0" max="23" value="${cfg.startHour}"><i>시 (KST)</i></label>
+        <label>최소 인원 대기<input type="number" id="cfGrace" min="1" value="${cfg.graceMin}"><i>분 (시작 시각 이후)</i></label>
+        <label>레이트 레지<input type="number" id="cfLateReg" min="1" value="${cfg.lateRegMin}"><i>분 (실제 시작 이후)</i></label>
+        <label>시작 칩<input type="number" id="cfStack" min="1" value="${cfg.startingStack}"><i>칩</i></label>
+        <label>블라인드 주기<input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><i>분</i></label>
+        <label>평일 상금 배수<input type="number" id="cfWd" min="0" value="${cfg.weekdayMultiplier}"><i>× 등록자 수</i></label>
+        <label>주말 상금 배수<input type="number" id="cfWe" min="0" value="${cfg.weekendMultiplier}"><i>× 등록자 수</i></label>
+        <label>고정 상금 풀<input type="number" id="cfFixed" min="0" value="${cfg.prizeFixed}"><i>0이면 인원 × 배수</i></label>
+      </div>
+      <div class="ad-row">
+        <button type="button" id="cfSave">설정 저장</button>
+        <button type="button" id="cfReset">기본값으로</button>
+        <span class="ad-note">지금 기본값: 등록 ${d.regOpenHour}시 · 시작 ${d.startHour}시 · 대기 ${d.graceMin}분 ·
+          레이트 ${d.lateRegMin}분 · 칩 ${num(d.startingStack)} · 블라인드 ${d.levelMin}분</span>
       </div>
     </section>
 
@@ -232,6 +259,48 @@ export function adminPage(user: WebUser): string {
         // 날짜만 받고 그날 끝으로 본다 — 시각까지 고르게 하면 KST 환산 실수가 늘어난다
         endsAt: d ? Math.floor(new Date(d + 'T23:59:59+09:00').getTime() / 1000) : null,
       }).then(function(r){ if (shout(r)) location.reload(); });
+    });
+
+    /* 저장 전에 화면에서도 한 번 본다. 서버가 마지막 문이지만, 눌러 보고 나서야
+       "시간 순서가 틀렸다"는 말을 듣는 것보다 미리 막는 편이 낫다. */
+    function cfNum(id){ return Math.floor(Number(document.getElementById(id).value)); }
+    function cfRead(){
+      return {
+        regOpenHour: cfNum('cfRegHour'), startHour: cfNum('cfStartHour'),
+        graceMin: cfNum('cfGrace'), lateRegMin: cfNum('cfLateReg'),
+        startingStack: cfNum('cfStack'), levelMin: cfNum('cfLevel'),
+        weekdayMultiplier: cfNum('cfWd'), weekendMultiplier: cfNum('cfWe'),
+        prizeFixed: cfNum('cfFixed'),
+      };
+    }
+    function cfCheck(c){
+      var bad = [];
+      for (var k in c) if (!isFinite(c[k])) bad.push('숫자가 아닌 값이 있습니다');
+      if (c.regOpenHour < 0 || c.regOpenHour > 23 || c.startHour < 0 || c.startHour > 23) {
+        bad.push('시각은 0~23 사이여야 합니다');
+      }
+      if (c.regOpenHour >= c.startHour) bad.push('등록 시작은 대회 시작보다 앞서야 합니다');
+      if (c.startHour * 60 + c.graceMin > 24 * 60) bad.push('대기 마감이 자정을 넘습니다');
+      if (c.graceMin <= 0 || c.lateRegMin <= 0 || c.startingStack <= 0 || c.levelMin <= 0) {
+        bad.push('대기·레이트 레지·칩·블라인드 주기는 1 이상이어야 합니다');
+      }
+      if (c.weekdayMultiplier < 0 || c.weekendMultiplier < 0 || c.prizeFixed < 0) {
+        bad.push('배수와 고정 상금은 0 이상이어야 합니다');
+      }
+      return bad;
+    }
+    document.getElementById('cfSave').addEventListener('click', function(){
+      var c = cfRead();
+      var bad = cfCheck(c);
+      if (bad.length) { alert(bad.join('\\n')); return; }
+      confirmThen('대회 설정을 저장할까요?',
+        '다음에 만들어질 대회부터 적용됩니다. 진행 중인 대회는 바뀌지 않습니다.',
+        function(){ post('/api/admin/config', c).then(function(r){ if (shout(r)) location.reload(); }); });
+    });
+    document.getElementById('cfReset').addEventListener('click', function(){
+      confirmThen('기본값으로 되돌릴까요?',
+        '저장된 설정을 지워 코드의 기본값을 쓰게 합니다. 다음 대회부터 적용됩니다.',
+        function(){ post('/api/admin/config/reset', {}).then(function(r){ if (shout(r)) location.reload(); }); });
     });
 
     document.getElementById('adSFill').addEventListener('click', function(){
@@ -377,4 +446,27 @@ export async function handleAdminSeasonBackfill(
     });
   }
   return sendJson(res, 200, { ok: true, rows: r.rows });
+}
+
+export async function handleAdminConfig(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  const n = (k: string) => Math.floor(Number(b?.[k]));
+  /* 검증은 saveConfig 안에서 한다 — 여기서 한 번 더 쓰면 두 벌이 되고, 언젠가 갈라진다.
+     화면에도 같은 검사가 있지만 그건 편의고 마지막 문은 질의 계층이다. */
+  const r = saveConfig({
+    regOpenHour: n('regOpenHour'), startHour: n('startHour'),
+    graceMin: n('graceMin'), lateRegMin: n('lateRegMin'),
+    startingStack: n('startingStack'), levelMin: n('levelMin'),
+    weekdayMultiplier: n('weekdayMultiplier'), weekendMultiplier: n('weekendMultiplier'),
+    prizeFixed: n('prizeFixed'),
+  });
+  if (!r.ok) return sendJson(res, 400, { error: r.errors.join(' · ') });
+  return sendJson(res, 200, { ok: true });
+}
+
+export async function handleAdminConfigReset(
+  _req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  resetConfig();
+  return sendJson(res, 200, { ok: true });
 }

@@ -16,6 +16,7 @@ import { randomInt } from 'node:crypto';
 import { one, all, run, tx } from './queries';
 import * as G from '../services/holdem';
 import * as T from '../services/tournament';
+import { getConfig } from './settings';
 
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
@@ -102,6 +103,8 @@ export interface HtRow {
   reg_open_at: number; scheduled_start_at: number; grace_ends_at: number;
   prize_multiplier: number;
   started_at: number | null; finished_at: number | null; cancelled_at: number | null;
+  starting_stack: number; level_sec: number; late_reg_sec: number;
+  prize_fixed: number;
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -136,8 +139,11 @@ const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 /* ── 조회 ─────────────────────────────────────────────────────────── */
 
-function todaySchedule(now: number): T.TournamentSchedule {
-  return T.scheduleForDate(T.kstDateStr(now * 1000));
+function todaySchedule(now: number, cfg = getConfig()): T.TournamentSchedule {
+  return T.scheduleForDate(T.kstDateStr(now * 1000), {
+    regOpenHour: cfg.regOpenHour, startHour: cfg.startHour, graceSec: cfg.graceMin * 60,
+    weekdayMultiplier: cfg.weekdayMultiplier, weekendMultiplier: cfg.weekendMultiplier,
+  });
 }
 
 /* 이미 만들어진 토너먼트의 일정은 저장된 값을 쓴다.
@@ -352,15 +358,20 @@ export interface HoldemStatus {
 
 /** 오늘 토너먼트 행을 확보한다(없으면 만든다). */
 function ensureTournament(now: number): HtRow {
-  const s = todaySchedule(now);
+  /* 대회를 만드는 이 순간의 설정을 행에 박는다. 진행 중인 대회를 보호하는 장치가
+     바로 이것이다 — 운영자가 나중에 값을 바꿔도 이미 만들어진 행은 안 흔들린다. */
+  const cfg = getConfig();
+  const s = todaySchedule(now, cfg);
   const found = findTournament(s.dateStr);
   if (found) return found;
   // 같은 날짜로 두 요청이 동시에 들어오면 유니크 인덱스가 한쪽을 막는다 → 무시하고 다시 읽는다
   try {
     run(`INSERT INTO holdem_tournaments
-           (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      s.dateStr, s.title, s.regOpenAt, s.scheduledStartAt, s.graceEndsAt, s.prizeMultiplier);
+           (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+            starting_stack, level_sec, late_reg_sec, prize_fixed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      s.dateStr, s.title, s.regOpenAt, s.scheduledStartAt, s.graceEndsAt, s.prizeMultiplier,
+      cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, cfg.prizeFixed);
   } catch { /* 경합 — 아래에서 다시 읽는다 */ }
   return findTournament(s.dateStr)!;
 }
@@ -396,6 +407,17 @@ function activeTournament(now: number): HtRow {
   run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`,
     now, running.id);
   return today;
+}
+
+/* 대회 행에 박아 둔 운영 설정. 0 이면 '코드 기본값을 쓴다'는 뜻이다 —
+   설정 기능이 없던 시절에 만들어진 행도 예전과 똑같이 동작해야 한다. */
+export function tuning(t: HtRow) {
+  return {
+    startingStack: t.starting_stack > 0 ? t.starting_stack : T.STARTING_STACK,
+    levelSec: t.level_sec > 0 ? t.level_sec : T.LEVEL_DURATION_SEC,
+    lateRegSec: t.late_reg_sec > 0 ? t.late_reg_sec : T.LATE_REG_SEC,
+    prizeFixed: t.prize_fixed > 0 ? t.prize_fixed : 0,
+  };
 }
 
 function facts(t: HtRow): T.TournamentFacts {
@@ -512,7 +534,7 @@ function startTournament(t: HtRow, regs: HtEntryRow[], now: number): void {
   order.forEach((r, seat) => {
     run(`INSERT INTO holdem_seats (table_id, seat, user_id, username, stack, presence, last_seen_at)
          VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)`,
-      tableId, seat, r.user_id, r.username, T.STARTING_STACK, now);
+      tableId, seat, r.user_id, r.username, tuning(t).startingStack, now);
   });
 
   const table = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE id = ?`, tableId)!;
@@ -555,7 +577,7 @@ export function adminResetRunningTournament(): {
 
   // 앉아 있는 사람은 그대로. 스택만 되돌리고 탈락 표시를 푼다
   run(`UPDATE holdem_seats SET stack = ?, presence = 'ACTIVE', last_seen_at = ?
-        WHERE table_id = ?`, T.STARTING_STACK, now, table.id);
+        WHERE table_id = ?`, tuning(t).startingStack, now, table.id);
   run(`UPDATE holdem_entries SET finish_place = NULL, elim_seq = NULL,
          eliminated_at = NULL, prize = 0 WHERE tournament_id = ?`, t.id);
 
@@ -713,7 +735,7 @@ function startHand(t: HtRow, table: HtTableRow, now: number): void {
   /* 블라인드 레벨은 핸드를 시작하는 이 순간에 확정해서 저장한다.
      스펙 5항의 "8분이 지나도 진행 중인 핸드는 끝난 뒤 다음 핸드부터 상승"이
      이렇게 자동으로 지켜진다 — 핸드 도중에는 다시 계산하지 않는다. */
-  const lv = T.levelAt(now - (t.started_at ?? now));
+  const lv = T.levelAt(now - (t.started_at ?? now), tuning(t).levelSec);
   const deck = G.shuffleDeck(randomInt);
   const handNo = table.hand_no + 1;
 
@@ -1016,7 +1038,7 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
  */
 function payPrizes(t: HtRow, now: number): void {
   const entries = getEntries(t.id);
-  const pool = T.prizePool(entries.length, t.prize_multiplier);
+  const pool = T.prizePool(entries.length, t.prize_multiplier, tuning(t).prizeFixed);
   const amounts = T.prizeAmounts(pool, entries.length);
   if (!amounts.length) return;
   const ranked = entries
@@ -1084,7 +1106,8 @@ export function registerHoldem(userId: string, username: string):
   return tx(() => {
     const st = advanceHoldem();
     const t = st.tournament;
-    const can = T.canRegister(nowSec(), st.schedule, facts(t), st.registered, st.seated);
+    const can = T.canRegister(nowSec(), st.schedule, facts(t), st.registered, st.seated,
+      tuning(t).lateRegSec);
     if (!can.ok) return { ok: false, error: can.reason };
 
     /* 마지막 자리를 두고 두 요청이 겹치는 것은 유니크 인덱스가 막는다.
@@ -1109,7 +1132,7 @@ export function registerHoldem(userId: string, username: string):
           run(`DELETE FROM holdem_seats WHERE table_id = ? AND seat = ?`, table.id, seat);
           run(`INSERT INTO holdem_seats (table_id, seat, user_id, username, stack, presence, last_seen_at)
                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)`,
-            table.id, seat, userId, username, T.STARTING_STACK, nowSec());
+            table.id, seat, userId, username, tuning(t).startingStack, nowSec());
           break;
         }
       }

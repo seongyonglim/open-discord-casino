@@ -900,6 +900,72 @@ section('[10] 시즌');
 /* 홀덤은 season_stats 를 쓰지 않는다 — 대회 결과에 등수와 상금이 이미 있고 대회에는
    끝난 시각이 있으니, 시즌 구간으로 자르기만 하면 된다. 옮겨 담을 필요가 없어서
    지난 대회가 저절로 제자리에 들어간다. 그게 실제로 되는지 본다. */
+/* 설정 기능의 요점은 "바꿔도 진행 중인 대회가 안 흔들린다"이다. 그게 안 되면
+   운영자가 값을 고치는 순간 블라인드가 뛰고 늦게 온 사람만 다른 스택을 받는다. */
+section('[10d] 대회 설정');
+{
+  const S = require('../src/db/settings') as typeof import('../src/db/settings');
+  const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
+  const T = require('../src/services/tournament') as typeof import('../src/services/tournament');
+  const db = getDb();
+  db.prepare(`DELETE FROM holdem_settings`).run();
+
+  const d = S.defaultConfig();
+  ck('설정이 없으면 코드 기본값을 쓴다',
+    S.getConfig().startHour === d.startHour && S.getConfig().startingStack === d.startingStack,
+    JSON.stringify(S.getConfig()));
+
+  // 검증 — 화면이 아니라 여기가 마지막 문이다
+  const bad = (o: Partial<import('../src/db/settings').TournamentConfig>) =>
+    S.validateConfig({ ...d, ...o }).length > 0;
+  ck('등록이 시작보다 늦으면 거절', bad({ regOpenHour: 22, startHour: 21 }));
+  ck('등록과 시작이 같아도 거절', bad({ regOpenHour: 22, startHour: 22 }));
+  ck('대기 마감이 자정을 넘으면 거절', bad({ startHour: 23, graceMin: 120 }));
+  ck('0 이하 칩 거절', bad({ startingStack: 0 }));
+  ck('0 이하 블라인드 주기 거절', bad({ levelMin: 0 }));
+  ck('소수점 거절', bad({ startingStack: 100.5 }));
+  ck('음수 상금 거절', bad({ prizeFixed: -1 }));
+  ck('올바른 설정은 통과', S.validateConfig({ ...d, startHour: 20, regOpenHour: 19 }).length === 0);
+  ck('잘못된 설정은 저장되지 않는다', !S.saveConfig({ ...d, startingStack: 0 }).ok);
+
+  // 저장하면 다음에 만들어지는 대회에 박힌다
+  for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  ck('올바른 설정은 저장된다',
+    S.saveConfig({ ...d, startingStack: 33333, levelMin: 3, lateRegMin: 7, prizeFixed: 12345 }).ok);
+  const st = HD.advanceHoldem();
+  const t = st.tournament;
+  ck('새 대회에 설정이 박힌다',
+    t.starting_stack === 33333 && t.level_sec === 180 && t.late_reg_sec === 420
+    && t.prize_fixed === 12345,
+    JSON.stringify({ s: t.starting_stack, l: t.level_sec, r: t.late_reg_sec, p: t.prize_fixed }));
+
+  /* 여기가 핵심이다 — 설정을 다시 바꿔도 이미 만들어진 대회의 값은 그대로여야 한다. */
+  S.saveConfig({ ...d, startingStack: 777, levelMin: 99, lateRegMin: 99, prizeFixed: 0 });
+  const again = db.prepare(`SELECT * FROM holdem_tournaments WHERE id = ?`).get(t.id) as
+    { starting_stack: number; level_sec: number; late_reg_sec: number; prize_fixed: number };
+  ck('설정을 바꿔도 이미 만들어진 대회는 안 변한다',
+    again.starting_stack === 33333 && again.level_sec === 180
+    && again.late_reg_sec === 420 && again.prize_fixed === 12345,
+    JSON.stringify(again));
+  ck('그 대회의 tuning 도 행의 값을 본다',
+    HD.tuning(again as never).startingStack === 33333
+    && HD.tuning(again as never).levelSec === 180);
+
+  // 설정 이전에 만들어진 행(0)은 코드 기본값으로 읽힌다
+  const old = { starting_stack: 0, level_sec: 0, late_reg_sec: 0, prize_fixed: 0 };
+  const tn = HD.tuning(old as never);
+  ck('설정이 없던 시절의 행은 코드 기본값으로 읽힌다',
+    tn.startingStack === d.startingStack && tn.levelSec === d.levelMin * 60
+    && tn.lateRegSec === d.lateRegMin * 60 && tn.prizeFixed === 0, JSON.stringify(tn));
+
+  // 고정 상금 풀
+  ck('고정 상금 풀이 인원을 무시한다', T.prizePool(3, 1000, 50000) === 50000);
+  ck('0이면 예전처럼 인원 × 배수', T.prizePool(3, 1000, 0) === 3000);
+
+  S.resetConfig();
+  ck('되돌리면 기본값', S.getConfig().startingStack === d.startingStack);
+}
+
 section('[10c] 홀덤 — 프리롤 상금 순위');
 {
   const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');

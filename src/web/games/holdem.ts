@@ -13,7 +13,7 @@ import {
   advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords,
-  ACTION_SEC, actOpenAt, type HoldemStatus,
+  ACTION_SEC, actOpenAt, tuning, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -74,7 +74,8 @@ function statePayload(st: HoldemStatus, userId: string) {
   const t = st.tournament;
   const table = getTable(t.id);
   const entries = getEntries(t.id);
-  const pool = T.prizePool(entries.length, t.prize_multiplier);
+  const tune = tuning(t);
+  const pool = T.prizePool(entries.length, t.prize_multiplier, tune.prizeFixed);
 
   const base = {
     ok: true,
@@ -95,13 +96,13 @@ function statePayload(st: HoldemStatus, userId: string) {
       registered: entries.length,
       minPlayers: T.MIN_PLAYERS,
       maxPlayers: T.MAX_PLAYERS,
-      startingStack: T.STARTING_STACK,
+      startingStack: tune.startingStack,
       prizePool: pool,
       prizes: T.prizeAmounts(pool, entries.length),
       itm: T.itmCount(entries.length),
       lateRegLeft: T.lateRegLeft(now, {
         startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at,
-      }),
+      }, tune.lateRegSec),
       iRegistered: entries.some(e => e.user_id === userId),
     },
     // 결과는 끝난 뒤에만 (진행 중 순위를 흘리면 남은 사람의 정보가 된다)
@@ -134,7 +135,7 @@ function statePayload(st: HoldemStatus, userId: string) {
 
   const level = hand
     ? { level: hand.level, sb: hand.sb, bb: hand.bb, ante: hand.ante }
-    : T.levelAt(now - (t.started_at ?? now));
+    : T.levelAt(now - (t.started_at ?? now), tune.levelSec);
   const elapsed = now - (t.started_at ?? now);
   const totalChips = living.reduce((a, s) => a + s.stack, 0);
 
@@ -222,7 +223,7 @@ function statePayload(st: HoldemStatus, userId: string) {
           }
         : null,
       level,
-      nextLevelIn: T.nextLevelIn(elapsed),
+      nextLevelIn: T.nextLevelIn(elapsed, tune.levelSec),
       // 남은 인원·평균 스택은 실제로 살아 있는 사람만 센다 (표시용 좌석 목록과 다르다)
       remaining: living.length,
       avgStack: living.length ? Math.floor(totalChips / living.length) : 0,
