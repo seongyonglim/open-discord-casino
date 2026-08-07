@@ -436,6 +436,49 @@ async function main(): Promise<void> {
     }
   }
 
+  /* 운영자 화면은 왼쪽 메뉴로 나뉜다. 카드는 전부 그려 두고 보이기만 바꾸는 구조라,
+     카드에 data-pane 을 안 붙이면 어느 메뉴에도 안 걸려 영영 안 보인다 — 화면에는
+     아무 에러도 안 나고 그냥 없는 기능이 된다. 그런 실패는 눈으로 못 잡으므로 여기서 센다. */
+  section('[5c] 운영자 화면 — 메뉴와 카드가 빠짐없이 짝지어졌는가');
+  {
+    const PANES = ['tour', 'season', 'user', 'sys'];
+    const plain = mkSession('e_notadmin', 100);
+    const r404 = await req('GET', '/admin', plain);
+    ck('운영자가 아니면 못 본다', r404.status === 403 || r404.status === 404, String(r404.status));
+
+    const { ensureSeedAdmin } = require('../src/db/queries') as typeof import('../src/db/queries');
+    const admin = mkSession('e_admin', 100);
+    ensureSeedAdmin('e_admin');
+    const page = await req('GET', '/admin', admin);
+    ck('운영자는 볼 수 있다', page.status === 200, String(page.status));
+
+    const cards = [...page.text.matchAll(/<section class="ad-card"([^>]*)>/g)].map(m => m[1]);
+    ck('카드가 여럿 있다', cards.length >= 7, String(cards.length));
+    const noPane = cards.filter(a => !/data-pane="/.test(a)).length;
+    ck('모든 카드가 메뉴에 걸려 있다 (없으면 영영 안 보인다)', noPane === 0, `${noPane}개 누락`);
+
+    const used = [...page.text.matchAll(/<section class="ad-card" data-pane="([a-z]+)"/g)].map(m => m[1]);
+    const unknown = used.filter(p => !PANES.includes(p));
+    ck('없는 메뉴를 가리키는 카드가 없다', unknown.length === 0, unknown.join(','));
+    const empty = PANES.filter(p => !used.includes(p));
+    ck('빈 메뉴가 없다 (눌러도 아무것도 없는 자리)', empty.length === 0, empty.join(','));
+
+    const navKeys = [...page.text.matchAll(/class="ad-nav-item" data-pane="([a-z]+)"/g)].map(m => m[1]);
+    ck('메뉴 버튼이 넷이다', navKeys.length === 4, navKeys.join(','));
+    ck('메뉴 버튼과 카드의 이름이 같다',
+      navKeys.slice().sort().join(',') === PANES.slice().sort().join(','), navKeys.join(','));
+
+    // 원장 — 읽기 전용이고 운영자 세션만 지난다
+    const led = await req('GET', '/api/admin/ledger?id=e_admin', admin);
+    ck('운영자는 원장을 읽는다', led.status === 200 && Array.isArray(led.body?.rows),
+      String(led.status));
+    ck('원장에 실제 기록이 있다', (led.body?.rows?.length ?? 0) > 0,
+      String(led.body?.rows?.length));
+    const ledDenied = await req('GET', '/api/admin/ledger?id=e_admin', plain);
+    ck('운영자가 아니면 원장도 못 읽는다',
+      ledDenied.status === 403 || ledDenied.status === 404, String(ledDenied.status));
+  }
+
   section('[6] 최종 원장 정합성');
   {
     const users = db.prepare(`SELECT id, balance FROM users`).all() as any[];

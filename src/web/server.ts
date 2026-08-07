@@ -9,7 +9,7 @@ import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
 import {
   adminPage, isAdmin, adminTokenOk,
-  handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
+  handleAdminUsers, handleAdminLedger, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
   handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill,
   handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
   handleAdminRecurrence, handleAdminTournamentAbort,
@@ -249,6 +249,11 @@ export function startWebServer(): void {
         if (!isAdmin(me)) return sendJson(res, 404, { error: 'not found' });
         if (path === '/api/admin/users' && req.method === 'GET') {
           return await handleAdminUsers(req, res, url.searchParams.get('q') ?? '');
+        }
+        /* 원장은 읽기만 한다 — 유저 검색과 같은 잠금(admin 세션)까지만 지난다.
+           운영 토큰은 "바꾸는 동작"의 잠금이고, 여기서는 아무것도 바꾸지 않는다. */
+        if (path === '/api/admin/ledger' && req.method === 'GET') {
+          return await handleAdminLedger(req, res, url.searchParams.get('id') ?? '');
         }
         // 여기부터는 바꾸는 동작 — 두 번째 잠금을 지난 요청만 받는다
         if (!adminTokenOk(req)) return sendJson(res, 403, { error: '운영 토큰이 맞지 않습니다' });
