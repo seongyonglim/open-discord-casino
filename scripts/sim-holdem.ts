@@ -42,7 +42,12 @@ const { startWebServer } = require('../src/web/server') as typeof import('../src
 
 const db = getDb();
 const nowSec = () => Math.floor(Date.now() / 1000);
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+/* 각본 전체의 속도. 연출을 하나하나 뜯어볼 때는 1배가 맞지만, "블라인드가 끝까지 오르는지"
+   처럼 뒤쪽을 보려는 경우에는 앞의 각본을 기다리는 시간이 대부분이다.
+     SIM_SPEED=3 npx tsx scripts/sim-holdem.ts   (세 배 빠르게)
+   기다리는 시간만 줄인다 — 게임 규칙(액션 간격·블라인드 주기)은 서버가 정하므로 그대로다. */
+const SPEED = Math.max(0.2, Math.min(20, Number(process.env.SIM_SPEED ?? 1)));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, Math.round(ms / SPEED)));
 
 /* ── 등장 인물 ────────────────────────────────────────────────────────
    미리보기(사람)와 봇 셋. 이름이 성향을 말해 준다 — 화면에서 누가 무엇을 할지 짐작된다. */
@@ -214,7 +219,9 @@ let mePlayedFor = 0;
 /* 래빗·패공개를 눌러볼 수 있게 다음 판을 미뤄 두는 시간.
    처음 3600초로 뒀더니 화면에 "다음 판 3594초"가 그대로 찍혔다 — 실제로 멈추는 시간과
    같은 값을 써야 카운트다운이 말이 된다. 아래 sleep과 반드시 같이 움직인다. */
-const PAUSE_SEC = 30;
+/* 속도를 올리면 이 값도 같이 줄인다. 화면의 "다음 판 N초"가 이 값에서 나오므로,
+   sleep 만 줄이면 카운트다운이 30초를 세는 동안 각본은 벌써 다음으로 넘어가 있다. */
+const PAUSE_SEC = Math.max(3, Math.round(30 / SPEED));
 
 function maybePlayForMe(): void {
   const hand = HD.getCurrentHand(TABLE.id);
@@ -422,6 +429,9 @@ async function main(): Promise<void> {
         + `${T.BLIND_LEVELS[T.BLIND_LEVELS.length - 1].bb} 앤티 ${T.BLIND_LEVELS[T.BLIND_LEVELS.length - 1].ante}`,
       '오른쪽 패널의 [블라인드 업]이 "최종 레벨"로 바뀌면 더 오르지 않습니다',
     ]);
+    /* 레벨 하나당 머무는 시간. 눈으로 따라갈 만큼은 두되 기다리게 하지는 않는다.
+       SIM_LEVEL_MS 로 조절한다 — 빠르게 훑고 싶으면 1000 정도. */
+    const LEVEL_HOLD_MS = Math.max(300, Number(process.env.SIM_LEVEL_MS ?? 3500));
     while (true) {
       const cur = HD.getCurrentHand(TABLE.id);
       if (!cur || cur.level >= T.BLIND_LEVELS.length) break;
@@ -431,7 +441,7 @@ async function main(): Promise<void> {
       const h = HD.getCurrentHand(TABLE.id);
       if (!h) break;
       note(`레벨 ${h.level} · 블라인드 ${h.sb}/${h.bb}${h.ante ? ` 앤티 ${h.ante}` : ''}`);
-      await sleep(3500);
+      await sleep(LEVEL_HOLD_MS);
     }
     note('마지막 레벨입니다 — 여기서 더 오르지 않습니다');
     await sleep(6000);
