@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
-  showHoldemCards, holdemRecords,
+  showHoldemCards, holdemRecords, type ShowWhich,
   ACTION_SEC, actOpenAt, tuning, type HoldemStatus,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
@@ -71,6 +71,12 @@ import type { WebUser } from '../../db/queries';
 export const FINISH_LINGER_SEC = T.FINISH_LINGER_SEC;
 
 /* ── 상태 응답 ────────────────────────────────────────────────────── */
+
+/* 깐 장만 남기고 나머지는 null(뒷면)로 바꾼다.
+   가리는 일을 화면에 맡기지 않는 이유는 하나다 — 응답에 들어 있으면 읽힌다. */
+function maskCards(cards: string[], mask: number): (string | null)[] {
+  return cards.map((c, i) => ((mask >> i) & 1) === 1 ? c : null);
+}
 
 function statePayload(st: HoldemStatus, userId: string) {
   const now = Math.floor(Date.now() / 1000);
@@ -196,6 +202,22 @@ function statePayload(st: HoldemStatus, userId: string) {
     };
   })();
 
+  /* 사전 액션용 상황. 내 차례가 "아닐 때"만 채운다 — 내 차례에는 진짜 버튼이 뜬다.
+     여기 담기는 것은 지금 내가 콜하려면 얼마가 드는가와 체크가 가능한가뿐이고, 둘 다
+     이미 화면에 보이는 베팅 액수에서 나오는 값이다. 남의 카드는 물론 아무 히든 정보도
+     섞이지 않는다.
+
+     이걸 안 주면 사전 액션 상자를 내 차례에만 띄우게 되는데, 그러면 미리 정해 둘
+     이유가 사라진다 — 실제로 그렇게 동작하고 있었다. */
+  const myPre = (() => {
+    if (!hand || ended || !mySeat || !myHand) return null;
+    if (hand.to_act_seat === mySeat.seat) return null;
+    const me = views.find(v => v.seat === mySeat.seat);
+    if (!me || me.state !== 'active') return null;
+    const la = G.legalActions(me, views, hand.last_raise_size, hand.bb);
+    return { canCheck: la.canCheck, canCall: la.canCall, callAmount: la.callAmount };
+  })();
+
   return {
     ...base,
     table: {
@@ -274,12 +296,24 @@ function statePayload(st: HoldemStatus, userId: string) {
           act: h?.last_action ?? null,
           actAmount: h?.last_amount ?? 0,
           /* 내 카드는 항상, 남의 카드는 공개된 것만.
-             본인이 끝난 판에서 직접 공개(shown)했다면 그것도 공개된 것으로 본다. */
-          cards: (s.user_id === userId || (ended && h?.shown === 1)) && h
+             본인이 끝난 판에서 직접 공개(shown)했다면 그것도 공개된 것으로 본다.
+
+             한 장만 깔 수 있으므로 안 깐 장은 아예 내려보내지 않는다 — 화면에서 가리는
+             것으로는 안 된다. 응답에 들어 있으면 개발자 도구로 그대로 읽히고, 그건
+             "한 장만 깠다"가 성립하지 않는다는 뜻이다. 안 깐 자리는 null(뒷면)이 된다. */
+          cards: s.user_id === userId && h
             ? G.cardsToStrings(JSON.parse(h.hole_json) as number[])
-            : revealed.get(s.seat) ?? [],
+            : ended && h?.shown === 1
+              ? maskCards(G.cardsToStrings(JSON.parse(h.hole_json) as number[]), h.shown_mask)
+              : revealed.get(s.seat) ?? [],
           // 자발적으로 깐 패는 쇼다운 공개와 구분해서 표시한다
           shown: ended && h?.shown === 1 && !revealed.has(s.seat),
+          /* 어느 장을 깠는지 장별로 준다. 좌석 하나에 참·거짓 하나만 주면 한 장만 깠어도
+             두 장 다 "깐 카드"로 표시된다 — 내 화면에서 두 장이 함께 뒤집히는 것처럼
+             보이던 원인이 이것이다(내 카드는 나에게 늘 앞면이라 표시만 남는다). */
+          shownCards: ended && h?.shown === 1 && !revealed.has(s.seat)
+            ? [((h.shown_mask >> 0) & 1) === 1, ((h.shown_mask >> 1) & 1) === 1]
+            : [false, false],
         };
       }),
       // 내 두 장 + 보드로 지금 무엇이 완성됐는지. 내 카드로 계산한 내 정보다.
@@ -288,11 +322,16 @@ function statePayload(st: HoldemStatus, userId: string) {
         : null,
       /* 패 공개 버튼을 띄울지. 판이 끝났고, 내가 그 판에 있었고,
          쇼다운에서 이미 까이지도 않았고, 아직 내가 까지도 않았을 때만. */
-      canShow: ended && myHand != null && myHand.shown !== 1
+      /* 아직 안 깐 장이 남아 있으면 버튼을 띄운다. 한 장만 깐 사람은 나머지 한 장을
+         더 깔 수 있어야 하므로 "shown 이 0인가"로는 부족하다. */
+      canShow: ended && myHand != null && (myHand.shown_mask & 3) !== 3
         && !revealed.has(myHand.seat),
+      /* 이미 깐 장 — 화면이 남은 선택지만 그린다 */
+      shownMask: myHand ? (myHand.shown_mask & 3) : 0,
       mySeat: mySeat?.seat ?? null,
       myPresence: mySeat?.presence ?? null,
       legal: myLegal,
+      pre: myPre,
       /* 대회가 끝났고 지금은 마지막 판을 보여주는 중이라는 신호.
          클라이언트는 이걸 보고 "다음 판 N초" 대신 종료를 알리고, 남은 시간이 다 되면
          우승 축하로 넘어간다. 이게 없으면 테이블이 왜 멈춰 있는지 알 수 없다. */
@@ -359,8 +398,17 @@ export async function handleAction(
   const amount = Math.floor(Number(data?.amount ?? 0));
   if (!Number.isFinite(amount) || amount < 0) return sendJson(res, 400, { error: '금액이 올바르지 않습니다' });
 
-  const r = holdemAction(userId, kind, amount);
+  /* 사전 액션으로 콜할 때만 온다 — "걸어 둘 때 본 콜 금액"이다.
+     화면도 콜 금액이 바뀌면 체크를 풀지만, 폴링 사이(최대 1초)에 상황이 바뀌고 그 틈에
+     내 차례가 오면 늦는다. 돈이 걸린 자동 실행이라 그 1초가 실제 사고가 된다.
+     여기서 다시 재고, 더 커졌으면 실행하지 않는다 — 마지막 문은 서버다. */
+  const maxCall = data?.maxCall == null ? null : Math.floor(Number(data.maxCall));
+  const r = holdemAction(userId, kind, amount,
+    maxCall != null && Number.isFinite(maxCall) ? maxCall : undefined);
   if (!r.ok) {
+    if (r.error === 'call_grew') {
+      return sendJson(res, 409, { error: '콜 금액이 올라 자동 콜을 실행하지 않았습니다' });
+    }
     const msg = r.error === 'not_your_turn' ? '지금은 당신의 차례가 아닙니다'
       : r.error === 'not_seated' ? '이 토너먼트에 참여하지 않았습니다'
       : r.error === 'no_hand' ? '진행 중인 핸드가 없습니다'
@@ -400,10 +448,15 @@ export async function handleRecords(
 }
 
 export async function handleShow(
-  _req: IncomingMessage, res: ServerResponse, userId: string
+  req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
+  const b = await readJson(req) as { which?: unknown } | null;
+  /* 어느 장을 깔지. 값이 없거나 이상하면 둘 다로 본다 — 예전 화면이 본문 없이 보내던
+     요청과 같은 뜻이 되어야 한다(그때는 공개가 두 장 전부였다). */
+  const n = Math.floor(Number(b?.which ?? 3));
+  const which: ShowWhich = n === 1 || n === 2 ? n : 3;
   // 판이 끝났는지는 showHoldemCards가 SQL 조건으로 직접 확인한다.
-  const r = showHoldemCards(userId);
+  const r = showHoldemCards(userId, which);
   if (!r.ok) return sendJson(res, 400, { error: '지금은 패를 공개할 수 없습니다' });
   return sendJson(res, 200, { ok: true });
 }
@@ -583,15 +636,25 @@ export function holdemPage(user: WebUser): string {
                  테이블 중앙의 작은 버튼은 눈에 잘 들어오지 않았다.
                  래빗은 왼쪽(나만 보는 것), 패 공개는 오른쪽(남에게 보이는 것). -->
             <button type="button" class="hta post rabbit" id="htRabbit" hidden>🐇 남은 카드 보기</button>
-            <button type="button" class="hta post show" id="htShow" hidden>👁 내 패 공개</button>
+            <!-- 패 공개는 세 갈래다 — 왼쪽 한 장 · 오른쪽 한 장 · 두 장.
+                 한 장만 까는 것은 실제 포커의 관례다(블러프였는지 아닌지만 흘린다).
+                 이미 깐 장의 버튼은 화면이 감춘다. -->
+            <button type="button" class="hta post show" id="htShowL" hidden>👁 왼쪽</button>
+            <button type="button" class="hta post show" id="htShowR" hidden>👁 오른쪽</button>
+            <button type="button" class="hta post show" id="htShow" hidden>👁 두 장 공개</button>
             <!-- 자리 비움일 때 이 줄에 혼자 선다. 액션 버튼이 늘 같은 자리에 있으므로
                  자리를 비운 사이에도 "내가 누르는 곳"이 바뀌지 않는다. -->
             <button type="button" class="hta back" id="htBack3" hidden>▶ 게임 복귀</button>
           </div>
+          <!-- 사전 액션. 내 차례가 아닐 때 액션 버튼 자리에 뜬다.
+               상황에 따라 둘씩만 보인다 — 베팅이 없으면 [체크/폴드][체크],
+               베팅이 있으면 [폴드][콜 N]. 지금 할 수 없는 선택을 늘어놓으면
+               무엇을 고르는 자리인지가 흐려진다. -->
           <div class="ht-pre" id="htPre">
-            <label><input type="checkbox" id="htPreCheckFold"> 체크 / 폴드</label>
-            <label><input type="checkbox" id="htPreCheck"> 자동 체크</label>
-            <label><input type="checkbox" id="htPreCall"> <span id="htPreCallLabel">자동 콜</span></label>
+            <label id="htPreCFBox"><input type="checkbox" id="htPreCheckFold"> 체크 / 폴드</label>
+            <label id="htPreCBox"><input type="checkbox" id="htPreCheck"> 체크</label>
+            <label id="htPreFBox"><input type="checkbox" id="htPreFold"> 폴드</label>
+            <label id="htPreCallBox"><input type="checkbox" id="htPreCall"> <span id="htPreCallLabel">콜</span></label>
           </div>
         </div>
       </div>
@@ -640,7 +703,7 @@ export function holdemPage(user: WebUser): string {
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', helpBody())}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
-      'actallin','actbet','actcall','actcheck','actraise','actfold',
+      'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide',
       'potwin','clockwarn','allinbgm'];</script>
   <script>
   (function(){

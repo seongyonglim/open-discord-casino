@@ -26,6 +26,8 @@ export function stateFragment(cardV: string): string {
     var msgEl = document.getElementById('htMsg');
     var rabbitBtn = document.getElementById('htRabbit');
     var showBtn = document.getElementById('htShow');
+    var showLBtn = document.getElementById('htShowL');
+    var showRBtn = document.getElementById('htShowR');
     var rnoteEl = document.getElementById('htRNote');
     var sideNote = document.getElementById('htSideNote');
     var lvEl = document.getElementById('htLvUp');

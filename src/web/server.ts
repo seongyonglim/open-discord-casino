@@ -67,6 +67,9 @@ const SFX_FILES = new Set([
      체크는 칩이 나가지 않으므로 이 소리만 난다. */
   'act-allin.mp3', 'act-bet.mp3', 'act-call.mp3', 'act-check.mp3', 'act-raise.mp3',
   'act-fold.mp3',
+  /* 폴드할 때 카드가 미끄러지는 소리. act-fold(음성) 위에 겹쳐 낸다 —
+     음성은 "무슨 행동을 했다", 이건 카드가 실제로 밀려나는 그 순간의 소리다. */
+  'fold-slide.mp3',
   /* 팟 획득 — 칩이 승자에게 밀려가는 소리(chips-to-winner) 위에 겹쳐 낸다.
      칩 소리는 "돈이 움직였다", 이건 "네가(또는 저 사람이) 이겼다"다. */
   'win-pot.mp3',

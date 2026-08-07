@@ -392,6 +392,10 @@ async function main(): Promise<void> {
         .run(nowSec() + ACTION_SEC);
     };
     {
+      /* 첫 차례인 사람은 접게 한다. 셋 다 체크·콜로 끝까지 가면 쇼다운에서 전원이
+         공개돼 버려서, 아래 "한 장만 공개" 검사가 가릴 대상을 못 찾고 헛돈다.
+         한 명이 접으면 그 사람의 패는 안 보이는 채로 남아 검사할 거리가 생긴다. */
+      let foldedOnce = false;
       let steps = 0, acted = 0;
       while (steps++ < 60) {
         const cur = (await state(sessions[0].c)).body;
@@ -403,7 +407,9 @@ async function main(): Promise<void> {
         if (!s) break;
         openNow();
         const la = (await state(s.c)).body.table.legal;
-        const kind = la?.canCheck ? 'check' : la?.canCall ? 'call' : 'fold';
+        const kind = !foldedOnce ? 'fold'
+          : la?.canCheck ? 'check' : la?.canCall ? 'call' : 'fold';
+        if (!foldedOnce) foldedOnce = true;
         const r = await req('POST', '/api/games/holdem/action', s.c, { action: kind });
         if (r.body?.ok) acted++;
         else db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE ended_at IS NULL`).run(nowSec() - 1);
@@ -414,6 +420,48 @@ async function main(): Promise<void> {
       ck('끝난 뒤 결과가 내려온다', done.table?.result != null);
       const chips = done.table.seats.reduce((a: number, x: any) => a + x.stack, 0);
       ck('칩 총량 = 10,000 × 3', chips === 30000, String(chips));
+
+      /* 한 장만 공개. 이 기능의 전부는 "안 깐 장이 정말로 안 나가는가"다 —
+         화면에서 가리는 것으로는 안 된다. 응답에 들어 있으면 개발자 도구로 그대로 읽히고,
+         그러면 "한 장만 깠다"가 성립하지 않는다. 그래서 남의 시점 raw 응답으로 확인한다. */
+      /* 쇼다운까지 간 사람의 카드는 이미 공개돼 있다 — 그 사람으로는 가림이 확인되지
+         않는다. 아직 남에게 안 보이는 사람을 골라야 한다(대개 폴드한 쪽이다). */
+      const folded = (done.table.seats ?? []).filter((x: any) => x.state === 'folded');
+      const target = sessions.find(s => s.id === folded[0]?.userId);
+      const watcher = sessions.find(s => s.id !== target?.id)!;
+
+      if (!target) {
+        /* 셋 다 쇼다운으로 공개됐으면 가릴 것이 없다. 조용히 넘어가면 검사가 헛돈 것을
+           모르므로 그 사실을 남긴다 — 통과로 세지 않는다. */
+        console.log('  SKIP  한 장 공개 — 이번 판은 전원이 쇼다운으로 공개됨');
+      } else {
+        const own = (await req('GET', '/api/games/holdem/state', target.c)).body;
+        const myCards = (own?.table?.seats ?? [])
+          .filter((x: any) => x.userId === target.id)[0]?.cards ?? [];
+        ck('가릴 대상의 카드 두 장을 안다', myCards.length === 2, JSON.stringify(myCards));
+
+        const show1 = await req('POST', '/api/games/holdem/show', target.c, { which: 1 });
+        ck('왼쪽 한 장 공개가 받아들여진다', show1.body?.ok === true, JSON.stringify(show1.body));
+
+        const seen = await req('GET', '/api/games/holdem/state', watcher.c);
+        const him = (seen.body?.table?.seats ?? []).filter((x: any) => x.userId === target.id)[0];
+        ck('남에게는 깐 장만 보인다',
+          him?.cards?.length === 2 && him.cards[0] === myCards[0] && him.cards[1] === null,
+          JSON.stringify(him?.cards));
+        /* 진짜 요지 — 안 깐 카드의 값이 응답 어디에도 없어야 한다. 좌석 배열만 보면
+           다른 자리에 실려 나가는 경우를 놓친다. */
+        ck('안 깐 장이 응답 어디에도 없다',
+          myCards[1] != null && !seen.text.includes('"' + myCards[1] + '"'),
+          String(myCards[1]));
+
+        // 나머지 한 장도 마저 깔 수 있다 (마음이 바뀌는 경우)
+        const show2 = await req('POST', '/api/games/holdem/show', target.c, { which: 2 });
+        ck('나머지 한 장도 깔 수 있다', show2.body?.ok === true, JSON.stringify(show2.body));
+        const seen2 = await req('GET', '/api/games/holdem/state', watcher.c);
+        const himB = (seen2.body?.table?.seats ?? []).filter((x: any) => x.userId === target.id)[0];
+        ck('두 장 모두 보인다',
+          JSON.stringify(himB?.cards) === JSON.stringify(myCards), JSON.stringify(himB?.cards));
+      }
     }
 
     // 자리 비움 → 복귀

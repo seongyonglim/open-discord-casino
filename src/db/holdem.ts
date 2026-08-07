@@ -131,6 +131,8 @@ export interface HtHandSeatRow {
   hole_json: string; stack: number; bet: number; committed: number;
   state: G.SeatState; acted: number; won: number;
   last_action: string | null; last_amount: number; shown: number;
+  /** 깐 장 — 1비트가 첫 장, 2비트가 둘째 장 (0·1·2·3) */
+  shown_mask: number;
 }
 export interface HtEntryRow {
   id: number; tournament_id: number; user_id: string; username: string;
@@ -296,7 +298,10 @@ export function rabbitBoard(hand: HtHandRow): string[] {
  * 판이 끝났고(ended_at) 내가 그 판에 있었을 때만 한 행이 바뀌게 한다.
  * 이미 쇼다운에 공개된 패라면 굳이 막지 않는다(멱등하다).
  */
-export function showHoldemCards(userId: string): { ok: boolean } {
+/** 어느 장을 깔지. 1 = 첫 장, 2 = 둘째 장, 3 = 둘 다. 그 밖의 값은 둘 다로 본다. */
+export type ShowWhich = 1 | 2 | 3;
+
+export function showHoldemCards(userId: string, which: ShowWhich = 3): { ok: boolean } {
   const t = one<HtRow>(`SELECT * FROM holdem_tournaments
       WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
       ORDER BY id DESC LIMIT 1`);
@@ -307,7 +312,11 @@ export function showHoldemCards(userId: string): { ok: boolean } {
      새 판이 도는 중에도 지난 판을 여는 요청이 통과한다 — 정보가 새지는 않지만
      화면(현재 판만 그린다)과 서버가 어긋난다. 하위 조회는 최신 판만 집고,
      끝났는지는 밖에서 본다. */
-  run(`UPDATE holdem_hand_seats SET shown = 1
+  /* 이미 깐 장은 도로 덮을 수 없다 — 한 장을 깐 뒤 마음이 바뀌어 나머지도 깔 수 있게
+     비트를 더한다(OR). 반대로 줄이는 길은 두지 않는다. 남들이 이미 본 카드를 없던 일로
+     만들 수는 없기 때문이다. */
+  const mask = which === 1 || which === 2 || which === 3 ? which : 3;
+  run(`UPDATE holdem_hand_seats SET shown = 1, shown_mask = shown_mask | ?
        WHERE user_id = ? AND hand_id = (
          SELECT id FROM holdem_hands
          WHERE table_id = ? AND ended_at IS NOT NULL
@@ -315,7 +324,7 @@ export function showHoldemCards(userId: string): { ok: boolean } {
          AND hand_id = (
          SELECT id FROM holdem_hands
          WHERE table_id = ? ORDER BY hand_no DESC LIMIT 1)`,
-    userId, table.id, table.id);
+    mask, userId, table.id, table.id);
   return { ok: one<{ n: number }>(`SELECT changes() AS n`)!.n > 0 };
 }
 
@@ -1205,11 +1214,13 @@ export function registerHoldem(userId: string, username: string):
 export type ActionError =
   /* too_soon은 "차례는 맞지만 아직 열리지 않았다"다. 실패가 아니라 잠깐 뒤에 다시 하면
      되는 상태이므로 호출부(봇·자동 액션)는 다음 주기에 그대로 재시도하면 된다. */
-  | 'no_tournament' | 'not_seated' | 'no_hand' | 'not_your_turn' | 'too_soon' | 'illegal';
+  | 'no_tournament' | 'not_seated' | 'no_hand' | 'not_your_turn' | 'too_soon' | 'illegal'
+  /* 사전 액션으로 걸어 둔 콜인데 그 사이 금액이 올랐다 — 실행하지 않는다 */
+  | 'call_grew';
 
 /** 힛/폴드가 아니라 포커 액션. amount는 "이 스트리트에 올릴 총액"이다. */
 export function holdemAction(
-  userId: string, kind: G.ActionKind, amount: number
+  userId: string, kind: G.ActionKind, amount: number, maxCall?: number
 ): { ok: true } | { ok: false; error: ActionError; detail?: string } {
   return tx(() => {
     /* 자리 비움 상태에서 직접 버튼을 눌렀다면 전진시키기 전에 먼저 앉은 것으로 되돌린다.
@@ -1244,6 +1255,15 @@ export function holdemAction(
     if (open != null && now < open) return { ok: false, error: 'too_soon' };
 
     const views = toViews(getHandSeats(hand.id));
+    /* 사전 액션으로 걸어 둔 콜은 "그때 본 금액"을 넘어서면 실행하지 않는다.
+       화면도 금액이 바뀌면 체크를 풀지만 폴링 사이(최대 1초)의 틈이 있고, 하필 그 틈에
+       내 차례가 오면 늦는다 — 콜 200을 걸어 뒀는데 5,000이 나가는 사고가 그 틈에서 난다.
+       걸어 둔 사람만 이 값을 보내므로 직접 누른 콜은 여기에 걸리지 않는다. */
+    if (kind === 'call' && maxCall != null) {
+      const me = views.find(v => v.seat === seatRow.seat);
+      const la = me ? G.legalActions(me, views, hand.last_raise_size, hand.bb) : null;
+      if (la && la.callAmount > maxCall) return { ok: false, error: 'call_grew' };
+    }
     const r = G.applyAction(views, seatRow.seat, kind, amount, hand.last_raise_size, hand.bb);
     if (!r.ok) return { ok: false, error: 'illegal', detail: r.error };
     saveViews(hand.id, views);

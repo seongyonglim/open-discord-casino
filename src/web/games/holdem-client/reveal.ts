@@ -103,10 +103,18 @@ export const REVEAL = `    var holeOpenAt = {}, holeRevealHand = null, holeDoneA
         /* 버린 패 · 자발적 공개 표시는 클래스만 바꾼다 — 요소를 다시 만들지 않는다.
            본인이 깐 패는 흐리게 하지 않는다. 굳이 보여준 것을 가릴 이유가 없다. */
         if (cur && cur.classList) {
-          cur.classList.toggle('mucked', s.state === 'folded' && !s.shown);
-          cur.classList.toggle('shown', !!s.shown);
+          /* 깐 장에만 표시를 붙인다. 좌석 단위로 붙이면 한 장만 깠어도 두 장 다
+             깐 것처럼 보인다. shownCards 가 없던 시절의 응답이면 좌석 값으로 되돌린다. */
+          var thisShown = s.shownCards ? !!s.shownCards[i] : !!s.shown;
+          cur.classList.toggle('mucked', s.state === 'folded' && !thisShown);
+          cur.classList.toggle('shown', thisShown);
         }
       }
+      /* 접어서 버린 패는 태그 아래로 미끄러져 사라진다. 스스로 깐 패(shown)는 그대로
+         둔다 — 굳이 보여준 것을 치우면 안 된다.
+         :has 로 CSS 에서 판단할 수도 있지만, "버린 패인가"는 이미 여기서 알고 있는
+         사실이라 클래스로 넘긴다 — 같은 판단이 두 곳에 있으면 언젠가 갈라진다. */
+      hole.classList.toggle('folded', s.state === 'folded' && !s.shown && want.length > 0);
     }
 
     /* ── 래빗 헌트 ───────────────────────────────────────────────────
@@ -170,14 +178,25 @@ export const REVEAL = `    var holeOpenAt = {}, holeRevealHand = null, holeDoneA
        판이 끝난 뒤에만 되고, 서버가 SQL 조건으로 다시 확인한다. */
     var showSent = null;                 // 눌러놓고 폴링을 기다리는 판 번호
     function syncShow(tb){
-      // 이미 눌렀으면 서버가 반영해줄 때까지 다시 못 누르게 둔다
-      showBtn.hidden = !tb.canShow || showSent === tb.handNo;
+      /* 이미 깐 장의 버튼은 감춘다 — 눌러도 아무 일이 없는 버튼을 남겨 두면
+         "안 먹혔나" 싶어 다시 누르게 된다. mask 는 1비트가 왼쪽, 2비트가 오른쪽이다. */
+      var mask = tb.shownMask || 0;
+      var wait = !tb.canShow || showSent === tb.handNo;
+      showLBtn.hidden = wait || (mask & 1) === 1;
+      showRBtn.hidden = wait || (mask & 2) === 2;
+      // 두 장 버튼은 아직 아무것도 안 깠을 때만 — 한 장을 깐 뒤에는 남은 한 장 버튼이 그 일을 한다
+      showBtn.hidden = wait || mask !== 0;
     }
-    showBtn.addEventListener('click', function(){
+    function sendShow(which){
       if (!st || !st.table || !st.table.ended) return;
-      showSent = st.table.handNo;
-      showBtn.hidden = true;
-      fetch('/api/games/holdem/show', { method: 'POST' })
+      /* 한 장만 깔 때는 다음 폴링에서 나머지 버튼이 다시 나와야 하므로 판을 잠그지 않는다.
+         두 장을 다 까는 경우에만 판 번호로 잠근다 — 더 누를 것이 없다. */
+      if (which === 3) { showSent = st.table.handNo; }
+      showLBtn.hidden = showRBtn.hidden = showBtn.hidden = true;
+      fetch('/api/games/holdem/show', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ which: which }),
+      })
         .then(function(r){ return r.json(); })
         .then(function(d){
           if (d && d.error) { showSent = null; return; }
@@ -185,7 +204,10 @@ export const REVEAL = `    var holeOpenAt = {}, holeRevealHand = null, holeDoneA
           poll();                        // 내가 깐 게 바로 보이게 한 번 당겨온다
         })
         .catch(function(){ showSent = null; });
-    });
+    }
+    showLBtn.addEventListener('click', function(){ sendShow(1); });
+    showRBtn.addEventListener('click', function(){ sendShow(2); });
+    showBtn.addEventListener('click', function(){ sendShow(3); });
 
     /* 행동 이름. 금액이 의미 있는 것만 금액을 붙인다 —
        "체크 0" 같은 표기는 정보가 아니라 잡음이다. */

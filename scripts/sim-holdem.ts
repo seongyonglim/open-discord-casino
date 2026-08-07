@@ -81,15 +81,18 @@ function note(s: string): void { console.log('      ' + s); }
    등록은 시작 시각이 미래인 동안에 끝내야 한다 — registerHoldem이 내부에서
    advanceHoldem을 부르므로, 시작 시각이 이미 지났으면 세 번째 등록에서 대회가 시작돼
    네 번째 사람이 늦은 등록이 되어 첫 핸드에 못 들어간다. */
-HD.advanceHoldem();
-db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
-  started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
-  .run(nowSec() - 60, nowSec() + 3600, nowSec() + 7200);
+/* 대회를 직접 연다. 예전에는 advanceHoldem 이 오늘 판을 만들어 줘서 그 행의 시각만
+   고쳐 썼는데, 자동 생성을 없앤 뒤로는 그럴 행이 없다 — 그대로 두면 여기서 죽는다. */
+const A = require('../src/db/admin') as typeof import('../src/db/admin');
+const made = A.createTournament({
+  title: '시뮬레이션 프리롤', regOpenAt: nowSec() - 60, startAt: nowSec() + 3600,
+});
+if (!made.ok) { console.error('대회를 못 열었다:', made.error); process.exit(1); }
 for (const p of ALL) HD.registerHoldem(p.id, p.name);
 db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
 
 const st0 = HD.advanceHoldem();
-const TID = st0.tournament.id;
+const TID = st0.tournament!.id;
 const TABLE = HD.getTable(TID)!;
 
 /* 시작 블라인드 레벨. 기본은 1이다.
@@ -376,7 +379,12 @@ async function main(): Promise<void> {
     for (const b of BOTS) {
       const row = seats.find(x => x.user_id === b.id);
       if (!row || row.shown === 1) continue;
-      if (HD.showHoldemCards(b.id).ok) { note(`${b.name} 가 패를 공개했습니다`); shown = true; break; }
+      /* 한 장만 깐다 — 보여 주려는 것이 바로 이 모양이다. 남에게는 깐 장만 앞면이고
+         나머지는 뒷면으로 남는다(안 깐 장은 서버가 아예 안 내려보낸다). */
+      if (HD.showHoldemCards(b.id, 1).ok) {
+        note(`${b.name} 가 왼쪽 한 장만 공개했습니다 — 오른쪽은 뒷면으로 남습니다`);
+        shown = true; break;
+      }
     }
     if (!shown) note('※ 공개할 봇이 없었습니다 (전원 쇼다운으로 이미 공개된 판)');
   }

@@ -344,6 +344,29 @@ console.log('\n[4b] 내 패 공개 (끝난 판에서만)');
     HD.getHandSeats(hand.id).filter(h => h.shown === 1).length === 1);
   ck('참가하지 않은 사람은 공개할 수 없다', HD.showHoldemCards('nobody-xyz').ok === false);
 
+  /* 한 장만 까기. 실제 포커의 관례이고, 그래서 "안 깐 장은 정말로 안 보이는가"가
+     이 기능의 전부다 — 화면에서 가리는 것으로는 안 되고 값 자체가 남아 있으면 안 된다. */
+  {
+    const maskOf = (h: number, seat: number) =>
+      HD.getHandSeats(h).find(x => x.seat === seat)!.shown_mask;
+    ck('두 장 공개는 마스크가 3이다', maskOf(hand.id, mine.seat) === 3,
+      String(maskOf(hand.id, mine.seat)));
+
+    // 다른 사람으로 한 장만 까 본다 (지난 판이라 지금은 거절되므로 그 판을 되돌려 연다)
+    db.prepare(`UPDATE holdem_hands SET hand_no = hand_no + 100 WHERE id = ?`).run(hand.id);
+    ck('왼쪽 한 장만 깐다', HD.showHoldemCards(other.user_id, 1).ok);
+    ck('마스크가 1이다 (왼쪽만)', maskOf(hand.id, other.seat) === 1,
+      String(maskOf(hand.id, other.seat)));
+    ck('한 장만 깠어도 shown 은 켜진다',
+      HD.getHandSeats(hand.id).find(x => x.seat === other.seat)!.shown === 1);
+
+    // 마음이 바뀌어 나머지도 깔 수 있다 — 비트를 더한다
+    ck('나머지 한 장을 더 깔 수 있다', HD.showHoldemCards(other.user_id, 2).ok);
+    ck('마스크가 3이 된다 (더해진다)', maskOf(hand.id, other.seat) === 3,
+      String(maskOf(hand.id, other.seat)));
+    db.prepare(`UPDATE holdem_hands SET hand_no = hand_no - 100 WHERE id = ?`).run(hand.id);
+  }
+
   /* 열어놓은 판을 닫아 [5]에게 넘긴다. [5]는 "판이 끝난 상태"에서 시작해
      판마다 시간을 밀어 블라인드를 올리는데, 여기서 진행 중인 판을 남기면
      그 판만큼 활주로가 줄어 레벨이 오르기 전에 토너먼트가 끝난다. */
@@ -952,7 +975,22 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
 
     // 간격이 지난 것으로 만들면 같은 액션이 수락된다
     openAction();
-    const ok = HD.holdemAction(who.user_id, 'call', 0);
+
+    /* 사전 액션으로 걸어 둔 콜은 "그때 본 금액"을 넘으면 실행되지 않는다.
+       화면도 금액이 바뀌면 체크를 풀지만 폴링 사이(최대 1초)의 틈이 있고, 하필 그 틈에
+       내 차례가 오면 늦는다 — 콜 200을 걸어 뒀는데 5,000이 나가는 사고가 그 틈에서 난다.
+       그래서 서버가 다시 잰다. 여기가 뚫리면 돈이 잘못 나가는 것이라 화면 검사로는 부족하다. */
+    const tooSmall = HD.holdemAction(who.user_id, 'call', 0, 1);
+    ck('걸어 둔 금액보다 콜이 크면 거절한다',
+      !tooSmall.ok && tooSmall.error === 'call_grew', JSON.stringify(tooSmall));
+    const untouched = HD.getCurrentHand(tG.id)!;
+    ck('거절된 자동 콜은 판을 바꾸지 않는다',
+      untouched.to_act_seat === h.to_act_seat, `to_act=${untouched.to_act_seat}`);
+    const enough = HD.holdemAction(who.user_id, 'call', 0, 99_999);
+    ck('걸어 둔 금액이 충분하면 실행된다', enough.ok, JSON.stringify(enough));
+    /* 위에서 이미 콜이 나갔으므로 아래 검사는 그 결과를 이어서 본다 —
+       직접 누른 콜(maxCall 없음)도 여전히 되는지는 다음 사람 차례에서 확인한다. */
+    const ok = enough;
     ck('열린 뒤에는 같은 액션이 수락된다', ok.ok, JSON.stringify(ok));
 
     /* 액션 직후 다음 사람의 차례도 곧바로 열리지 않는다 — 그게 이 규칙의 요점이다. */
