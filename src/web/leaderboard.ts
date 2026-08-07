@@ -13,6 +13,7 @@ import { layout, esc, jsonForScript } from './views';
 import { sendJson } from './http';
 import {
   listSeasons, getSeason, seasonGames, seasonOverall, seasonGameRanking, mySeasonRank,
+  seasonHoldemRanking, seasonHoldemCount, myHoldemRank,
   type SeasonRow,
 } from '../db/queries';
 import type { WebUser } from '../db/queries';
@@ -31,37 +32,54 @@ export interface RankPayload {
     startedAt: number; endsAt: number | null; closedAt: number | null };
   games: { key: string; label: string; rounds: number; players: number }[];
   tab: string;                       // 'overall' 또는 게임 키
-  kind: 'overall' | 'game';
+  kind: 'overall' | 'game' | 'holdem';
   rows: RankRow[];
   me: { rank: number; total: number; score: number; username: string;
-        rounds?: number; rated?: number; wins?: number; pushes?: number } | null;
+        rounds?: number; rated?: number; wins?: number; pushes?: number;
+        entries?: number; itm?: number } | null;
   serverNow: number;
 }
 interface RankRow {
   userId: string; username: string; avatar: string | null; rank: number;
   score: number; rounds?: number; rated?: number; wins?: number; pushes?: number;
+  entries?: number; itm?: number;
 }
 
 export function buildRankPayload(seasonId: number | null, tab: string, me: WebUser | null): RankPayload {
   const seasons = listSeasons();
   const s: SeasonRow = (seasonId != null ? getSeason(seasonId) : undefined) ?? seasons[0];
   const games = seasonGames(s.id).map(g => ({ key: g.game, label: label(g.game), rounds: g.rounds, players: g.players }));
+  /* 홀덤은 season_stats 에 없다 — 판마다 걸고 되받는 게임이 아니라 대회이고, 집계를
+     대회 결과(holdem_entries)에서 시즌 구간으로 잘라 온다. 그래서 카테고리도 여기서 붙인다.
+     그 시즌에 끝난 대회가 있을 때만 붙으므로, 다른 게임과 마찬가지로 데이터가 정한다. */
+  const htCount = seasonHoldemCount(s.id);
+  if (htCount > 0) {
+    games.unshift({ key: 'holdem', label: '홀덤 프리롤', rounds: htCount, players: 0 });
+  }
   // 요청한 탭이 그 시즌에 없으면 통합으로 되돌린다 — 시즌을 바꿨을 때 빈 화면이 나오지 않게
   const active = tab !== 'overall' && games.some(g => g.key === tab) ? tab : 'overall';
 
   const rows: RankRow[] = active === 'overall'
     ? seasonOverall(s.id, 100).map(r => ({ ...r }))
-    : seasonGameRanking(s.id, active, 100).map(r => ({
-        userId: r.userId, username: r.username, avatar: r.avatar, rank: r.rank,
-        score: r.profit, rounds: r.rounds, rated: r.rated, wins: r.wins, pushes: r.pushes,
-      }));
+    : active === 'holdem'
+      ? seasonHoldemRanking(s.id, 100).map(r => ({
+          userId: r.userId, username: r.username, avatar: r.avatar, rank: r.rank,
+          score: r.prize, entries: r.entries, wins: r.wins, itm: r.itm,
+        }))
+      : seasonGameRanking(s.id, active, 100).map(r => ({
+          userId: r.userId, username: r.username, avatar: r.avatar, rank: r.rank,
+          score: r.profit, rounds: r.rounds, rated: r.rated, wins: r.wins, pushes: r.pushes,
+        }));
 
-  const mine = me ? mySeasonRank(s.id, me.id, active === 'overall' ? null : active) : null;
+  const mine = !me ? null
+    : active === 'holdem' ? myHoldemRank(s.id, me.id)
+    : mySeasonRank(s.id, me.id, active === 'overall' ? null : active);
   return {
     seasons: seasons.map(x => ({ id: x.id, number: x.number, name: x.name, closed: x.closed_at != null })),
     season: { id: s.id, number: s.number, name: s.name, reward: s.reward,
       startedAt: s.started_at, endsAt: s.ends_at, closedAt: s.closed_at },
-    games, tab: active, kind: active === 'overall' ? 'overall' : 'game',
+    games, tab: active,
+    kind: active === 'overall' ? 'overall' : active === 'holdem' ? 'holdem' : 'game',
     rows,
     me: mine && me ? { ...mine, username: me.username } : null,
     serverNow: Math.floor(Date.now() / 1000),
@@ -182,6 +200,7 @@ export function leaderboardPage(me: WebUser | null): string {
 
     function paintTable(){
       var overall = data.kind === 'overall';
+      var ht = data.kind === 'holdem';       // 홀덤은 대회라 열이 또 다르다 (상금·우승·입상·참가)
       var rows = data.rows;
       document.getElementById('lbEmpty').hidden = rows.length > 0;
 
@@ -194,24 +213,33 @@ export function leaderboardPage(me: WebUser | null): string {
             + avatar(r, 'lb-pav')
             + '<div class="lb-pname">' + esc(r.username) + '<\\/div>'
             + '<div class="lb-pscore">' + num(r.score) + (overall ? 'P' : 'P') + '<\\/div>'
-            + (overall ? '' : '<div class="lb-psub">' + r.rounds + '판 · ' + winRate(r) + '<\\/div>')
+            + (overall ? ''
+                : ht ? '<div class="lb-psub">' + r.entries + '회 · 우승 ' + r.wins + '<\\/div>'
+                : '<div class="lb-psub">' + r.rounds + '판 · ' + winRate(r) + '<\\/div>')
             + '<\\/div>';
         }).join('');
 
       document.getElementById('lbHead').innerHTML = overall
         ? '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">포인트<\\/th><\\/tr>'
-        : '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">순수익<\\/th>'
-          + '<th class="r">승률<\\/th><th class="r">판수<\\/th><\\/tr>';
+        : ht
+          ? '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">프리롤 상금<\\/th>'
+            + '<th class="r">우승<\\/th><th class="r">입상<\\/th><th class="r">참가<\\/th><\\/tr>'
+          : '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">순수익<\\/th>'
+            + '<th class="r">승률<\\/th><th class="r">판수<\\/th><\\/tr>';
 
       var from = top.length < 3 ? 0 : 3;
       document.getElementById('lbBody').innerHTML = rows.slice(from).map(function(r){
         var mine = data.me && r.userId === data.me.userId;
-        var profitCls = overall ? '' : (r.score > 0 ? ' pos' : r.score < 0 ? ' neg' : '');
+        // 상금은 손익이 아니라 받은 돈이라 붉게 물들 일이 없다 — 색은 순수익 탭에만 쓴다
+        var profitCls = (overall || ht) ? '' : (r.score > 0 ? ' pos' : r.score < 0 ? ' neg' : '');
         return '<tr' + (mine ? ' class="me"' : '') + '>'
           + '<td class="c rk">' + r.rank + '<\\/td>'
           + '<td><span class="lb-who">' + avatar(r, 'lb-av') + esc(r.username) + '<\\/span><\\/td>'
-          + '<td class="r n' + profitCls + '">' + (r.score > 0 && !overall ? '+' : '') + num(r.score) + 'P<\\/td>'
-          + (overall ? '' : '<td class="r n">' + winRate(r) + '<\\/td><td class="r n">' + num(r.rounds) + '<\\/td>')
+          + '<td class="r n' + profitCls + '">' + (r.score > 0 && !overall && !ht ? '+' : '') + num(r.score) + 'P<\\/td>'
+          + (overall ? ''
+              : ht ? '<td class="r n">' + num(r.wins) + '<\\/td><td class="r n">' + num(r.itm)
+                     + '<\\/td><td class="r n">' + num(r.entries) + '<\\/td>'
+              : '<td class="r n">' + winRate(r) + '<\\/td><td class="r n">' + num(r.rounds) + '<\\/td>')
           + '<\\/tr>';
       }).join('');
     }
@@ -223,12 +251,16 @@ export function leaderboardPage(me: WebUser | null): string {
       if (!data.me) { bar.hidden = true; return; }
       bar.hidden = false;
       var overall = data.kind === 'overall';
+      var ht = data.kind === 'holdem';
       bar.innerHTML = '<div class="lb-mebox">'
         + '<span class="lb-merk">' + data.me.rank + '<span>/' + data.me.total + '<\\/span><\\/span>'
         + '<span class="lb-mename">' + esc(data.me.username) + '<\\/span>'
-        + '<span class="lb-mescore">' + (data.me.score > 0 && !overall ? '+' : '')
+        + '<span class="lb-mescore">' + (data.me.score > 0 && !overall && !ht ? '+' : '')
         + num(data.me.score) + 'P<\\/span>'
-        + (overall ? '' : '<span class="lb-mesub">' + num(data.me.rounds || 0) + '판<\\/span>')
+        + (overall ? ''
+            : ht ? '<span class="lb-mesub">' + num(data.me.entries || 0) + '회 · 우승 '
+                   + num(data.me.wins || 0) + '<\\/span>'
+            : '<span class="lb-mesub">' + num(data.me.rounds || 0) + '판<\\/span>')
         + '<\\/div>';
     }
 

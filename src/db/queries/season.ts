@@ -44,6 +44,66 @@ export function seasonGames(seasonId: number): { game: string; rounds: number; p
       GROUP BY game ORDER BY rounds DESC, game ASC`, seasonId);
 }
 
+/* ── 홀덤 ─────────────────────────────────────────────────────────
+   홀덤은 다른 게임과 성격이 다르다. 판마다 돈을 걸고 되받는 게 아니라 하루 한 번 열리는
+   대회이고, 참가비가 없다(프리롤). 그래서 승률·순수익이라는 지표가 성립하지 않는다 —
+   의미가 있는 것은 몇 번 나갔고, 몇 번 이겼고, 상금을 얼마 받았는가다.
+
+   집계도 season_stats 를 쓰지 않는다. 대회 결과는 이미 holdem_entries 에 등수와 상금으로
+   남아 있고, 대회에는 끝난 시각이 있다. 그러니 시즌 구간으로 자르기만 하면 된다 —
+   옮겨 담을 필요가 없고, 지난 시즌·지난 대회가 저절로 제자리에 들어간다. */
+
+/** 그 시즌 구간에서 끝난 대회. 취소된 대회는 finished_at 이 없어 저절로 빠진다. */
+function holdemWindow(s: SeasonRow): string {
+  void s;
+  return `t.finished_at IS NOT NULL AND t.finished_at >= ?
+          AND (? IS NULL OR t.finished_at < ?)`;
+}
+
+export interface SeasonHoldemRow {
+  userId: string; username: string; avatar: string | null;
+  entries: number; wins: number; itm: number; prize: number; rank: number;
+}
+
+export function seasonHoldemRanking(seasonId: number, limit = 100): SeasonHoldemRow[] {
+  const s = getSeason(seasonId);
+  if (!s) return [];
+  const rows = all<Omit<SeasonHoldemRow, 'rank'>>(
+    `SELECT e.user_id AS userId, u.username, u.avatar,
+            COUNT(*) AS entries,
+            SUM(CASE WHEN e.finish_place = 1 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN e.prize > 0 THEN 1 ELSE 0 END) AS itm,
+            COALESCE(SUM(e.prize), 0) AS prize
+       FROM holdem_entries e
+       JOIN holdem_tournaments t ON t.id = e.tournament_id
+       JOIN users u ON u.id = e.user_id
+      WHERE ${holdemWindow(s)}
+      GROUP BY e.user_id
+      ORDER BY prize DESC, wins DESC, entries DESC, e.user_id ASC
+      LIMIT ?`, s.started_at, s.closed_at, s.closed_at, limit);
+  return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+/** 그 시즌에 끝난 대회가 하나라도 있는가 — 홀덤 카테고리를 띄울지 정한다. */
+export function seasonHoldemCount(seasonId: number): number {
+  const s = getSeason(seasonId);
+  if (!s) return 0;
+  return one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM holdem_tournaments t WHERE ${holdemWindow(s)}`,
+    s.started_at, s.closed_at, s.closed_at)!.n;
+}
+
+/** 홀덤에서의 내 자리. 상금 순이라 나보다 상금이 많은 사람 수로 등수를 센다. */
+export function myHoldemRank(seasonId: number, userId: string):
+  { rank: number; total: number; score: number; entries: number; wins: number; itm: number } | null {
+  const rows = seasonHoldemRanking(seasonId, 100000);
+  const i = rows.findIndex(r => r.userId === userId);
+  if (i < 0) return null;
+  const r = rows[i];
+  return { rank: r.rank, total: rows.length, score: r.prize,
+    entries: r.entries, wins: r.wins, itm: r.itm };
+}
+
 /** 그 시즌에 한 판이라도 한 사람 수. 통합 랭킹·성적표와 같은 기준이다. */
 export function seasonPlayers(seasonId: number): number {
   return one<{ n: number }>(

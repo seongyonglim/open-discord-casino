@@ -897,6 +897,59 @@ section('[10] 시즌');
 
 /* 시즌 표를 만들기 전의 판은 시즌 장부에 없다. 첫 시즌의 범위는 "지금까지 전부"이므로
    통산 기록이 곧 첫 시즌의 기록이다 — 옮길 수 있어야 하고, 여러 번 옮겨도 같아야 한다. */
+/* 홀덤은 season_stats 를 쓰지 않는다 — 대회 결과에 등수와 상금이 이미 있고 대회에는
+   끝난 시각이 있으니, 시즌 구간으로 자르기만 하면 된다. 옮겨 담을 필요가 없어서
+   지난 대회가 저절로 제자리에 들어간다. 그게 실제로 되는지 본다. */
+section('[10c] 홀덤 — 프리롤 상금 순위');
+{
+  const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const db = getDb();
+  for (const t of ['season_stats', 'season_results', 'seasons',
+    'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  mkUser('ht_a', 0); mkUser('ht_b', 0); mkUser('ht_c', 0);
+  const s = S.currentSeason();
+  ck('대회가 없으면 홀덤 카테고리가 안 뜬다', S.seasonHoldemCount(s.id) === 0);
+
+  const mk = (id: number, finished: number | null) =>
+    db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at) VALUES (?, ?, '프리롤', 0, 0, 0, 1000, 1, ?)`)
+      .run(id, '1999-0' + id + '-01', finished);
+  const ent = (tid: number, uid: string, place: number, prize: number) =>
+    db.prepare(`INSERT INTO holdem_entries
+      (tournament_id, user_id, username, registered_at, finish_place, prize)
+      VALUES (?, ?, ?, 0, ?, ?)`).run(tid, uid, uid, place, prize);
+
+  const inSeason = s.started_at + 10;
+  mk(1, inSeason); ent(1, 'ht_a', 1, 2600); ent(1, 'ht_b', 2, 1400); ent(1, 'ht_c', 3, 0);
+  mk(2, inSeason + 1); ent(2, 'ht_b', 1, 2600); ent(2, 'ht_a', 3, 0);
+  mk(3, null);        // 취소되어 안 끝난 대회 — 집계에 들어가면 안 된다
+  ent(3, 'ht_c', 1, 99999);
+
+  ck('끝난 대회만 센다 (취소된 대회 제외)', S.seasonHoldemCount(s.id) === 2,
+    String(S.seasonHoldemCount(s.id)));
+  const r = S.seasonHoldemRanking(s.id);
+  ck('프리롤 상금 순으로 줄 선다',
+    r.length === 3 && r[0].userId === 'ht_b' && r[1].userId === 'ht_a',
+    JSON.stringify(r.map(x => x.userId + ':' + x.prize)));
+  ck('상금이 합산된다 (ht_b 1400+2600)', r[0].prize === 4000, String(r[0].prize));
+  ck('참가·우승·입상이 함께 온다',
+    r[0].entries === 2 && r[0].wins === 1 && r[0].itm === 2, JSON.stringify(r[0]));
+  ck('상금 못 받은 사람도 참가 기록으로 남는다',
+    r[2].userId === 'ht_c' && r[2].prize === 0 && r[2].entries === 1, JSON.stringify(r[2]));
+  ck('취소된 대회의 상금은 안 잡힌다', r[2].prize === 0);
+
+  const mine = S.myHoldemRank(s.id, 'ht_a');
+  ck('내 홀덤 순위가 나온다',
+    mine != null && mine.rank === 2 && mine.total === 3 && mine.score === 2600, JSON.stringify(mine));
+  ck('안 나간 사람은 순위가 없다', S.myHoldemRank(s.id, 'se_a') == null);
+
+  /* 시즌 구간 밖의 대회는 안 잡혀야 한다 — 이게 되어야 시즌이 넘어갈 때 저절로 갈린다. */
+  mk(4, s.started_at - 100); ent(4, 'ht_a', 1, 5000);
+  ck('시즌 시작 전에 끝난 대회는 안 잡힌다',
+    S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize === 2600);
+}
+
 section('[10b] 첫 시즌으로 지난 기록 가져오기');
 {
   const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
