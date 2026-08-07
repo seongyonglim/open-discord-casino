@@ -1,0 +1,110 @@
+  /* ── 페이지 전환 ────────────────────────────────────────────────────
+     게임을 오갈 때 화면이 뚝 끊기지 않게 부드럽게 넘긴다.
+     크로스 도큐먼트 뷰 트랜지션이라 SSR 다중 페이지 구조에 그대로 쓸 수 있고,
+     지원하지 않는 브라우저는 아래 mainIn 페이드로 대체된다(둘 다 없어도 화면은 정상).
+     헤더는 페이지마다 같으니 고정해 두고 본문만 교차 페이드시킨다. */
+  @view-transition{navigation:auto}
+  header{view-transition-name:od-header}
+  main{view-transition-name:od-main}
+  ::view-transition-old(od-main){animation:vtOut .16s cubic-bezier(.4,0,1,1) both}
+  ::view-transition-new(od-main){animation:vtIn .22s cubic-bezier(0,0,.2,1) both}
+  ::view-transition-old(od-header),::view-transition-new(od-header){animation:none;mix-blend-mode:normal}
+  @keyframes vtOut{to{opacity:0;transform:translateY(-4px)}}
+  @keyframes vtIn{from{opacity:0;transform:translateY(6px)}}
+  /* 뷰 트랜지션 미지원 브라우저용 대체.
+     @supports로 막지 않으면 지원 브라우저에서 뷰 트랜지션과 겹쳐 두 번 페이드된다. */
+  @supports not (view-transition-name:none){
+    @media(prefers-reduced-motion:no-preference){
+      main{animation:mainIn .2s cubic-bezier(0,0,.2,1) both}
+    }
+  }
+  @keyframes mainIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  main{max-width:1320px;margin:0 auto;padding:16px 16px 40px}
+  .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px;box-shadow:inset 0 1px 0 rgba(212,175,55,.14)}
+  .card + .card{margin-top:16px}
+  .card h2{margin:0 0 14px;font-family:var(--display);font-weight:400;font-size:17px;color:var(--gold);
+    letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .lbl{font-size:12px;color:var(--muted);font-weight:600}
+  .stat .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
+  .stat .val.gold{color:var(--gold)}
+  .stat .val.hi{color:var(--win)}
+  .stat .val.lo{color:var(--lose)}
+  /* 큰 숫자를 읽는 데 필요한 맥락 한 줄 — 순위 없는 잔액, 판수 없는 손익은
+     크기를 가늠할 수 없다. 숫자와 같은 무게로 보이면 안 되므로 작고 흐리게. */
+  .stat .sub{margin-top:3px;font-size:11.5px;color:var(--muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;
+    letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:10px;border-bottom:1px solid var(--line)}
+  tr:last-child td{border-bottom:none}
+  .rank{font-family:var(--mono);color:var(--muted);width:36px}
+  .rank.top1{color:var(--gold);font-weight:700}
+  .delta.pos{color:var(--win)}
+  .delta.neg{color:var(--lose)}
+  .empty{color:var(--muted);font-size:13.5px;text-align:center;padding:24px 0}
+  .btn{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:10px 16px;font-size:13.5px;font-weight:700;color:var(--txt);cursor:pointer;
+    transition:transform .08s,border-color .12s,color .12s}
+  .btn:hover{border-color:var(--gold);color:var(--gold)}
+  .btn:active:not(:disabled){transform:scale(.95)}
+  .btn:disabled{opacity:.4;cursor:default;border-color:var(--line);color:var(--muted)}
+  .btn-gold{background:linear-gradient(180deg,var(--gold-hi),var(--gold));border-color:var(--gold);color:#211a04;
+    box-shadow:0 2px 10px rgba(212,175,55,.25)}
+  .btn-gold:hover{background:linear-gradient(180deg,#f7e199,var(--gold-hi));color:#211a04;border-color:var(--gold-hi)}
+  .btn-gold:disabled{background:var(--panel2);box-shadow:none}
+  .notice{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;border-radius:11px;
+    padding:11px 14px;margin-bottom:14px}
+  .notice.ok{background:rgba(46,204,113,.1);border:1px solid rgba(46,204,113,.35);color:#5fdc8b}
+  .notice.err{background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.35);color:#f0868a}
+  .game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+  .game-card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:18px;
+    display:flex;flex-direction:column;gap:6px;box-shadow:inset 0 1px 0 rgba(212,175,55,.1);
+    transition:border-color .15s,transform .15s,background .15s,box-shadow .15s}
+  /* 출시된 게임은 카드 전체가 링크다. 반응을 확실히 보이게 테두리·배경·그림자를 함께 바꾼다 —
+     예전에는 2px 떠오르고 테두리만 옅게 밝아져서 마우스를 올려도 반응을 알아채기 어려웠다 */
+  .game-card.ready{cursor:pointer}
+  /* 마우스를 올렸을 때 네 가지가 함께 움직인다 — 테두리·배경·떠오름·그림자.
+     하나만 바꾸면 "반응이 있었나?" 싶고, 넷이 같이 움직이면 확실히 잡힌다.
+     살짝 키우기(scale)까지 더하면 카드가 손에 잡히는 느낌이 난다. */
+  .game-card.ready:hover{border-color:var(--gold);background:#1f1f23;
+    transform:translateY(-4px) scale(1.015);
+    box-shadow:0 14px 32px rgba(0,0,0,.55),0 0 0 1px rgba(212,175,55,.25),
+      inset 0 1px 0 rgba(212,175,55,.28)}
+  .game-card.ready:active{transform:translateY(-1px) scale(1)}
+  .game-card.ready:hover .btn{background:var(--gold-hi);border-color:var(--gold-hi)}
+  .game-card.ready:hover .icon{color:var(--gold-hi)}
+  .game-card .icon{width:30px;height:30px;color:var(--gold)}
+  .game-card .icon svg{width:100%;height:100%}
+  .game-card h3{margin:2px 0 0;font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.3px}
+  /* 설명이 남는 공간을 모두 차지하게 해서, 설명 길이가 달라도 버튼은 항상 카드 맨 아래에 정렬된다 */
+  .game-card p{margin:0 0 4px;color:var(--muted);font-size:13px;flex:1}
+  /* 고르기 전에 알면 도움이 되는 수치 한 줄 — 최대 배당, 덱 수 같은 것.
+     설명(flex:1)과 달리 늘어나지 않게 flex:none으로 두고, 숫자라서 고정폭으로 쓴다.
+     설명보다 한 단 작고 흐리게 — 이것부터 읽히면 카드가 사양표가 된다. */
+  .game-card .gc-fact{flex:none;margin:0 0 6px;padding-top:6px;
+    border-top:1px solid rgba(255,255,255,.055);
+    font-family:var(--mono);font-size:11px;color:#6d6d73;letter-spacing:-.1px}
+  .game-card .btn{justify-content:center}
+
+  /* 아이콘 줄 — 왼쪽 아이콘, 오른쪽 배지 */
+  .gc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  /* 시간·성격 배지. 지금은 홀덤 프리롤만 쓴다 — 일곱 중 유일하게 시간이 정해진 게임이라
+     그 사실 자체가 정보다. "인기"나 "HOT" 같은 건 붙이지 않는다. 우리 규모에서는
+     대부분 사실이 아니게 되고, 사실이 아닌 배지는 한 번 들키면 나머지도 안 믿게 된다. */
+  .gc-badge{flex:none;padding:3px 8px;border-radius:999px;
+    font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.3px;
+    color:#1c1608;background:linear-gradient(180deg,#e8c65a,#c8a52f);
+    border:1px solid rgba(255,235,160,.55)}
+  .game-card.ready:hover p{color:#c8c8cf}
+  /* 지금 일이 벌어지고 있는 카드(등록 중·진행 중)만 강조한다.
+     상시로 크게 띄우면 하루 대부분의 시간에 거짓 긴박감을 만든다. */
+  .game-card.live{border-color:var(--gold-dim);background:linear-gradient(180deg,#221f16,#1a1a1e)}
+  .game-card.live .gc-badge{animation:liveBadge 1.8s ease-in-out infinite}
+  @keyframes liveBadge{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.5)}
+    60%{box-shadow:0 0 0 7px rgba(212,175,55,0)}}
+

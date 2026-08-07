@@ -1,0 +1,37 @@
+  /* ── 로그인 화면 ─────────────────────────────────────────────
+     로그인 전에는 보여줄 콘텐츠가 없어서, 카드 하나를 위에 붙여두면 아래가 텅 빈다.
+     화면 높이를 다 써서 가운데에 세로로 세운다. login-page 클래스가 붙은 페이지에서만 적용. */
+  .login-page main{display:flex;align-items:center;justify-content:center;
+    min-height:calc(100vh - 190px);padding-top:0}
+  .login-page .tabs{display:none}          /* 로그인 전에는 탭 이동이 의미가 없다 */
+  .login-page .loginbtn{display:none}      /* 화면 가운데 버튼과 중복이라 헤더 쪽은 감춘다 */
+  .login-hero{text-align:center;max-width:460px;width:100%}
+  .login-mark{width:64px;height:64px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    box-shadow:0 10px 30px rgba(0,0,0,.55)}
+  .login-mark svg{width:38px;height:38px}
+  .login-title{font-family:'Black Han Sans',sans-serif;font-weight:400;
+    font-size:40px;line-height:1.15;letter-spacing:.5px;margin:0 0 10px;color:var(--gold)}
+  .login-title span{color:var(--txt)}
+  .login-sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}
+  /* 디스코드 브랜드 색(blurple) — 어느 서비스로 로그인하는지 한눈에 보이게 */
+  .login-cta{display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    width:100%;max-width:300px;padding:15px 22px;border-radius:12px;
+    background:#5865f2;color:#fff;font-weight:700;font-size:15.5px;text-decoration:none;
+    box-shadow:0 8px 22px rgba(88,101,242,.34);transition:transform .12s,background .12s,box-shadow .12s}
+  .login-cta:hover{background:#4752e0;transform:translateY(-2px);box-shadow:0 12px 28px rgba(88,101,242,.44)}
+  .login-cta:active{transform:translateY(0) scale(.99)}
+  .login-note{color:var(--muted);font-size:12.5px;margin:14px 0 0}
+  .login-games{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:30px}
+  .login-game{display:inline-flex;align-items:center;gap:6px;
+    padding:7px 12px;border:1px solid var(--line);border-radius:999px;
+    background:var(--panel);color:var(--muted);font-size:12.5px}
+  .login-game svg{width:14px;height:14px;color:var(--gold)}
+  @media (max-width:640px){
+    .login-title{font-size:32px}
+    .login-page main{min-height:calc(100vh - 160px)}
+  }
+
+  .bump{animation:statBump .3s ease}
+  .gold-flash{animation:goldFlash .6s ease-out}
+

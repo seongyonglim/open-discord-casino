@@ -1,0 +1,12 @@
+# app.css 를 이 순서로 이어 붙인다. CSS 는 뒤에 오는 규칙이 이기므로 순서가 곧 동작이다.
+# 새 조각을 넣을 때는 이 파일에도 같은 자리에 적어야 한다.
+01-base.css
+02-shell.css
+03-lobby.css
+04-board.css
+05-poker.css
+06-login.css
+07-bacc.css
+08-bj.css
+09-holdem.css
+10-notice.css

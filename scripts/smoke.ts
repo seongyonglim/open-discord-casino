@@ -202,7 +202,15 @@ async function main(): Promise<void> {
        미디어 쿼리 안의 재정의는 정상적인 반응형 패턴이므로 최상위 규칙만 본다. */
     console.log('\n[9] CSS 클래스 중복 정의');
     {
-      const raw = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.css'), 'utf8');
+      /* 스타일시트는 역할별 조각으로 나뉘어 있다(assets/css/). 검사는 반드시 이어 붙인
+         전체를 봐야 한다 — 조각 하나만 보면 "게임끼리 이름이 겹친다"는 이 검사가
+         정확히 무의미해진다(겹침은 서로 다른 조각 사이에서 생긴다).
+         순서는 서버가 쓰는 것과 같은 ORDER.txt 에서 읽는다. */
+      const cssDir = join(process.cwd(), 'src', 'web', 'assets', 'css');
+      const raw = readFileSync(join(cssDir, 'ORDER.txt'), 'utf8')
+        .split('\n').map(l => l.trim()).filter(l => l !== '' && !l.startsWith('#'))
+        .map(f => readFileSync(join(cssDir, f), 'utf8'))
+        .join('\n');
       /* 주석을 먼저 없앤다. 이게 없으면 아래 셀렉터 정규식의 [^{}@]+? 가 주석까지
          함께 빨아들여, 주석 바로 뒤에 오는 규칙이 "주석+셀렉터"가 되어 단일 클래스
          판정을 통과하지 못하고 조용히 건너뛰어진다. 이 코드베이스는 규칙 앞에 주석을

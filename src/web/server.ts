@@ -113,10 +113,25 @@ function serveAsset(dir: 'sfx' | 'cards' | 'img', name: string, res: http.Server
 // 전역 스타일시트와 공용 스크립트. 모든 페이지가 같은 내용을 쓰므로 인라인 대신 여기서 서빙해
 // 브라우저 캐시에 맡긴다(게임을 오갈 때마다 44KB를 다시 받고 파싱하던 비용이 사라진다).
 // 내용은 프로세스 수명 동안 바뀌지 않으니 gzip까지 한 번만 해두고 재사용한다.
-const APP_FILES: Record<string, { path: string; mime: string }> = {
-  '/app.css': { path: 'app.css', mime: 'text/css; charset=utf-8' },
+/* path 가 배열이면 그 순서로 이어 붙인다.
+   스타일시트는 2,500줄이라 한 파일로는 읽을 수 없어 역할별로 나눴다(assets/css/).
+   순서가 곧 동작이다 — CSS 는 뒤에 오는 규칙이 이기므로, 조각 순서를 바꾸면 화면이 바뀐다.
+   그래서 순서는 assets/css/ORDER.txt 한 곳에만 적고 여기서 그대로 읽는다.
+   이어 붙인 결과가 나누기 전과 한 글자도 다르지 않은지는 scripts/golden.ts 가 확인한다. */
+const APP_FILES: Record<string, { path: string | string[]; mime: string }> = {
+  '/app.css': { path: cssParts(), mime: 'text/css; charset=utf-8' },
   '/app.js': { path: 'app.js', mime: 'text/javascript; charset=utf-8' },
 };
+
+/* 돌려주는 경로는 src/web/assets/ 를 기준으로 한 상대 경로다 — serveAppFile 이 그 앞을
+   붙이기 때문이다. 여기서도 'assets' 를 붙였다가 경로가 두 겹이 되어 500이 났었다. */
+function cssParts(): string[] {
+  return readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'css', 'ORDER.txt'), 'utf8')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l !== '' && !l.startsWith('#'))
+    .map(f => join('css', f));
+}
 const appCache = new Map<string, CachedAsset>();
 /* 로컬 미리보기에서는 캐시하지 않는다.
    프로세스 수명 동안 캐시하면 스타일 한 줄을 고칠 때마다 서버를 다시 띄워야 한다 —
@@ -129,7 +144,13 @@ function serveAppFile(route: string, res: http.ServerResponse): void {
   let hit = APP_CACHE_ON ? appCache.get(route) : undefined;
   if (!hit) {
     // app.js 안의 효과음 URL이 자산 버전을 필요로 하므로 여기서 치환한다
-    const text = readFileSync(join(process.cwd(), 'src', 'web', 'assets', meta.path), 'utf8')
+    const parts = Array.isArray(meta.path) ? meta.path : [meta.path];
+    const text = parts
+      .map(p => readFileSync(join(process.cwd(), 'src', 'web', 'assets', p), 'utf8'))
+      /* 조각 사이에 줄바꿈 하나를 넣는다 — 조각은 마지막 줄의 줄바꿈을 갖고 있지 않다.
+         나눌 때 원본을 줄 단위로 잘랐으므로, 같은 자리에 같은 줄바꿈을 되돌려 놓아야
+         원본과 바이트가 같아진다. */
+      .join('\n')
       .split('__ASSET_V__').join(ASSET_V);
     const raw = Buffer.from(text, 'utf8');
     hit = { raw, gz: gzipSync(raw, { level: 9 }) };

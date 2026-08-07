@@ -33,6 +33,10 @@ process.env.PORT = String(PORT);
 const { upsertUser, adjustBalance, getWebUser, createSession } =
   require('../src/db/queries') as typeof import('../src/db/queries');
 const { startWebServer } = require('../src/web/server') as typeof import('../src/web/server');
+/* 자산 캐시 버전. public/ 과 src/web/assets/ 의 가장 최근 수정 시각에서 나오므로,
+   파일을 하나 나누기만 해도 값이 바뀐다 — 동작이 바뀐 것이 아니라 캐시 무효화용 꼬리표다.
+   패턴으로 짐작하지 않고 실제 값을 그대로 가린다. */
+const { ASSET_V } = require('../src/web/assets') as typeof import('../src/web/assets');
 
 /* 검사 대상. audit-pages의 목록과 같은 화면들 + 별도 파일로 나가는 정적 자산.
    자산까지 넣는 이유는 CSS·JS 파일을 건드리는 리팩토링도 이 도구로 잡으려는 것이다. */
@@ -59,6 +63,7 @@ async function get(path: string, cookie: string): Promise<string> {
    그래서 자리(값이 있던 위치)는 남기고 값만 가린다. */
 function normalize(text: string): string {
   return text
+    .split(ASSET_V).join('<ASSET_V>')
     // 세션 토큰·nonce 류의 긴 16진수
     .replace(/\b[0-9a-f]{32,}\b/g, '<HEX>')
     // 초/밀리초 단위 epoch (10자리·13자리)
