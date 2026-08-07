@@ -1113,6 +1113,10 @@
   .ht-pre{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#a9bdb1}
   .ht-pre[hidden]{display:none}
   .ht-pre label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  /* 상황에 안 맞는 선택지는 감춘다(베팅이 없으면 [폴드][콜]은 뜻이 없다).
+     display 를 직접 정해 둔 요소라 hidden 속성만으로는 안 사라진다 — 브라우저 기본의
+     [hidden]{display:none} 보다 위 규칙이 세다. 그래서 넷이 다 보이고 있었다. */
+  .ht-pre label[hidden]{display:none}
   .ht-pre input{accent-color:var(--gold)}
 
   /* 오른쪽 패널 — 토너먼트 정보 + 칩 순위 */

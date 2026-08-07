@@ -1086,12 +1086,20 @@ console.log('\n[13] 반복 개최 (자동 생성은 켰을 때만 · 지운 판�
   // 매일 — 켜면 만들어진다
   wipe();
   ck('매일 규칙은 저장된다', R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 }).ok);
-  R.ensureRecurring();
+  /* 시각을 고정해서 부른다. 그냥 부르면 지금이 몇 시냐에 따라 결과가 갈린다 —
+     다음 차례가 12시간(RECUR_LEAD_SEC) 안이어야 만들어지는데, 설정 시각을 막 넘긴
+     직후에는 다음 차례가 24시간 뒤라 안 만들어진다. 하루 중 언제 돌려도 같아야 한다.
+     ensureRecurring 이 now 를 받으므로 "설정 시각 한 시간 전"을 그대로 넘긴다. */
+  const cfgNow = require('../src/db/settings') as typeof import('../src/db/settings');
+  const sm = cfgNow.getConfig().startMin;
+  const todayStart = T.kstTimeToUnix(T.kstDateStr(Date.now()), Math.floor(sm / 60), sm % 60);
+  const oneHourBefore = todayStart - 3600;
+  R.ensureRecurring(oneHourBefore);
   ck('켜면 다음 판이 만들어진다', count() === 1, String(count()));
 
   // 두 번 불러도 하나다 — 요청마다 불리는 함수라 여기가 새면 대회가 무한히 늘어난다
-  R.ensureRecurring();
-  R.ensureRecurring();
+  R.ensureRecurring(oneHourBefore);
+  R.ensureRecurring(oneHourBefore);
   ck('여러 번 불러도 하나만 만든다', count() === 1, String(count()));
 
   /* 되살아남 방지. 예전 구조에서 실제로 겪은 문제라 검사로 못 박는다 —
@@ -1316,7 +1324,11 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     wipe();
     S.saveConfig({ ...S.defaultConfig(), buyIn: 500 });
     R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
-    R.ensureRecurring();
+    /* 여기도 시각을 고정한다 — 설정 시각을 막 넘긴 뒤에 돌리면 다음 차례가 24시간 뒤라
+       12시간 리드 밖이어서 아무것도 안 만들어진다(하루 중 언제 돌리냐로 결과가 갈린다). */
+    const sm2 = S.getConfig().startMin;
+    const start2 = T.kstTimeToUnix(T.kstDateStr(Date.now()), Math.floor(sm2 / 60), sm2 % 60);
+    R.ensureRecurring(start2 - 3600);
     ck('반복 개최로 열린 판에도 참가비가 붙는다', HD.liveTournament()?.buy_in === 500,
       String(HD.liveTournament()?.buy_in));
     db.prepare(`DELETE FROM holdem_settings`).run();
