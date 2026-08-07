@@ -80,6 +80,18 @@
   .ad-tbl .ad-id{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
   /* 지급된 금액은 "지울 수 없는 이유"라서 눈에 띄어야 한다 */
   .ad-tbl .paid{color:var(--gold);font-weight:700}
+  /* 대회 목록의 방식·상태 — 글자만 늘어놓으면 훑을 때 안 잡힌다.
+     방식은 돈이 오가느냐로 갈리고(바이인은 주황 = 참가자가 내는 돈),
+     상태는 지금 손댈 수 있느냐로 갈린다(진행 중만 초록으로 살아 있다). */
+  .ad-tag{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;
+    padding:2px 8px;white-space:nowrap}
+  .ad-tag.free{background:rgba(255,255,255,.07);color:#a8a8b0}
+  .ad-tag.buy{background:rgba(255,179,92,.13);color:#ffb35c}
+  .ad-st{display:inline-block;font-size:11.5px;font-weight:700;white-space:nowrap}
+  .ad-st.s-wait{color:var(--muted)}
+  .ad-st.s-run{color:var(--win)}
+  .ad-st.s-done{color:#a8a8b0}
+  .ad-st.s-cancel{color:#e08585}
   /* 원장 — 들어온 것과 나간 것을 색으로 가른다. 부호만으로는 표를 훑을 때 안 잡힌다.
      시각 칸은 숫자라 고정폭으로 세운다(사유 칸은 한글이 섞여 아래 ad-id 규칙을 안 쓴다). */
   .ad-tbl td.n{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}

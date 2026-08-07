@@ -20,6 +20,9 @@ export interface AdminTournamentRow {
   scheduled_start_at: number;
   started_at: number | null; finished_at: number | null; cancelled_at: number | null;
   prize_multiplier: number;
+  /** 목록이 "이 판이 얼마짜리인가"를 다시 재는 데 쓴다 — 지급액만으로는 안 끝난 판을 못 읽는다 */
+  prize_fixed: number;
+  buy_in: number;
   entries: number;
   /** 실제로 지급된 상금 합계. 0이면 이 대회는 경제에 아무 흔적도 남기지 않았다. */
   paid: number;
@@ -205,7 +208,10 @@ export function createTournament(o: {
       return { ok: false as const, error: 'bad_time' as const };
     }
     const mult = Math.max(0, Math.floor(o.prizeMultiplier ?? cfg.weekdayMultiplier));
-    const buyIn = Math.max(0, Math.floor(o.buyIn ?? 0));
+    /* 안 주면 템플릿([기본 룰 템플릿])의 값을 쓴다. 반복 개최가 이 길로 들어오므로,
+       템플릿을 바이인으로 바꿔 두면 자동으로 열리는 판도 바이인이 된다.
+       테스트 대회는 0 을 명시해서 언제나 프리롤로 남는다 — 지울 수 있어야 하기 때문이다. */
+    const buyIn = Math.max(0, Math.floor(o.buyIn ?? cfg.buyIn));
     const fixed = Math.max(0, Math.floor(o.prizeFixed ?? cfg.prizeFixed));
     /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이다. */
     const title = (o.title ?? '').trim() || (buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
@@ -235,7 +241,12 @@ export function createTournament(o: {
  */
 export function openTestTournament() {
   // 만드는 조건은 하나뿐이므로 결과를 그대로 넘긴다 — 여기서 뭉개면 거절 이유를 못 알려 준다
-  return createTournament({ title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0 });
+  /* 참가비를 0 으로 못 박는다. 템플릿이 바이인이어도 테스트 판은 프리롤이어야 한다 —
+     이 판의 존재 이유가 "경제에 아무 흔적도 남기지 않는 것"이고, 참가비를 걷는 순간
+     원장이 움직여서 끝난 뒤 통째로 지울 수 없게 된다. */
+  return createTournament({
+    title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0, buyIn: 0, prizeFixed: 0,
+  });
 }
 
 /**
