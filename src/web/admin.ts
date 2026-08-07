@@ -17,7 +17,7 @@ import { readJson, sendJson } from './http';
 import {
   listTournaments, purgeTournament, openTestTournament, searchUsers, grantPoints,
 } from '../db/admin';
-import { listSeasons, updateSeason, closeSeason, seasonPlayers } from '../db/queries';
+import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import type { WebUser } from '../db/queries';
 
 /** 바꾸는 동작의 두 번째 잠금. 토큰이 설정돼 있지 않으면 무조건 잠긴다. */
@@ -125,6 +125,12 @@ export function adminPage(user: WebUser): string {
         <button type="button" id="adSSave">안내 저장</button>
       </div>
       <div class="ad-row">
+        <button type="button" id="adSFill">지난 기록을 첫 시즌으로 가져오기</button>
+        <span class="ad-note">시즌 표를 만들기 전의 판은 시즌 장부에 없습니다. 첫 시즌의 범위가
+          "지금까지 전부"이므로 통산 기록을 그대로 옮깁니다. 더하는 것이 아니라 맞추는 것이라
+          여러 번 눌러도 결과가 같습니다.</span>
+      </div>
+      <div class="ad-row">
         <button type="button" id="adSClose" class="danger">시즌 종료 · 다음 시즌 열기</button>
         <span class="ad-note">되돌릴 수 없습니다.</span>
       </div>
@@ -226,6 +232,15 @@ export function adminPage(user: WebUser): string {
         // 날짜만 받고 그날 끝으로 본다 — 시각까지 고르게 하면 KST 환산 실수가 늘어난다
         endsAt: d ? Math.floor(new Date(d + 'T23:59:59+09:00').getTime() / 1000) : null,
       }).then(function(r){ if (shout(r)) location.reload(); });
+    });
+
+    document.getElementById('adSFill').addEventListener('click', function(){
+      confirmThen('지난 기록을 첫 시즌으로 가져올까요?',
+        '통산 기록(game_stats)을 첫 시즌의 시즌 장부에 맞춰 넣습니다. 더하는 것이 아니라 맞추는 것이라 여러 번 눌러도 같습니다.',
+        function(){
+          post('/api/admin/season/backfill', {})
+            .then(function(r){ if (shout(r)) { alert(r.d.rows + '행을 시즌 장부에 넣었습니다.'); location.reload(); } });
+        });
     });
 
     document.getElementById('adSClose').addEventListener('click', function(){
@@ -348,4 +363,18 @@ export async function handleAdminSeasonClose(
   const r = closeSeason({ seed: 0 });
   if (!r.ok) return sendJson(res, 400, { error: '진행 중인 시즌이 없습니다' });
   return sendJson(res, 200, { ok: true, closed: r.closed, ranked: r.ranked, nextNumber: r.nextNumber });
+}
+
+export async function handleAdminSeasonBackfill(
+  _req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const r = backfillFirstSeason();
+  if (!r.ok) {
+    return sendJson(res, 400, {
+      error: r.error === 'not_first_season'
+        ? '시즌이 이미 한 번 닫혔습니다 — 통산 기록이 여러 시즌에 걸쳐 있어 옮길 수 없습니다'
+        : '진행 중인 시즌이 없습니다',
+    });
+  }
+  return sendJson(res, 200, { ok: true, rows: r.rows });
 }
