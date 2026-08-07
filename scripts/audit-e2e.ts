@@ -510,6 +510,10 @@ async function main(): Promise<void> {
     }
     ck('화면이 내 행을 표시할 줄 안다', page.includes("r.userId === data.me.userId"));
     ck('화면이 포디움도 표시할 줄 안다', page.includes('lb-you'));
+    /* 고정바는 목록에 내가 없을 때만 뜬다. 이미 초록으로 칠해진 줄이 화면에 있는데
+       아래에 같은 말을 또 적으면 중복이다 — 그 판단이 화면에 들어 있는지 본다. */
+    ck('고정바가 목록에 있는지 보고 결정한다',
+      page.includes('if (shown) { bar.hidden = true; return; }'));
   }
 
   section('[6] 최종 원장 정합성');
