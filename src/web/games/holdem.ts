@@ -686,9 +686,13 @@ export function holdemPage(user: WebUser): string {
         <div class="ht-info" id="htInfo"></div>
         <div class="ht-tabs">
           <button type="button" class="ht-tab active" data-htab="live">칩 순위</button>
+          <!-- 상금 구조. 예전에는 "지급 인원 2명"만 적혀 있어서, 몇 등까지 얼마를 받는지
+               알려면 규칙 도움말을 열어야 했다. 지금 판의 실제 금액을 여기서 보여준다. -->
+          <button type="button" class="ht-tab" data-htab="prize">상금</button>
           <button type="button" class="ht-tab" data-htab="rec">역대 전적</button>
         </div>
         <div class="ht-rank" id="htRank"></div>
+        <div class="ht-prize-tab" id="htPrizeTab" hidden></div>
         <div class="ht-rec-wrap" id="htRec" hidden>
           <div class="ht-rec" id="htRecList"></div>
         </div>

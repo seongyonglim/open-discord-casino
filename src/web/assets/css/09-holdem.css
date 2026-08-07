@@ -1222,6 +1222,39 @@
   .ht-rw.out .ht-rw-av{filter:grayscale(1)}
   /* 내 줄이어도 탈락했으면 강조하지 않는다 — 금색은 "살아 있다"는 뜻으로 쓰고 있다 */
   .ht-rw.out.me{background:rgba(255,255,255,.03)}
+  /* 지급 인원 위의 툴팁 — 마우스를 올렸을 때만 등수별 금액을 펼친다.
+     평소에 펼쳐 두면 정보 패널이 두 배로 길어져서 다른 값들이 밀려난다.
+     오른쪽 패널이 좁아 왼쪽으로 펼친다(오른쪽으로 열면 화면 밖으로 나간다). */
+  .ht-i-pz{position:relative}
+  .ht-help{font-style:normal;font-size:10px;color:var(--muted);cursor:help}
+  .ht-i-pz .ht-tip{position:absolute;right:0;top:calc(100% + 6px);z-index:40;
+    min-width:190px;padding:8px 10px;border-radius:10px;
+    background:#141418;border:1px solid var(--gold-dim);
+    box-shadow:0 12px 30px rgba(0,0,0,.6);
+    opacity:0;visibility:hidden;transform:translateY(-4px);
+    transition:opacity .12s,transform .12s,visibility 0s linear .12s}
+  .ht-i-pz:hover .ht-tip{opacity:1;visibility:visible;transform:none;transition-delay:0s}
+  .ht-i-pz .ht-tip .ht-pz-row{padding:5px 0}
+  .ht-i-pz .ht-tip .empty{font-size:11.5px;color:var(--muted)}
+
+  /* ── 상금 구조 탭 ─────────────────────────────────────────────────
+     "지급 인원 2명"만으로는 몇 등까지 얼마인지 알 수 없다. 등수·금액·비율을 한 줄에 둔다.
+     못 받는 자리도 한 줄 적는다 — 경계가 보여야 지금 내 자리가 상금권인지 판단된다. */
+  .ht-prize-tab{padding:4px 14px 14px}
+  .ht-prize-tab[hidden]{display:none}
+  .ht-pz-head{display:flex;flex-direction:column;gap:2px;padding:8px 0 10px;
+    border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:6px;
+    font-size:11.5px;color:var(--muted)}
+  .ht-pz-head b{font-family:var(--mono);font-size:14px;color:var(--gold);font-weight:800}
+  .ht-pz-row{display:flex;align-items:center;gap:8px;padding:7px 4px;
+    border-bottom:1px solid rgba(255,255,255,.035)}
+  .ht-pz-row:last-child{border-bottom:0}
+  .ht-pz-pl{flex:1;min-width:0;font-size:12.5px;font-weight:700}
+  .ht-pz-amt{font-family:var(--mono);font-size:12.5px;font-weight:800;color:var(--gold);flex:none}
+  /* 비율은 금액을 읽은 다음에 오는 정보다 — 같은 무게로 두면 둘 다 안 읽힌다 */
+  .ht-pz-pct{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none;width:42px;text-align:right}
+  .ht-pz-row.out .ht-pz-pl,.ht-pz-row.out .ht-pz-amt{color:#7f8a83;font-weight:600}
+  .ht-pz-note{margin-top:10px;font-size:11px;line-height:1.6;color:var(--muted)}
   .ht-side .ht-back{margin:0 14px 14px;padding:8px 12px;font-size:12.5px}
   .ht-side .ht-back[hidden]{display:none}
 

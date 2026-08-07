@@ -100,7 +100,10 @@ const TABLE = HD.getTable(TID)!;
    그 화면을 볼 수 있다. 레벨은 "시작 시각으로부터 흐른 시간"에서만 나오므로
    시작 시각을 뒤로 밀면 그 레벨에서 시작한다:
      SIM_LEVEL=6 npx tsx scripts/sim-holdem.ts   (앤티 연출 확인용) */
-const START_LEVEL = Math.max(1, Math.min(T.BLIND_LEVELS.length, Number(process.env.SIM_LEVEL ?? 1)));
+/* 기본 시작 레벨을 11로 둔다. 1부터 시작하면 마지막 레벨(16)까지 보는 데 오래 걸리는데,
+   16레벨을 넣은 이유가 바로 그 끝 구간이라 그걸 못 보면 확인이 안 된다.
+   앞 구간(앤티가 붙는 6레벨 등)을 보려면 SIM_LEVEL 로 지정한다. */
+const START_LEVEL = Math.max(1, Math.min(T.BLIND_LEVELS.length, Number(process.env.SIM_LEVEL ?? 11)));
 if (START_LEVEL > 1) {
   db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ? WHERE id = ?`)
     .run((START_LEVEL - 1) * T.LEVEL_DURATION_SEC, TID);
@@ -407,6 +410,32 @@ async function main(): Promise<void> {
     note(`레벨 ${h.level} · 블라인드 ${h.sb}/${h.bb}`);
   }
   await sleep(8000);
+
+  /* ── ACT 4b ── 마지막 레벨까지 올려 본다 ────────────────────────
+     16레벨을 넣은 이유가 "헤즈업이 늘어지지 않게"인데, 실제로 8분씩 기다리면 두 시간이
+     걸려서 눈으로 확인할 방법이 없었다. 여기서 한 판씩 레벨을 올려 끝까지 보여 준다.
+     SIM_SKIP_LEVELUP=1 로 두면 건너뛴다 — 다른 연출만 보고 싶을 때가 있다. */
+  if (process.env.SIM_SKIP_LEVELUP !== '1') {
+    act('블라인드 끝까지 — LEVEL 16', [
+      '한 판마다 레벨을 하나씩 올려 마지막 레벨까지 갑니다',
+      `마지막은 ${T.BLIND_LEVELS.length}레벨 — ${T.BLIND_LEVELS[T.BLIND_LEVELS.length - 1].sb}/`
+        + `${T.BLIND_LEVELS[T.BLIND_LEVELS.length - 1].bb} 앤티 ${T.BLIND_LEVELS[T.BLIND_LEVELS.length - 1].ante}`,
+      '오른쪽 패널의 [블라인드 업]이 "최종 레벨"로 바뀌면 더 오르지 않습니다',
+    ]);
+    while (true) {
+      const cur = HD.getCurrentHand(TABLE.id);
+      if (!cur || cur.level >= T.BLIND_LEVELS.length) break;
+      db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ? WHERE id = ?`)
+        .run(T.LEVEL_DURATION_SEC, TID);
+      await waitNextHand();
+      const h = HD.getCurrentHand(TABLE.id);
+      if (!h) break;
+      note(`레벨 ${h.level} · 블라인드 ${h.sb}/${h.bb}${h.ante ? ` 앤티 ${h.ante}` : ''}`);
+      await sleep(3500);
+    }
+    note('마지막 레벨입니다 — 여기서 더 오르지 않습니다');
+    await sleep(6000);
+  }
 
   /* ── ACT 5 ── 사이드 팟 */
   act('사이드 팟 — 숏스택이 올인한 위로 돈이 쌓일 때', [

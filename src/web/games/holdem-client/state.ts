@@ -12,6 +12,11 @@ export function stateFragment(cardV: string): string {
   return `    var MEID = window.__MEID__;
     var CARD_V = ${cardV};
     var st = null, unit = 'chip', spectate = false, paidHandNo = null;
+    /* 우승 팝업을 닫고 로비로 나온 대회. 서버는 끝난 뒤에도 30초 동안 테이블을 계속
+       내려보내는데(마지막 쇼다운을 보여주려는 창이다), 그동안 화면이 테이블에 붙들려
+       있으면 팝업을 닫아도 갈 데가 없다. 여기에 대회 id 를 적어 두고 그 대회의 테이블은
+       더 그리지 않는다 — 대회가 바뀌면 값이 달라져 저절로 풀린다. */
+    var leftTableTid = null;
     // 판에 처음 들어온 순간에는 연출 없이 현재 상태를 그대로 보여준다
     var firstTablePaint = true;
 

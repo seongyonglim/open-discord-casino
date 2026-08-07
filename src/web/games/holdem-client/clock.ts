@@ -25,9 +25,6 @@ export const CLOCK = `    function turnLeft(tb){
     // 화면에 그린 마지막 게이지 비율과 그것이 어느 차례의 것인지 (단조 감소 보장용)
     var fracKey = null, fracLast = 1;
     var clockWarned = null;    // 이미 경고를 낸 차례의 열쇠 — 한 차례에 한 번만 울린다
-    /* 내 차례 알림을 이미 낸 차례. 시계 경고와 열쇠는 같지만 따로 둔다 — 하나는 차례가
-       열릴 때, 하나는 5초 남았을 때라 시점이 다르다. */
-    var myTurnRung = null;
     function noteClock(tb){
       if (!tb || tb.toActSeat == null || tb.actionLeft == null || tb.ended) {
         clockBase = null;
@@ -77,19 +74,6 @@ export const CLOCK = `    function turnLeft(tb){
         key: key, dl: dl, seat: tb.toActSeat, left: full, at: Date.now(),
         total: tb.actionSec || 20,
       };
-
-      /* 내 차례가 열렸으면 한 번 알린다.
-         차례의 주인에게만 낸다 — 남의 차례까지 울리면 알림이 아니라 소음이고, 무엇보다
-         "내가 눌러야 한다"는 뜻이 사라진다. 시계 경고(clock-warn)가 누구 차례든 울리는
-         것과 반대다: 그건 "곧 자동으로 넘어간다"는 판 전체의 소식이고, 이건 나에게만
-         해당하는 요구다.
-
-         화면에 처음 들어온 순간에는 울리지 않는다(firstTablePaint). 이미 진행 중이던
-         내 차례를 뒤늦게 알리는 것은 알림이 아니라 놀람이다. */
-      if (tb.toActSeat === tb.mySeat && myTurnRung !== key && !firstTablePaint) {
-        myTurnRung = key;
-        if (window.casinoSfx && window.casinoSfx.myTurn) window.casinoSfx.myTurn();
-      }
     }
     function paintClock(){
       var seats = seatsEl.querySelectorAll('.ht-seat');

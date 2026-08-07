@@ -22,6 +22,7 @@ export const FORMAT = `    var ctrlEl = document.getElementById('htControls');
     var clothEl = document.getElementById('htCloth');
     var infoEl = document.getElementById('htInfo');
     var rankEl = document.getElementById('htRank');
+    var prizeTabEl = document.getElementById('htPrizeTab');
     var recEl = document.getElementById('htRec');
     var sideTitle = document.getElementById('htSideTitle');
 

@@ -50,6 +50,68 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
       return s.stack;
     }
 
+    /* ── 상금 구조 ────────────────────────────────────────────────────
+       예전에는 "지급 인원 2명"만 적혀 있었다. 몇 등까지 얼마를 받는지 알려면 규칙
+       도움말을 열어야 했는데, 그건 판이 도는 중에 볼 것이 못 된다.
+
+       금액은 서버가 계산해 준 것을 그대로 쓴다(t.prizes). 여기서 다시 계산하면 산식이 두
+       벌이 되고, 언젠가 화면에 적힌 상금과 실제로 들어오는 상금이 갈라진다 — 그건 표시
+       오류가 아니라 거짓말이 된다. 비율만 여기서 만든다(금액 ÷ 풀).
+
+       참가자가 늘면 지급 인원과 금액이 함께 바뀐다. 서버가 매 폴링마다 다시 계산해 주므로
+       이 화면도 저절로 따라간다. */
+    function prizeRows(t){
+      var list = t.prizes || [];
+      var pool = t.prizePool || 0;
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        var amt = list[i] || 0;
+        out.push({
+          place: i + 1, amount: amt,
+          pct: pool > 0 ? Math.round(amt / pool * 1000) / 10 : 0,
+        });
+      }
+      return out;
+    }
+    function medal(place){
+      return place === 1 ? '🥇' : place === 2 ? '🥈' : place === 3 ? '🥉' : '';
+    }
+    function prizeListHtml(t){
+      var rows = prizeRows(t);
+      if (!rows.length) {
+        return '<div class="empty" style="padding:14px 0">아직 상금이 정해지지 않았습니다</div>';
+      }
+      var html = rows.map(function(r){
+        return '<div class="ht-pz-row">' +
+          '<span class="ht-pz-pl">' + r.place + '위 ' + medal(r.place) + '<\\/span>' +
+          '<span class="ht-pz-amt">' + num(r.amount) + 'P<\\/span>' +
+          '<span class="ht-pz-pct">' + r.pct + '%<\\/span>' +
+          '<\\/div>';
+      }).join('');
+      /* 못 받는 자리도 한 줄로 적는다. "여기까지"가 보여야 지금 내 자리가 상금권인지
+         한눈에 판단된다 — 지급 인원 숫자만으로는 그 경계가 안 잡힌다. */
+      if (t.registered > rows.length) {
+        html += '<div class="ht-pz-row out">' +
+          '<span class="ht-pz-pl">' + (rows.length + 1) + '위 이하<\\/span>' +
+          '<span class="ht-pz-amt">—<\\/span>' +
+          '<span class="ht-pz-pct">0%<\\/span><\\/div>';
+      }
+      return html;
+    }
+    function renderPrizeTab(){
+      if (!st || !st.tournament) return;
+      var t = st.tournament;
+      prizeTabEl.innerHTML =
+        '<div class="ht-pz-head">' +
+          '<span>상금 풀 <b>' + num(t.prizePool) + 'P<\\/b><\\/span>' +
+          '<span>참가 ' + t.registered + '명 · 지급 ' + t.itm + '명<\\/span>' +
+        '<\\/div>' +
+        '<div class="ht-pz-list">' + prizeListHtml(t) + '<\\/div>' +
+        (t.buyIn > 0
+          ? '<div class="ht-pz-note">참가비 ' + num(t.buyIn) + 'P가 그대로 상금이 됩니다<\\/div>'
+          : '<div class="ht-pz-note">참가비 없는 프리롤입니다 — 상금은 운영에서 지급합니다<\\/div>');
+    }
+
     function renderSide(){
       var t = st.tournament, tb = st.table;
       sideTitle.textContent = t.title;
@@ -65,32 +127,46 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
       } else {
         sideNote.hidden = true;
       }
+      /* ── 왜 값이 아니라 "구조"로 다시 그리는가 ────────────────────────
+         예전에는 완성된 HTML 문자열을 서명으로 삼아, 값이 하나라도 바뀌면 블록을 통째로
+         새로 만들었다. 그런데 이 블록 안에는 지급 인원 툴팁이 들어 있다. 마우스를 올린
+         채로 블록이 새로 만들어지면 툴팁 DOM 도 함께 새로 생기고, 그 순간 :hover 가
+         끊겨 툴팁이 사라졌다 다시 나타난다 — 제보된 "1초마다 깜빡인다"가 이것이다.
+
+         그래서 두 가지를 나눈다. 줄이 생기거나 없어지는 것(구조)만 서명으로 삼아 다시
+         그리고, 숫자는 매번 자리에 글자만 갈아 끼운다. 구조는 앤티 유무·레이트 레지
+         유무·표시 단위로만 바뀌므로 대부분의 순간에는 아무것도 다시 만들지 않는다. */
+      var infoSig = [!!tb.level.ante, t.lateRegLeft != null, unit].join('|');
       var infoHtml =
-        '<div class="ht-i"><span class="k">블라인드</span><span class="v gold">' +
-          num(tb.level.sb) + ' / ' + num(tb.level.bb) +
-          (tb.level.ante ? ' <i>앤티 ' + num(tb.level.ante) + '</i>' : '') + '</span></div>' +
-        '<div class="ht-i"><span class="k">레벨</span><span class="v">Level ' + tb.level.level + '</span></div>' +
+        '<div class="ht-i"><span class="k">블라인드</span><span class="v gold" id="htBlinds"></span></div>' +
+        '<div class="ht-i"><span class="k">레벨</span><span class="v" id="htLevel"></span></div>' +
         /* 블라인드 업까지 남은 시간은 따로 한 줄을 준다. 예전에는 레벨 옆에 10.5px 회색
            <i>로 붙어 있어서 사실상 안 보였다. 이건 다음 판을 어떻게 칠지 정하는 정보다.
            1분 이하면 색을 올리고 깜빡인다. mmss는 항상 5글자라 등폭 폰트에서 폭이 고정된다. */
+        /* 초마다 바뀌는 값은 서명에서 뺀다 — 빈 칸으로 그려 두고 아래에서 글자만 채운다.
+           안 그러면 이 블록이 매초 통째로 다시 그려지고, 그때마다 지급 인원 툴팁의 DOM 이
+           새로 만들어져 마우스를 올린 채로 1초마다 깜빡였다. */
         '<div class="ht-i"><span class="k">블라인드 업</span><span class="v">' +
-          (tb.nextLevelIn == null
-            ? '<span class="ht-nextlv done">최종 레벨</span>'
-            : '<span class="ht-nextlv' + (tb.nextLevelIn <= 60 ? ' soon' : '') + '">' +
-              mmss(tb.nextLevelIn) + '</span>') + '</span></div>' +
-        '<div class="ht-i"><span class="k">남은 인원</span><span class="v">' + tb.remaining +
-          ' / ' + t.registered + '명</span></div>' +
-        '<div class="ht-i"><span class="k">평균 스택</span><span class="v">' + stackText(tb.avgStack) + '</span></div>' +
-        '<div class="ht-i"><span class="k">상금 풀</span><span class="v gold">' + num(t.prizePool) + 'P</span></div>' +
-        '<div class="ht-i"><span class="k">지급 인원</span><span class="v">' + t.itm + '명</span></div>' +
+          '<span class="ht-nextlv" id="htNextLv"></span></span></div>' +
+        '<div class="ht-i"><span class="k">남은 인원</span><span class="v" id="htRemain"></span></div>' +
+        '<div class="ht-i"><span class="k">평균 스택</span><span class="v" id="htAvg"></span></div>' +
+        '<div class="ht-i"><span class="k">상금 풀</span><span class="v gold" id="htPool"></span></div>' +
+        /* 지급 인원 옆에 등수별 금액을 붙인다. 숫자만 있으면 "2명"이 몇 등까지인지,
+           얼마씩인지가 안 보인다. 마우스를 올렸을 때만 펼쳐서 평소에는 조용히 둔다.
+           툴팁 안쪽도 내용이 바뀔 때만 갈아 끼운다 — 매번 새로 쓰면 마우스를 올린 채로
+           내용이 한 번 사라졌다 돌아온다. */
+        '<div class="ht-i ht-i-pz"><span class="k">지급 인원 <i class="ht-help">ⓘ</i></span>' +
+          '<span class="v" id="htItm"></span>' +
+          '<div class="ht-tip" id="htPzTip"></div></div>' +
         (t.lateRegLeft != null
-          ? '<div class="ht-i late"><span class="k">LATE REG</span><span class="v">' + mmss(t.lateRegLeft) + '</span></div>'
+          ? '<div class="ht-i late"><span class="k">LATE REG</span>' +
+            '<span class="v" id="htLateLeft"></span></div>'
           : '') +
         '<div class="ht-i"><span class="k">표시 단위</span>' +
           '<span class="v"><button type="button" class="ht-unit" id="htUnit">' +
           (unit === 'chip' ? '칩' : 'BB') + '</button></span></div>';
-      if (infoEl.dataset.sig !== infoHtml) {
-        infoEl.dataset.sig = infoHtml;
+      if (infoEl.dataset.sig !== infoSig) {
+        infoEl.dataset.sig = infoSig;
         infoEl.innerHTML = infoHtml;
         // 버튼이 새로 만들어질 때만 이벤트를 다시 붙인다
         document.getElementById('htUnit').addEventListener('click', function(){
@@ -98,6 +174,33 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
           render();
         });
       }
+      /* 값은 자리에 글자만 갈아 끼운다 — 요소를 다시 만들지 않으므로 툴팁이 끊기지 않는다 */
+      var put = function(id, text){
+        var e = document.getElementById(id);
+        if (e && e.textContent !== text) e.textContent = text;
+      };
+      put('htBlinds', num(tb.level.sb) + ' / ' + num(tb.level.bb)
+        + (tb.level.ante ? ' (앤티 ' + num(tb.level.ante) + ')' : ''));
+      put('htLevel', 'Level ' + tb.level.level);
+      put('htRemain', tb.remaining + ' / ' + t.registered + '명');
+      put('htAvg', stackText(tb.avgStack));
+      put('htPool', num(t.prizePool) + 'P');
+      put('htItm', t.itm + '명');
+      var tip = document.getElementById('htPzTip');
+      var tipHtml = prizeListHtml(t);
+      if (tip && tip.dataset.sig !== tipHtml) { tip.dataset.sig = tipHtml; tip.innerHTML = tipHtml; }
+      var nx = document.getElementById('htNextLv');
+      if (nx) {
+        if (tb.nextLevelIn == null) {
+          nx.textContent = '최종 레벨';
+          nx.className = 'ht-nextlv done';
+        } else {
+          nx.textContent = mmss(tb.nextLevelIn);
+          nx.className = 'ht-nextlv' + (tb.nextLevelIn <= 60 ? ' soon' : '');
+        }
+      }
+      var lr = document.getElementById('htLateLeft');
+      if (lr && t.lateRegLeft != null) lr.textContent = mmss(t.lateRegLeft);
 
       /* 칩 순위 — 스택 많은 순. 번호·아바타·이름·스택 한 줄.
          스택은 shownStack 을 쓴다: 판이 끝나고 팟이 아직 승자에게 안 갔으면 마지막으로

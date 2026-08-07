@@ -10,7 +10,10 @@
  * 한 번 정하면 바꾸지 않는다 — 링크를 공유한 사람의 주소가 깨진다.
  */
 
-export type NoticeKind = '업데이트' | '밸런스' | '버그 수정' | '신규' | '점검' | '이벤트';
+/* 태그 넷. [밸런스]와 [버그 수정]은 [업데이트]로 합쳤다 — 읽는 사람에게 그 셋은 모두
+   "있던 것이 바뀌었다"이고, 쓰는 사람만 매번 어느 쪽인지 고민했다.
+   실제 목록은 db/notices 의 NOTICE_KINDS 가 갖고 있다(운영자 화면이 그것을 쓴다). */
+export type NoticeKind = '업데이트' | '신규' | '시즌' | '점검';
 
 export interface NoticeSection {
   heading: string;
@@ -102,8 +105,8 @@ export const NOTICES: Notice[] = [
   {
     id: '2026-08-04-deck-and-relief',
     date: '2026-08-04',
-    kind: '밸런스',
-    title: '[밸런스] 블랙잭·바카라 1덱 변경 및 지원금 오류 수정 안내',
+    kind: '업데이트',
+    title: '[업데이트] 블랙잭·바카라 1덱 변경 및 지원금 오류 수정 안내',
     summary: '블랙잭·바카라를 8덱에서 1덱으로 변경했습니다. 개인회생 지원금 관련 오류를 수정하고, 제보자에게 보상을 지급합니다.',
     sections: [
       {

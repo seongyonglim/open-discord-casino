@@ -31,9 +31,25 @@ function toNotice(r: Row): Notice {
 }
 
 /** 표가 비어 있을 때만 코드의 글을 심는다. 서버가 뜰 때 한 번 불린다. */
+/**
+ * 없앤 태그를 쓰는 글을 옮긴다. 서버가 뜰 때마다 돌지만, 옮길 글이 없으면 아무 일도 없다.
+ *
+ * 제목에도 태그가 들어간다("[밸런스] …"). 분류만 바꾸고 제목을 두면 목록에서 [업데이트]인데
+ * 제목은 [밸런스]인 글이 되므로 함께 고친다. 운영자가 제목에서 태그를 뺀 글이면 바뀔 것이
+ * 없어 그대로 지나간다.
+ */
+export function migrateNoticeKinds(): void {
+  for (const [from, to] of Object.entries(MERGED_KINDS)) {
+    run(`UPDATE notices SET kind = ?, title = REPLACE(title, ?, ?) WHERE kind = ?`,
+      to, `[${from}]`, `[${to}]`, from);
+  }
+}
+
 export function seedNoticesOnce(): void {
   const n = one<{ n: number }>(`SELECT COUNT(*) AS n FROM notices`)!.n;
-  if (n > 0) return;
+  /* 글이 이미 있어도 태그 이관은 해야 한다 — 없앤 태그를 쓰는 글이 남아 있으면
+     운영자 화면의 분류 목록에 그 값이 없어서 수정할 때마다 다른 태그로 바뀐다. */
+  if (n > 0) { migrateNoticeKinds(); return; }
   tx(() => {
     /* 배열 순서가 곧 최신순이다(맨 앞이 최신). 그 순서를 sort_at 으로 옮겨 둔다 —
        날짜만으로 정렬하면 같은 날 올라온 글의 앞뒤가 실행할 때마다 뒤집힌다. */
@@ -73,7 +89,28 @@ export function noticeNeighbors(id: string): { prev: Notice | null; next: Notice
   };
 }
 
-export const NOTICE_KINDS = ['업데이트', '밸런스', '버그 수정', '신규', '점검', '이벤트'] as const;
+/* 태그는 넷이다. 예전에는 [밸런스]와 [버그 수정]이 따로 있었는데, 읽는 사람에게 그 셋은
+   같은 것이다 — "있던 것이 바뀌었다". 쓰는 사람만 매번 어느 쪽인지 고민했고, 그래서
+   비슷한 글에 다른 태그가 붙었다. 하나로 합친다.
+
+     업데이트  있던 것이 바뀐다 (버그 수정 · 밸런스 조정 · 기능 개선)
+     신규      없던 것이 생긴다
+     시즌      시즌이 갈린다 (오픈 · 마감 · 보상 개편)
+     점검      서비스가 멈춘다
+
+   [이벤트] 대신 [시즌]을 둔다. 이 서비스에서 기간이 갈리는 일은 사실상 시즌 전환뿐이고,
+   "이벤트"는 무엇이든 담기는 이름이라 붙여 놓아도 무슨 글인지 알려 주지 않는다.
+   시즌은 포인트가 초기화되고 순위가 확정되는 사건이라 그 자체로 한 층이다.
+
+   합치면서 이미 올라간 글의 태그도 옮긴다 — 아래 MERGED_KINDS 와 seedNoticesOnce. */
+export const NOTICE_KINDS = ['업데이트', '신규', '시즌', '점검'] as const;
+
+/** 없앤 태그 → 대신 쓸 태그. 지난 글을 옮기는 데 쓴다. */
+export const MERGED_KINDS: Record<string, string> = {
+  '밸런스': '업데이트',
+  '버그 수정': '업데이트',
+  '이벤트': '시즌',
+};
 
 /* ── 본문 글쓰기 ──────────────────────────────────────────────────
    sections 는 제목·문단·목록·표가 들어가는 구조라, 폼으로 만들면 칸이 끝없이 늘어난다.
