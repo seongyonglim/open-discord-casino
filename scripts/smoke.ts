@@ -5,7 +5,7 @@
 // - FLY_APP_NAME 을 넣어 fly 위에서 도는 상태를 재현한다 (임시 로그인이 닫혀 있는지 확인용).
 // - 시크릿을 비워서, 디스코드 설정 전에 배포해도 서버가 죽지 않는지 확인한다.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
@@ -252,7 +252,15 @@ async function main(): Promise<void> {
        연출을 닫는 일은 마지막 장이 도착한 뒤(별도 타이머)에만 해야 한다. */
     console.log('\n[10] 딜링 연출 — 마지막 장 잘림');
     for (const g of ['poker', 'baccarat']) {
-      const src = readFileSync(join(process.cwd(), 'src', 'web', 'games', `${g}.ts`), 'utf8');
+      /* 화면 파일과 그 인라인 스크립트 조각을 함께 읽는다. 조각으로 나눈 뒤로 딜링 루프는
+         <게임>-client/cards.ts 에 있어서, 화면 파일만 읽으면 "루프를 못 찾음"으로 실패한다.
+         조용히 통과하지 않고 실패한 것이 옳은 동작이라 여기서 대상만 넓힌다. */
+      const dir = join(process.cwd(), 'src', 'web', 'games');
+      const partsDir = join(dir, `${g}-client`);
+      const src = readFileSync(join(dir, `${g}.ts`), 'utf8')
+        + (existsSync(partsDir)
+          ? readdirSync(partsDir).map(f => readFileSync(join(partsDir, f), 'utf8')).join('\n')
+          : '');
       const loop = src.match(/slots\.forEach\(function\(s, n\)\{[\s\S]*?\}, SHUFFLE_MS \+ n \* STEP\)\);/);
       check(`${g} — 카드별 콜백이 연출을 닫지 않음`,
         loop != null && !loop[0].includes('showAllCards'),
