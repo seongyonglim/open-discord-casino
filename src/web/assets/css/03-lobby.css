@@ -1,0 +1,39 @@
+  /* ── 최근 소식 ────────────────────────────────────────────────────
+     "내가 없는 동안 무슨 일이 있었나". 줄마다 왼쪽에 무엇에 대한 소식인지,
+     오른쪽에 내용을 둔다 — 훑을 때 종류가 먼저 잡혀야 읽을지 말지 정할 수 있다. */
+  .news{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .news li{display:flex;align-items:baseline;gap:10px;font-size:13.5px;line-height:1.5}
+  .nw-k{flex:none;min-width:62px;padding:2px 8px;border-radius:6px;text-align:center;
+    font-family:var(--mono);font-size:10.5px;font-weight:800;
+    color:var(--gold);background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.28)}
+  .nw-v{color:#cfd2d6;min-width:0}
+  .nw-v b{color:var(--txt)}
+  .nw-v a{color:#cfd2d6;text-decoration:underline;text-decoration-color:rgba(212,175,55,.5)}
+  .nw-v a:hover{color:var(--gold)}
+  .news .dim{color:var(--muted);font-size:12px}
+  .news .pos{color:var(--win);font-family:var(--mono);font-weight:700}
+  .game-card .soon{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+    color:var(--muted);border:1px dashed #3a3a40;border-radius:10px;padding:10px 0}
+  .footer{margin-top:32px;text-align:center;color:var(--muted);font-size:12px}
+
+  @keyframes tilePop{0%{transform:scale(.5);opacity:0}55%{transform:scale(1.16)}100%{transform:scale(1);opacity:1}}
+  @keyframes gridShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(3px)}
+    30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
+  @keyframes statBump{0%{text-shadow:0 0 0 rgba(212,175,55,0)}35%{text-shadow:0 0 16px currentColor}100%{text-shadow:0 0 0 rgba(212,175,55,0)}}
+  @keyframes goldFlash{0%{box-shadow:0 0 0 0 rgba(212,175,55,.55)}100%{box-shadow:0 0 0 22px rgba(212,175,55,0)}}
+  @keyframes nodePulse{0%{r:16}45%{r:21}100%{r:16}}
+
+  /* 게임 전환 바 (게임 화면 상단) */
+  .game-switch{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .gs-pill{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;color:var(--muted);
+    transition:border-color .12s,color .12s}
+  .gs-pill:hover{border-color:var(--gold-dim);color:var(--txt)}
+  .gs-pill.active{border-color:var(--gold);color:var(--gold);background:rgba(212,175,55,.08)}
+  .gs-ic{width:16px;height:16px;display:flex;flex:none}
+  /* 규칙 도움말 — 전환 바의 오른쪽 끝. margin-left:auto로 알약들과 떨어뜨려
+     "게임 고르기"와 "규칙 보기"가 다른 일이라는 게 보이게 한다.
+     알약과 높이를 맞춰야 줄이 흐트러지지 않는다(알약은 패딩 8px + 글자 → 약 35px). */
+  .gs-help{width:32px;height:32px;margin-left:auto;align-self:center;font-size:14px}
+  .gs-ic svg{width:100%;height:100%}
+

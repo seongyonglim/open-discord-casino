@@ -1,0 +1,205 @@
+  /* 포커 플립 */
+  /* 카드 폭은 고정이라 자리 배치가 줄어들지 않는다. 예상 못 한 폭에서 상자 밖으로 삐져나오는 대신
+     테이블 안에서 가로 스크롤되도록 막아 둔다(들어맞는 폭에서는 아무 차이가 없다) */
+  .poker-table{background:radial-gradient(120% 100% at 50% 0%, #143024 0%, #0c1a14 70%);
+    border:1px solid var(--line);border-radius:14px;padding:18px 16px;margin-bottom:10px;
+    overflow-x:auto}
+  .poker-seats{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center}
+  .seat{text-align:center;min-width:104px}
+  .seat-name{font-size:11.5px;font-weight:800;letter-spacing:1.2px;margin-bottom:8px}
+  .seat-name.master{color:#5fb0ff}
+  .seat-name.shark{color:#ff8f6b}
+  .seat-cat{font-size:11.5px;color:var(--muted);margin-top:9px;min-height:16px}
+  .seat-cat.win{color:var(--win);font-weight:700}
+  .hand,.board{display:flex;gap:7px;justify-content:center}
+  .board-wrap{text-align:center}
+  .poker-status{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-bottom:11px}
+  /* 카드 그림은 미리 만들어 둔 SVG(public/cards)를 그대로 쓴다 — 크기와 상관없이 선명하다 */
+  .pcard{display:block;width:48px;height:72px;border-radius:6px;flex:none;
+    box-shadow:0 3px 8px rgba(0,0,0,.5);animation:cardFlip .32s cubic-bezier(.3,.8,.35,1)}
+  /* 뒷면은 back.svg 이미지지만, 이미지가 아직 안 왔거나 실패해도 투명하게 비지 않도록
+     back.svg와 같은 남색 그라디언트를 배경으로 깔아 둔다.
+     border 대신 background만 쓴다 — box-sizing:border-box라 border를 주면 이미지가 2px 줄어
+     앞면 카드와 크기가 미묘하게 달라진다. */
+  .pcard.back{animation:none;background:linear-gradient(160deg,#2a3a63,#141b30)}
+  @keyframes cardFlip{
+    from{transform:rotateY(-88deg) scale(.92);opacity:.25}
+    to{transform:none;opacity:1}
+  }
+  /* 새 라운드 딜링 — 딜러 자리(테이블 상단 중앙)에서 각 자리로 날아와 놓인다 */
+  @keyframes cardDealIn{
+    from{transform:translate(var(--dfx),var(--dfy)) rotate(-12deg) scale(.8);opacity:0}
+    30%{opacity:1}
+    to{transform:none;opacity:1}
+  }
+  .pcard.deal-in{animation:cardDealIn .3s cubic-bezier(.3,.85,.35,1) forwards}
+  @media (max-width:640px){
+    .poker-table{padding:16px 10px}
+    .poker-seats{grid-template-columns:auto 1fr auto;gap:8px}
+    .seat{min-width:78px}
+    .hand,.board{gap:4px}
+    .pcard{width:34px;height:51px;border-radius:5px}
+  }
+
+  .market-grid{display:flex;flex-direction:column;gap:9px}
+  .market-row{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+  .market-row.bucket-row{grid-template-columns:repeat(5,1fr)}
+  @media (max-width:760px){.market-row.bucket-row{grid-template-columns:repeat(2,1fr)}}
+  .market{position:relative;background:#12281d;border:1px solid #1f4230;border-radius:11px;
+    padding:0 0 8px;cursor:pointer;text-align:center;transition:border-color .12s,transform .08s;
+    display:flex;flex-direction:column;overflow:hidden}
+  .market:hover:not(.disabled){border-color:var(--gold);transform:translateY(-1px)}
+  .market:active:not(.disabled){transform:scale(.985)}
+  .market.disabled{opacity:.5;cursor:default}
+  /* 상단 띠 — 왼쪽에 이 시장에 걸린 총액, 오른쪽에 배당 */
+  .m-top{display:flex;align-items:center;justify-content:space-between;gap:6px;
+    padding:4px 7px;background:rgba(0,0,0,.34);border-bottom:1px solid rgba(255,255,255,.06)}
+  .m-total{font-family:var(--mono);font-size:11px;font-weight:700;color:#cfe3d6;
+    background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1);border-radius:5px;
+    padding:0 5px;min-width:34px;text-align:center}
+  .m-top .m-odds{font-family:var(--mono);font-size:19px;font-weight:600;color:var(--gold);line-height:1.15}
+  .market-row.bucket-row .m-top .m-odds{font-size:16.5px}
+  /* 중앙 코인 더미 — 칩이 쌓일 자리. 세로로 넉넉해야 칩이 여러 줄 쌓여도 잘리지 않는다 */
+  .m-pile{position:relative;height:78px;flex:none}
+  .market-row.bucket-row .m-pile{height:66px}
+  .m-body{padding:6px 8px 0;display:flex;flex-direction:column;gap:6px;flex:1;justify-content:flex-end}
+  .market .m-label{font-size:12px;color:#cfe3d6;line-height:1.25;font-weight:600}
+  .market-row.bucket-row .m-label{font-size:11px;color:#a9c4b5;font-weight:500}
+  .market .m-sub{font-size:10.5px;color:#7f9a8b}
+  .m-dots{display:flex;gap:3px;justify-content:center}
+  .m-dots .dot{width:8px;height:8px;border-radius:50%;background:#20362a;
+    border:1px solid rgba(255,255,255,.1)}
+  .m-dots .dot.hit{background:radial-gradient(circle at 35% 30%,#ff7b7b,#d0202a);
+    border-color:#ff9a9a;box-shadow:0 0 5px rgba(229,72,77,.75)}
+  .m-drought{font-family:var(--mono);font-size:10px;color:var(--gold-dim)}
+  .market.m-master{background:#12233a;border-color:#22406b}
+  .market.m-shark{background:#33201a;border-color:#5e3527}
+  .market.hit{border-color:var(--win);box-shadow:0 0 0 1px var(--win) inset}
+  .market.miss{opacity:.42}
+
+  /* 칩 스프라이트 — 동전은 찌그러지지 않은 정원(正圓), 골드바는 그보다 확실히 크게.
+     (width/height를 같은 값으로 고정하고 min-width를 명시해, 버튼 쪽 .coin 규칙 같은 게
+      섞여 들어와도 타원으로 눌리지 않게 한다) */
+  .pchip{position:absolute;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:700;color:#4a3608;
+    text-shadow:0 1px 0 rgba(255,255,255,.4);pointer-events:none;flex:none}
+  .pchip.c-coin{width:21px;height:21px;min-width:21px;margin-left:-10.5px;border-radius:50%;font-size:8px;
+    background:radial-gradient(circle at 36% 28%,#fff6d8 0%,#f0cf74 42%,#c79a2c 78%,#9a7420 100%);
+    border:1px solid #f7dd96;
+    box-shadow:0 2px 3px rgba(0,0,0,.5),inset 0 0 0 2px rgba(255,255,255,.22),inset 0 -2px 2px rgba(120,88,20,.35)}
+  .pchip.c-bar{width:40px;height:24px;min-width:40px;margin-left:-20px;border-radius:4px;font-size:11px;
+    background:linear-gradient(165deg,#fff4c8 0%,#f2d074 36%,#c99b2c 72%,#8f6a18 100%);
+    border:1px solid #ffe9a0;
+    box-shadow:0 3px 0 #7a5c14,0 5px 6px rgba(0,0,0,.55),inset 0 1.5px 0 rgba(255,255,255,.55)}
+  .pchip.mine.c-coin{box-shadow:0 2px 0 #8a6a1e,0 3px 4px rgba(0,0,0,.5),0 0 0 1.5px var(--gold),0 0 8px rgba(212,175,55,.7)}
+  .pchip.mine.c-bar{box-shadow:0 3px 0 #7a5c14,0 5px 6px rgba(0,0,0,.55),0 0 0 1.5px var(--gold),0 0 9px rgba(212,175,55,.7)}
+  /* 다른 사람 칩 — 아래에서 스윽 올라온다 */
+  @keyframes chipDrop{
+    from{transform:translate(0,30px) scale(.55);opacity:0}
+    60%{opacity:1}
+    to{transform:none;opacity:1}
+  }
+  .pchip.drop{animation:chipDrop .3s cubic-bezier(.22,.9,.3,1.25)}
+  /* 내가 누른 칩 — 눌린 코인 버튼 자리에서 출발해 상자 안으로 밀려 들어온다.
+     상자에 overflow:hidden이 걸려 있어 상자 밖 구간이 잘려 보이지 않으므로,
+     회수 연출과 마찬가지로 화면 전체 레이어에 복제본을 띄워 날린다.
+     날아가는 동안 원본은 pending으로 숨겨 두고, 도착하면 드러낸다 */
+  @keyframes chipToss{
+    from{transform:translate(var(--fx),var(--fy)) scale(var(--fs));opacity:.85}
+    30%{opacity:1}
+    to{transform:none;opacity:1}
+  }
+  .pchip.pending{opacity:0}
+  .pchip.toss{animation:chipToss .36s cubic-bezier(.25,.8,.3,1.02) forwards}
+  /* 적중 시 — 이긴 상자의 칩들이 화면 아래 중앙으로 빨려 들어간다.
+     상자에 overflow:hidden이 걸려 있어 원본은 밖으로 못 나가므로,
+     화면 전체를 덮는 레이어에 복제본을 띄워 날린다 */
+
+  /* 참가자 패널 — 디스코드 아바타 · 닉네임 · 보유 포인트. 칩이 여기서 출발하고 여기로 돌아온다 */
+  .roster{display:flex;flex-direction:column;gap:6px;max-height:520px;overflow-y:auto}
+  .rw{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;
+    background:var(--panel2);border:1px solid var(--line);transition:border-color .15s}
+  .rw.me{border-color:var(--gold-dim);background:rgba(212,175,55,.06)}
+  .rw.won{border-color:var(--win)}
+  .rw-av{width:34px;height:34px;border-radius:50%;flex:none;object-fit:cover;
+    background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;
+    justify-content:center;font-weight:700;font-size:14px;color:var(--gold);overflow:hidden}
+  /* 닉네임과 보유 포인트를 위아래로 분리 — 한 줄에 붙어 있으면 읽기 어렵다 */
+  .rw-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .rw-name{display:block;font-size:13px;font-weight:600;line-height:1.15;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rw-bal{display:block;font-family:var(--mono);font-size:12px;color:var(--gold);line-height:1.15}
+  .rw-bet{display:flex;flex-direction:column;align-items:flex-end;gap:3px;
+    font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;flex:none}
+  .rw-bet .pos{color:var(--win);font-weight:700}
+  /* 게임별 정보(사다리 예측 / 크래시 캐시아웃 배율)와 베팅액을 위아래로 */
+  .rw-tag{font-size:12px;line-height:1.15}
+  .rw-amt{font-size:11.5px;line-height:1.15}
+  .rw-bal.up{animation:balUp .5s ease}
+  .rw-bal.down{animation:balDown .5s ease}
+  @keyframes balUp{0%{transform:scale(1)}30%{transform:scale(1.18);color:var(--win)}100%{transform:scale(1)}}
+  @keyframes balDown{0%{transform:scale(1)}30%{transform:scale(.9);color:var(--lose)}100%{transform:scale(1)}}
+
+  .chip-fly-layer{position:fixed;inset:0;pointer-events:none;z-index:500}
+  @keyframes chipFly{
+    0%{transform:none;opacity:1}
+    18%{transform:translate(0,-10px) scale(1.12);opacity:1}
+    70%{opacity:1}
+    100%{transform:translate(var(--tx),var(--ty)) scale(.5);opacity:0}
+  }
+  .pchip.fly{animation:chipFly .66s cubic-bezier(.45,.02,.3,1) forwards}
+
+  /* 칩과 Clear Screen을 한 줄에 둔다 (.game-controls는 네 게임이 공유하는 세로 배치라
+     포커에서만 가로로 뒤집는다). 칩은 남는 폭에 고르게 퍼지고 오른쪽에 Clear 자리만 남긴다.
+     안내 문구는 넣지 않는다 — 떴다 사라질 때마다 칩 위치가 밀린다. */
+  .poker-controls{flex-direction:row;align-items:center;gap:14px;padding:12px 16px}
+  .poker-controls .coin-row{flex:1 1 auto}
+  .poker-controls .btn{flex:none}
+  /* 폭이 좁으면 칩 6개 + 버튼이 한 줄에 안 들어가므로 접히게 둔다 */
+  @media (max-width:720px){
+    .poker-controls{flex-wrap:wrap}
+    .poker-controls .game-msg{order:3;flex-basis:100%;text-align:left}
+  }
+
+  /* 세로가 짧은 화면(720p 노트북 등)에서만 한 단계 축소 — 베팅 버튼이 접히지 않도록.
+     넓은 화면에서는 위의 큰 사이즈를 그대로 쓴다 */
+  @media (max-height:820px){
+    .card{padding:11px}
+    .poker-controls{padding:9px 13px;gap:10px}
+    .poker-table{padding:9px 14px}
+    .pcard{width:42px;height:63px}
+    .pcard .pr{font-size:17px}
+    .pcard .ps{font-size:15px}
+    .hist-row{padding-bottom:3px;margin-bottom:7px}
+    .market-grid,.market-row{gap:7px}
+    .market{padding-bottom:5px}
+    .m-top{padding:2px 6px}
+    .m-top .m-odds{font-size:17px}
+    .market-row.bucket-row .m-top .m-odds{font-size:15px}
+    .m-pile{height:40px}
+    .market-row.bucket-row .m-pile{height:36px}
+    .m-body{padding-top:2px;gap:2px}
+    .coin{height:36px}
+    .coin .face{font-size:11px}
+    .coin.kind-coin .face{width:34px;height:34px}
+    .coin.kind-bar .face{width:44px;height:24px}
+  }
+
+  .coin-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  /* 하위 3단은 동전, 상위 2단은 골드바 — 실물 칩을 집어 올리는 느낌 */
+  .coin{flex:1;min-width:56px;height:46px;border:none;background:none;padding:0;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:transform .1s}
+  .coin:hover{transform:translateY(-2px)}
+  .coin:active{transform:scale(.94)}
+  .coin .face{display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:700;font-size:12.5px;color:#4a3608;
+    text-shadow:0 1px 0 rgba(255,255,255,.4);filter:saturate(.35) brightness(.62);transition:filter .12s}
+  .coin.active .face{filter:none}
+  .coin.kind-coin .face{width:42px;height:42px;border-radius:50%;
+    background:radial-gradient(circle at 34% 28%,#ffe9a3 0%,#e6bd52 45%,#a9812a 100%);
+    border:2.5px solid #f5d98a;box-shadow:0 2px 5px rgba(0,0,0,.55),inset 0 0 0 3px rgba(255,255,255,.18)}
+  .coin.kind-bar .face{width:52px;height:30px;border-radius:4px;
+    background:linear-gradient(160deg,#fff0b8 0%,#f0cd66 38%,#c99b2c 70%,#8f6a18 100%);
+    border:1.5px solid #ffe9a0;box-shadow:0 3px 6px rgba(0,0,0,.6),inset 0 1.5px 0 rgba(255,255,255,.5)}
+  .coin.active .face{box-shadow:0 2px 6px rgba(0,0,0,.55),0 0 0 3px var(--gold),0 0 14px rgba(212,175,55,.55)}
+

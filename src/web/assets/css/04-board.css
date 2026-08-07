@@ -1,0 +1,250 @@
+  /* 게임 공통 레이아웃 (베팅 패널 + 게임판) */
+  .game-layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+  .game-panel{width:230px;flex:none;display:flex;flex-direction:column;gap:12px}
+  .game-panel .field label{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px}
+  .game-panel .bet-row{display:flex;gap:6px}
+  .game-panel .bet-row input{flex:1;min-width:0}
+  .game-panel .stat{padding:12px 14px}
+  .game-board{flex:1;min-width:280px;display:flex;justify-content:center}
+  .game-input{background:#0d0d0f;border:1px solid var(--line);border-radius:8px;color:var(--txt);
+    padding:9px 11px;font-family:inherit;font-size:13.5px;outline:none}
+  .game-input:focus{border-color:var(--gold)}
+  .game-input:disabled{opacity:.5}
+  .chip-btn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:0 10px;height:38px;
+    font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:transform .08s,border-color .12s,color .12s}
+  .chip-btn:hover{border-color:var(--gold);color:var(--gold)}
+  .chip-btn:active{transform:scale(.93)}
+  .chip-btn:disabled{opacity:.35;cursor:default;transform:none;border-color:var(--line);color:var(--muted)}
+  /* 게임판을 작게 유지해 베팅 컨트롤이 스크롤 없이 한 화면에 들어오게 한다 */
+  .mines-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;max-width:290px;width:100%}
+  @media (max-width:640px){.game-panel{width:100%}.game-board{min-width:0}}
+
+  /* 지뢰찾기 */
+  .mines-grid.shake{animation:gridShake .4s}
+  .mines-tile{aspect-ratio:1;border-radius:10px;background:var(--panel2);border:1px solid var(--line);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+    transition:border-color .12s,background .12s,transform .1s}
+  .mines-tile svg{width:52%;height:52%}
+  .mines-tile .mark{color:var(--gold-dim);width:30%;height:30%}
+  .mines-tile:hover:not(:disabled){border-color:var(--gold);background:#1f1a10;transform:translateY(-1px)}
+  .mines-tile:active:not(:disabled){transform:scale(.93)}
+  .mines-tile:disabled{cursor:default}
+  /* 안전 칸은 금화 — 초록 보석보다 "돈을 벌었다"는 신호가 직관적이다 */
+  .mines-tile.safe{background:rgba(212,175,55,.14);border-color:var(--gold);color:var(--gold-hi);
+    animation:tilePop .3s cubic-bezier(.34,1.56,.64,1)}
+  .mines-tile.mine{background:rgba(229,72,77,.16);border-color:var(--lose);color:var(--lose);
+    animation:tilePop .3s cubic-bezier(.34,1.56,.64,1)}
+
+  /* 사다리게임 */
+  .ladder-board{width:100%;display:flex;justify-content:center}
+  .ladder-svg{max-width:100%}
+  .ladder-svg.shake{animation:gridShake .4s}
+  .ladder-line{stroke:var(--line);stroke-width:2}
+  .ladder-rung{stroke:var(--gold-dim);stroke-width:3;stroke-linecap:round}
+  .ladder-node{fill:var(--panel2);stroke-width:1.5;transition:fill .2s,stroke-width .2s}
+  .ladder-node.side-l{stroke:var(--side-l)}
+  .ladder-node.side-r{stroke:var(--side-r)}
+  .ladder-node.parity-odd{stroke:var(--gold)}
+  .ladder-node.parity-even{stroke:#c77dff}
+  .ladder-node.side-l.hit{fill:rgba(74,144,226,.9);stroke-width:3;animation:nodePulse .5s ease-out}
+  .ladder-node.side-r.hit{fill:rgba(229,72,77,.9);stroke-width:3;animation:nodePulse .5s ease-out}
+  .ladder-node.parity-odd.hit{fill:rgba(212,175,55,.9);stroke-width:3;animation:nodePulse .5s ease-out}
+  .ladder-node.parity-even.hit{fill:rgba(199,125,255,.85);stroke-width:3;animation:nodePulse .5s ease-out}
+  .ladder-label{font-size:12px;font-weight:700;pointer-events:none;user-select:none}
+  .ladder-label.side-l{fill:var(--side-l)}
+  .ladder-label.side-r{fill:var(--side-r)}
+  .ladder-label.parity-odd{fill:var(--gold)}
+  .ladder-label.parity-even{fill:#c77dff}
+  .ladder-cap{fill:var(--muted);font-size:11px;font-weight:700;letter-spacing:2px;
+    pointer-events:none;user-select:none}
+  .ladder-trail{stroke:var(--gold);stroke-width:4;stroke-linecap:round;opacity:.55}
+  .ladder-token{fill:var(--gold);stroke:#000;stroke-width:1;transition:cx .28s ease,cy .28s ease;
+    filter:drop-shadow(0 0 5px rgba(212,175,55,.8))}
+  .ladder-token.win{fill:var(--win)}
+  .ladder-token.lose{fill:var(--lose)}
+  .side-l-text{color:var(--side-l);font-weight:700}
+  .side-r-text{color:var(--side-r);font-weight:700}
+
+  /* 보드 무대 위에 겹쳐 표시하는 상태 배지 (카운트다운 등). 게임판 요소와 겹치지 않게 우측 상단에 둔다. */
+  .stage-status{position:absolute;top:10px;right:10px;font-family:var(--mono);font-size:12px;
+    color:var(--muted);background:rgba(20,20,24,.85);border:1px solid var(--line);
+    border-radius:8px;padding:5px 10px;pointer-events:none}
+  .predict-row{display:flex;gap:6px;align-items:center}
+  .predict-lbl{width:34px;flex:none;font-size:12px;color:var(--muted);font-weight:600}
+  .toggle-row{display:flex;gap:6px}
+  .toggle-btn{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 0;
+    font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .12s}
+  .toggle-btn:hover{border-color:var(--gold);color:var(--gold)}
+  .toggle-btn.side-l.active{background:var(--side-l);border-color:var(--side-l);color:#fff}
+  .toggle-btn.side-r.active{background:var(--side-r);border-color:var(--side-r);color:#fff}
+  .toggle-btn:disabled{opacity:.4;cursor:default}
+
+  /* 사다리 출목표 — 출발/도착 2행으로 나눠 각 칸에 좌·우를 글자로 표기 (칩이 작아 비어 보이던 문제 해결) */
+  .bead{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+  .bead-row{display:flex;align-items:center;gap:5px;overflow-x:auto;scrollbar-width:none}
+  .bead-row::-webkit-scrollbar{display:none}
+  .bead-lbl{width:30px;flex:none;font-size:11px;font-weight:700;color:var(--muted)}
+  .bead-cell{width:24px;height:24px;flex:none;border-radius:6px;display:flex;align-items:center;
+    justify-content:center;font-size:11px;font-weight:700;border:1px solid var(--line)}
+  .bead-cell.l{background:rgba(74,144,226,.18);border-color:rgba(74,144,226,.5);color:var(--side-l)}
+  .bead-cell.r{background:rgba(229,72,77,.18);border-color:rgba(229,72,77,.5);color:var(--side-r)}
+  /* 홀짝은 좌우(파랑/빨강)와 구분되도록 골드/보라 계열로 */
+  .bead-cell.odd{background:rgba(212,175,55,.18);border-color:var(--gold-dim);color:var(--gold)}
+  .bead-cell.even{background:rgba(199,125,255,.16);border-color:rgba(199,125,255,.45);color:#c77dff}
+  /* 홀/짝 글자색은 출목표 셀과 같게 — 홀은 골드, 짝은 보라 */
+  .parity-text{font-weight:700}
+  .parity-text.odd{color:var(--gold)}
+  .parity-text.even{color:#c77dff}
+  .toggle-btn.parity-odd:hover,.toggle-btn.parity-even:hover{border-color:var(--gold);color:var(--gold)}
+  .toggle-btn.parity-odd.active{background:var(--gold);border-color:var(--gold);color:#211a04}
+  .toggle-btn.parity-even.active{background:#c77dff;border-color:#c77dff;color:#1e0a2e}
+
+  .bet-feed{max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+
+  /* 게임 화면 공통 셸 — [히스토리 → 보드] + 하단 베팅 컨트롤, 우측 사이드 패널 (모든 게임 동일 구조) */
+  .game-shell{display:flex;gap:16px;align-items:flex-start}
+  .game-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+  .game-side{width:290px;flex:none;padding:0;overflow:hidden}
+  /* 지뢰찾기는 혼자 하는 게임이라 참가자 목록이 없지만 랭킹 패널은 붙는다.
+     보드가 290px 고정이므로 본문만 620px로 묶고 그 옆에 패널을 둔다.
+     926 = 620(본문) + 16(간격) + 290(패널) */
+  .mines-shell{max-width:926px;margin:0 auto}
+  .mines-shell .game-main{max-width:620px}
+  /* 참가자 패널은 되도록 오른쪽에 붙여 둔다 — 아래로 내려가면 보드를 보면서 남의 베팅을
+     같이 볼 수 없어서 "다 같이 한 판" 하는 느낌이 사라진다.
+     좁은 창(에디터에 붙은 미리보기 창 등)에서는 패널만 줄이고 배치는 유지하다가,
+     정말 좁아지는 700px 아래에서만 세로로 쌓는다. */
+  @media (max-width:1000px){.game-side{width:240px}}
+  /* 세로로 쌓을 때는 align-items를 stretch로 되돌려야 한다.
+     .game-shell은 가로 배치 기준으로 flex-start를 쓰는데, 방향이 column이 되면 교차축이 가로로
+     바뀌어 그 값이 "가로로 늘리지 말라"는 뜻이 된다. 그러면 본문이 내용 최대폭까지 커져서
+     700px 창에서 864px이 되고 화면 밖으로 174px 밀려 나갔다(실측). */
+  @media (max-width:700px){
+    .game-shell{flex-direction:column;align-items:stretch}
+    .game-side{width:100%}
+    /* 세로로 쌓이면 본문 폭 제한을 풀어야 화면 폭을 넘지 않는다 */
+    .mines-shell .game-main{max-width:none}
+  }
+  /* 포커도 다른 게임과 같은 기준(700px)으로 쌓는다.
+     다만 카드가 가로로 9장 들어가야 해서 좁은 구간에서는 카드를 줄여야 하는데,
+     그 규칙은 아래 .poker-table 기본값보다 뒤에 있어야 덮이지 않는다 —
+     "좁은 창의 포커 테이블" 항목으로 파일 뒤쪽에 모아 두었다. */
+
+  .hist-row{display:flex;gap:5px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px;
+    scrollbar-width:none}
+  .hist-row::-webkit-scrollbar{display:none}
+  .ch-chip{flex:none;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:3px 7px;
+    border-radius:6px;border:1px solid var(--line);white-space:nowrap}
+  .ch-chip.low{color:#7f8794;background:rgba(127,135,148,.1)}
+  .ch-chip.mid{color:var(--gold);background:rgba(212,175,55,.1);border-color:var(--gold-dim)}
+  .ch-chip.high{color:#c77dff;background:rgba(199,125,255,.12);border-color:rgba(199,125,255,.4)}
+  .ch-chip.bust{color:var(--lose);background:rgba(229,72,77,.12);border-color:rgba(229,72,77,.4)}
+  /* 포커 플립 전적 칩 — 보드의 MASTER(파랑)·SHARK(빨강) 색을 그대로 따라간다.
+     예전에는 그래프게임용 low/bust 색을 빌려 써서 MASTER가 회색으로 보였다 */
+  .ch-chip.w-master{color:var(--side-l);background:rgba(74,144,226,.14);border-color:rgba(74,144,226,.45)}
+  .ch-chip.w-shark{color:var(--lose);background:rgba(229,72,77,.12);border-color:rgba(229,72,77,.4)}
+  .ch-chip.w-tie{color:var(--gold);background:rgba(212,175,55,.1);border-color:var(--gold-dim)}
+
+  /* 보드 무대 (게임판이 놓이는 어두운 영역) — 크래시/사다리 공용 */
+  .board-stage{position:relative;width:100%;background:#0c0c0e;border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    min-height:216px;padding:10px 0}
+  .crash-stage{position:relative;width:100%;background:#0c0c0e;border:1px solid var(--line);
+    border-radius:12px;overflow:hidden}
+  .crash-stage.crashed{border-color:rgba(229,72,77,.45)}
+  .crash-graph{display:block;width:100%;height:auto}
+  .cg-line{stroke:#1e1e22;stroke-width:1}
+  .cg-lbl{fill:#6f6f77;font-size:11px;font-family:var(--mono)}
+  .crash-curve{fill:none;stroke:var(--win);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}
+  .crash-area{fill:rgba(46,204,113,.13);stroke:none}
+  .crash-stage.crashed .crash-curve{stroke:var(--lose)}
+  .crash-stage.crashed .crash-area{fill:rgba(229,72,77,.13)}
+  .crash-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;
+    text-align:center;pointer-events:none}
+  .crash-label{display:none;font-size:12px;font-weight:800;letter-spacing:2px;color:var(--lose);margin-bottom:2px}
+  .crash-betlabel{display:none;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:2px}
+  .crash-multi{font-family:var(--mono);font-size:52px;font-weight:600;color:var(--txt);line-height:1.1;
+    text-shadow:0 2px 14px rgba(0,0,0,.85)}
+  .crash-multi.running{color:var(--win)}
+  .crash-multi.betting{color:var(--win)}
+  .crash-multi.crashed{color:var(--lose);animation:statBump .4s ease}
+  .crash-tip{fill:var(--win)}
+  .crash-stage.crashed .crash-tip{fill:var(--lose)}
+  .crash-status{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px}
+  @media (max-width:640px){.crash-multi{font-size:38px}}
+
+  .game-controls{display:flex;flex-direction:column;gap:11px}
+  .mode-tabs{display:flex;gap:8px}
+  .mode-tab{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 0;
+    font-size:13.5px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .12s}
+  .mode-tab:hover:not(:disabled){color:var(--txt)}
+  .mode-tab.active{background:#0d0d0f;border-color:var(--gold);color:var(--gold)}
+  .mode-tab:disabled{opacity:.5;cursor:default}
+  .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  /* 그리드 항목은 기본값이 min-width:auto라 내용보다 작아지지 못한다.
+     0으로 풀어두지 않으면 좁은 폭에서 칸이 상자 밖으로 밀려 나간다. */
+  .field-grid .field{min-width:0}
+  @media (max-width:640px){.field-grid{grid-template-columns:1fr}}
+  .field-grid .field label{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px}
+  .field-grid .bet-row{display:flex;gap:6px}
+  .field-grid .bet-row input{flex:1;min-width:0}
+  .quick-row{display:flex;gap:6px;margin-top:6px}
+  .chip-btn.wide{flex:1;padding:0}
+  .btn-primary{background:var(--win);border-color:var(--win);color:#06240f;font-size:15px;padding:14px 0}
+  .btn-primary:hover{background:#42d886;border-color:#42d886;color:#06240f}
+  .btn-primary:disabled{background:var(--panel2);border-color:var(--line);color:var(--muted)}
+  .game-action{width:100%;justify-content:center}
+  /* 배당·예상획득을 큰 카드 대신 한 줄로 압축 (베팅 버튼이 스크롤 없이 보이도록) */
+  .payout-line{display:flex;justify-content:space-between;gap:12px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--muted)}
+  .payout-line b{font-family:var(--mono);font-size:15px;font-weight:600;margin-left:6px}
+  .payout-line .gold{color:var(--gold)}
+  .payout-line .hi{color:var(--win)}
+  .game-msg{color:var(--muted);font-size:13.5px;margin:0;min-height:20px}
+
+  .side-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;
+    border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
+  .side-head .num{font-family:var(--mono);color:var(--gold)}
+
+  /* 우측 패널 탭 — 참가인원 / 랭킹.
+     이름을 sp- 로 통일한다. side-* 는 사다리 노드용으로 이미 붐빈다. */
+  .sp-tabs{display:flex;border-bottom:1px solid var(--line)}
+  .sp-tab{flex:1;padding:12px 8px;background:none;border:none;
+    border-bottom:2px solid transparent;font:inherit;font-size:13px;font-weight:700;
+    color:var(--muted);cursor:pointer;transition:color .12s,border-color .12s}
+  .sp-tab:hover{color:var(--txt)}
+  .sp-tab.on{color:var(--gold);border-bottom-color:var(--gold)}
+  /* hidden 속성이 아니라 .on 으로 전환한다 — display:flex가 필요해서다 */
+  .sp-pane{display:none}
+  .sp-pane.on{display:flex;flex-direction:column}
+  /* 탭바에 이미 이름이 있으니 pane 안쪽 제목 줄의 구분선은 지운다(선이 두 겹 된다) */
+  .sp-pane .side-head{border-bottom:none}
+  /* 스크롤은 반드시 이 안쪽이 갖는다. .game-side가 overflow:hidden이라
+     바깥에 걸면 탭바까지 함께 밀려 사라진다. max-height를 .roster와 같은 값으로
+     맞춰야 탭을 눌러도 패널 높이가 튀지 않는다. */
+  .sp-rank{display:flex;flex-direction:column;gap:2px;padding:6px 8px 10px;
+    max-height:520px;overflow-y:auto}
+  .sp-rw{display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px}
+  .sp-rw.me{background:rgba(212,175,55,.1)}
+  /* 순위는 1 → 10 → 100에서 자릿수가 늘어난다. 폭을 고정하지 않으면 닉네임 열이 밀린다. */
+  .sp-no{width:22px;flex:none;text-align:right;font-family:var(--mono);font-size:11px;
+    font-weight:700;color:var(--muted)}
+  .sp-no.top1{color:var(--gold)}
+  .sp-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .sp-nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .sp-sub{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .sp-p{flex:none;font-family:var(--mono);font-size:12px;font-weight:700;min-width:84px;
+    text-align:right}
+  .sp-empty{padding:16px 8px;text-align:center;color:var(--muted);font-size:12px}
+  /* 세로로 쌓이는 좁은 창에서는 목록을 짧게. 이 블록은 반드시 위 기본 규칙보다
+     뒤에 와야 한다 — 같은 특이도라 앞에 두면 520px에 덮여 죽는다(실제로 그랬다).
+     .roster도 같이 줄여야 탭을 눌러도 패널 높이가 튀지 않는다. */
+  @media (max-width:700px){
+    .sp-rank{max-height:360px}
+    .roster{max-height:360px}
+  }
+  .cash-out{color:var(--win);font-weight:700}
+  .cash-pending{color:var(--muted)}
+  .cash-bust{color:var(--lose)}
+
