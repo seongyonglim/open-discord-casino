@@ -16,7 +16,7 @@ import { layout, esc, jsonForScript } from './views';
 import { readJson, sendJson } from './http';
 import {
   listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
-  cancelRunningTournament, searchUsers, grantPoints,
+  cancelRunningTournament, searchUsers, grantPoints, userLedger,
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
@@ -147,12 +147,41 @@ export function adminPage(user: WebUser): string {
       <td>${esc(s.reward || '—')}</td>
     </tr>`).join('');
 
+  /* 왼쪽 메뉴와 화면을 짝지어 둔다. 카드 일곱 개가 세로로 이어져 있어서 아래쪽 것은
+     스크롤을 한참 내려야 나왔다 — 하는 일이 다른 카드들이 한 줄에 꿰여 있던 셈이다.
+
+     화면을 갈아끼우되 카드는 전부 그린 채로 두고 보이기만 바꾼다. 이 화면의 동작은
+     전부 로드 시점에 getElementById 로 묶이기 때문에, 안 보이는 화면을 아예 안 그리면
+     그 묶기가 통째로 끊긴다 — 지금 잘 도는 것을 건드리지 않는 길이 이쪽이다. */
+  const MENU: { key: string; label: string; sub: string }[] = [
+    { key: 'tour', label: '대회 관리', sub: '개설 · 개최 방식 · 기록' },
+    { key: 'season', label: '시즌 / 랭킹', sub: '시즌 설정 · 마감' },
+    { key: 'user', label: '유저 / 재화', sub: '조회 · 지급 · 원장' },
+    { key: 'sys', label: '공지 / 시스템', sub: '공지 · 운영 토큰' },
+  ];
+  const nav = MENU.map(m => `
+    <button type="button" class="ad-nav-item" data-pane="${m.key}">
+      <span class="ad-nav-l">${esc(m.label)}</span>
+      <span class="ad-nav-s">${esc(m.sub)}</span>
+    </button>`).join('');
+
   const body = `
   <div class="ad-wrap">
-    <h1 class="ad-h">운영자 화면</h1>
-    <p class="ad-sub">${esc(user.username)} 님으로 접속했습니다. 데이터를 바꾸는 동작에는 운영 토큰이 필요합니다.</p>
+    <div class="ad-top">
+      <div>
+        <h1 class="ad-h">운영자 화면</h1>
+        <p class="ad-sub">${esc(user.username)} 님으로 접속했습니다. 데이터를 바꾸는 동작에는 운영 토큰이 필요합니다.</p>
+      </div>
+      <!-- 토큰 상태는 어느 화면에 있든 보여야 한다. 없으면 바꾸는 동작이 전부 막히는데,
+           그 사실을 [공지/시스템] 화면에 들어가야만 알 수 있으면 늦다. -->
+      <div class="ad-tokchip" id="adTokChip"></div>
+    </div>
 
-    <section class="ad-card">
+    <div class="ad-shell">
+      <nav class="ad-nav" id="adNav">${nav}</nav>
+      <div class="ad-panes">
+
+    <section class="ad-card" data-pane="sys">
       <h2>운영 토큰</h2>
       ${tokenSet
         ? `<p class="ad-note">서버에 ADMIN_TOKEN 이 설정돼 있습니다. 아래에 같은 값을 넣어야 바꾸는 동작이 열립니다.</p>`
@@ -165,7 +194,7 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
-    <section class="ad-card">
+    <section class="ad-card" data-pane="tour">
       <h2>대회 기록</h2>
       <p class="ad-note">상금이 나간 대회는 <b>[상금 회수 후 삭제]</b>로만 지울 수 있습니다 — 그냥 지우면
         원장에 근거 없는 포인트가 남습니다. 회수는 역방향 원장으로 기록되고,
@@ -206,7 +235,7 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
-    <section class="ad-card">
+    <section class="ad-card" data-pane="tour">
       <h2>개최 방식</h2>
       <p class="ad-note">반복을 켜면 시작 <b>12시간 전</b>에 다음 판이 자동으로 만들어집니다.
         시각·칩·상금은 아래 [대회 설정]의 값을 그대로 씁니다 — 여기서는 <b>어느 날 여는지</b>만 정합니다.
@@ -237,7 +266,7 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
-    <section class="ad-card">
+    <section class="ad-card" data-pane="tour">
       <h2>대회 설정</h2>
       <p class="ad-note">바꾼 값은 <b>다음에 만들어질 대회부터</b> 적용됩니다. 진행 중인 대회는 만들어질 때의
         값을 자기 행에 갖고 있어서 흔들리지 않습니다 — 블라인드가 갑자기 뛰거나 늦게 온 사람만
@@ -268,7 +297,7 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
-    <section class="ad-card">
+    <section class="ad-card" data-pane="season">
       <h2>시즌</h2>
       <p class="ad-note">시즌을 닫으면 <b>그 순간의 잔액이 성적표로 찍히고</b>, 전원 잔액이 0으로
         초기화되며 다음 시즌이 열립니다. 게임별 전적은 지우지 않습니다 — 시즌이 열쇠에 들어 있어
@@ -296,7 +325,7 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
-    <section class="ad-card">
+    <section class="ad-card" data-pane="sys">
       <h2>공지사항</h2>
       <p class="ad-note">아이디는 주소에 그대로 쓰입니다 — 한 번 정하면 바꾸지 마세요. 링크를 공유한
         사람의 주소가 깨집니다. 그래서 <b>지우기와 별개로 숨김</b>을 뒀습니다. 숨기면 목록에도 상세에도
@@ -327,7 +356,7 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
-    <section class="ad-card">
+    <section class="ad-card" data-pane="user">
       <h2>포인트</h2>
       <p class="ad-note">지급·차감은 원장에 남습니다. 잔액을 음수로 만드는 차감은 거절됩니다.</p>
       <div class="ad-row">
@@ -339,6 +368,20 @@ export function adminPage(user: WebUser): string {
         <tbody id="adUBody"><tr><td colspan="5" class="ad-note">검색해 주세요.</td></tr></tbody>
       </table></div>
     </section>
+
+    <section class="ad-card" data-pane="user">
+      <h2>원장 <span class="ad-sub2-in" id="adLName"></span></h2>
+      <p class="ad-note">잔액은 이 표의 누적합과 같습니다 — 그것이 이 서비스의 경제 규칙이고,
+        감사가 매번 확인합니다. 어긋나 보이면 그건 표시가 아니라 사고입니다.
+        위 목록에서 <b>[원장]</b>을 누르면 그 사람의 최근 50건이 나옵니다.</p>
+      <div class="ad-scroll"><table class="ad-tbl">
+        <thead><tr><th>시각</th><th class="r">증감</th><th>사유</th><th class="r">이후 잔액</th></tr></thead>
+        <tbody id="adLBody"><tr><td colspan="4" class="ad-note">유저를 고르면 나옵니다.</td></tr></tbody>
+      </table></div>
+    </section>
+
+      </div>
+    </div>
   </div>
 
   <dialog id="adConfirm" class="ad-dlg">
@@ -352,11 +395,49 @@ export function adminPage(user: WebUser): string {
 
   <script>
   (function(){
+    /* ── 왼쪽 메뉴 ────────────────────────────────────────────────
+       카드는 전부 그려져 있고 여기서 보이기만 바꾼다. 고른 화면은 주소(#)에 남긴다 —
+       새로고침하거나 저장 뒤 location.reload() 가 걸려도 보던 자리로 돌아온다.
+       이 화면은 저장할 때마다 새로고침하므로, 이게 없으면 매번 첫 화면으로 튕긴다. */
+    var PANES = ['tour', 'season', 'user', 'sys'];
+    var navEl = document.getElementById('adNav');
+    function showPane(key){
+      if (PANES.indexOf(key) < 0) key = PANES[0];
+      var cards = document.querySelectorAll('.ad-card[data-pane]');
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].hidden = cards[i].getAttribute('data-pane') !== key;
+      }
+      var items = navEl.querySelectorAll('.ad-nav-item');
+      for (var j = 0; j < items.length; j++) {
+        var on = items[j].getAttribute('data-pane') === key;
+        items[j].classList.toggle('on', on);
+        items[j].setAttribute('aria-current', on ? 'page' : 'false');
+      }
+    }
+    navEl.addEventListener('click', function(ev){
+      var b = ev.target.closest ? ev.target.closest('.ad-nav-item') : null;
+      if (!b) return;
+      var key = b.getAttribute('data-pane');
+      /* 주소만 바꾸고 hashchange 가 실제 전환을 맡는다 — 뒤로 가기로도 같은 길을 지난다 */
+      if (location.hash.slice(1) === key) showPane(key); else location.hash = key;
+    });
+    window.addEventListener('hashchange', function(){ showPane(location.hash.slice(1)); });
+    showPane(location.hash.slice(1));
+
     var tokKey = 'od_admin_token';
     var tokEl = document.getElementById('adTok');
     var tokState = document.getElementById('adTokState');
+    var tokChip = document.getElementById('adTokChip');
     function tok(){ try { return sessionStorage.getItem(tokKey) || ''; } catch (e) { return ''; } }
-    function paintTok(){ tokState.textContent = tok() ? '기억됨 (이 탭에만)' : '없음 — 바꾸는 동작이 막힙니다'; }
+    function paintTok(){
+      var has = !!tok();
+      tokState.textContent = has ? '기억됨 (이 탭에만)' : '없음 — 바꾸는 동작이 막힙니다';
+      /* 어느 화면에 있든 보이는 자리. 없으면 눌러서 곧장 그 카드로 갈 수 있게 한다 */
+      tokChip.className = 'ad-tokchip' + (has ? ' on' : '');
+      tokChip.innerHTML = has
+        ? '<span class="dot"><\\/span>운영 토큰 기억됨'
+        : '<a href="#sys"><span class="dot"><\\/span>운영 토큰 없음 — 넣기<\\/a>';
+    }
     document.getElementById('adTokSave').addEventListener('click', function(){
       try { sessionStorage.setItem(tokKey, tokEl.value); } catch (e) { /* 저장 못 하면 이번만 */ }
       tokEl.value = '';
@@ -666,14 +747,44 @@ export function adminPage(user: WebUser): string {
               + '<td class="r">' + num(u.balance) + 'P<\\/td>'
               + '<td>' + esc(u.role || 'member') + '<\\/td>'
               + '<td><button type="button" class="ad-give" data-id="' + esc(u.id) + '" data-name="'
-              + esc(u.username) + '">포인트<\\/button><\\/td><\\/tr>';
+              + esc(u.username) + '">포인트<\\/button>'
+              + '<button type="button" class="ad-led" data-id="' + esc(u.id) + '" data-name="'
+              + esc(u.username) + '">원장<\\/button><\\/td><\\/tr>';
           }).join('');
         });
     }
     document.getElementById('adFind').addEventListener('click', find);
     document.getElementById('adQ').addEventListener('keydown', function(e){ if (e.key === 'Enter') find(); });
 
+    /* 원장 보기 — 읽기만 한다. 방금 한 조치가 제대로 남았는지 확인하는 자리다. */
+    var lBody = document.getElementById('adLBody');
+    var lName = document.getElementById('adLName');
+    function when(sec){
+      return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit',
+        day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(sec * 1000));
+    }
+    function loadLedger(id, name){
+      lName.textContent = '— ' + name;
+      lBody.innerHTML = '<tr><td colspan="4" class="ad-note">불러오는 중…<\\/td><\\/tr>';
+      fetch('/api/admin/ledger?id=' + encodeURIComponent(id))
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          var rows = (d && d.rows) || [];
+          if (!rows.length) { lBody.innerHTML = '<tr><td colspan="4" class="ad-note">기록이 없습니다.<\\/td><\\/tr>'; return; }
+          lBody.innerHTML = rows.map(function(x){
+            var sign = x.delta > 0 ? 'pos' : 'neg';
+            return '<tr><td class="n">' + esc(when(x.created_at)) + '<\\/td>'
+              + '<td class="r ' + sign + '">' + (x.delta > 0 ? '+' : '') + num(x.delta) + 'P<\\/td>'
+              + '<td class="ad-rsn">' + esc(x.reason) + '<\\/td>'
+              + '<td class="r">' + num(x.balance_after) + 'P<\\/td><\\/tr>';
+          }).join('');
+        })
+        .catch(function(){ lBody.innerHTML = '<tr><td colspan="4" class="ad-note">불러오지 못했습니다.<\\/td><\\/tr>'; });
+    }
+
     uBody.addEventListener('click', function(ev){
+      var led = ev.target.closest ? ev.target.closest('.ad-led') : null;
+      if (led) { loadLedger(led.getAttribute('data-id'), led.getAttribute('data-name')); return; }
       var b = ev.target.closest ? ev.target.closest('.ad-give') : null;
       if (!b) return;
       var name = b.getAttribute('data-name'), id = b.getAttribute('data-id');
@@ -686,7 +797,13 @@ export function adminPage(user: WebUser): string {
         name + ' 님에게 ' + num(amount) + 'P. 사유: ' + memo,
         function(){
           post('/api/admin/points', { userId: id, delta: amount, memo: memo })
-            .then(function(r){ if (shout(r)) { alert('잔액 ' + num(r.d.balance) + 'P'); find(); } });
+            .then(function(r){
+              if (!shout(r)) return;
+              alert('잔액 ' + num(r.d.balance) + 'P');
+              find();
+              // 방금 준 것이 원장에 남았는지 그 자리에서 보인다
+              loadLedger(id, name);
+            });
         });
     });
 
@@ -702,6 +819,13 @@ export async function handleAdminUsers(
   _req: IncomingMessage, res: ServerResponse, q: string
 ): Promise<void> {
   return sendJson(res, 200, { ok: true, users: searchUsers(q) });
+}
+
+export async function handleAdminLedger(
+  _req: IncomingMessage, res: ServerResponse, id: string
+): Promise<void> {
+  if (id.trim() === '') return sendJson(res, 400, { error: '아이디가 필요합니다' });
+  return sendJson(res, 200, { ok: true, rows: userLedger(id) });
 }
 
 export async function handleAdminPoints(req: IncomingMessage, res: ServerResponse): Promise<void> {

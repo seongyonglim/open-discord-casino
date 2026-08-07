@@ -264,6 +264,26 @@ export function searchUsers(q: string, limit = 20): AdminUserRow[] {
       ORDER BY balance DESC LIMIT ?`, like, like, limit);
 }
 
+export interface LedgerRow {
+  id: number; delta: number; reason: string; balance_after: number; created_at: number;
+}
+
+/**
+ * 한 사람의 원장. 읽기만 한다.
+ *
+ * 운영자가 "이 사람 잔액이 왜 이런가"에 답할 수 있어야 한다. 잔액은 이 표의 누적합과
+ * 같다는 것이 이 서비스의 경제 불변식인데, 정작 그 표를 볼 방법이 없었다 —
+ * 포인트를 지급하거나 상금을 회수한 뒤 무슨 일이 있었는지 확인할 자리가 없었다.
+ *
+ * 최근 것부터 준다. 오래된 기록을 뒤지는 일은 드물고, 방금 한 조치가 제대로 남았는지
+ * 보는 일이 대부분이다.
+ */
+export function userLedger(userId: string, limit = 50): LedgerRow[] {
+  return all<LedgerRow>(
+    `SELECT id, delta, reason, balance_after, created_at FROM points_ledger
+      WHERE user_id = ? ORDER BY id DESC LIMIT ?`, userId, Math.min(200, Math.max(1, limit)));
+}
+
 export type GrantError = 'no_user' | 'bad_amount' | 'would_go_negative';
 
 /**
