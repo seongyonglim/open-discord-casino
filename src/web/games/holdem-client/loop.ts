@@ -19,7 +19,10 @@ export const LOOP = `    function render(){
          이야기 — 남은 사람들의 승부와 대회를 결정짓는 마지막 판 — 을 하나도 못 봤다.
          참가했던 사람만 대상이다. 구경만 하러 온 사람은 로비에서 [관전하기]로 들어온다. */
       if (st.table != null && st.table.mySeat == null && st.tournament && st.tournament.iRegistered) spectate = true;
-      var showTable = st.table != null && (st.table.mySeat != null || spectate);
+      /* 우승 팝업을 닫았으면 그 대회의 테이블은 더 보여주지 않는다. 안 그러면 서버가
+         30초 동안 테이블을 계속 주는 탓에 팝업만 사라지고 화면은 그대로 멈춰 있다. */
+      var left = st.tournament != null && leftTableTid === st.tournament.id;
+      var showTable = !left && st.table != null && (st.table.mySeat != null || spectate);
       lobbyEl.hidden = showTable;
       lobbyRecEl.hidden = showTable || recEmpty;
       tableEl.hidden = !showTable;

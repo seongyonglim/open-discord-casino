@@ -21,12 +21,18 @@
     padding:4px 10px;border-radius:6px;
     font-size:11px;font-weight:800;letter-spacing:.3px;
     background:rgba(255,255,255,.07);color:#cfe0d5;border:1px solid rgba(255,255,255,.14)}
+  /* 태그 넷. 색이 곧 성격이다 — 목록을 훑을 때 글자보다 색이 먼저 읽힌다.
+       신규   금색 — 이 서비스의 강조색. 없던 것이 생겼다는 가장 큰 소식이다
+       업데이트 파랑 — 있던 것이 바뀌었다. [밸런스]가 쓰던 색을 그대로 물려받는다
+                     (합치면서 색까지 바뀌면 지난 글이 다른 종류처럼 보인다)
+       시즌   보라 — 기간이 갈리는 일. 다른 셋과 층이 달라 계열도 따로 둔다
+       점검   회색(기본) — 멈춘다는 소식이라 요란할 이유가 없다 */
   .nt-kind.k-신규{background:rgba(212,175,55,.14);color:var(--gold);
     border-color:rgba(212,175,55,.45)}
-  .nt-kind.k-밸런스{background:rgba(150,195,255,.12);color:#bcd9ff;
+  .nt-kind.k-업데이트{background:rgba(150,195,255,.12);color:#bcd9ff;
     border-color:rgba(150,195,255,.4)}
-  .nt-kind.k-버그\ 수정{background:rgba(255,140,140,.12);color:#ffb3b3;
-    border-color:rgba(255,140,140,.4)}
+  .nt-kind.k-시즌{background:rgba(178,150,255,.13);color:#cbbcff;
+    border-color:rgba(178,150,255,.42)}
 
   /* 개별 글 */
   /* 개별 글은 가운데로. max-width만 주면 왼쪽에 쏠려 보인다. */

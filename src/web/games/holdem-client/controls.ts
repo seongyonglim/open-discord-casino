@@ -15,6 +15,9 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
     /* 슬라이더 금액을 마지막으로 되돌린 차례. (판 · 스트리트 · 콜 금액)으로 가른다.
        차례가 바뀌면 금액을 최소값으로 되돌린다 — renderControls 를 보라. */
     var betTurnKey = null;
+    /* 내 차례 알림을 이미 낸 차례. 열쇠는 서버의 마감 시각(turnStamp)이라 한 차례에
+       하나뿐이고, 같은 사람이 한 스트리트에서 두 번 말해도 각각 따로 잡힌다. */
+    var myTurnRung = null;
     function setAmount(chips){
       var la = st.table.legal; if (!la) return;
       var lo = la.minRaiseTo == null ? la.maxRaiseTo : la.minRaiseTo;
@@ -97,6 +100,25 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
          서버는 폴드를 계속 허용한다(canFold는 항상 true). 마감 초과 자동 처리가
          "체크 가능하면 체크, 아니면 폴드"로 폴드를 쓰고, 클라이언트가 버튼을 감추는 것과
          규칙이 허용하는 것은 별개다. 여기서 막는 건 손가락이 미끄러지는 경우다. */
+      /* ── 내 차례 알림 ───────────────────────────────────────────────
+         버튼이 실제로 눌리는 상태가 된 바로 이 지점에서 울린다.
+         예전에는 시계 기준점을 잡는 곳(noteClock)에서 울리고 0.8초를 기다렸는데, 그건
+         "서버가 차례를 알려 준 시점"이지 "내가 누를 수 있게 된 시점"이 아니다. 둘 사이에는
+         차례가 열리기까지의 간격(actOpenIn)과 폴링 지연이 끼어서, 소리가 버튼보다 먼저
+         나거나 한참 뒤에 나는 일이 생겼다. 0.8초 지연은 그걸 가리려던 우회였다.
+
+         여기까지 내려왔다는 것은 la 가 있고(내 차례) actOpenIn 이 0 이며(열렸고)
+         자리 비움이 아니라는 뜻이다 — 즉 네 버튼이 이 줄 다음에 실제로 켜진다.
+
+         자리 비움이면 울리지 않는다. 위에서 away 일 때 이미 돌아갔으므로 여기 닿지 않는다 —
+         자동으로 체크·폴드되는 중인 사람에게 "당신 차례"라고 알리는 것은 알림이 아니라
+         소음이다. [게임 복귀]로 돌아오면 다음 차례부터 다시 울린다. */
+      var turnKey = turnStamp(st.table);
+      if (turnKey != null && myTurnRung !== turnKey && !firstTablePaint) {
+        myTurnRung = turnKey;
+        if (window.casinoSfx && window.casinoSfx.myTurn) window.casinoSfx.myTurn();
+      }
+
       document.getElementById('htFold').hidden = !la.canFold || la.canCheck;
       document.getElementById('htCheck').hidden = !la.canCheck;
       var call = document.getElementById('htCall');
