@@ -11,3 +11,4 @@
 09-holdem.css
 10-notice.css
 11-admin.css
+12-rank.css

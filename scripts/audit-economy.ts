@@ -803,5 +803,93 @@ section('[9] 운영자 동작');
 }
 auditLedger('운영자 동작 후');
 
+/* ── 10. 시즌 ────────────────────────────────────────────────────
+   시즌 점수는 "종료 시점 잔액"이다. 닫는 순간을 놓치면 영영 알 수 없으므로
+   순서(점수를 찍고 → 초기화)가 어긋나지 않는지가 이 절의 핵심이다. */
+section('[10] 시즌');
+{
+  const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const { bumpGameStats } = require('../src/db/queries') as typeof import('../src/db/queries');
+  const db = getDb();
+  for (const t of ['season_stats', 'season_results', 'seasons']) db.prepare(`DELETE FROM ${t}`).run();
+
+  const s0 = S.currentSeason();
+  ck('시즌이 없으면 시즌 0 이 열린다', s0.number === 0 && s0.closed_at == null, JSON.stringify(s0));
+
+  // 판을 돌리면 시즌 장부에도 쌓인다
+  mkUser('se_a', 1000); mkUser('se_b', 1000);
+  bumpGameStats('se_a', 'mines', 100, 300);   // +200
+  bumpGameStats('se_a', 'mines', 100, 0);     // -100
+  bumpGameStats('se_b', 'mines', 100, 150);   // +50
+  bumpGameStats('se_b', 'ladder', 100, 100);  // 푸시
+  const games = S.seasonGames(s0.id);
+  ck('그 시즌에 실제로 돌린 게임만 카테고리가 된다',
+    games.length === 2 && games[0].game === 'mines', JSON.stringify(games));
+  ck('안 돌린 게임은 카테고리에 없다', !games.some(g => g.game === 'poker'));
+
+  const gr = S.seasonGameRanking(s0.id, 'mines');
+  ck('게임별 랭킹은 순수익 순', gr.length === 2 && gr[0].userId === 'se_a', JSON.stringify(gr.map(r => r.userId)));
+  ck('판수·승수가 함께 온다 (승률 계산의 재료)',
+    gr[0].rounds === 2 && gr[0].wins === 1 && gr[0].rated === 2, JSON.stringify(gr[0]));
+  ck('순수익이 맞다 (+200 -100 = +100)', gr[0].profit === 100, String(gr[0].profit));
+
+  // 통합 랭킹 — 진행 중이면 실시간 잔액, 안 논 사람은 빠진다
+  mkUser('se_idle', 999999);
+  const overall = S.seasonOverall(s0.id);
+  ck('안 논 사람은 통합 랭킹에 안 나온다',
+    !overall.some(r => r.userId === 'se_idle'), JSON.stringify(overall.map(r => r.userId)));
+  ck('통합 랭킹은 잔액 순', overall.length === 2 && overall[0].rank === 1);
+
+  const mine = S.mySeasonRank(s0.id, 'se_a', 'mines');
+  ck('내 게임 순위가 나온다', mine != null && mine.rank === 1 && mine.total === 2, JSON.stringify(mine));
+  ck('안 논 사람은 내 순위가 없다', S.mySeasonRank(s0.id, 'se_idle', null) == null);
+
+  // 시즌을 닫는다 — 점수를 찍고 나서 초기화해야 한다
+  const balA = bal('se_a'), balB = bal('se_b');
+  // 종료 직전에 지원금을 받아 쿨다운에 걸린 상태를 만든다 (새 시즌에서 풀려야 한다)
+  db.prepare(`UPDATE users SET last_relief_at = ? WHERE id = 'se_a'`)
+    .run(Math.floor(Date.now() / 1000));
+  const closed = S.closeSeason({ seed: 0, nextName: '시즌 1' });
+  ck('시즌이 닫히고 다음 시즌이 열린다',
+    closed.ok && closed.closed === 0 && closed.nextNumber === 1, JSON.stringify(closed));
+
+  const after = S.seasonOverall(s0.id);
+  ck('닫힌 시즌의 점수 = 닫기 직전 잔액',
+    after.length === 2
+    && after.find(r => r.userId === 'se_a')!.score === balA
+    && after.find(r => r.userId === 'se_b')!.score === balB,
+    JSON.stringify(after));
+
+  ck('전원 잔액이 0 으로 초기화됐다',
+    bal('se_a') === 0 && bal('se_b') === 0 && bal('se_idle') === 0,
+    `${bal('se_a')} ${bal('se_b')} ${bal('se_idle')}`);
+  ck('초기화가 원장에 남았다 (잔액 = 원장 누적합)',
+    (db.prepare(`SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE user_id='se_a'`)
+      .get() as { n: number }).n === 0);
+  /* 0 에서 시작하니 지원금이 유일한 출발선이다. 쿨다운이 시즌을 넘어 이어지면
+     종료 직전에 받은 사람만 최대 2시간을 못 움직인다 — 시작선이 달라진다. */
+  ck('지원금 쿨다운이 풀렸다 (0 에서 시작하므로 바로 받을 수 있어야 한다)',
+    (db.prepare(`SELECT COUNT(*) AS n FROM users WHERE last_relief_at IS NOT NULL`)
+      .get() as { n: number }).n === 0);
+  const relief = require('../src/services/relief') as typeof import('../src/services/relief');
+  ck('실제로 지원금을 받을 수 있다', relief.claim('se_a').ok);
+
+  const s1 = S.currentSeason();
+  ck('새 시즌은 통계가 비어 있다 (전부 초기화)',
+    s1.number === 1 && S.seasonGames(s1.id).length === 0);
+  ck('지난 시즌 기록은 그대로 남아 있다',
+    S.seasonGameRanking(s0.id, 'mines').length === 2);
+
+  // 새 시즌에서 한 판 — 지난 시즌에 섞이지 않아야 한다
+  bumpGameStats('se_a', 'poker', 100, 500);
+  ck('새 판은 새 시즌에만 쌓인다',
+    S.seasonGameRanking(s1.id, 'poker').length === 1
+    && S.seasonGameRanking(s0.id, 'poker').length === 0);
+  ck('통산 기록(game_stats)은 시즌과 무관하게 이어진다',
+    (db.prepare(`SELECT rounds FROM game_stats WHERE user_id='se_a' AND game='mines'`)
+      .get() as { rounds: number }).rounds === 2);
+}
+auditLedger('시즌 후');
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);

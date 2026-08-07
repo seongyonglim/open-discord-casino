@@ -327,6 +327,22 @@ export function placeBet(userId: string, gameType: string, betAmount: number, in
  * 반드시 "유저가 존재하는지 확인하는 continue" 뒤, 원장 INSERT와 같은 블록에
  * 두어야 한다. 앞에 두면 탈퇴한 유저의 고아 행이 생긴다(외래키가 없다).
  */
+/* 지금 열려 있는 시즌의 id. 없으면 시즌 0 을 연다 — 빈 DB 로 처음 뜨는 서버에서도
+   집계가 어디로 갈지 정해져 있어야 하기 때문이다.
+   이 함수가 season.ts 가 아니라 여기 있는 이유: bumpGameStats 가 이걸 부르는데,
+   season.ts 는 core 를 가져다 쓴다. 반대로도 가져오면 순환이 된다. */
+export function currentSeasonId(): number {
+  const open = one<{ id: number }>(
+    `SELECT id FROM seasons WHERE closed_at IS NULL ORDER BY number DESC LIMIT 1`);
+  if (open) return open.id;
+  const now = Math.floor(Date.now() / 1000);
+  const last = one<{ n: number }>(`SELECT MAX(number) AS n FROM seasons`);
+  const next = last?.n == null ? 0 : last.n + 1;
+  run(`INSERT INTO seasons (number, name, reward, started_at) VALUES (?, ?, ?, ?)`,
+    next, next === 0 ? '오픈베타' : '', '', now);
+  return one<{ id: number }>(`SELECT id FROM seasons WHERE number = ?`, next)!.id;
+}
+
 export function bumpGameStats(
   userId: string, game: string, staked: number, returned: number
 ): void {
@@ -347,6 +363,24 @@ export function bumpGameStats(
        profit   = profit + excluded.profit,
        updated_at = excluded.updated_at`,
     userId, game, win, push, staked, returned, returned - staked
+  );
+  /* 같은 판을 시즌 장부에도 올린다. 통산(game_stats)과 시즌(season_stats)은 뜻이 다르고,
+     시즌이 넘어가면 시즌 쪽만 0 에서 다시 시작한다 — 행이 없으니 저절로 그렇게 된다.
+     두 곳에 쓰는 자리가 여기 하나뿐이라, 게임을 새로 붙여도 시즌 집계는 저절로 따라온다. */
+  run(
+    `INSERT INTO season_stats (season_id, user_id, game, rounds, rated, wins, pushes,
+       staked, returned, profit, updated_at)
+     VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?, ?, unixepoch())
+     ON CONFLICT(season_id, user_id, game) DO UPDATE SET
+       rounds   = rounds + 1,
+       rated    = rated + 1,
+       wins     = wins + excluded.wins,
+       pushes   = pushes + excluded.pushes,
+       staked   = staked + excluded.staked,
+       returned = returned + excluded.returned,
+       profit   = profit + excluded.profit,
+       updated_at = excluded.updated_at`,
+    currentSeasonId(), userId, game, win, push, staked, returned, returned - staked
   );
 }
 
