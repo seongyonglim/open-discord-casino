@@ -479,6 +479,39 @@ async function main(): Promise<void> {
       ledDenied.status === 403 || ledDenied.status === 404, String(ledDenied.status));
   }
 
+  /* 랭킹의 "내 자리" 표시. 화면은 r.userId === me.userId 로 판단하는데, 서버가 me 에
+     userId 를 안 담고 있어서 그 비교가 늘 거짓이었다 — 강조가 한 번도 켜진 적이 없다.
+     에러도 안 나고 그냥 강조가 안 될 뿐이라 눈으로는 못 잡았다. 여기서 못 박는다. */
+  section('[5d] 랭킹 — 내 자리를 가려낼 수 있는가');
+  {
+    const c = mkSession('e_rank', 5000);
+    const { bumpGameStats } = require('../src/db/queries') as typeof import('../src/db/queries');
+    bumpGameStats('e_rank', 'mines', 100, 200);   // 시즌 장부에 올라야 순위에 들어온다
+
+    const r = await req('GET', '/api/leaderboard?tab=overall', c);
+    ck('랭킹 응답 200', r.status === 200, String(r.status));
+    const me = r.body?.me;
+    ck('내 자리 정보가 있다', me != null);
+    ck('me.userId 가 세션 사용자와 같다', me?.userId === 'e_rank', String(me?.userId));
+    ck('me.avatar 열쇠가 있다 (고정바가 아바타를 그린다)', me != null && 'avatar' in me);
+
+    /* 진짜 요지 — 표의 행 하나와 me 가 같은 사람으로 이어지는가.
+       둘을 잇는 열쇠가 userId 뿐이라, 여기가 끊기면 강조가 통째로 죽는다. */
+    const rows = (r.body?.rows ?? []) as { userId: string }[];
+    ck('표에 내 행이 있다', rows.some(x => x.userId === 'e_rank'), String(rows.length));
+    ck('표의 열쇠와 me 의 열쇠가 이어진다',
+      rows.some(x => x.userId === me?.userId), `${me?.userId}`);
+
+    // 화면 쪽 이름이 바뀌면 조용히 강조만 사라지므로 함께 본다
+    const page = (await req('GET', '/leaderboard', c)).text;
+    for (const cls of ['lb-pod.mine', 'lb-you', 'lb-youtag', 'tr.me']) {
+      ck(`강조 스타일이 살아 있다 — ${cls}`,
+        (await req('GET', '/app.css', c)).text.includes('.' + cls.replace('tr.me', 'lb-tbl tr.me')));
+    }
+    ck('화면이 내 행을 표시할 줄 안다', page.includes("r.userId === data.me.userId"));
+    ck('화면이 포디움도 표시할 줄 안다', page.includes('lb-you'));
+  }
+
   section('[6] 최종 원장 정합성');
   {
     const users = db.prepare(`SELECT id, balance FROM users`).all() as any[];

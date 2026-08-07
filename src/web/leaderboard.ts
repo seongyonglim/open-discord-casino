@@ -34,7 +34,8 @@ export interface RankPayload {
   tab: string;                       // 'overall' 또는 게임 키
   kind: 'overall' | 'game' | 'holdem';
   rows: RankRow[];
-  me: { rank: number; total: number; score: number; username: string;
+  me: { rank: number; total: number; score: number; userId: string; username: string;
+        avatar: string | null;
         rounds?: number; rated?: number; wins?: number; pushes?: number;
         entries?: number; itm?: number } | null;
   serverNow: number;
@@ -81,7 +82,12 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
     games, tab: active,
     kind: active === 'overall' ? 'overall' : active === 'holdem' ? 'holdem' : 'game',
     rows,
-    me: mine && me ? { ...mine, username: me.username } : null,
+    /* userId 를 함께 준다. 이게 없어서 화면의 "내 줄" 표시가 한 번도 켜진 적이 없었다 —
+       표는 r.userId === data.me.userId 로 판단하는데 오른쪽이 늘 undefined 였다.
+       아무 에러도 안 나고 그냥 강조가 안 될 뿐이라 눈으로는 못 잡혔다. */
+    me: mine && me
+      ? { ...mine, userId: me.id, username: me.username, avatar: me.avatar ?? null }
+      : null,
     serverNow: Math.floor(Date.now() / 1000),
   };
 }
@@ -208,7 +214,11 @@ export function leaderboardPage(me: WebUser | null): string {
       var top = rows.slice(0, 3);
       document.getElementById('lbPodium').innerHTML = top.length < 3 ? '' :
         [top[1], top[0], top[2]].map(function(r){
-          return '<div class="lb-pod p' + r.rank + '">'
+          /* 내가 포디움에 있으면 그 카드를 초록으로 두른다. 등수 색(금·은·동)은 그대로
+             두고 테두리만 바꾼다 — 등수와 "내 자리"는 다른 정보라 서로 덮으면 안 된다. */
+          var pmine = data.me && r.userId === data.me.userId;
+          return '<div class="lb-pod p' + r.rank + (pmine ? ' mine' : '') + '">'
+            + (pmine ? '<span class="lb-you">나<\\/span>' : '')
             + '<div class="lb-medal">' + (r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : '🥉') + '<\\/div>'
             + avatar(r, 'lb-pav')
             + '<div class="lb-pname">' + esc(r.username) + '<\\/div>'
@@ -234,7 +244,8 @@ export function leaderboardPage(me: WebUser | null): string {
         var profitCls = (overall || ht) ? '' : (r.score > 0 ? ' pos' : r.score < 0 ? ' neg' : '');
         return '<tr' + (mine ? ' class="me"' : '') + '>'
           + '<td class="c rk">' + r.rank + '<\\/td>'
-          + '<td><span class="lb-who">' + avatar(r, 'lb-av') + esc(r.username) + '<\\/span><\\/td>'
+          + '<td><span class="lb-who">' + avatar(r, 'lb-av') + esc(r.username)
+            + (mine ? '<span class="lb-youtag">(나)<\\/span>' : '') + '<\\/span><\\/td>'
           + '<td class="r n' + profitCls + '">' + (r.score > 0 && !overall && !ht ? '+' : '') + num(r.score) + 'P<\\/td>'
           + (overall ? ''
               : ht ? '<td class="r n">' + num(r.wins) + '<\\/td><td class="r n">' + num(r.itm)
@@ -252,15 +263,20 @@ export function leaderboardPage(me: WebUser | null): string {
       bar.hidden = false;
       var overall = data.kind === 'overall';
       var ht = data.kind === 'holdem';
+      /* 위 표와 같은 순서·같은 자리에 놓는다 — [등수][아바타 이름][보조][점수].
+         예전에는 등수 뒤에 이름이 바로 붙고 아바타가 없어서, 표에서 눈이 내려오다가
+         이 줄에서 한 번 끊겼다. 같은 줄의 연장으로 읽히는 편이 낫다. */
       bar.innerHTML = '<div class="lb-mebox">'
         + '<span class="lb-merk">' + data.me.rank + '<span>/' + data.me.total + '<\\/span><\\/span>'
+        + '<span class="lb-mewho">' + avatar(data.me, 'lb-av')
         + '<span class="lb-mename">' + esc(data.me.username) + '<\\/span>'
-        + '<span class="lb-mescore">' + (data.me.score > 0 && !overall && !ht ? '+' : '')
-        + num(data.me.score) + 'P<\\/span>'
+        + '<span class="lb-youtag">(나)<\\/span><\\/span>'
         + (overall ? ''
             : ht ? '<span class="lb-mesub">' + num(data.me.entries || 0) + '회 · 우승 '
                    + num(data.me.wins || 0) + '<\\/span>'
             : '<span class="lb-mesub">' + num(data.me.rounds || 0) + '판<\\/span>')
+        + '<span class="lb-mescore">' + (data.me.score > 0 && !overall && !ht ? '+' : '')
+        + num(data.me.score) + 'P<\\/span>'
         + '<\\/div>';
     }
 
