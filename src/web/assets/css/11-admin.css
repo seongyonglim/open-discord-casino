@@ -55,3 +55,41 @@
   .ad-grid i{font-style:normal;font-size:11px;color:var(--muted);font-weight:600}
   .ad-live{font-size:10px;font-weight:800;color:var(--win);
     border:1px solid rgba(46,204,113,.4);border-radius:4px;padding:1px 5px;margin-left:6px}
+
+  /* ── 입력 손질 ─────────────────────────────────────────────────
+     기본 입력이 게임 화면과 결이 달라 떠 보였다. 높이·모서리·초점 표시를 맞추고,
+     숫자는 등폭으로 오른쪽에 세운다 — 자릿수가 눈으로 비교돼야 하는 값들이다. */
+  .ad-wrap input,.ad-wrap select,.ad-wrap textarea{
+    background:#0e0e11;border:1px solid #2f2f35;border-radius:10px;
+    padding:9px 12px;color:var(--txt);font-family:inherit;font-size:13.5px;
+    transition:border-color .12s,box-shadow .12s;min-height:38px}
+  .ad-wrap input:hover,.ad-wrap select:hover,.ad-wrap textarea:hover{border-color:#3d3d45}
+  .ad-wrap input:focus,.ad-wrap select:focus,.ad-wrap textarea:focus{
+    outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.14)}
+  .ad-wrap input[type=number]{font-family:var(--mono);text-align:right;letter-spacing:.3px}
+  .ad-wrap input[type=time],.ad-wrap input[type=date]{font-family:var(--mono)}
+  /* 크롬의 시계·달력 아이콘이 어두운 배경에서 검게 묻힌다 */
+  .ad-wrap input[type=time]::-webkit-calendar-picker-indicator,
+  .ad-wrap input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.75);cursor:pointer}
+  .ad-wrap select{appearance:none;padding-right:30px;
+    background-image:linear-gradient(45deg,transparent 50%,#8b8b92 50%),linear-gradient(135deg,#8b8b92 50%,transparent 50%);
+    background-position:calc(100% - 16px) 17px,calc(100% - 11px) 17px;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+
+  /* 단위를 칸 안쪽에 붙인다 — 밖에 두면 값과 단위가 시선에서 떨어진다 */
+  .ad-inx{position:relative;display:block}
+  .ad-inx input{width:100%;padding-right:46px}
+  .ad-inx b{position:absolute;right:12px;top:50%;transform:translateY(-50%);
+    font-size:11.5px;font-weight:700;color:var(--muted);pointer-events:none}
+
+  /* 카드 안의 소제목 — 항목이 열 개를 넘으면 덩어리로 끊어 줘야 읽힌다 */
+  .ad-sub2{font-size:12px;font-weight:800;color:var(--gold);margin:14px 0 8px;
+    display:flex;align-items:baseline;gap:8px}
+  .ad-sub2:first-of-type{margin-top:4px}
+  .ad-sub2 span{font-size:11.5px;font-weight:600;color:var(--muted)}
+
+  .ad-wrap button.primary{background:rgba(212,175,55,.14);border-color:var(--gold);color:var(--gold-hi)}
+  .ad-wrap button.primary:hover{background:rgba(212,175,55,.22)}
+  .ad-ta{width:100%;font-family:var(--mono);font-size:13px;line-height:1.65;resize:vertical;margin-bottom:10px}
+  .ad-tbl td button{padding:5px 9px;font-size:12px;margin-right:4px}
+  .ad-card h2{display:flex;align-items:center;gap:8px}

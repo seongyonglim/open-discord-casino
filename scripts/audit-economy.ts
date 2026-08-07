@@ -902,6 +902,84 @@ section('[10] 시즌');
    지난 대회가 저절로 제자리에 들어간다. 그게 실제로 되는지 본다. */
 /* 설정 기능의 요점은 "바꿔도 진행 중인 대회가 안 흔들린다"이다. 그게 안 되면
    운영자가 값을 고치는 순간 블라인드가 뛰고 늦게 온 사람만 다른 스택을 받는다. */
+/* 공지는 코드에서 DB 로 옮겼다. 옮기면서 보이는 글이 달라지면 안 되고, 운영자가 지운 글이
+   서버를 다시 띄울 때마다 되살아나도 안 된다. 그 둘이 이 절의 핵심이다. */
+section('[10e] 공지사항');
+{
+  const N = require('../src/db/notices') as typeof import('../src/db/notices');
+  const SEED = require('../src/web/notices') as typeof import('../src/web/notices');
+  const db = getDb();
+  db.prepare(`DELETE FROM notices`).run();
+
+  N.seedNoticesOnce();
+  ck('빈 DB 에 코드의 글이 심어진다', N.listNotices().length === SEED.NOTICES.length,
+    `${N.listNotices().length} / ${SEED.NOTICES.length}`);
+  ck('순서가 코드와 같다 (맨 앞이 최신)',
+    N.listNotices()[0].id === SEED.NOTICES[0].id, N.listNotices()[0].id);
+  ck('본문이 그대로 옮겨졌다',
+    JSON.stringify(N.listNotices()[0].sections) === JSON.stringify(SEED.NOTICES[0].sections));
+
+  /* 지운 글이 되살아나면 지우기가 지우기가 아니다 */
+  const first = N.listNotices()[0].id;
+  N.deleteNotice(first);
+  N.seedNoticesOnce();
+  ck('한 번 심은 뒤에는 다시 심지 않는다 (지운 글이 안 되살아난다)',
+    !N.listNotices().some(x => x.id === first));
+
+  // 본문 규칙
+  const parsed = N.parseBody('## 바뀐 점\n- 하나\n- 둘\n설명 문단\n\n## 다음 절\n본문');
+  ck('## 는 절, - 는 목록, 나머지는 문단',
+    parsed.length === 2 && parsed[0].heading === '바뀐 점'
+    && parsed[0].bullets?.length === 2 && parsed[0].paras?.length === 1
+    && parsed[1].heading === '다음 절', JSON.stringify(parsed));
+  ck('빈 줄은 무시된다', N.parseBody('가\n\n\n나')[0].paras?.length === 2);
+  /* 되돌린 뒤 다시 읽으면 내용이 같아야 한다. JSON 문자열로 비교하면 안 된다 —
+     unparseBody 는 문단을 목록보다 먼저 적는데, 화면도 항상 문단 → 목록 → 표 순으로
+     그리므로(pages.ts 의 noticeBody) 키가 꽂힌 순서만 다르고 보이는 것은 같다.
+     그래서 필드별로 본다. */
+  const rt = N.parseBody(N.unparseBody(parsed));
+  const same = (a: typeof parsed, b: typeof parsed) =>
+    a.length === b.length && a.every((s, i) =>
+      s.heading === b[i].heading
+      && JSON.stringify(s.paras ?? []) === JSON.stringify(b[i].paras ?? [])
+      && JSON.stringify(s.bullets ?? []) === JSON.stringify(b[i].bullets ?? []));
+  ck('되돌렸다 다시 읽어도 내용이 같다', same(rt, parsed), JSON.stringify(rt));
+
+  // 표는 줄 규칙으로 쓸 수 없으므로 수정할 때 되살려야 한다
+  const withTable = [{ heading: '요금', table: { head: ['A'], rows: [['1']] } }];
+  const kept = N.keepTables(N.parseBody('## 요금'), withTable);
+  ck('수정해도 예전 표가 남는다', kept[0].table != null, JSON.stringify(kept[0]));
+
+  // 검증
+  const base = { date: '2026-08-07', kind: '업데이트', title: '제목', summary: '요약',
+    sections: N.parseBody('본문'), active: true };
+  ck('대문자 아이디 거절', !N.createNotice({ ...base, id: 'Bad-Id' }).ok);
+  ck('한글 아이디 거절', !N.createNotice({ ...base, id: '공지' }).ok);
+  ck('날짜 형식 거절', !N.createNotice({ ...base, id: 'x1', date: '2026/08/07' }).ok);
+  ck('없는 분류 거절', !N.createNotice({ ...base, id: 'x2', kind: '잡담' }).ok);
+  ck('제목 없으면 거절', !N.createNotice({ ...base, id: 'x3', title: '  ' }).ok);
+  ck('본문 없으면 거절', !N.createNotice({ ...base, id: 'x4', sections: [] }).ok);
+
+  ck('올바른 글은 만들어진다', N.createNotice({ ...base, id: 'ok-1' }).ok);
+  ck('같은 아이디는 거절', !N.createNotice({ ...base, id: 'ok-1' }).ok);
+  ck('새 글이 맨 위에 선다', N.listNotices()[0].id === 'ok-1');
+
+  // 숨김 — 지우지 않고 내린다
+  ck('숨기면 목록에서 빠진다',
+    N.toggleNotice('ok-1').ok && !N.listNotices().some(x => x.id === 'ok-1'));
+  ck('숨긴 글은 상세로도 못 연다', N.findNotice('ok-1') == null);
+  ck('운영자 목록에는 남아 있다', N.listNoticesAdmin().some(x => x.id === 'ok-1'));
+  ck('다시 보이게 할 수 있다',
+    N.toggleNotice('ok-1').ok && N.findNotice('ok-1') != null);
+
+  ck('수정이 반영된다',
+    N.updateNotice('ok-1', { ...base, title: '고친 제목' }).ok
+    && N.findNotice('ok-1')!.title === '고친 제목');
+  ck('없는 글 수정은 거절', !N.updateNotice('nope', base).ok);
+  ck('지우면 사라진다', N.deleteNotice('ok-1').ok && N.findNotice('ok-1') == null);
+  ck('없는 글 지우기는 거절', !N.deleteNotice('nope').ok);
+}
+
 section('[10d] 대회 설정');
 {
   const S = require('../src/db/settings') as typeof import('../src/db/settings');
@@ -918,14 +996,23 @@ section('[10d] 대회 설정');
   // 검증 — 화면이 아니라 여기가 마지막 문이다
   const bad = (o: Partial<import('../src/db/settings').TournamentConfig>) =>
     S.validateConfig({ ...d, ...o }).length > 0;
-  ck('등록이 시작보다 늦으면 거절', bad({ regOpenHour: 22, startHour: 21 }));
-  ck('등록과 시작이 같아도 거절', bad({ regOpenHour: 22, startHour: 22 }));
-  ck('대기 마감이 자정을 넘으면 거절', bad({ startHour: 23, graceMin: 120 }));
+  ck('등록이 시작보다 늦으면 거절', bad({ regOpenMin: 22 * 60, startMin: 21 * 60 }));
+  ck('등록과 시작이 같아도 거절', bad({ regOpenMin: 22 * 60, startMin: 22 * 60 }));
+  ck('대기 마감이 자정을 넘으면 거절', bad({ startMin: 23 * 60, graceMin: 120 }));
+  /* 분 단위를 받는 것이 이번 변경의 요점이다 — 시간만 받으면 22:30 일정을 못 만든다. */
+  ck('분 단위 시각을 받는다 (21:30 → 22:15)',
+    S.validateConfig({ ...d, regOpenMin: 21 * 60 + 30, startMin: 22 * 60 + 15 }).length === 0);
+  ck('분까지 봐서 뒤집히면 거절 (22:30 → 22:15)',
+    bad({ regOpenMin: 22 * 60 + 30, startMin: 22 * 60 + 15 }));
+  ck('분이 일정에 실제로 반영된다', (() => {
+    const s = T.scheduleForDate('2026-08-10', { regOpenMin: 21 * 60 + 30, startMin: 22 * 60 + 15 });
+    return s.scheduledStartAt - s.regOpenAt === 45 * 60;
+  })());
   ck('0 이하 칩 거절', bad({ startingStack: 0 }));
   ck('0 이하 블라인드 주기 거절', bad({ levelMin: 0 }));
   ck('소수점 거절', bad({ startingStack: 100.5 }));
   ck('음수 상금 거절', bad({ prizeFixed: -1 }));
-  ck('올바른 설정은 통과', S.validateConfig({ ...d, startHour: 20, regOpenHour: 19 }).length === 0);
+  ck('올바른 설정은 통과', S.validateConfig({ ...d, startMin: 20 * 60, regOpenMin: 19 * 60 }).length === 0);
   ck('잘못된 설정은 저장되지 않는다', !S.saveConfig({ ...d, startingStack: 0 }).ok);
 
   // 저장하면 다음에 만들어지는 대회에 박힌다

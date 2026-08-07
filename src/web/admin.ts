@@ -19,6 +19,10 @@ import {
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
+import {
+  listNoticesAdmin, createNotice, updateNotice, toggleNotice, deleteNotice,
+  parseBody, unparseBody, keepTables, NOTICE_KINDS,
+} from '../db/notices';
 import type { WebUser } from '../db/queries';
 
 /** 바꾸는 동작의 두 번째 잠금. 토큰이 설정돼 있지 않으면 무조건 잠긴다. */
@@ -33,6 +37,9 @@ export function isAdmin(user: WebUser | null): boolean {
 }
 
 const num = (n: number) => Number(n || 0).toLocaleString('ko-KR');
+/** 자정으로부터의 분을 HH:MM 으로. time 입력이 그대로 읽고 쓰는 형식이다. */
+const hhmm = (m: number) =>
+  String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 const kst = (s: number | null) => s == null ? '—'
   : new Date((s + 9 * 3600) * 1000).toISOString().replace('T', ' ').slice(5, 16);
 
@@ -65,6 +72,28 @@ export function adminPage(user: WebUser): string {
 
   const cfg = getConfig();
   const d = defaultConfig();
+  const notices = listNoticesAdmin();
+  const noticeRows = notices.map(n => `<tr>
+      <td class="n">${esc(n.date)}</td>
+      <td>${esc(n.kind)}</td>
+      <td>${esc(n.title)}</td>
+      <td class="ad-id">${esc(n.id)}</td>
+      <td>${n.active ? '보임' : '<span class="ad-no">숨김</span>'}</td>
+      <td>
+        <button type="button" class="nt-edit" data-id="${esc(n.id)}">수정</button>
+        <button type="button" class="nt-toggle" data-id="${esc(n.id)}">${n.active ? '숨기기' : '보이기'}</button>
+        <button type="button" class="nt-del danger" data-id="${esc(n.id)}" data-title="${esc(n.title)}">지우기</button>
+      </td>
+    </tr>`).join('');
+  /* 수정 화면이 원문처럼 보이도록 본문을 줄 규칙으로 되돌려 함께 내려보낸다.
+     화면에서 다시 서버에 물으면 왕복이 한 번 더 생기는데, 글 몇 개라 통째로 보내는 편이 낫다. */
+  const noticeBodies: Record<string, unknown> = {};
+  for (const n of notices) {
+    noticeBodies[n.id] = {
+      date: n.date, kind: n.kind, title: n.title, summary: n.summary,
+      active: n.active, body: unparseBody(n.sections),
+    };
+  }
   const seasons = listSeasons();
   const cur = seasons.find(s => s.closed_at == null);
   const seasonRows = seasons.map(s => `<tr>
@@ -98,6 +127,12 @@ export function adminPage(user: WebUser): string {
       <h2>대회 기록</h2>
       <p class="ad-note">상금이 한 푼이라도 나간 대회는 지울 수 없습니다 — 상금은 원장에 이미 발행돼 있어서,
         기록만 지우면 잔액과 원장이 어긋납니다. 테스트는 아래 [테스트 대회 열기]로 여세요(상금 배수 0).</p>
+      <p class="ad-note"><b>오늘 날짜 대회는 지워도 곧바로 다시 만들어집니다.</b> 이 서버는 타이머 없이
+        요청이 들어올 때마다 "오늘 대회가 있나"를 보고 없으면 그 자리에서 만들기 때문입니다(1초 안).
+        그래서 오늘 것을 지우는 일은 <b>없애기가 아니라 지금 설정으로 다시 만들기</b>입니다 —
+        대회 설정을 바꾼 뒤 오늘부터 적용하고 싶을 때 쓰세요.
+        <b>등록한 사람이 있으면 그 등록도 함께 사라지니 등록 시작 이후에는 쓰지 마세요.</b>
+        지난 날짜의 대회는 다시 만들어지지 않습니다(테스트 흔적 지우기는 그쪽입니다).</p>
       <div class="ad-row">
         <button type="button" id="adTest">테스트 대회 열기</button>
         <span class="ad-note">오늘 자리를 상금 없는 대회로 바꿉니다. 끝나면 이 표에서 지우면 원래대로 돌아옵니다.</span>
@@ -116,21 +151,28 @@ export function adminPage(user: WebUser): string {
       <p class="ad-note">바꾼 값은 <b>다음에 만들어질 대회부터</b> 적용됩니다. 진행 중인 대회는 만들어질 때의
         값을 자기 행에 갖고 있어서 흔들리지 않습니다 — 블라인드가 갑자기 뛰거나 늦게 온 사람만
         다른 스택을 받는 일이 없습니다. 순위별 분배(ITM 비율)는 검증된 산식이라 고정입니다.</p>
+      <div class="ad-sub2">일정</div>
       <div class="ad-grid">
-        <label>등록 시작 시각<input type="number" id="cfRegHour" min="0" max="23" value="${cfg.regOpenHour}"><i>시 (KST)</i></label>
-        <label>대회 시작 시각<input type="number" id="cfStartHour" min="0" max="23" value="${cfg.startHour}"><i>시 (KST)</i></label>
-        <label>최소 인원 대기<input type="number" id="cfGrace" min="1" value="${cfg.graceMin}"><i>분 (시작 시각 이후)</i></label>
-        <label>레이트 레지<input type="number" id="cfLateReg" min="1" value="${cfg.lateRegMin}"><i>분 (실제 시작 이후)</i></label>
-        <label>시작 칩<input type="number" id="cfStack" min="1" value="${cfg.startingStack}"><i>칩</i></label>
-        <label>블라인드 주기<input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><i>분</i></label>
-        <label>평일 상금 배수<input type="number" id="cfWd" min="0" value="${cfg.weekdayMultiplier}"><i>× 등록자 수</i></label>
-        <label>주말 상금 배수<input type="number" id="cfWe" min="0" value="${cfg.weekendMultiplier}"><i>× 등록자 수</i></label>
-        <label>고정 상금 풀<input type="number" id="cfFixed" min="0" value="${cfg.prizeFixed}"><i>0이면 인원 × 배수</i></label>
+        <label>등록 시작<input type="time" id="cfRegAt" value="${hhmm(cfg.regOpenMin)}"><i>KST</i></label>
+        <label>대회 시작<input type="time" id="cfStartAt" value="${hhmm(cfg.startMin)}"><i>KST</i></label>
+        <label>최소 인원 대기<span class="ad-inx"><input type="number" id="cfGrace" min="1" value="${cfg.graceMin}"><b>분</b></span><i>시작 시각 이후 · 지금 마감 ${hhmm(cfg.startMin + cfg.graceMin)}</i></label>
+        <label>레이트 레지<span class="ad-inx"><input type="number" id="cfLateReg" min="1" value="${cfg.lateRegMin}"><b>분</b></span><i>실제 시작 이후</i></label>
+      </div>
+      <div class="ad-sub2">칩과 블라인드</div>
+      <div class="ad-grid">
+        <label>시작 칩<span class="ad-inx"><input type="number" id="cfStack" min="1" step="500" value="${cfg.startingStack}"><b>칩</b></span><i></i></label>
+        <label>블라인드 주기<span class="ad-inx"><input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><b>분</b></span><i>레벨 11까지 ${cfg.levelMin * 10}분</i></label>
+      </div>
+      <div class="ad-sub2">상금 풀 <span>순위별 분배(ITM 비율)는 고정입니다 — 여기서는 풀의 크기만 정합니다</span></div>
+      <div class="ad-grid">
+        <label>평일 배수<span class="ad-inx"><input type="number" id="cfWd" min="0" step="100" value="${cfg.weekdayMultiplier}"><b>×명</b></span><i>5명이면 ${num(cfg.weekdayMultiplier * 5)}P</i></label>
+        <label>주말 배수<span class="ad-inx"><input type="number" id="cfWe" min="0" step="100" value="${cfg.weekendMultiplier}"><b>×명</b></span><i>5명이면 ${num(cfg.weekendMultiplier * 5)}P</i></label>
+        <label>고정 상금 풀<span class="ad-inx"><input type="number" id="cfFixed" min="0" step="1000" value="${cfg.prizeFixed}"><b>P</b></span><i>0이면 인원 × 배수를 씁니다</i></label>
       </div>
       <div class="ad-row">
-        <button type="button" id="cfSave">설정 저장</button>
+        <button type="button" id="cfSave" class="primary">설정 저장</button>
         <button type="button" id="cfReset">기본값으로</button>
-        <span class="ad-note">지금 기본값: 등록 ${d.regOpenHour}시 · 시작 ${d.startHour}시 · 대기 ${d.graceMin}분 ·
+        <span class="ad-note">기본값 — 등록 ${hhmm(d.regOpenMin)} · 시작 ${hhmm(d.startMin)} · 대기 ${d.graceMin}분 ·
           레이트 ${d.lateRegMin}분 · 칩 ${num(d.startingStack)} · 블라인드 ${d.levelMin}분</span>
       </div>
     </section>
@@ -160,6 +202,37 @@ export function adminPage(user: WebUser): string {
       <div class="ad-row">
         <button type="button" id="adSClose" class="danger">시즌 종료 · 다음 시즌 열기</button>
         <span class="ad-note">되돌릴 수 없습니다.</span>
+      </div>
+    </section>
+
+    <section class="ad-card">
+      <h2>공지사항</h2>
+      <p class="ad-note">아이디는 주소에 그대로 쓰입니다 — 한 번 정하면 바꾸지 마세요. 링크를 공유한
+        사람의 주소가 깨집니다. 그래서 <b>지우기와 별개로 숨김</b>을 뒀습니다. 숨기면 목록에도 상세에도
+        안 나오지만 글은 남아 있어 언제든 되돌릴 수 있습니다.</p>
+      <div class="ad-scroll"><table class="ad-tbl">
+        <thead><tr><th>날짜</th><th>분류</th><th>제목</th><th>아이디</th><th>상태</th><th></th></tr></thead>
+        <tbody id="ntBody">${noticeRows}</tbody>
+      </table></div>
+      <div class="ad-row" style="margin-top:12px">
+        <button type="button" id="ntNew">새 글 쓰기</button>
+        <span class="ad-note">본문 규칙 — <code>## 제목</code>은 절, <code>- 항목</code>은 목록, 나머지 줄은 문단입니다.</span>
+      </div>
+      <div id="ntForm" hidden>
+        <div class="ad-grid">
+          <label>아이디 (주소)<input type="text" id="ntId" placeholder="holdem-update-1"><i>영소문자·숫자·하이픈</i></label>
+          <label>날짜<input type="date" id="ntDate"><i>KST</i></label>
+          <label>분류<select id="ntKind">${NOTICE_KINDS.map(k => `<option>${esc(k)}</option>`).join('')}</select><i></i></label>
+          <label>보이기<select id="ntActive"><option value="1">보임</option><option value="0">숨김</option></select><i></i></label>
+        </div>
+        <div class="ad-row"><input type="text" id="ntTitle" placeholder="제목" style="flex:1;min-width:260px"></div>
+        <div class="ad-row"><input type="text" id="ntSummary" placeholder="목록에 한 줄로 보이는 요약" style="flex:1;min-width:260px"></div>
+        <textarea id="ntBodyText" class="ad-ta" rows="12" placeholder="## 바뀐 점&#10;- 블라인드 주기를 8분으로 되돌렸습니다&#10;자세한 내용은 아래를 보세요."></textarea>
+        <div class="ad-row">
+          <button type="button" id="ntSave">저장</button>
+          <button type="button" id="ntCancel">취소</button>
+          <span class="ad-note" id="ntMode"></span>
+        </div>
       </div>
     </section>
 
@@ -261,12 +334,79 @@ export function adminPage(user: WebUser): string {
       }).then(function(r){ if (shout(r)) location.reload(); });
     });
 
+    /* ── 공지 ────────────────────────────────────────────────────
+       수정은 새 글 쓰기와 같은 폼을 쓴다. 다른 점은 아이디를 잠근다는 것 하나다 —
+       아이디가 곧 주소라, 고치면 공유된 링크가 깨진다. */
+    var ntBodies = ${jsonForScript(noticeBodies)};
+    var ntEditing = null;
+    var ntForm = document.getElementById('ntForm');
+    function ntShow(id){
+      ntEditing = id;
+      ntForm.hidden = false;
+      var v = id ? ntBodies[id] : null;
+      document.getElementById('ntId').value = id || '';
+      document.getElementById('ntId').disabled = !!id;
+      document.getElementById('ntDate').value = v ? v.date : new Date().toISOString().slice(0, 10);
+      document.getElementById('ntKind').value = v ? v.kind : '업데이트';
+      document.getElementById('ntActive').value = v ? (v.active ? '1' : '0') : '1';
+      document.getElementById('ntTitle').value = v ? v.title : '';
+      document.getElementById('ntSummary').value = v ? v.summary : '';
+      document.getElementById('ntBodyText').value = v ? v.body : '';
+      document.getElementById('ntMode').textContent = id ? ('수정 중 — ' + id) : '새 글';
+      ntForm.scrollIntoView({ block: 'nearest' });
+    }
+    document.getElementById('ntNew').addEventListener('click', function(){ ntShow(null); });
+    document.getElementById('ntCancel').addEventListener('click', function(){
+      ntForm.hidden = true; ntEditing = null;
+    });
+    document.getElementById('ntSave').addEventListener('click', function(){
+      var body = {
+        id: document.getElementById('ntId').value.trim(),
+        date: document.getElementById('ntDate').value,
+        kind: document.getElementById('ntKind').value,
+        title: document.getElementById('ntTitle').value,
+        summary: document.getElementById('ntSummary').value,
+        body: document.getElementById('ntBodyText').value,
+        active: document.getElementById('ntActive').value === '1',
+      };
+      if (!body.id) { alert('아이디를 넣어 주세요.'); return; }
+      if (!body.title.trim()) { alert('제목을 넣어 주세요.'); return; }
+      if (!body.body.trim()) { alert('본문을 넣어 주세요.'); return; }
+      var url = ntEditing ? '/api/admin/notice/update' : '/api/admin/notice/create';
+      post(url, body).then(function(r){ if (shout(r)) location.reload(); });
+    });
+    document.getElementById('ntBody').addEventListener('click', function(ev){
+      var t = ev.target.closest ? ev.target : null;
+      if (!t) return;
+      var id = t.getAttribute('data-id');
+      if (!id) return;
+      if (t.classList.contains('nt-edit')) { ntShow(id); return; }
+      if (t.classList.contains('nt-toggle')) {
+        post('/api/admin/notice/toggle', { id: id })
+          .then(function(r){ if (shout(r)) location.reload(); });
+        return;
+      }
+      if (t.classList.contains('nt-del')) {
+        confirmThen('공지를 지울까요?',
+          t.getAttribute('data-title') + ' — 되돌릴 수 없습니다. 잠시 내리는 것이라면 [숨기기]를 쓰세요.',
+          function(){ post('/api/admin/notice/delete', { id: id })
+            .then(function(r){ if (shout(r)) location.reload(); }); });
+      }
+    });
+
     /* 저장 전에 화면에서도 한 번 본다. 서버가 마지막 문이지만, 눌러 보고 나서야
        "시간 순서가 틀렸다"는 말을 듣는 것보다 미리 막는 편이 낫다. */
     function cfNum(id){ return Math.floor(Number(document.getElementById(id).value)); }
+    /* time 입력은 'HH:MM' 문자열이다. 자정으로부터의 분으로 바꿔 보낸다 —
+       서버도 DB도 분으로 다루므로 여기서 한 번만 변환한다. */
+    function cfClock(id){
+      var v = String(document.getElementById(id).value || '');
+      var m = v.match(/^(d{1,2}):(d{2})$/);
+      return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+    }
     function cfRead(){
       return {
-        regOpenHour: cfNum('cfRegHour'), startHour: cfNum('cfStartHour'),
+        regOpenMin: cfClock('cfRegAt'), startMin: cfClock('cfStartAt'),
         graceMin: cfNum('cfGrace'), lateRegMin: cfNum('cfLateReg'),
         startingStack: cfNum('cfStack'), levelMin: cfNum('cfLevel'),
         weekdayMultiplier: cfNum('cfWd'), weekendMultiplier: cfNum('cfWe'),
@@ -454,7 +594,7 @@ export async function handleAdminConfig(req: IncomingMessage, res: ServerRespons
   /* 검증은 saveConfig 안에서 한다 — 여기서 한 번 더 쓰면 두 벌이 되고, 언젠가 갈라진다.
      화면에도 같은 검사가 있지만 그건 편의고 마지막 문은 질의 계층이다. */
   const r = saveConfig({
-    regOpenHour: n('regOpenHour'), startHour: n('startHour'),
+    regOpenMin: n('regOpenMin'), startMin: n('startMin'),
     graceMin: n('graceMin'), lateRegMin: n('lateRegMin'),
     startingStack: n('startingStack'), levelMin: n('levelMin'),
     weekdayMultiplier: n('weekdayMultiplier'), weekendMultiplier: n('weekendMultiplier'),
@@ -468,5 +608,63 @@ export async function handleAdminConfigReset(
   _req: IncomingMessage, res: ServerResponse
 ): Promise<void> {
   resetConfig();
+  return sendJson(res, 200, { ok: true });
+}
+
+/* ── 공지 API ───────────────────────────────────────────────────── */
+
+const NOTICE_MSG: Record<string, string> = {
+  bad_id: '아이디는 영소문자·숫자·하이픈으로 2~49자여야 합니다',
+  bad_date: '날짜 형식이 올바르지 않습니다',
+  bad_kind: '분류가 올바르지 않습니다',
+  no_title: '제목을 넣어 주세요',
+  no_body: '본문을 넣어 주세요',
+  duplicate: '같은 아이디의 글이 이미 있습니다',
+  not_found: '없는 글입니다',
+};
+
+function readNoticeBody(b: Record<string, unknown> | null) {
+  return {
+    date: String(b?.date ?? ''),
+    kind: String(b?.kind ?? ''),
+    title: String(b?.title ?? ''),
+    summary: String(b?.summary ?? ''),
+    sections: parseBody(String(b?.body ?? '')),
+    active: b?.active !== false,
+  };
+}
+
+export async function handleAdminNoticeCreate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  const r = createNotice({ id: String(b?.id ?? '').trim(), ...readNoticeBody(b) });
+  if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] ?? r.error });
+  return sendJson(res, 200, { ok: true });
+}
+
+export async function handleAdminNoticeUpdate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  const id = String(b?.id ?? '').trim();
+  const next = readNoticeBody(b);
+  /* 예전 글에 표가 있었으면 되살린다. 표는 줄 규칙으로 쓰지 않으므로, 되살리지 않으면
+     본문을 한 글자만 고쳐도 표가 통째로 사라진다. */
+  const old = listNoticesAdmin().find(x => x.id === id);
+  const r = updateNotice(id, {
+    ...next, sections: old ? keepTables(next.sections, old.sections) : next.sections,
+  });
+  if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] ?? r.error });
+  return sendJson(res, 200, { ok: true });
+}
+
+export async function handleAdminNoticeToggle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { id?: unknown } | null;
+  const r = toggleNotice(String(b?.id ?? ''));
+  if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] });
+  return sendJson(res, 200, { ok: true, active: r.active });
+}
+
+export async function handleAdminNoticeDelete(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { id?: unknown } | null;
+  const r = deleteNotice(String(b?.id ?? ''));
+  if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] });
   return sendJson(res, 200, { ok: true });
 }

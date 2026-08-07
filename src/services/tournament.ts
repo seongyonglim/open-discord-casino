@@ -82,7 +82,8 @@ export interface TournamentSchedule {
 
 /** 운영자가 고칠 수 있는 일정 값. 안 주면 이 파일의 기본값을 쓴다. */
 export interface ScheduleOverrides {
-  regOpenHour?: number; startHour?: number; graceSec?: number;
+  /* 자정으로부터의 분(0~1439). 시간만 받으면 22:30 같은 일정을 못 만든다. */
+  regOpenMin?: number; startMin?: number; graceSec?: number;
   weekdayMultiplier?: number; weekendMultiplier?: number;
 }
 
@@ -90,10 +91,12 @@ export function scheduleForDate(dateStr: string, o: ScheduleOverrides = {}): Tou
   // 요일 판정은 그 날짜의 정오를 기준으로 한다 — 자정 경계에서 흔들리지 않는다
   const noon = kstTimeToUnix(dateStr, 12, 0);
   const weekend = isKstWeekend(noon * 1000);
-  const scheduledStartAt = kstTimeToUnix(dateStr, o.startHour ?? START_HOUR, 0);
+  const sm = o.startMin ?? START_HOUR * 60;
+  const rm = o.regOpenMin ?? REG_OPEN_HOUR * 60;
+  const scheduledStartAt = kstTimeToUnix(dateStr, Math.floor(sm / 60), sm % 60);
   return {
     dateStr,
-    regOpenAt: kstTimeToUnix(dateStr, o.regOpenHour ?? REG_OPEN_HOUR, 0),
+    regOpenAt: kstTimeToUnix(dateStr, Math.floor(rm / 60), rm % 60),
     scheduledStartAt,
     graceEndsAt: scheduledStartAt + (o.graceSec ?? GRACE_SEC),
     weekend,
