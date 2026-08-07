@@ -48,6 +48,19 @@ export const FORMAT = `    var ctrlEl = document.getElementById('htControls');
       if (m) return m + '분 ' + ss + '초';
       return ss + '초';
     }
+    /* KST 시계 표기. 대회 시각이 21:00/22:00 로 고정돼 있던 동안에는 문구에 그대로
+       적어 뒀는데, 운영자가 시각을 정하게 되면서 그 문장이 거짓이 됐다. 서버가 준
+       실제 시각에서 뽑아 쓴다 — 브라우저의 시간대와 무관하게 KST 로 읽는다. */
+    function kstClock(sec){
+      if (sec == null) return '--:--';
+      return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul',
+        hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(sec * 1000));
+    }
+    function kstDay(sec){
+      if (sec == null) return '';
+      return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul',
+        month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(sec * 1000));
+    }
     /* 스택 표기 — 칩 또는 BB. 숏스택일 때 3.4BB처럼 소수 한 자리가 의미 있다. */
     function stackText(chips){
       if (unit === 'chip' || !st || !st.table) return num(chips);

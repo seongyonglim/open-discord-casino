@@ -149,9 +149,17 @@ export function revokePrizesAndPurge(id: number):
 /** 다음 판 시작까지 이만큼은 남아 있어야 임시 판을 연다. 한 판의 최대 길이에서 왔다. */
 export const CREATE_GAP_SEC = 2 * 60 * 60;
 
-export function createTournament(o: { title?: string; prizeMultiplier?: number; regMin?: number }):
+export function createTournament(o: {
+  title?: string; prizeMultiplier?: number;
+  /** 등록이 열리는 시각(unix초). 안 주면 지금 */
+  regOpenAt?: number;
+  /** 시작 시각(unix초). 안 주면 regMin 분 뒤 */
+  startAt?: number;
+  regMin?: number;
+}):
   { ok: true; id: number }
-  | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number } {
+  | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number }
+  | { ok: false; error: 'bad_time' } {
   return tx(() => {
     const running = one<{ id: number }>(
       `SELECT id FROM holdem_tournaments
@@ -168,16 +176,27 @@ export function createTournament(o: { title?: string; prizeMultiplier?: number; 
       return { ok: false as const, error: 'too_close' as const, startsAt: soon.scheduled_start_at };
     }
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = nowSec;
     const cfg = getConfig();
-    const regMin = Math.max(0, Math.floor(o.regMin ?? 10));
+    /* 시각을 직접 받는다. 안 주면 "지금 등록을 열고 regMin 분 뒤 시작"으로 둔다 —
+       테스트 대회처럼 지금 당장 열려는 경우가 그렇다. */
+    const regOpenAt = o.regOpenAt != null ? Math.floor(o.regOpenAt) : now;
+    const startAt = o.startAt != null ? Math.floor(o.startAt)
+      : regOpenAt + Math.max(0, Math.floor(o.regMin ?? 10)) * 60;
+    /* 등록이 시작보다 늦으면 등록 창이 아예 열리지 않는다 — 아무도 신청할 수 없는 대회다.
+       화면에서도 막지만 마지막 문은 여기다. */
+    if (!Number.isFinite(regOpenAt) || !Number.isFinite(startAt) || regOpenAt > startAt) {
+      return { ok: false as const, error: 'bad_time' as const };
+    }
     const mult = Math.max(0, Math.floor(o.prizeMultiplier ?? cfg.weekdayMultiplier));
+    /* date_str 은 이제 "하루 하나"의 열쇠가 아니다(유니크 인덱스를 걷어냈다).
+       시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
             starting_stack, level_sec, late_reg_sec, prize_fixed)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      T.kstDateStr(now * 1000), (o.title ?? '').trim() || '임시 프리롤',
-      now - 1, now + regMin * 60, now + regMin * 60 + cfg.graceMin * 60, mult,
+      T.kstDateStr(startAt * 1000), (o.title ?? '').trim() || '홀덤 프리롤',
+      regOpenAt, startAt, startAt + cfg.graceMin * 60, mult,
       cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, cfg.prizeFixed);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
@@ -197,6 +216,30 @@ export function createTournament(o: { title?: string; prizeMultiplier?: number; 
 export function openTestTournament() {
   // 만드는 조건은 하나뿐이므로 결과를 그대로 넘긴다 — 여기서 뭉개면 거절 이유를 못 알려 준다
   return createTournament({ title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0 });
+}
+
+/**
+ * 진행 중인 대회를 중단시킨다.
+ *
+ * 예전에는 이런 판이 저절로 정리됐다 — 자정이 지나면 "오늘 판"이 바뀌면서 밀려났고,
+ * 재시작하면 부팅 취소가 걷어 갔다. 그 두 장치가 다 없어졌으므로(날짜로 고르지 않고,
+ * 재시작도 늘 일어나지는 않는다) 막힌 판을 사람이 풀 수 있어야 한다.
+ *
+ * 지우는 것이 아니라 취소로 표시한다. 이미 돌아간 핸드와 등록 기록은 남는다 —
+ * 무슨 일이 있었는지 지우면 다시 볼 방법이 없다. 상금은 대회가 끝날 때만 나가므로
+ * 중단된 판은 원장을 건드리지 않았고, 따라서 경제도 어긋나지 않는다.
+ */
+export function cancelRunningTournament():
+  { ok: true; id: number } | { ok: false; error: 'none_running' } {
+  return tx(() => {
+    const t = one<{ id: number }>(
+      `SELECT id FROM holdem_tournaments
+        WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
+        ORDER BY id DESC LIMIT 1`);
+    if (!t) return { ok: false as const, error: 'none_running' as const };
+    run(`UPDATE holdem_tournaments SET cancelled_at = unixepoch() WHERE id = ?`, t.id);
+    return { ok: true as const, id: t.id };
+  });
 }
 
 /* ── 사용자 · 포인트 ──────────────────────────────────────────────── */

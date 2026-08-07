@@ -16,10 +16,14 @@ import { layout, esc, jsonForScript } from './views';
 import { readJson, sendJson } from './http';
 import {
   listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
-  searchUsers, grantPoints,
+  cancelRunningTournament, searchUsers, grantPoints,
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
+import {
+  getRecurrence, saveRecurrence, nextOccurrence, WEEKDAY_LABEL, MODE_LABEL,
+  type RecurMode,
+} from '../db/recurrence';
 import {
   listNoticesAdmin, createNotice, updateNotice, toggleNotice, deleteNotice,
   parseBody, unparseBody, keepTables, NOTICE_KINDS,
@@ -43,6 +47,11 @@ const hhmm = (m: number) =>
   String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 const kst = (s: number | null) => s == null ? '—'
   : new Date((s + 9 * 3600) * 1000).toISOString().replace('T', ' ').slice(5, 16);
+/* datetime-local 입력이 읽고 쓰는 형식(YYYY-MM-DDTHH:MM). 브라우저는 이 값을 그 사람의
+   시간대로 해석하는데, 운영자도 서버 일정도 KST 라 여기서 KST 로 찍어 준다.
+   (다른 시간대에서 열면 그 시간대로 읽히므로, 화면에 KST 라고 적어 둔다.) */
+const localInput = (s: number) =>
+  new Date((s + 9 * 3600) * 1000).toISOString().slice(0, 16);
 
 function tournamentState(t: { started_at: number | null; finished_at: number | null; cancelled_at: number | null }): string {
   if (t.cancelled_at != null) return '취소';
@@ -88,6 +97,23 @@ export function adminPage(user: WebUser): string {
   const nextStart = pending.length
     ? Math.min(...pending.map(t => t.scheduled_start_at)) : null;
   const canMake = !live && (nextStart == null || nextStart - nowSec >= 2 * 3600);
+  /* 폼의 기본값은 설정에 적힌 시각의 "다음 차례"다 — 21:00/22:00 이 지났으면 내일 것을 준다.
+     매번 손으로 날짜를 고르게 하면 늘 하던 일정을 여는 데도 다섯 번을 눌러야 한다. */
+  const nextAt = (minOfDay: number) => {
+    const kstNow = nowSec + 9 * 3600;
+    const dayStart = Math.floor(kstNow / 86400) * 86400;          // KST 자정
+    const at = dayStart + minOfDay * 60 - 9 * 3600;               // 다시 UTC 기준 unix초
+    return at > nowSec ? at : at + 86400;
+  };
+  const defaultStartAt = nextAt(cfg.startMin);
+  // 등록은 시작보다 앞서야 한다 — 설정의 간격을 그대로 유지해 하루를 넘겨도 어긋나지 않는다
+  const defaultRegAt = defaultStartAt - (cfg.startMin - cfg.regOpenMin) * 60;
+  /* 반복 개최 — 규칙과 그 규칙이 가리키는 다음 차례. 켜져 있을 때만 계산한다. */
+  const rec = getRecurrence();
+  const nextRecur = rec.enabled ? nextOccurrence(rec, nowSec) : null;
+  const recText = rec.mode === 'weekly' ? `매주 ${WEEKDAY_LABEL[rec.weekday]}요일`
+    : rec.mode === 'monthly' ? `매월 ${rec.day}일`
+      : MODE_LABEL[rec.mode];
   const notices = listNoticesAdmin();
   const noticeRows = notices.map(n => `<tr>
       <td class="n">${esc(n.date)}</td>
@@ -145,30 +171,31 @@ export function adminPage(user: WebUser): string {
         원장에 근거 없는 포인트가 남습니다. 회수는 역방향 원장으로 기록되고,
         <b>이미 다 쓴 사람은 잔액이 음수가 됩니다</b>(지원금으로 갚아 나갈 수 있습니다).
         되돌릴 수 없으니 테스트는 상금 배수 0으로 여세요.</p>
-      <p class="ad-note"><b>오늘 날짜 대회는 지워도 곧바로 다시 만들어집니다.</b> 이 서버는 타이머 없이
-        요청이 들어올 때마다 "오늘 대회가 있나"를 보고 없으면 그 자리에서 만들기 때문입니다(1초 안).
-        그래서 오늘 것을 지우는 일은 <b>없애기가 아니라 지금 설정으로 다시 만들기</b>입니다 —
-        대회 설정을 바꾼 뒤 오늘부터 적용하고 싶을 때 쓰세요.
-        <b>등록한 사람이 있으면 그 등록도 함께 사라지니 등록 시작 이후에는 쓰지 마세요.</b>
-        지난 날짜의 대회는 다시 만들어지지 않습니다(테스트 흔적 지우기는 그쪽입니다).</p>
+      <p class="ad-note">${rec.enabled
+        ? `<b>반복 개최가 켜져 있습니다</b> — ${recText}. 그 밖의 판은 아래에서 직접 여세요.`
+        : `<b>대회는 저절로 열리지 않습니다.</b> 아래에서 직접 여셔야 합니다 —
+           열지 않으면 그날은 대회가 없습니다. 정기적으로 열려면 [개최 방식]에서 반복을 켜세요.`}</p>
       <div class="ad-sub2">새 대회 <span>${live
-        ? '지금 돌고 있는 판이 있어 만들 수 없습니다 — 끝난 뒤에 열립니다'
+        ? '지금 돌고 있는 대회가 있어 만들 수 없습니다 — 끝난 뒤에 열립니다'
         : nextStart == null
-          ? '대기 중인 대회가 없습니다'
+          ? '예정된 대회가 없습니다 — 지금 열 수 있습니다'
           : nextStart - nowSec >= 2 * 3600
-            ? `다음 대회는 ${hhmm(Math.floor(((nextStart + 9 * 3600) % 86400) / 60))} 시작 — 두 시간 넘게 남아 만들 수 있습니다.
-               임시 판이 끝나면 정규 판으로 저절로 돌아오니 지우지 마세요`
-            : `다음 대회가 ${hhmm(Math.floor(((nextStart + 9 * 3600) % 86400) / 60))}에 시작해 만들 수 없습니다 —
+            ? `다음 대회 ${kst(nextStart)} 시작 — 두 시간 넘게 남아 하나 더 열 수 있습니다`
+            : `다음 대회가 ${kst(nextStart)}에 시작해 만들 수 없습니다 —
                한 판이 두 시간까지 갈 수 있어서, 시작까지 두 시간 이상 남았을 때만 열립니다`}</span></div>
       <div class="ad-grid">
-        <label>제목<input type="text" id="ncTitle" placeholder="임시 프리롤" ${canMake ? '' : 'disabled'}><i></i></label>
-        <label>등록 시간<span class="ad-inx"><input type="number" id="ncReg" min="0" value="10" ${canMake ? '' : 'disabled'}><b>분</b></span><i>이 시간 뒤에 시작합니다</i></label>
+        <label>제목<input type="text" id="ncTitle" placeholder="홀덤 프리롤" ${canMake ? '' : 'disabled'}><i>비우면 "홀덤 프리롤"</i></label>
+        <label>등록 시작<input type="datetime-local" id="ncRegAt" value="${localInput(defaultRegAt)}" ${canMake ? '' : 'disabled'}><i>KST · 이때부터 신청을 받습니다</i></label>
+        <label>대회 시작<input type="datetime-local" id="ncStartAt" value="${localInput(defaultStartAt)}" ${canMake ? '' : 'disabled'}><i>KST · 3명 이상이면 이때 시작</i></label>
         <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${canMake ? '' : 'disabled'}><b>×명</b></span><i>0이면 상금 없음(테스트용)</i></label>
       </div>
       <div class="ad-row">
-        <button type="button" id="ncMake" ${canMake ? '' : 'disabled'}>새 대회 만들기</button>
-        <button type="button" id="adTest" ${canMake ? '' : 'disabled'}>테스트 대회 열기</button>
-        <span class="ad-note">테스트 대회는 상금 배수 0이라 포인트가 한 푼도 안 나갑니다 — 끝나면 이 표에서 지울 수 있습니다.</span>
+        <button type="button" id="ncMake" class="primary" ${canMake ? '' : 'disabled'}>대회 열기</button>
+        <button type="button" id="adTest" ${canMake ? '' : 'disabled'}>테스트 대회 (지금 · 상금 없음)</button>
+        ${live
+          ? `<button type="button" id="adAbort" class="danger">진행 중 대회 중단</button>`
+          : ''}
+        <span class="ad-note">칩·블라인드·대기·레이트 레지는 아래 [대회 설정]의 값을 씁니다.</span>
       </div>
       <div class="ad-scroll">
         <table class="ad-tbl">
@@ -176,6 +203,37 @@ export function adminPage(user: WebUser): string {
             <th class="r">배수</th><th class="r">지급</th><th></th></tr></thead>
           <tbody id="adTBody">${rows}</tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="ad-card">
+      <h2>개최 방식</h2>
+      <p class="ad-note">반복을 켜면 시작 <b>12시간 전</b>에 다음 판이 자동으로 만들어집니다.
+        시각·칩·상금은 아래 [대회 설정]의 값을 그대로 씁니다 — 여기서는 <b>어느 날 여는지</b>만 정합니다.
+        이미 돌고 있는 판이 있으면 만들지 않고 끝난 뒤에 따라잡습니다.
+        <b>지운 판은 되살아나지 않습니다</b> — 만든 차례를 따로 적어 두기 때문입니다.</p>
+      <div class="ad-grid">
+        <label>자동 개최<select id="rcEnabled">
+          <option value="0" ${rec.enabled ? '' : 'selected'}>끔 (수동으로만)</option>
+          <option value="1" ${rec.enabled ? 'selected' : ''}>켬</option>
+        </select><i>마스터 스위치 — 끄면 아래 설정과 무관하게 아무것도 안 만듭니다</i></label>
+        <label>반복 주기<select id="rcMode">
+          <option value="manual" ${rec.mode === 'manual' ? 'selected' : ''}>수동 개최</option>
+          <option value="daily" ${rec.mode === 'daily' ? 'selected' : ''}>매일</option>
+          <option value="weekly" ${rec.mode === 'weekly' ? 'selected' : ''}>매주</option>
+          <option value="monthly" ${rec.mode === 'monthly' ? 'selected' : ''}>매월</option>
+        </select><i>매주·매월이면 아래 칸이 쓰입니다</i></label>
+        <label>요일 (매주)<select id="rcWeekday">
+          ${WEEKDAY_LABEL.map((w, i) =>
+            `<option value="${i}" ${rec.weekday === i ? 'selected' : ''}>${w}요일</option>`).join('')}
+        </select><i>매주일 때만</i></label>
+        <label>날짜 (매월)<span class="ad-inx"><input type="number" id="rcDay" min="1" max="31" value="${rec.day}"><b>일</b></span><i>그 달에 없는 날이면 건너뜁니다</i></label>
+      </div>
+      <div class="ad-row">
+        <button type="button" id="rcSave" class="primary">개최 방식 저장</button>
+        <span class="ad-note">${rec.enabled && nextRecur
+          ? `다음 자동 개최 — ${kst(nextRecur.startAt)} 시작 (등록 ${kst(nextRecur.regOpenAt)})`
+          : '지금은 자동으로 열리지 않습니다'}</span>
       </div>
     </section>
 
@@ -342,15 +400,32 @@ export function adminPage(user: WebUser): string {
 
     var ncMake = document.getElementById('ncMake');
     if (ncMake) ncMake.addEventListener('click', function(){
+      /* datetime-local 은 'YYYY-MM-DDTHH:MM' 을 준다. 브라우저의 시간대로 해석되므로
+         Date 에 그대로 넘긴다 — 운영자도 KST 라 화면에 적힌 시각 그대로 들어간다. */
+      function at(id){
+        var v = String(document.getElementById(id).value || '');
+        var ms = v ? new Date(v).getTime() : NaN;
+        return isFinite(ms) ? Math.floor(ms / 1000) : NaN;
+      }
       var body = {
         title: document.getElementById('ncTitle').value,
-        regMin: Math.floor(Number(document.getElementById('ncReg').value)),
+        regOpenAt: at('ncRegAt'),
+        startAt: at('ncStartAt'),
         prizeMultiplier: Math.floor(Number(document.getElementById('ncMult').value)),
       };
-      if (!isFinite(body.regMin) || body.regMin < 0) { alert('등록 시간을 확인해 주세요.'); return; }
+      if (!isFinite(body.regOpenAt) || !isFinite(body.startAt)) { alert('시각을 넣어 주세요.'); return; }
+      if (body.regOpenAt > body.startAt) {
+        alert('등록 시작이 대회 시작보다 늦습니다 — 아무도 신청할 수 없는 대회가 됩니다.'); return;
+      }
       if (!isFinite(body.prizeMultiplier) || body.prizeMultiplier < 0) { alert('상금 배수를 확인해 주세요.'); return; }
-      confirmThen('새 대회를 만들까요?',
-        (body.title || '임시 프리롤') + ' — 지금 등록을 열고 ' + body.regMin + '분 뒤에 시작합니다.'
+      var fmt = function(sec){
+        var d = new Date(sec * 1000);
+        return (d.getMonth() + 1) + '/' + d.getDate() + ' '
+          + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      };
+      confirmThen('대회를 열까요?',
+        (body.title || '홀덤 프리롤') + ' — 등록 ' + fmt(body.regOpenAt)
+        + ' · 시작 ' + fmt(body.startAt) + '.'
         + (body.prizeMultiplier === 0 ? ' 상금 배수 0이라 포인트는 나가지 않습니다.' : ''),
         function(){ post('/api/admin/tournament/create', body)
           .then(function(r){ if (shout(r)) location.reload(); }); });
@@ -358,8 +433,16 @@ export function adminPage(user: WebUser): string {
 
     document.getElementById('adTest').addEventListener('click', function(){
       confirmThen('테스트 대회를 열까요?',
-        '오늘 자리의 대회가 상금 없는 테스트 대회로 바뀝니다. 진행 중인 대회가 있으면 거절됩니다.',
+        '지금 등록을 열고 바로 시작하는 상금 없는 대회를 만듭니다. 끝나면 이 표에서 지울 수 있습니다.',
         function(){ post('/api/admin/tournament/test', {}).then(function(r){ if (shout(r)) location.reload(); }); });
+    });
+    /* 막힌 판을 푸는 유일한 길이다 — 날짜로 밀려나던 것도, 부팅 취소도 이제 없다.
+       버튼은 실제로 돌고 있을 때만 그려지므로 없을 수 있다. */
+    var abort = document.getElementById('adAbort');
+    if (abort) abort.addEventListener('click', function(){
+      confirmThen('진행 중인 대회를 중단할까요?',
+        '앉아 있는 사람들의 판이 그 자리에서 끝나고 상금은 나가지 않습니다. 기록은 남습니다. 되돌릴 수 없습니다.',
+        function(){ post('/api/admin/tournament/abort', {}).then(function(r){ if (shout(r)) location.reload(); }); });
     });
 
     document.getElementById('adTBody').addEventListener('click', function(ev){
@@ -493,11 +576,15 @@ export function adminPage(user: WebUser): string {
         lateRegMin: '레이트 레지', startingStack: '시작 칩', levelMin: '블라인드 주기',
         weekdayMultiplier: '평일 배수', weekendMultiplier: '주말 배수', prizeFixed: '고정 상금 풀' };
       for (var k in c) if (!isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
-      if (c.regOpenHour < 0 || c.regOpenHour > 23 || c.startHour < 0 || c.startHour > 23) {
-        bad.push('시각은 0~23 사이여야 합니다');
+      /* 분 단위로 바뀐 뒤에도 시(regOpenHour/startHour)를 보고 있었다 — 없는 값이라
+         비교가 전부 false 가 되어 화면 검증이 조용히 아무것도 안 했다. 서버가 막아 주긴
+         하지만, 저장을 눌러 봐야 알게 되는 것이 이 검사를 둔 이유를 지운다. */
+      if (isFinite(c.regOpenMin) && isFinite(c.startMin) && c.regOpenMin >= c.startMin) {
+        bad.push('등록 시작은 대회 시작보다 앞서야 합니다');
       }
-      if (c.regOpenHour >= c.startHour) bad.push('등록 시작은 대회 시작보다 앞서야 합니다');
-      if (c.startHour * 60 + c.graceMin > 24 * 60) bad.push('대기 마감이 자정을 넘습니다');
+      if (isFinite(c.startMin) && c.startMin + c.graceMin > 24 * 60) {
+        bad.push('대기 마감이 자정을 넘습니다');
+      }
       if (c.graceMin <= 0 || c.lateRegMin <= 0 || c.startingStack <= 0 || c.levelMin <= 0) {
         bad.push('대기·레이트 레지·칩·블라인드 주기는 1 이상이어야 합니다');
       }
@@ -513,6 +600,28 @@ export function adminPage(user: WebUser): string {
       confirmThen('대회 설정을 저장할까요?',
         '다음에 만들어질 대회부터 적용됩니다. 진행 중인 대회는 바뀌지 않습니다.',
         function(){ post('/api/admin/config', c).then(function(r){ if (shout(r)) location.reload(); }); });
+    });
+    /* 개최 방식. 켰는데 주기가 '수동'이면 아무 일도 안 일어난다 — 서버도 막지만
+       그 조합을 저장해 두고 기다리게 두면 운영자는 켰다고 믿는다. 여기서 먼저 말한다. */
+    document.getElementById('rcSave').addEventListener('click', function(){
+      var rcSel = document.getElementById('rcWeekday');
+      var body = {
+        enabled: document.getElementById('rcEnabled').value === '1',
+        mode: document.getElementById('rcMode').value,
+        weekday: Number(document.getElementById('rcWeekday').value),
+        day: Math.floor(Number(document.getElementById('rcDay').value)),
+      };
+      if (body.enabled && body.mode === 'manual') {
+        alert('자동 개최를 켜려면 반복 주기를 매일·매주·매월 중에서 골라 주세요.');
+        return;
+      }
+      var what = !body.enabled ? '자동 개최를 끕니다 — 앞으로는 직접 여셔야 합니다.'
+        : body.mode === 'weekly' ? '매주 ' + rcSel.options[rcSel.selectedIndex].text + '에 자동으로 열립니다.'
+        : body.mode === 'monthly' ? '매월 ' + body.day + '일에 자동으로 열립니다.'
+        : '매일 자동으로 열립니다.';
+      confirmThen('개최 방식을 저장할까요?',
+        what + ' 시각과 칩·상금은 [대회 설정]의 값을 씁니다. 이미 만들어진 대회는 바뀌지 않습니다.',
+        function(){ post('/api/admin/recurrence', body).then(function(r){ if (shout(r)) location.reload(); }); });
     });
     document.getElementById('cfReset').addEventListener('click', function(){
       confirmThen('기본값으로 되돌릴까요?',
@@ -681,6 +790,22 @@ export async function handleAdminConfig(req: IncomingMessage, res: ServerRespons
   return sendJson(res, 200, { ok: true });
 }
 
+export async function handleAdminRecurrence(
+  req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  /* 검증은 saveRecurrence 안에서 한다 — 화면에도 같은 검사가 있지만 그건 편의고
+     마지막 문은 질의 계층이다. */
+  const r = saveRecurrence({
+    enabled: b?.enabled === true,
+    mode: String(b?.mode ?? 'manual') as RecurMode,
+    weekday: Math.floor(Number(b?.weekday)),
+    day: Math.floor(Number(b?.day)),
+  });
+  if (!r.ok) return sendJson(res, 400, { error: r.errors.join(' · ') });
+  return sendJson(res, 200, { ok: true });
+}
+
 export async function handleAdminConfigReset(
   _req: IncomingMessage, res: ServerResponse
 ): Promise<void> {
@@ -752,7 +877,8 @@ export async function handleAdminTournamentCreate(
   const b = await readJson(req) as Record<string, unknown> | null;
   const r = createTournament({
     title: String(b?.title ?? ''),
-    regMin: Math.floor(Number(b?.regMin ?? 10)),
+    regOpenAt: b?.regOpenAt != null ? Math.floor(Number(b.regOpenAt)) : undefined,
+    startAt: b?.startAt != null ? Math.floor(Number(b.startAt)) : undefined,
     prizeMultiplier: Math.floor(Number(b?.prizeMultiplier ?? 0)),
   });
   if (!r.ok) return sendJson(res, 400, { error: createErrorText(r) });
@@ -761,11 +887,22 @@ export async function handleAdminTournamentCreate(
 
 /* 왜 안 되는지를 그대로 적는다. "만들 수 없습니다"만 나오면 운영자는 무엇을 기다려야
    하는지 알 수 없다 — 곧 시작할 판 때문이라면 그 시각을 알려 주는 것이 답이다. */
-function createErrorText(r: { error: 'live_exists' } | { error: 'too_close'; startsAt: number }): string {
+function createErrorText(
+  r: { error: 'live_exists' } | { error: 'too_close'; startsAt: number } | { error: 'bad_time' }
+): string {
   if (r.error === 'live_exists') return '지금 돌고 있는 대회가 있습니다 — 끝난 뒤에 만들 수 있습니다';
+  if (r.error === 'bad_time') return '등록 시작이 대회 시작보다 늦습니다 — 아무도 신청할 수 없는 대회가 됩니다';
   const at = new Date((r.startsAt + 9 * 3600) * 1000).toISOString().slice(11, 16);
   return `곧 시작할 대회가 있습니다 (${at} 시작) — 한 판이 두 시간까지 갈 수 있어서,`
     + ' 다음 대회 시작까지 두 시간 이상 남았을 때만 새로 만들 수 있습니다';
+}
+
+export async function handleAdminTournamentAbort(
+  _req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const r = cancelRunningTournament();
+  if (!r.ok) return sendJson(res, 400, { error: '진행 중인 대회가 없습니다' });
+  return sendJson(res, 200, { ok: true, id: r.id });
 }
 
 export async function handleAdminTournamentRevoke(

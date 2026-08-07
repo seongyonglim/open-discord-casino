@@ -25,6 +25,7 @@ const Q = require('../src/db/queries') as typeof import('../src/db/queries');
 const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
 const T = require('../src/services/tournament') as typeof import('../src/services/tournament');
 const G = require('../src/services/holdem') as typeof import('../src/services/holdem');
+const A = require('../src/db/admin') as typeof import('../src/db/admin');
 
 const db = getDb();
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -66,14 +67,26 @@ const N = 4;
 for (let i = 0; i < N; i++) mkUser('p' + i);
 
 let st = HD.advanceHoldem();
-ck('오늘 토너먼트가 생성됨', st.tournament != null && st.tournament.date_str.length === 10,
-  st.tournament?.date_str);
+ck('열어 두지 않았으면 대회가 없다', st.tournament == null && st.status === 'NONE', st.status);
 
 /* 상태 검사는 시각을 먼저 못 박고 한다.
    이 감사를 23:00(KST) 이후에 돌리면 갓 만든 토너먼트가 곧바로 "인원 미달 취소"로
    판정되는 게 맞다 — 제품이 옳고 단정이 틀린 경우였다. 그래서 검사할 상태마다
    그 상태가 되는 시각을 직접 만들어 준다. 하루 중 언제 돌려도 결과가 같아야 한다. */
+/**
+ * 대회의 시각 창을 원하는 상태로 맞춘다.
+ *
+ * 대회가 하나도 없으면 먼저 만든다. 예전에는 advanceHoldem 이 "오늘 판"을 저절로
+ * 만들어 줬지만, 자동 생성을 없앤 뒤로는 운영자(또는 이 감사)가 열어야 생긴다.
+ * 그 변화 때문에 이 파일의 검사 대부분이 대회 없이 돌다가 죽었다 — 여기 한 줄이 그걸 받는다.
+ */
 function setWindow(regOpen: number, start: number, grace: number): void {
+  const n = (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n;
+  if (n === 0) {
+    db.prepare(`INSERT INTO holdem_tournaments
+        (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier)
+      VALUES ('1999-01-01', '감사용 프리롤', 0, 0, 0, 1000)`).run();
+  }
   db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
     started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
     .run(nowSec() + regOpen, nowSec() + start, nowSec() + grace);
@@ -477,47 +490,53 @@ console.log('\n[6] 블라인드는 진행 중인 핸드 도중에 오르지 않�
    "인원 미달 취소"와는 다른 상황이다. 3명이 안 차서 시작조차 못 한 판은 23:00에
    CANCELLED로 끝난다([11]에서 검증). 여기서 보는 건 이미 시작해 카드까지 돌린 판이며,
    그 판은 다음 판 등록이 열리는 순간에만 버려진다. */
-console.log('\n[6b] 자정을 넘겨도 진행 중인 판이 유지된다');
+/* 예전에는 이 자리에 "자정을 넘겨도 진행 중인 판이 유지된다"가 있었다. 대회를 날짜로
+   찾던 시절의 방어책이다 — 자정이 지나면 "오늘 판"이 새로 생겨 진행 중인 테이블이 화면에서
+   사라졌기 때문에, 그걸 막는 특별 규칙을 따로 둬야 했다.
+
+   자동 생성을 없애면서 그 규칙이 통째로 사라졌다. 이제 살아 있는 판을 곧바로 고르므로
+   날짜가 판단에 들어가지 않고, 그래서 자정에 어긋날 자리가 없다.
+   여기서는 그 새 규칙을 본다. */
+console.log('\n[6b] 대회는 저절로 생기지 않고, 날짜와 무관하게 살아 있는 판이 골라진다');
 {
   for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
     'holdem_tables', 'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${tb}`).run();
-  HD.advanceHoldem();
-  setWindow(-60, 600, 1800);
+
+  ck('대회가 없으면 없는 상태가 나온다', HD.advanceHoldem().status === 'NONE');
+  ck('요청해도 저절로 만들어지지 않는다', (() => {
+    HD.advanceHoldem(); HD.advanceHoldem();
+    return (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 0;
+  })());
+  ck('대회가 없으면 등록도 거절된다', (() => {
+    mkUser('none1');
+    const r = HD.registerHoldem('none1', 'none1');
+    return !r.ok && r.error === 'closed';
+  })());
+
+  // 운영자가 열어야 생긴다
+  const made = A.createTournament({ title: '수동 판', regOpenAt: nowSec() - 60, startAt: nowSec() - 1 });
+  ck('운영자가 열면 생긴다', made.ok, JSON.stringify(made));
   for (let i = 0; i < 3; i++) { mkUser('m' + i); HD.registerHoldem('m' + i, 'm' + i); }
-  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
   const live = HD.advanceHoldem();
-  ck('판이 시작됐다', live.status === 'RUNNING', live.status);
-  const runningId = live.tournament.id;
+  ck('3명이 차면 시작한다', live.status === 'RUNNING', live.status);
+  const runningId = live.tournament!.id;
 
-  // 날짜만 옛날로 돌린다 = 자정을 넘긴 상황
+  /* 날짜를 옛날로 돌린다 = 자정을 넘긴 상황. 예전에는 여기서 판이 바뀌었다. */
   db.prepare(`UPDATE holdem_tournaments SET date_str = '2000-01-01' WHERE id = ?`).run(runningId);
-  /* 오늘 판 행이 생기되, 등록은 아직 열리지 않은 상태로 둔다.
-     이 setup 호출 자체가 "오늘 등록이 열렸다"고 판단해 어제 판을 취소해 버릴 수 있다 —
-     실제 시각이 이미 21시를 넘겼으면 오늘 판의 reg_open_at이 과거이기 때문이다.
-     그래서 행을 만든 뒤 창을 미래로 밀고, setup이 남긴 취소도 되돌린다.
-     이걸 안 하면 검사가 실행 시각에 따라 통과·실패가 갈린다(실제로 21시 이후 실패했다). */
-  const after = HD.advanceHoldem();
-  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
-    .run(nowSec() + 3600, runningId);
-  db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL WHERE id = ?`).run(runningId);
   const kept = HD.advanceHoldem();
-  ck('날짜가 바뀌어도 같은 판을 계속 본다',
-    kept.tournament.id === runningId && kept.status === 'RUNNING',
-    `id ${kept.tournament.id} (기대 ${runningId}) · ${kept.status}`);
-  void after;
+  ck('날짜가 바뀌어도 같은 판을 계속 본다 (날짜가 판단에서 빠졌다)',
+    kept.tournament!.id === runningId && kept.status === 'RUNNING',
+    `id ${kept.tournament!.id} (기대 ${runningId})`);
+  ck('자정을 넘겨도 새 판이 생기지 않는다',
+    (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 1);
 
-  // 오늘 등록이 열리는 순간 어제 판은 버려진다
-  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
-    .run(nowSec() - 60, runningId);
-  const fresh = HD.advanceHoldem();
-  ck('오늘 등록이 열리면 어제 판은 버려지고 오늘 판으로 넘어간다',
-    fresh.tournament.id !== runningId, `id ${fresh.tournament.id}`);
-  ck('버려진 판에 취소가 기록됐다',
-    (db.prepare(`SELECT cancelled_at FROM holdem_tournaments WHERE id = ?`)
-      .get(runningId) as { cancelled_at: number | null }).cancelled_at != null);
-  ck('오늘 판은 등록을 받을 수 있는 상태',
-    fresh.status === 'REGISTRATION_OPEN' || fresh.status === 'WAITING_MIN_PLAYERS'
-    || fresh.status === 'CANCELLED', fresh.status);
+  /* 끝난 판은 유예 동안만 "지금 대회"다. 안 묶으면 며칠 전 결과가 로비에 계속 남는다. */
+  db.prepare(`UPDATE holdem_tournaments SET finished_at = ? WHERE id = ?`).run(nowSec(), runningId);
+  ck('막 끝난 판은 결과를 보여 주려고 유지된다',
+    HD.advanceHoldem().tournament?.id === runningId);
+  db.prepare(`UPDATE holdem_tournaments SET finished_at = ? WHERE id = ?`)
+    .run(nowSec() - T.FINISH_LINGER_SEC - 10, runningId);
+  ck('유예가 지나면 대회가 없는 상태로 돌아간다', HD.advanceHoldem().status === 'NONE');
 }
 
 /* 실제로 이렇게 터졌다: 2026-08-06 판이 23:49 에 시작해 다음 날 01:13 에 끝났다.
@@ -534,42 +553,42 @@ console.log('\n[6c] 자정을 넘겨 끝난 판도 앉아 있던 사람에게는
   db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
   const live = HD.advanceHoldem();
   ck('판이 시작됐다', live.status === 'RUNNING', live.status);
-  const oldId = live.tournament.id;
+  const oldId = live.tournament!.id;
 
   // 자정을 넘겨 방금 끝난 상태를 만든다 (날짜는 어제 · 종료는 조금 전)
   db.prepare(`UPDATE holdem_tournaments SET date_str = '2000-01-01', finished_at = ? WHERE id = ?`)
     .run(nowSec() - 5, oldId);
-  // 오늘 판 행을 만들되 등록은 아직 안 열린 상태로 (실행 시각에 따라 갈리지 않게)
-  HD.advanceHoldem();
-  db.prepare(`UPDATE holdem_tournaments SET reg_open_at = ? WHERE id <> ?`)
-    .run(nowSec() + 3600, oldId);
-  db.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL WHERE id = ?`).run(oldId);
+  // 운영자가 다음 판을 열어 둔다 — 등록은 아직 안 열린 상태로 (실행 시각에 갈리지 않게)
+  const next = A.createTournament({
+    title: '다음 판', regOpenAt: nowSec() + 3600, startAt: nowSec() + 7200,
+  });
+  ck('끝난 판이 있어도 다음 판을 열 수 있다', next.ok, 'error' in next ? next.error : '');
 
-  // 시계에서 유도하면(로비) 오늘 판으로 넘어간다 — 이 동작은 그대로여야 한다
+  // 앉은 자리가 없는 사람은 살아 있는 판(=다음 판)을 본다
   const byClock = HD.advanceHoldem();
-  ck('시계로 유도하면 오늘 판을 본다 (로비 동작은 그대로)',
-    byClock.tournament.id !== oldId, `id ${byClock.tournament.id} (끝난 판 ${oldId})`);
+  ck('앉은 자리가 없으면 살아 있는 판을 본다',
+    byClock.tournament!.id !== oldId, `id ${byClock.tournament!.id} (끝난 판 ${oldId})`);
 
   // 앉아 있던 사람에게는 끝난 판이 유지된다 — 우승 화면이 뜰 자리를 준다
   const mine = HD.advanceHoldem('f0');
   ck('앉아 있던 사람은 끝난 판을 계속 본다',
-    mine.tournament.id === oldId, `id ${mine.tournament.id} (기대 ${oldId})`);
+    mine.tournament!.id === oldId, `id ${mine.tournament!.id} (기대 ${oldId})`);
   ck('그 판의 상태가 FINISHED 다 (유예 판정의 전제)',
     mine.status === 'FINISHED', mine.status);
   ck('끝난 판에 테이블이 남아 있다 (쇼다운을 그릴 근거)',
-    HD.getTable(mine.tournament.id) != null);
+    HD.getTable(mine.tournament!.id) != null);
 
   // 앉지 않았던 사람은 영향이 없다
   mkUser('outsider');
-  ck('앉지 않았던 사람은 오늘 판을 본다',
-    HD.advanceHoldem('outsider').tournament.id !== oldId);
+  ck('앉지 않았던 사람은 살아 있는 판을 본다',
+    HD.advanceHoldem('outsider').tournament!.id !== oldId);
 
   // 유예가 지나면 창이 닫힌다 — 다음 날 어제의 시체를 보지 않는다
   db.prepare(`UPDATE holdem_tournaments SET finished_at = ? WHERE id = ?`)
     .run(nowSec() - T.FINISH_LINGER_SEC - 5, oldId);
   ck('유예가 지나면 끝난 판을 더 보여주지 않는다',
-    HD.advanceHoldem('f0').tournament.id !== oldId,
-    `id ${HD.advanceHoldem('f0').tournament.id}`);
+    HD.advanceHoldem('f0').tournament!.id !== oldId,
+    `id ${HD.advanceHoldem('f0').tournament!.id}`);
 }
 
 console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');
@@ -583,7 +602,12 @@ console.log('\n[7] 부팅 시 진행 중 토너먼트 취소');
   db.prepare(`UPDATE holdem_tournaments SET started_at = ?`).run(nowSec());
   const n = HD.cancelRunningHoldemOnBoot();
   ck('진행 중 토너먼트가 취소됐다', n === 1, String(n));
-  ck('취소 상태가 유지된다', HD.advanceHoldem().status === 'CANCELLED');
+  // 취소된 판은 로비에서 사라진다 — 예전에는 CANCELLED 를 계속 띄웠지만,
+  // 대회가 저절로 생기지 않게 된 뒤로는 "예정 없음"이 맞는 표시다
+  ck('취소된 판은 더 이상 보이지 않는다', HD.advanceHoldem().status === 'NONE');
+  ck('취소 시각이 행에 남는다',
+    (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments WHERE cancelled_at IS NOT NULL`)
+      .get() as { n: number }).n === 1);
 }
 
 console.log('\n[8] 무작위 토너먼트 반복 (칩 보존 · 순위 · 상금)');
@@ -688,6 +712,42 @@ console.log('\n[8] 무작위 토너먼트 반복 (칩 보존 · 순위 · 상금
   ck('잔액 = 원장 누적합', ledgerBad === 0, `${ledgerBad}건`);
   ck('사이드 팟이 실제로 발생했다 (검증이 헛돌지 않았다)', sidePotHands > 0, String(sidePotHands));
   ck('늦은 등록이 실제로 수락됐다', lateRegs > 0, String(lateRegs));
+
+  /* 방금 끝난 진짜 판으로 "지난 대회" 요약을 확인한다 — 로비가 대회 없는 날에
+     이 값을 그린다. 손으로 만든 행이 아니라 실제로 돌아간 판이어야 의미가 있다. */
+  const RC = require('../src/db/holdem-recap') as typeof import('../src/db/holdem-recap');
+  const recap = RC.recentRecap();
+  ck('지난 대회 요약이 나온다', recap != null);
+  if (recap) {
+    const win = db.prepare(
+      `SELECT user_id, prize FROM holdem_entries WHERE tournament_id = ? AND finish_place = 1`)
+      .get(recap.id) as { user_id: string; prize: number };
+    const sum = (db.prepare(
+      `SELECT COALESCE(SUM(prize),0) AS n FROM holdem_entries WHERE tournament_id = ?`)
+      .get(recap.id) as { n: number }).n;
+    ck('요약의 1위 = 실제 우승자', recap.top[0]?.userId === win.user_id,
+      `${recap.top[0]?.userId} vs ${win.user_id}`);
+    ck('요약의 1위 상금이 맞다', recap.top[0]?.prize === win.prize);
+    ck('총 상금 = 지급 합계', recap.prizeTotal === sum, `${recap.prizeTotal} vs ${sum}`);
+    ck('상위 3명까지만 담는다', recap.top.length <= 3, String(recap.top.length));
+    ck('등수가 오름차순이다', recap.top.every((r, i) => r.place === i + 1),
+      recap.top.map(r => r.place).join(','));
+    /* 족보는 있을 수도 없을 수도 있다 — 마지막 판이 폴드로 끝났으면 없는 것이 맞다.
+       다만 "언제나 null" 이면 기능이 죽은 것과 구별되지 않는다. 그래서 끝난 판들을
+       훑어 한 번이라도 족보가 잡히는지 본다 — 쇼다운으로 끝난 판이 하나는 있다. */
+    ck('족보는 문자열이거나 null 이다',
+      recap.winningHand === null || typeof recap.winningHand === 'string',
+      String(recap.winningHand));
+    const named = (db.prepare(`SELECT result_json FROM holdem_hands WHERE result_json IS NOT NULL`)
+      .all() as { result_json: string }[])
+      .map(h => {
+        try {
+          return ((JSON.parse(h.result_json) as { potAwards?: { hand?: string }[] }).potAwards ?? [])
+            .some(p => !!p.hand);
+        } catch { return false; }
+      }).filter(Boolean).length;
+    ck('쇼다운으로 끝난 판에는 족보가 실제로 적힌다', named > 0, `${named}판`);
+  }
 }
 
 /* ── 쇼다운 결과에 족보와 이긴 5장이 실린다 ────────────────────────
@@ -771,10 +831,7 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
     'holdem_tables', 'holdem_entries', 'holdem_tournaments']) {
     db2.prepare(`DELETE FROM ${tb}`).run();
   }
-  HD.advanceHoldem();
-  db2.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
-    started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
-    .run(nowSec() - 30, nowSec() + 600, nowSec() + 3600);
+  setWindow(-30, 600, 3600);
   for (const id of ['s0', 's1', 's2']) HD.registerHoldem(id, id);
   db2.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
 
@@ -869,10 +926,7 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
   db3.prepare(`DELETE FROM holdem_entries`).run();
   db3.prepare(`DELETE FROM holdem_tournaments`).run();
   for (const id of ['g0', 'g1', 'g2']) { mkUser(id); Q.adjustBalance(id, 10_000, 'test'); }
-  HD.advanceHoldem();
-  db3.prepare(`UPDATE holdem_tournaments SET cancelled_at = NULL, finished_at = NULL,
-    started_at = NULL, reg_open_at = ?, scheduled_start_at = ?, grace_ends_at = ?`)
-    .run(nowSec() - 30, nowSec() + 600, nowSec() + 3600);
+  setWindow(-30, 600, 3600);
   for (const id of ['g0', 'g1', 'g2']) HD.registerHoldem(id, id);
   db3.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
   const stG = HD.advanceHoldem();
@@ -967,6 +1021,108 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
   ck('진행 중인 대회 상금은 안 더한다', of_('r_zero')?.prize === 0, String(of_('r_zero')?.prize));
   ck('상금 순 내림차순', rows.every((r, i) => i === 0 || rows[i - 1].prize >= r.prize),
     rows.map(r => r.prize).join(','));
+}
+
+console.log('\n[13] 반복 개최 (자동 생성은 켰을 때만 · 지운 판은 되살아나지 않는다)');
+{
+  const R = require('../src/db/recurrence') as typeof import('../src/db/recurrence');
+  const S = require('../src/db/settings') as typeof import('../src/db/settings');
+  const wipe = () => {
+    for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+      'holdem_tables', 'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${tb}`).run();
+    db.prepare(`DELETE FROM holdem_settings`).run();
+  };
+  const count = () => (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`)
+    .get() as { n: number }).n;
+
+  /* 켜지 않으면 아무 일도 없다. 이것이 예전 자동 생성과의 결정적 차이다 —
+     끄는 방법이 없어서 지운 대회가 1초 만에 되살아났다. */
+  wipe();
+  R.ensureRecurring();
+  ck('꺼져 있으면 아무것도 만들지 않는다', count() === 0, String(count()));
+
+  /* 마스터 스위치가 켜져도 주기가 수동이면 만들지 않는다 (저장 자체를 거절한다) */
+  ck('수동 + 켬 조합은 저장을 거절한다',
+    !R.saveRecurrence({ enabled: true, mode: 'manual', weekday: 0, day: 1 }).ok);
+
+  // 매일 — 켜면 만들어진다
+  wipe();
+  ck('매일 규칙은 저장된다', R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 }).ok);
+  R.ensureRecurring();
+  ck('켜면 다음 판이 만들어진다', count() === 1, String(count()));
+
+  // 두 번 불러도 하나다 — 요청마다 불리는 함수라 여기가 새면 대회가 무한히 늘어난다
+  R.ensureRecurring();
+  R.ensureRecurring();
+  ck('여러 번 불러도 하나만 만든다', count() === 1, String(count()));
+
+  /* 되살아남 방지. 예전 구조에서 실제로 겪은 문제라 검사로 못 박는다 —
+     행의 존재로 판단하면 지우는 순간 다시 만들어진다. */
+  const madeId = (db.prepare(`SELECT id FROM holdem_tournaments ORDER BY id DESC LIMIT 1`)
+    .get() as { id: number }).id;
+  A.purgeTournament(madeId);
+  ck('지우면 사라진다', count() === 0, String(count()));
+  R.ensureRecurring();
+  ck('지운 차례는 되살아나지 않는다', count() === 0, String(count()));
+
+  /* 시각은 [대회 설정]에서 온다 — 반복 규칙은 어느 날인지만 정한다.
+     두 곳에 시각을 두면 어느 쪽이 이기는지 아무도 모른다. */
+  wipe();
+  S.saveConfig({ ...S.defaultConfig(), regOpenMin: 13 * 60 + 30, startMin: 14 * 60 + 15 });
+  R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+  const occ = R.nextOccurrence(R.getRecurrence())!;
+  ck('다음 차례가 계산된다', occ != null);
+  ck('시작 시각이 설정의 14:15 이다',
+    T.kstTimeToUnix(occ.dateStr, 14, 15) === occ.startAt);
+  ck('등록 시각이 설정의 13:30 이다',
+    T.kstTimeToUnix(occ.dateStr, 13, 30) === occ.regOpenAt);
+  ck('다음 차례는 언제나 미래다', occ.startAt > nowSec());
+
+  // 주간 — 고른 요일에만 걸린다
+  R.saveRecurrence({ enabled: true, mode: 'weekly', weekday: 3, day: 1 });
+  const wk = R.nextOccurrence(R.getRecurrence())!;
+  ck('매주 규칙은 그 요일을 고른다', T.kstWeekday(wk.startAt * 1000) === 3,
+    String(T.kstWeekday(wk.startAt * 1000)));
+  ck('매주 규칙은 일주일 안에 걸린다', wk.startAt - nowSec() <= 8 * 86400);
+
+  // 월간 — 고른 날짜에만 걸린다
+  R.saveRecurrence({ enabled: true, mode: 'monthly', weekday: 0, day: 17 });
+  const mo = R.nextOccurrence(R.getRecurrence())!;
+  ck('매월 규칙은 그 날짜를 고른다', Number(mo.dateStr.slice(8, 10)) === 17, mo.dateStr);
+
+  /* 그 달에 없는 날(31일)을 골라도 멈추지 않고 있는 달을 찾는다.
+     달마다 있는 날이 다르다는 것을 규칙식으로 접으면 2월에 조용히 죽는다. */
+  R.saveRecurrence({ enabled: true, mode: 'monthly', weekday: 0, day: 31 });
+  const m31 = R.nextOccurrence(R.getRecurrence());
+  ck('31일 규칙은 31일이 있는 달을 찾는다', m31 != null && Number(m31.dateStr.slice(8, 10)) === 31,
+    m31?.dateStr ?? 'null');
+
+  /* 아직 멀면 만들지 않는다 — 12시간 전부터 만든다. 한 달 뒤 판을 지금 만들어 두면
+     그 사이 설정을 바꿔도 반영되지 않고, 새 판을 열 수도 없다(2시간 여유 규칙). */
+  wipe();
+  R.saveRecurrence({ enabled: true, mode: 'monthly', weekday: 0, day: 17 });
+  const far = R.nextOccurrence(R.getRecurrence())!;
+  if (far.startAt - nowSec() > R.RECUR_LEAD_SEC) {
+    R.ensureRecurring();
+    ck('시작이 멀면 아직 만들지 않는다', count() === 0, String(count()));
+  } else {
+    ck('시작이 멀면 아직 만들지 않는다', true, '오늘이 17일 근처라 건너뜀');
+  }
+
+  /* 행이 없어도 다음이 언제인지는 안내한다 — 규칙에서 계산해 준다.
+     로비의 "다음 대회" 배너가 이 값을 쓴다. */
+  const hint = R.upcomingHint();
+  ck('행이 없어도 다음 대회를 안내한다', hint != null && hint.startAt === far.startAt);
+
+  // 진행 중 대회 중단 — 자동으로 정리되던 장치가 없어졌으므로 사람이 풀 수 있어야 한다
+  wipe();
+  setWindow(-60, 600, 1800);
+  for (let i = 0; i < 3; i++) { mkUser('ab' + i); HD.registerHoldem('ab' + i, 'ab' + i); }
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  ck('중단할 판이 돌고 있다', HD.advanceHoldem().status === 'RUNNING');
+  ck('운영자가 중단할 수 있다', A.cancelRunningTournament().ok);
+  ck('중단하면 대회가 없는 상태가 된다', HD.advanceHoldem().status === 'NONE');
+  ck('중단할 판이 없으면 거절한다', !A.cancelRunningTournament().ok);
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

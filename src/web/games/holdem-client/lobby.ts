@@ -8,12 +8,81 @@
 
    조각들은 하나의 클로저를 공유한다 — 여기 있는 var·function 은 다른 조각에서도 보인다.
    그래서 파일이 나뉘어 있어도 스코프는 하나다. import 로 주고받는 것이 아니다. */
+/* 예정된 대회가 없을 때의 화면.
+   대회가 저절로 열리지 않게 되면서 "아무것도 없는 상태"가 정상적인 상태가 됐다.
+   그때 빈 카드만 남으면 서비스가 죽은 것처럼 보이므로 세 조각을 순서대로 채운다 —
+   다음 대회 안내(있으면) · 지난 대회 결과(있으면) · 마지막으로 안내 문구.
+   셋 다 없을 수는 없다. 안내 문구는 언제나 나온다. */
+export const LOBBY_EMPTY = `    function renderNoTournament(){
+      var now = st.serverNow, html = '';
+      var up = st.upcoming, rc = st.recap;
+
+      if (up) {
+        var opened = up.regOpenAt <= now;
+        html +=
+          '<div class="ht-card ht-next">' +
+            '<div class="ht-next-top">' +
+              '<span class="ht-badge open">다음 대회</span>' +
+              '<span class="ht-next-when">' + esc(kstDay(up.startAt)) + ' ' + esc(kstClock(up.startAt)) + '<\/span>' +
+            '<\/div>' +
+            '<div class="ht-next-count">' + esc(dur((opened ? up.startAt : up.regOpenAt) - now)) + '<\/div>' +
+            '<div class="ht-next-sub">' +
+              esc(opened ? '시작까지 남았습니다' : '등록 시작까지 남았습니다') + ' · 등록 ' +
+              esc(kstClock(up.regOpenAt)) + ' · 시작 ' + esc(kstClock(up.startAt)) + ' (KST)' +
+            '<\/div>' +
+          '<\/div>';
+      }
+
+      if (rc) {
+        var champ = rc.top[0];
+        var rest = '';
+        for (var i = 1; i < rc.top.length; i++) {
+          rest += '<li><span class="pl">' + rc.top[i].place + '위<\/span>' +
+            '<span class="nm">' + esc(rc.top[i].username) + '<\/span>' +
+            '<span class="pz">' + num(rc.top[i].prize) + 'P<\/span><\/li>';
+        }
+        html +=
+          '<div class="ht-card ht-recap">' +
+            '<h3 class="ht-h3">지난 대회</h3>' +
+            '<div class="ht-champ">' +
+              avatarHtml(champ.userId, champ.avatar, champ.username, 'ht-champ-av') +
+              '<div class="ht-champ-txt">' +
+                '<span class="ht-champ-tag">우승<\/span>' +
+                '<strong>' + esc(champ.username) + '<\/strong>' +
+                '<span class="ht-champ-sub">' + num(champ.prize) + 'P' +
+                  (rc.winningHand ? ' · ' + esc(rc.winningHand) : '') + '<\/span>' +
+              '<\/div>' +
+            '<\/div>' +
+            (rest ? '<ul class="ht-recap-rest">' + rest + '<\/ul>' : '') +
+            '<div class="ht-recap-foot">' + esc(rc.dateStr) + ' · 참가 ' + rc.entries + '명 · 총 상금 ' +
+              num(rc.prizeTotal) + 'P<\/div>' +
+          '<\/div>';
+      }
+
+      html +=
+        '<div class="ht-card ht-empty">' +
+          '<div class="ht-empty-ico">♠<\/div>' +
+          '<p class="ht-empty-msg">' +
+            (up ? '지금은 진행 중인 대회가 없습니다.' : '현재 예정된 토너먼트가 없습니다.') +
+          '<\/p>' +
+          '<p class="ht-empty-sub">' +
+            (up ? '위 시각에 등록이 열립니다.' : '다음 공지사항을 확인해 주세요!') +
+          '<\/p>' +
+        '<\/div>';
+
+      lobbyEl.innerHTML = html;
+    }
+`;
+
 export const LOBBY = `    function renderLobby(){
       var t = st.tournament, now = st.serverNow;
+      if (!t) { renderNoTournament(); return; }
       var badge = '', action = '', note = '';
       if (t.status === 'SCHEDULED') {
         badge = '<span class="ht-badge">예정</span>';
-        note = '등록은 ' + dur(t.regOpenAt - now) + ' 후에 열립니다 (KST 21:00)';
+        // 시각은 대회 행에서 읽는다 — 예전에는 문장 안에 시각을 박아 뒀는데,
+        // 운영자가 시각을 정하게 된 뒤로 그 문장이 사실과 어긋났다
+        note = '등록은 ' + dur(t.regOpenAt - now) + ' 후에 열립니다 (KST ' + kstClock(t.regOpenAt) + ')';
         action = '<button type="button" class="btn btn-gold" disabled>참가 신청</button>';
       } else if (t.status === 'REGISTRATION_OPEN') {
         badge = '<span class="ht-badge open">등록 중</span>';
@@ -87,7 +156,8 @@ export const LOBBY = `    function renderLobby(){
         '<div class="ht-card">' +
           '<div class="ht-card-top">' +
             '<div><h2>' + esc(t.title) + '</h2>' +
-              '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 21:00 · 시작 22:00 (KST)</p></div>' +
+              '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
+                ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p></div>' +
             '<div class="ht-badge-wrap">' + badge +
               (note ? '<span class="ht-note">' + esc(note) + '</span>' : '') + '</div>' +
           '</div>' +

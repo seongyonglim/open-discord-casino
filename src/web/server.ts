@@ -12,6 +12,7 @@ import {
   handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
   handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill,
   handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
+  handleAdminRecurrence, handleAdminTournamentAbort,
   handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
 } from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
@@ -257,6 +258,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/season/close' && req.method === 'POST') return await handleAdminSeasonClose(req, res);
         if (path === '/api/admin/season/backfill' && req.method === 'POST') return await handleAdminSeasonBackfill(req, res);
         if (path === '/api/admin/config' && req.method === 'POST') return await handleAdminConfig(req, res);
+        if (path === '/api/admin/recurrence' && req.method === 'POST') return await handleAdminRecurrence(req, res);
         if (path === '/api/admin/config/reset' && req.method === 'POST') return await handleAdminConfigReset(req, res);
         if (path === '/api/admin/notice/create' && req.method === 'POST') return await handleAdminNoticeCreate(req, res);
         if (path === '/api/admin/notice/update' && req.method === 'POST') return await handleAdminNoticeUpdate(req, res);
@@ -264,6 +266,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/notice/delete' && req.method === 'POST') return await handleAdminNoticeDelete(req, res);
         if (path === '/api/admin/tournament/create' && req.method === 'POST') return await handleAdminTournamentCreate(req, res);
         if (path === '/api/admin/tournament/revoke' && req.method === 'POST') return await handleAdminTournamentRevoke(req, res);
+        if (path === '/api/admin/tournament/abort' && req.method === 'POST') return await handleAdminTournamentAbort(req, res);
         if (path === '/api/admin/tournament/test' && req.method === 'POST') {
           return await handleAdminTestTournament(req, res);
         }

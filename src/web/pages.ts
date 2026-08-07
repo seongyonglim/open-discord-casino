@@ -10,6 +10,7 @@ import {
 import { recentHoldemWinners, type HoldemStatus } from '../db/holdem';
 import * as T from '../services/tournament';
 import { listNotices, noticeNeighbors, type Notice } from '../db/notices';
+import { upcomingHint } from '../db/recurrence';
 
 /* 로비의 게임 목록.
    ── 아이콘
@@ -53,7 +54,10 @@ const GAMES: GameDef[] = [
     desc: '참가비 없이 모여서 겨루는 토너먼트. 상위 입상자가 상금을 나눠 갖습니다.',
     /* 사실 줄을 두지 않는다 — 이 카드의 설명은 freerollOverride가 대회 상태로 갈아끼우고,
        거기에 신청 인원과 상금 풀이 들어 있다. 살아 있는 수치가 고정값보다 낫다. */
-    cta: '참가 신청', badge: '매일 22:00', ready: true },
+    /* 배지에 고정 시각을 적지 않는다. 예전에는 '매일 22:00'이었는데, 대회를 운영자가
+       직접 여는 방식으로 바뀌면서 그 문장이 사실이 아니게 됐다. 실제 시각은 아래
+       freerollOverride 가 대회 상태에서 읽어 갈아끼운다 — 없으면 '예정 없음'이 나온다. */
+    cta: '참가 신청', badge: '토너먼트', ready: true },
 
   { key: 'baccarat', name: '바카라', icon: baccaratIcon, group: 'table',
     desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어에도 걸 수 있어요.',
@@ -155,6 +159,23 @@ function gameCard(g: GameDef, override?: { badge?: string; desc?: string; cta?: 
    거짓 긴박감을 만들고, 그런 배지는 한 번 들키면 나머지도 안 믿게 된다. */
 function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; cta?: string; hot?: boolean } {
   const t = st.tournament;
+  /* 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
+     이때는 카드를 강조하지 않는다. 없는 대회를 기다리게 만드는 배지는 거짓말이 된다. */
+  if (!t || !st.schedule) {
+    /* 반복 개최를 켜 뒀거나 운영자가 다음 판을 미리 열어 뒀으면 그 시각을 안다.
+       알면서 "예정 없음"이라고 말하지 않는다 — 기다릴 사람이 헛걸음한다. */
+    const up = upcomingHint();
+    if (up) {
+      const s = Math.max(0, up.regOpenAt - Math.floor(Date.now() / 1000));
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      return {
+        badge: '예정',
+        desc: `다음 대회 ${up.dateStr} — 등록까지 ${h > 0 ? `${h}시간 ${m}분` : `${m}분`} 남았습니다`,
+        cta: '둘러보기',
+      };
+    }
+    return { badge: '예정 없음', desc: '다음 대회가 열리면 여기에 안내됩니다', cta: '둘러보기' };
+  }
   const n = st.registered;
   const pool = T.prizePool(n, t.prize_multiplier, t.prize_fixed > 0 ? t.prize_fixed : 0);
   const now = Math.floor(Date.now() / 1000);
@@ -171,7 +192,7 @@ function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; ct
         desc: n > 0
           ? `${n}명 신청 · 상금 풀 ${pool.toLocaleString('ko-KR')}P. 지금 신청할 수 있습니다.`
           : '참가 신청이 열렸습니다. 최소 3명이 모이면 시작합니다.',
-        cta: st.tournament.id ? '참가 신청' : '참가 신청',
+        cta: '참가 신청',
         hot: true,
       };
     case 'WAITING_MIN_PLAYERS':
@@ -292,8 +313,10 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
    오늘 대회가 끝났거나 취소됐으면 내일 일정을 계산해서 보여준다 — 그래야
    하루 중 언제 들어와도 "다음이 언제인가"에 답이 있다. */
 function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: string; sub: string } {
-  // 대회 상태를 못 읽었을 때(DB 오류 등)도 고정 일정은 사실이다
-  if (!ht) return { label: '홀덤 프리롤', value: '매일 22:00', sub: '등록 21:00 시작' };
+  /* 예정된 대회가 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
+     예전에는 '매일 22:00'을 적어 뒀는데, 이제 그건 사실이 아니다.
+     없는 일정을 적으면 기다린 사람이 헛걸음한다. */
+  if (!ht || !ht.schedule) return { label: '홀덤 프리롤', value: '예정 없음', sub: '열리면 공지합니다' };
   const now = Math.floor(Date.now() / 1000);
   const short = (at: number) => {
     const s = Math.max(0, at - now);
@@ -314,10 +337,12 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
     case 'RUNNING':
       return { label: '프리롤', value: '진행 중', sub: `${ht.registered}명 참가` };
     case 'FINISHED': case 'CANCELLED': {
-      // 오늘 판은 끝났다 — 내일 일정을 직접 계산한다(하루 하나라는 규칙이라 항상 있다)
-      const tmr = T.scheduleForDate(T.kstDateStr(Date.now() + 86_400_000));
-      return { label: '다음 프리롤 등록까지', value: short(tmr.regOpenAt),
-        sub: `내일 ${tmr.title}` };
+      /* 이 판은 끝났다. 다음이 언제인지는 예약된 판이나 반복 규칙에서 온다 —
+         예전에는 "내일 같은 시각"을 계산했는데, 매일 열린다는 보장이 없어졌다. */
+      const up = upcomingHint(now);
+      if (!up) return { label: '홀덤 프리롤', value: '예정 없음', sub: '열리면 공지합니다' };
+      return { label: '다음 프리롤 등록까지', value: short(up.regOpenAt),
+        sub: `${up.dateStr} · ${hhmm(up.startAt)} 시작` };
     }
     default:
       return { label: '프리롤 등록까지', value: short(ht.schedule.regOpenAt),
