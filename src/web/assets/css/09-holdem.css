@@ -37,6 +37,9 @@
   .ht-grid .k{font-size:10.5px;color:var(--muted);letter-spacing:.3px}
   .ht-grid .v{font-family:var(--mono);font-size:16px;font-weight:700}
   .ht-grid .v.gold{color:var(--gold)}
+  /* 참가비 — 내 잔액에서 나가는 돈이다. 상금(금색)과 같은 색으로 두면 받는 돈인지
+     내는 돈인지 구별이 안 된다. */
+  .ht-grid .v.warn{color:#ffb35c}
   /* 상태 배지와 같은 줄에 선다 — 한 줄짜리 문장 하나에 위아래 여백을 두 겹 주면
      카드가 그만큼 늘어진다 */
   .ht-badge-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}

@@ -13,7 +13,7 @@
  * 여기서는 그 순수 함수들을 불러 쓰고 상태를 저장하는 일만 한다.
  */
 import { randomInt } from 'node:crypto';
-import { one, all, run, tx } from './queries';
+import { one, all, run, tx, adjustBalance, getWebUser } from './queries';
 import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
@@ -106,6 +106,8 @@ export interface HtRow {
   started_at: number | null; finished_at: number | null; cancelled_at: number | null;
   starting_stack: number; level_sec: number; late_reg_sec: number;
   prize_fixed: number;
+  /** 참가비. 0 이면 프리롤 — 기본값이라 예전 행은 전부 프리롤로 읽힌다 */
+  buy_in: number;
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -134,6 +136,8 @@ export interface HtEntryRow {
   id: number; tournament_id: number; user_id: string; username: string;
   registered_at: number; finish_place: number | null; elim_seq: number | null;
   eliminated_at: number | null; prize: number;
+  /** 등록할 때 실제로 걷은 금액. 되돌릴 때 이 값을 쓴다 — 설정을 다시 읽으면 어긋난다 */
+  paid_in: number;
 }
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
@@ -522,6 +526,9 @@ export function advanceHoldem(userId?: string): HoldemStatus {
     if (t.started_at == null && t.cancelled_at == null && now >= s.graceEndsAt
         && regs.length < T.MIN_PLAYERS) {
       run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`, now, t.id);
+      /* 참가비를 걷었으면 돌려준다. 판이 열리지 않았고, 인원 미달은 참가자 잘못이 아니다.
+         돌려주지 않으면 3명이 안 모여 취소된 판에 돈만 잃는 사람이 생긴다. */
+      refundEntries(t.id, 'holdem:cancel:');
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
@@ -1068,7 +1075,7 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
  */
 function payPrizes(t: HtRow, now: number): void {
   const entries = getEntries(t.id);
-  const pool = T.prizePool(entries.length, t.prize_multiplier, tuning(t).prizeFixed);
+  const pool = T.prizePool(entries.length, t.prize_multiplier, tuning(t).prizeFixed, t.buy_in);
   const amounts = T.prizeAmounts(pool, entries.length);
   if (!amounts.length) return;
   const ranked = entries
@@ -1091,7 +1098,8 @@ function payPrizes(t: HtRow, now: number): void {
 
 /* ── 유저 동작 ───────────────────────────────────────────────────── */
 
-export type RegisterError = 'not_open' | 'late_reg_closed' | 'table_full' | 'closed' | 'already';
+export type RegisterError =
+  'not_open' | 'late_reg_closed' | 'table_full' | 'closed' | 'already' | 'no_funds';
 export type UnregisterError = 'not_registered' | 'already_started' | 'closed';
 
 /**
@@ -1114,6 +1122,13 @@ export function unregisterHoldem(userId: string):
     // 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다
     if (!t || t.finished_at != null || t.cancelled_at != null) return { ok: false, error: 'closed' };
 
+    /* 지우기 전에 얼마를 냈는지 읽어 둔다 — 지운 뒤에는 알 방법이 없다.
+       설정의 참가비를 다시 읽지 않는 이유는, 그 사이에 값이 바뀌었으면 걷은 것과 다른
+       액수를 돌려주게 되고 그 자리에서 "잔액 = 원장 누적합"이 깨지기 때문이다. */
+    const paid = one<{ paid_in: number }>(
+      `SELECT paid_in FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+      t.id, userId)?.paid_in ?? 0;
+
     run(`DELETE FROM holdem_entries
           WHERE user_id = ? AND tournament_id = (
             SELECT id FROM holdem_tournaments
@@ -1128,6 +1143,8 @@ export function unregisterHoldem(userId: string):
       if (mine === 0) return { ok: false, error: 'not_registered' };
       return { ok: false, error: 'already_started' };
     }
+    // 신청을 물렸으니 낸 돈도 돌려준다 (프리롤이면 0이라 아무 일도 없다)
+    if (paid > 0) adjustBalance(userId, paid, 'holdem:buyin:refund:' + t.id);
     return { ok: true, registered: getEntries(t.id).length };
   });
 }
@@ -1142,15 +1159,27 @@ export function registerHoldem(userId: string, username: string):
       tuning(t).lateRegSec);
     if (!can.ok) return { ok: false, error: can.reason };
 
+    /* 참가비가 있으면 낼 수 있는지 먼저 본다. 걷는 것은 등록이 성립한 뒤다 —
+       순서를 바꾸면 자리가 없어서 거절된 사람의 돈이 빠져나간다. */
+    const fee = Math.max(0, Math.floor(t.buy_in));
+    if (fee > 0 && (getWebUser(userId)?.balance ?? 0) < fee) {
+      return { ok: false, error: 'no_funds' };
+    }
+
     /* 마지막 자리를 두고 두 요청이 겹치는 것은 유니크 인덱스가 막는다.
        "빈자리 수를 세고 나서 INSERT" 사이에 다른 요청이 끼어들 수 있으므로
        코드 순서에 기대지 않고 DB 제약으로 막는 게 핵심이다. */
     try {
-      run(`INSERT INTO holdem_entries (tournament_id, user_id, username, registered_at)
-           VALUES (?, ?, ?, ?)`, t.id, userId, username, nowSec());
+      run(`INSERT INTO holdem_entries (tournament_id, user_id, username, registered_at, paid_in)
+           VALUES (?, ?, ?, ?, ?)`, t.id, userId, username, nowSec(), fee);
     } catch {
       return { ok: false, error: 'already' };
     }
+
+    /* 등록이 성립했으니 걷는다. 반드시 adjustBalance 를 거친다 — 잔액을 직접 고치면
+       "잔액 = 원장 누적합"이 깨지고, 그 불변식은 감사가 매번 검사한다.
+       걷은 금액은 참가 행(paid_in)에도 남는다. 되돌릴 때 설정을 다시 읽지 않기 위해서다. */
+    if (fee > 0) adjustBalance(userId, -fee, 'holdem:buyin:' + t.id);
 
     /* 진행 중(늦은 등록)이면 빈자리에 바로 앉힌다. 시작 전이면 시작할 때 한꺼번에 앉는다.
        늦게 온 사람도 시작 스택을 받는다 — 프리롤이므로 형평이 아니라 참여가 목적이다. */
@@ -1256,7 +1285,36 @@ export function cancelRunningHoldemOnBoot(): number {
          AND finished_at IS NULL AND cancelled_at IS NULL`);
     for (const t of rows) {
       run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ?`, nowSec(), t.id);
+      /* 상금은 대회가 끝날 때만 나가므로 여기서 되돌릴 상금은 없다. 하지만 참가비는
+         등록할 때 이미 걷었다 — 판이 중간에 없어졌으니 돌려준다. */
+      refundEntries(t.id, 'holdem:cancel:');
     }
     return rows.length;
   });
+}
+
+/**
+ * 그 대회에서 걷은 참가비를 전부 되돌린다. 프리롤이면 걷은 것이 없어 아무 일도 없다.
+ *
+ * 되돌린 뒤 paid_in 을 0 으로 내린다. 두 번 부르는 경로가 실제로 있기 때문이다 —
+ * 인원 미달로 취소된 판을 운영자가 다시 지우면 취소와 삭제가 잇달아 지나간다.
+ * 그때 두 번 돌려주면 없던 포인트가 생기고, 그건 "잔액 = 원장 누적합"이 아니라
+ * 경제 자체가 어긋나는 일이다.
+ *
+ * 반드시 adjustBalance 를 거친다(원장을 함께 쓴다). 잔액을 직접 UPDATE 하면
+ * 감사가 매번 검사하는 그 불변식이 깨진다.
+ */
+export function refundEntries(tournamentId: number, reasonPrefix: string): number {
+  const rows = all<{ user_id: string; paid_in: number }>(
+    `SELECT user_id, SUM(paid_in) AS paid_in FROM holdem_entries
+      WHERE tournament_id = ? AND paid_in > 0 GROUP BY user_id`, tournamentId);
+  let total = 0;
+  for (const r of rows) {
+    adjustBalance(r.user_id, r.paid_in, reasonPrefix + tournamentId);
+    total += r.paid_in;
+  }
+  if (rows.length) {
+    run(`UPDATE holdem_entries SET paid_in = 0 WHERE tournament_id = ?`, tournamentId);
+  }
+  return total;
 }

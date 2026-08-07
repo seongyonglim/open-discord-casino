@@ -92,7 +92,7 @@ function statePayload(st: HoldemStatus, userId: string) {
   const table = getTable(t.id);
   const entries = getEntries(t.id);
   const tune = tuning(t);
-  const pool = T.prizePool(entries.length, t.prize_multiplier, tune.prizeFixed);
+  const pool = T.prizePool(entries.length, t.prize_multiplier, tune.prizeFixed, t.buy_in);
 
   const base = {
     ok: true,
@@ -114,6 +114,8 @@ function statePayload(st: HoldemStatus, userId: string) {
       minPlayers: T.MIN_PLAYERS,
       maxPlayers: T.MAX_PLAYERS,
       startingStack: tune.startingStack,
+      // 참가비. 0 이면 프리롤이고, 화면은 그때 참가비 줄을 아예 그리지 않는다
+      buyIn: t.buy_in,
       prizePool: pool,
       prizes: T.prizeAmounts(pool, entries.length),
       itm: T.itmCount(entries.length),
@@ -325,6 +327,7 @@ export async function handleRegister(
       : r.error === 'late_reg_closed' ? '늦은 등록 시간이 지났습니다'
       : r.error === 'table_full' ? '테이블이 꽉 찼습니다'
       : r.error === 'already' ? '이미 등록하셨습니다'
+      : r.error === 'no_funds' ? '참가비를 낼 포인트가 모자랍니다'
       : '지금은 등록할 수 없습니다';
     return sendJson(res, 400, { error: msg });
   }

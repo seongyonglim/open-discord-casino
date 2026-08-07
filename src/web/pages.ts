@@ -177,7 +177,7 @@ function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; ct
     return { badge: '예정 없음', desc: '다음 대회가 열리면 여기에 안내됩니다', cta: '둘러보기' };
   }
   const n = st.registered;
-  const pool = T.prizePool(n, t.prize_multiplier, t.prize_fixed > 0 ? t.prize_fixed : 0);
+  const pool = T.prizePool(n, t.prize_multiplier, t.prize_fixed > 0 ? t.prize_fixed : 0, t.buy_in);
   const now = Math.floor(Date.now() / 1000);
   const left = (at: number) => {
     const s = Math.max(0, at - now);
