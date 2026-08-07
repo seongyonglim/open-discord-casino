@@ -142,6 +142,43 @@ export function mySeasonRank(seasonId: number, userId: string, game: string | nu
   return { rank: above.n + 1, total: total.n, score: me.balance };
 }
 
+/**
+ * 첫 시즌에 통산 기록을 옮겨 담는다.
+ *
+ * 시즌 표를 만들기 전의 판은 season_stats 에 없다 — 집계가 그때부터 시작하기 때문이다.
+ * 그래서 시즌 0 을 열면 랭킹이 비어 보인다. 그런데 시즌 0 의 범위는 "지금까지 전부"이므로
+ * 통산 기록(game_stats)이 곧 시즌 0 의 기록이다. 그대로 옮기면 된다.
+ *
+ * 덮어쓰기라 여러 번 눌러도 결과가 같다. bumpGameStats 가 두 장부에 함께 쓰므로
+ * 옮긴 뒤에 들어온 판도 game_stats 에 들어 있고, 다시 옮기면 그 합이 그대로 나온다 —
+ * 더하기가 아니라 맞추기라서 중복으로 불어나지 않는다.
+ *
+ * 첫 시즌에만 허용한다. 시즌이 한 번이라도 닫힌 뒤에는 통산 기록이 여러 시즌에 걸쳐
+ * 있어서, 그걸 특정 시즌에 통째로 부으면 그 시즌 기록이 거짓이 된다.
+ */
+export function backfillFirstSeason():
+  { ok: true; rows: number } | { ok: false; error: 'not_first_season' | 'no_open_season' } {
+  return tx(() => {
+    if (one<{ n: number }>(`SELECT COUNT(*) AS n FROM seasons WHERE closed_at IS NOT NULL`)!.n > 0) {
+      return { ok: false as const, error: 'not_first_season' as const };
+    }
+    const s = one<SeasonRow>(
+      `SELECT * FROM seasons WHERE closed_at IS NULL ORDER BY number ASC LIMIT 1`);
+    if (!s) return { ok: false as const, error: 'no_open_season' as const };
+    run(
+      `INSERT INTO season_stats (season_id, user_id, game, rounds, rated, wins, pushes,
+         staked, returned, profit, updated_at)
+       SELECT ?, user_id, game, rounds, rated, wins, pushes, staked, returned, profit, updated_at
+         FROM game_stats WHERE rounds > 0
+       ON CONFLICT(season_id, user_id, game) DO UPDATE SET
+         rounds = excluded.rounds, rated = excluded.rated, wins = excluded.wins,
+         pushes = excluded.pushes, staked = excluded.staked, returned = excluded.returned,
+         profit = excluded.profit, updated_at = excluded.updated_at`, s.id);
+    return { ok: true as const,
+      rows: one<{ n: number }>(`SELECT COUNT(*) AS n FROM season_stats WHERE season_id = ?`, s.id)!.n };
+  });
+}
+
 /** 진행 중인 시즌의 안내 문구와 예정 종료 시각을 고친다. 점수·집계에는 손대지 않는다. */
 export function updateSeason(id: number, o: { name?: string; reward?: string; endsAt?: number | null }): boolean {
   const s = getSeason(id);

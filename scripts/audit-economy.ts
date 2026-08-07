@@ -888,6 +888,43 @@ section('[10] 시즌');
   ck('통산 기록(game_stats)은 시즌과 무관하게 이어진다',
     (db.prepare(`SELECT rounds FROM game_stats WHERE user_id='se_a' AND game='mines'`)
       .get() as { rounds: number }).rounds === 2);
+
+  /* 시즌이 한 번이라도 닫힌 뒤에는 통산 기록을 특정 시즌에 부을 수 없어야 한다 —
+     통산이 여러 시즌에 걸쳐 있어서 그 시즌 기록이 거짓이 된다. */
+  ck('닫힌 시즌이 있으면 가져오기를 거절한다',
+    !S.backfillFirstSeason().ok, JSON.stringify(S.backfillFirstSeason()));
+}
+
+/* 시즌 표를 만들기 전의 판은 시즌 장부에 없다. 첫 시즌의 범위는 "지금까지 전부"이므로
+   통산 기록이 곧 첫 시즌의 기록이다 — 옮길 수 있어야 하고, 여러 번 옮겨도 같아야 한다. */
+section('[10b] 첫 시즌으로 지난 기록 가져오기');
+{
+  const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const { bumpGameStats } = require('../src/db/queries') as typeof import('../src/db/queries');
+  const db = getDb();
+  for (const t of ['season_stats', 'season_results', 'seasons', 'game_stats']) {
+    db.prepare(`DELETE FROM ${t}`).run();
+  }
+  // 시즌 표가 없던 시절의 판 = game_stats 에만 있는 상태를 만든다
+  mkUser('bf_a', 1000);
+  db.prepare(`INSERT INTO game_stats (user_id, game, rounds, rated, wins, pushes, staked, returned, profit)
+    VALUES ('bf_a', 'mines', 10, 10, 6, 1, 1000, 1400, 400)`).run();
+  const s = S.currentSeason();
+  ck('가져오기 전에는 시즌 장부가 비어 있다', S.seasonGames(s.id).length === 0);
+
+  const r1 = S.backfillFirstSeason();
+  ck('가져오기 성공', r1.ok && r1.rows === 1, JSON.stringify(r1));
+  const g = S.seasonGameRanking(s.id, 'mines');
+  ck('통산 기록이 그대로 옮겨졌다',
+    g.length === 1 && g[0].rounds === 10 && g[0].wins === 6 && g[0].profit === 400,
+    JSON.stringify(g[0]));
+
+  // 옮긴 뒤 한 판 더 — 두 장부에 함께 쌓이므로 다시 옮겨도 합이 맞아야 한다
+  bumpGameStats('bf_a', 'mines', 100, 0);
+  S.backfillFirstSeason();
+  const g2 = S.seasonGameRanking(s.id, 'mines');
+  ck('두 번 가져와도 불어나지 않는다 (더하기가 아니라 맞추기)',
+    g2[0].rounds === 11 && g2[0].profit === 300, JSON.stringify(g2[0]));
 }
 auditLedger('시즌 후');
 

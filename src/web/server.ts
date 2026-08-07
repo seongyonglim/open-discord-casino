@@ -10,7 +10,7 @@ import { setRequestUser, LOGO_SVG } from './views';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
-  handleAdminSeasonUpdate, handleAdminSeasonClose,
+  handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill,
 } from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -250,6 +250,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/tournament/purge' && req.method === 'POST') return await handleAdminPurge(req, res);
         if (path === '/api/admin/season/update' && req.method === 'POST') return await handleAdminSeasonUpdate(req, res);
         if (path === '/api/admin/season/close' && req.method === 'POST') return await handleAdminSeasonClose(req, res);
+        if (path === '/api/admin/season/backfill' && req.method === 'POST') return await handleAdminSeasonBackfill(req, res);
         if (path === '/api/admin/tournament/test' && req.method === 'POST') {
           return await handleAdminTestTournament(req, res);
         }
