@@ -1197,7 +1197,10 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
       (tournament_id, user_id, username, registered_at, finish_place, prize)
       VALUES (?, ?, ?, 0, ?, ?)`).run(tid, uid, uid, place, prize);
 
-  const inSeason = s.started_at + 10;
+  /* 시즌이 열려 있는 동안에는 위쪽 경계가 없어서 미래 시각이어도 잡히지만, 시즌을 닫는
+     순간 closed_at 이 지금으로 찍히면서 그런 대회는 경계 밖으로 나간다. 아래에서 실제로
+     시즌을 닫아 보므로 "이미 끝난 대회"답게 지금보다 앞선 시각을 쓴다. */
+  const inSeason = Math.floor(Date.now() / 1000) - 60;
   mk(1, inSeason); ent(1, 'ht_a', 1, 2600); ent(1, 'ht_b', 2, 1400); ent(1, 'ht_c', 3, 0);
   mk(2, inSeason + 1); ent(2, 'ht_b', 1, 2600); ent(2, 'ht_a', 3, 0);
   mk(3, null);        // 취소되어 안 끝난 대회 — 집계에 들어가면 안 된다
@@ -1221,10 +1224,37 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
     mine != null && mine.rank === 2 && mine.total === 3 && mine.score === 2600, JSON.stringify(mine));
   ck('안 나간 사람은 순위가 없다', S.myHoldemRank(s.id, 'se_a') == null);
 
-  /* 시즌 구간 밖의 대회는 안 잡혀야 한다 — 이게 되어야 시즌이 넘어갈 때 저절로 갈린다. */
+  /* 시즌 경계는 둘째 시즌부터 의미가 있다.
+     첫 시즌에는 앞선 시즌이 없으므로, 그 전에 끝난 대회를 가져갈 다른 주인도 없다.
+     예전에는 첫 시즌도 시작 시각으로 잘랐는데, 시즌 행을 만든 시각이 곧 시작이라
+     그 전에 끝난 대회가 통째로 밀려났다 — 실제로 그것 때문에 랭킹에 홀덤 탭이
+     아예 안 떴고, 아무 에러도 없이 그냥 없는 카테고리가 됐다. */
   mk(4, s.started_at - 100); ent(4, 'ht_a', 1, 5000);
-  ck('시즌 시작 전에 끝난 대회는 안 잡힌다',
-    S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize === 2600);
+  ck('첫 시즌은 시작 전에 끝난 대회도 담는다 (앞 시즌이 없으니 다른 주인이 없다)',
+    S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize === 7600,
+    String(S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize));
+  ck('그래서 홀덤 카테고리가 뜬다', S.seasonHoldemCount(s.id) === 3,
+    String(S.seasonHoldemCount(s.id)));
+
+  /* 둘째 시즌에서는 그 경계를 반드시 지킨다 — 안 그러면 같은 대회가 두 시즌에 들어간다. */
+  {
+    const closed = S.closeSeason({ seed: 0 });
+    ck('시즌을 닫고 다음 시즌이 열린다', closed.ok, JSON.stringify(closed));
+    const s2 = S.currentSeason();
+    ck('둘째 시즌은 첫 시즌이 아니다', s2.number > 0, String(s2.number));
+    ck('둘째 시즌에는 지난 대회가 안 잡힌다', S.seasonHoldemCount(s2.id) === 0,
+      String(S.seasonHoldemCount(s2.id)));
+    // 첫 시즌의 집계는 그대로 남는다 — 지난 시즌을 골라 보면 그때 기록이 나와야 한다
+    ck('첫 시즌 기록은 그대로 남는다', S.seasonHoldemCount(s.id) === 3,
+      String(S.seasonHoldemCount(s.id)));
+
+    const after = Math.floor(Date.now() / 1000) + 5;
+    mk(5, after); ent(5, 'ht_c', 1, 1234);
+    ck('둘째 시즌에 끝난 대회는 둘째 시즌에 잡힌다', S.seasonHoldemCount(s2.id) === 1,
+      String(S.seasonHoldemCount(s2.id)));
+    ck('그 대회가 첫 시즌으로 새지 않는다', S.seasonHoldemCount(s.id) === 3,
+      String(S.seasonHoldemCount(s.id)));
+  }
 }
 
 section('[10b] 첫 시즌으로 지난 기록 가져오기');
@@ -1274,7 +1304,13 @@ section('[10b] 첫 시즌으로 지난 기록 가져오기');
         (tournament_id, user_id, username, registered_at, finish_place, prize)
       VALUES (77, 'bf_a', 'bf_a', ?, 1, 3000)`).run(long);
 
-    ck('당기기 전에는 옛 대회가 시즌 밖이라 안 잡힌다', S.seasonHoldemCount(s2.id) === 0);
+    /* 집계는 가져오기를 누르지 않아도 맞는다 — 첫 시즌에는 아래쪽 경계가 없다.
+       예전에는 여기서 0이 나왔고, 그래서 운영자가 버튼을 누를 때까지 홀덤 탭이
+       안 떴다. 눌러야만 맞는 화면은 안 누르면 계속 틀린 화면이다. */
+    ck('버튼을 누르기 전에도 옛 대회가 잡힌다', S.seasonHoldemCount(s2.id) === 1,
+      String(S.seasonHoldemCount(s2.id)));
+    /* 가져오기가 하는 일은 이제 하나 남았다 — 화면에 적히는 시작 날짜를 사실에 맞춘다.
+       "8월 7일 시작"이라고 적어 두고 8월 6일 대회를 담고 있으면 그 표시가 거짓말이다. */
     S.backfillFirstSeason();
     ck('가져오면 시작 시각이 옛 기록까지 당겨진다',
       S.currentSeason().started_at <= long, `${S.currentSeason().started_at} vs ${long}`);

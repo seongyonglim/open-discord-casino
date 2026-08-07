@@ -53,11 +53,28 @@ export function seasonGames(seasonId: number): { game: string; rounds: number; p
    남아 있고, 대회에는 끝난 시각이 있다. 그러니 시즌 구간으로 자르기만 하면 된다 —
    옮겨 담을 필요가 없고, 지난 시즌·지난 대회가 저절로 제자리에 들어간다. */
 
-/** 그 시즌 구간에서 끝난 대회. 취소된 대회는 finished_at 이 없어 저절로 빠진다. */
+/**
+ * 그 시즌 구간에서 끝난 대회. 취소된 대회는 finished_at 이 없어 저절로 빠진다.
+ *
+ * 첫 시즌에는 아래쪽 경계를 두지 않는다. 시즌 행이 만들어진 시각이 곧 시작인데, 서비스는
+ * 그보다 먼저 돌고 있었으므로 그 전에 끝난 대회가 시즌 밖으로 밀려난다 — 실제로 그랬다.
+ * 대회가 끝난 지 13시간 뒤에 시즌을 열었더니 랭킹에 홀덤 탭이 아예 안 떴고, 아무 에러도
+ * 없이 그냥 없는 카테고리가 됐다.
+ *
+ * 첫 시즌보다 앞선 시즌은 없으므로, 그 전의 기록을 가져갈 다른 주인도 없다. 같은 대회가
+ * 두 시즌에 들어갈 일이 없다는 뜻이다. 둘째 시즌부터는 앞 시즌이 끝난 시각이 곧 시작이고
+ * 그 경계는 반드시 지켜야 한다.
+ */
 function holdemWindow(s: SeasonRow): string {
-  void s;
-  return `t.finished_at IS NOT NULL AND t.finished_at >= ?
+  const lower = isFirstSeason(s) ? `(? IS NOT NULL OR 1)` : `t.finished_at >= ?`;
+  return `t.finished_at IS NOT NULL AND ${lower}
           AND (? IS NULL OR t.finished_at < ?)`;
+}
+
+/** 이 시즌보다 앞선 시즌이 있는가. 없으면 그 전의 기록은 전부 이 시즌 몫이다. */
+function isFirstSeason(s: SeasonRow): boolean {
+  return one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM seasons WHERE number < ?`, s.number)!.n === 0;
 }
 
 export interface SeasonHoldemRow {

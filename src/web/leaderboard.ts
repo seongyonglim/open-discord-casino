@@ -55,7 +55,7 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
      그 시즌에 끝난 대회가 있을 때만 붙으므로, 다른 게임과 마찬가지로 데이터가 정한다. */
   const htCount = seasonHoldemCount(s.id);
   if (htCount > 0) {
-    games.unshift({ key: 'holdem', label: '홀덤 프리롤', rounds: htCount, players: 0 });
+    games.unshift({ key: 'holdem', label: '홀덤 토너먼트', rounds: htCount, players: 0 });
   }
   // 요청한 탭이 그 시즌에 없으면 통합으로 되돌린다 — 시즌을 바꿨을 때 빈 화면이 나오지 않게
   const active = tab !== 'overall' && games.some(g => g.key === tab) ? tab : 'overall';
@@ -232,7 +232,7 @@ export function leaderboardPage(me: WebUser | null): string {
       document.getElementById('lbHead').innerHTML = overall
         ? '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">포인트<\\/th><\\/tr>'
         : ht
-          ? '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">프리롤 상금<\\/th>'
+          ? '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">총 상금<\\/th>'
             + '<th class="r">우승<\\/th><th class="r">입상<\\/th><th class="r">참가<\\/th><\\/tr>'
           : '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">순수익<\\/th>'
             + '<th class="r">승률<\\/th><th class="r">판수<\\/th><\\/tr>';
@@ -260,6 +260,14 @@ export function leaderboardPage(me: WebUser | null): string {
     function paintMe(){
       var bar = document.getElementById('lbMe');
       if (!data.me) { bar.hidden = true; return; }
+      /* 이미 화면에 보이는 사람에게는 띄우지 않는다. 포디움이나 표에 내 줄이 이미
+         초록으로 칠해져 있는데 아래에 같은 말을 한 번 더 적으면 중복이다.
+         이 고정바의 쓸모는 100위 밖이라 표에 없는 경우 하나뿐이다. */
+      var shown = false;
+      for (var i = 0; i < data.rows.length; i++) {
+        if (data.rows[i].userId === data.me.userId) { shown = true; break; }
+      }
+      if (shown) { bar.hidden = true; return; }
       bar.hidden = false;
       var overall = data.kind === 'overall';
       var ht = data.kind === 'holdem';
