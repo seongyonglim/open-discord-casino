@@ -1,6 +1,9 @@
 node_modules/
 dist/
-.env
+# 비밀은 전부 무시한다. `.env` 만 적어 두면 .env.local · .env.prod 같은 변형이 그대로
+# 커밋된다 — 이름을 조금만 바꿔도 새는 구멍이라 통째로 막고, 값이 없는 예시만 남긴다.
+.env*
+!.env.example
 *.db
 data-snapshot.db
 .claude/
