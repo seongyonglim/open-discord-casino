@@ -6,6 +6,10 @@ import { join } from 'node:path';
 import { lobbyPage, leaderboardPage, noticeListPage, noticeDetailPage } from './pages';
 import { findNotice } from './notices';
 import { setRequestUser, LOGO_SVG } from './views';
+import {
+  adminPage, isAdmin, adminTokenOk,
+  handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
+} from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
 import { adminResetRunningTournament } from '../db/holdem';
@@ -166,6 +170,14 @@ function send(res: http.ServerResponse, status: number, html: string): void {
   sendBody(res, status, 'text/html; charset=utf-8', html);
 }
 
+/* 권한이 없다고 분명히 말한다. 로그인한 사람에게만 보이는 화면이라 경로의 존재를
+   숨길 이유가 없다 — 숨기면 운영자가 오타를 냈을 때 무엇이 잘못됐는지 알 수 없다. */
+function forbiddenPage(): string {
+  return '<!doctype html><meta charset="utf-8"><body style="background:#050506;color:#8b8b92;'
+    + 'font-family:sans-serif;text-align:center;padding:80px">'
+    + '운영자만 볼 수 있는 화면입니다 · <a style="color:#d4af37" href="/">로비로</a></body>';
+}
+
 function notFound(res: http.ServerResponse): void {
   send(res, 404, '<!doctype html><meta charset="utf-8"><body style="background:#050506;color:#8b8b92;font-family:sans-serif;text-align:center;padding:80px">페이지를 찾을 수 없습니다 · <a style="color:#d4af37" href="/">로비로</a></body>');
 }
@@ -214,6 +226,30 @@ export function startWebServer(): void {
         return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null));
       }
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
+
+      /* 운영자 화면. 보기는 admin 역할만, 바꾸는 동작은 admin + ADMIN_TOKEN 두 겹이다.
+         로그인 안 한 사람에게는 이 경로의 존재를 알리지 않는다 — 다른 화면과 같이
+         로그인으로 보낸다. 로그인했지만 권한이 없으면 403 으로 분명히 막는다. */
+      if (path === '/admin') {
+        if (!me) { res.writeHead(302, { location: '/auth/login' }); res.end(); return; }
+        if (!isAdmin(me)) return send(res, 403, forbiddenPage());
+        return send(res, 200, adminPage(me));
+      }
+      if (path.startsWith('/api/admin/')) {
+        // 존재를 알리지 않는다 — 권한이 없으면 없는 경로처럼 굴게 한다
+        if (!isAdmin(me)) return sendJson(res, 404, { error: 'not found' });
+        if (path === '/api/admin/users' && req.method === 'GET') {
+          return await handleAdminUsers(req, res, url.searchParams.get('q') ?? '');
+        }
+        // 여기부터는 바꾸는 동작 — 두 번째 잠금을 지난 요청만 받는다
+        if (!adminTokenOk(req)) return sendJson(res, 403, { error: '운영 토큰이 맞지 않습니다' });
+        if (path === '/api/admin/points' && req.method === 'POST') return await handleAdminPoints(req, res);
+        if (path === '/api/admin/tournament/purge' && req.method === 'POST') return await handleAdminPurge(req, res);
+        if (path === '/api/admin/tournament/test' && req.method === 'POST') {
+          return await handleAdminTestTournament(req, res);
+        }
+        return sendJson(res, 404, { error: 'not found' });
+      }
 
       /* 공지사항 — 글은 코드(web/notices.ts)에 있다. 목록과 개별 글. */
       if (path === '/notices') return send(res, 200, noticeListPage());
