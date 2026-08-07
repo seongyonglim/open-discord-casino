@@ -49,8 +49,13 @@
      단위는 작게 옆에. 좁아지면 한 칸씩 쌓인다. */
   .ad-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 14px;margin-bottom:12px}
   .ad-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--muted)}
+  /* 고정폭은 숫자 칸에만 남긴다(아래 input[type=number] 등). 여기에 걸어 두면 제목처럼
+     한글을 넣는 칸까지 고정폭이 되는데, 그 스택에는 한글 글리프가 없어서 입력한 글자가
+     폴백 폰트로 얇게 떨어진다 — 입력창이 촌스러워 보이던 원인 하나가 이것이었다.
+     숫자 정렬은 tabular-nums 로 지킨다. */
   .ad-grid input{background:var(--panel2);border:1px solid var(--line);border-radius:9px;
-    padding:8px 11px;color:var(--txt);font-family:var(--mono);font-size:13.5px;width:100%}
+    padding:8px 11px;color:var(--txt);font-size:13.5px;width:100%;
+    font-variant-numeric:tabular-nums}
   .ad-grid input:focus{outline:none;border-color:var(--gold)}
   .ad-grid i{font-style:normal;font-size:11px;color:var(--muted);font-weight:600}
   .ad-live{font-size:10px;font-weight:800;color:var(--win);
@@ -90,6 +95,7 @@
 
   .ad-wrap button.primary{background:rgba(212,175,55,.14);border-color:var(--gold);color:var(--gold-hi)}
   .ad-wrap button.primary:hover{background:rgba(212,175,55,.22)}
-  .ad-ta{width:100%;font-family:var(--mono);font-size:13px;line-height:1.65;resize:vertical;margin-bottom:10px}
+  /* 공지 본문은 한글 문장이다 — 고정폭으로 두면 폴백 폰트가 섞여 읽기 나쁘다 */
+  .ad-ta{width:100%;font-size:13.5px;line-height:1.7;resize:vertical;margin-bottom:10px}
   .ad-tbl td button{padding:5px 9px;font-size:12px;margin-right:4px}
   .ad-card h2{display:flex;align-items:center;gap:8px}

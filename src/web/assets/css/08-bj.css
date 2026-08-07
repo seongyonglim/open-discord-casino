@@ -62,7 +62,7 @@
   .bj-seat[data-seat="1"],.bj-seat[data-seat="3"]{transform:translateY(14px)}
   .bj-seat[data-seat="2"]{transform:translateY(22px)}
 
-  .bj-seat.empty{align-items:center;justify-content:center;color:#4f6d5c;gap:2px;
+  .bj-seat.empty{align-items:center;justify-content:center;color:#7fa392;gap:2px;
     background:rgba(0,0,0,.16);border-style:dashed}
   .bj-seat.empty.open{cursor:pointer}
   .bj-seat.empty.open:hover{border-color:var(--gold);color:var(--gold);background:rgba(212,175,55,.06)}

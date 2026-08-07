@@ -84,11 +84,16 @@
   /* 설명이 남는 공간을 모두 차지하게 해서, 설명 길이가 달라도 버튼은 항상 카드 맨 아래에 정렬된다 */
   .game-card p{margin:0 0 4px;color:var(--muted);font-size:13px;flex:1}
   /* 고르기 전에 알면 도움이 되는 수치 한 줄 — 최대 배당, 덱 수 같은 것.
-     설명(flex:1)과 달리 늘어나지 않게 flex:none으로 두고, 숫자라서 고정폭으로 쓴다.
-     설명보다 한 단 작고 흐리게 — 이것부터 읽히면 카드가 사양표가 된다. */
+     설명(flex:1)과 달리 늘어나지 않게 flex:none으로 두고, 설명보다 한 단 작고 흐리게 —
+     이것부터 읽히면 카드가 사양표가 된다.
+
+     고정폭을 벗겼다. 숫자만 있으면 고정폭이 맞지만 이 줄은 "25칸 · 지뢰 1·3·5·10·24개"
+     처럼 한글이 섞인다. 고정폭 스택에는 한글 글리프가 없어서 그 글자만 다른 폰트로
+     떨어지는데, 11px 에서는 자간과 굵기가 눈에 띄게 어긋나 흐릿해 보인다.
+     색도 #6d6d73 이라 대비가 3.4 였다 — 본문 기준(4.5)에 못 미친다. */
   .game-card .gc-fact{flex:none;margin:0 0 6px;padding-top:6px;
     border-top:1px solid rgba(255,255,255,.055);
-    font-family:var(--mono);font-size:11px;color:#6d6d73;letter-spacing:-.1px}
+    font-size:11.5px;color:#82828a;letter-spacing:-.1px}
   .game-card .btn{justify-content:center}
 
   /* 아이콘 줄 — 왼쪽 아이콘, 오른쪽 배지 */
@@ -96,8 +101,11 @@
   /* 시간·성격 배지. 지금은 홀덤 프리롤만 쓴다 — 일곱 중 유일하게 시간이 정해진 게임이라
      그 사실 자체가 정보다. "인기"나 "HOT" 같은 건 붙이지 않는다. 우리 규모에서는
      대부분 사실이 아니게 되고, 사실이 아닌 배지는 한 번 들키면 나머지도 안 믿게 된다. */
-  .gc-badge{flex:none;padding:3px 8px;border-radius:999px;
-    font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.3px;
+  /* 고정폭을 벗기고 한 단 키웠다. 여기 들어가는 말은 "예정 없음"·"등록 중"처럼
+     전부 한글인데, 고정폭 스택에 한글 글리프가 없어 10.5px 폴백으로 얇게 떨어졌다 —
+     대비는 충분한데도 읽기 어려웠던 이유가 색이 아니라 이것이었다. */
+  .gc-badge{flex:none;padding:3.5px 9px;border-radius:999px;
+    font-size:11.5px;font-weight:700;letter-spacing:0;
     color:#1c1608;background:linear-gradient(180deg,#e8c65a,#c8a52f);
     border:1px solid rgba(255,235,160,.55)}
   .game-card.ready:hover p{color:#c8c8cf}
