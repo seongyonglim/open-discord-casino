@@ -12,6 +12,7 @@
  */
 import { one, all, run, tx } from './queries';
 import * as T from '../services/tournament';
+import { rewards } from '../services/rewards';
 
 export interface TournamentConfig {
   /* 자정으로부터의 분(0~1439). 시간만 받으면 22:30 같은 일정을 만들 수 없다. */
@@ -33,8 +34,19 @@ export interface TournamentConfig {
 /* 순위별 분배 비율은 여기서 다루지 않는다. ITM 인원(참가자의 30%)과 순위별 비중은
    검증된 산식이라 그대로 둔다 — 운영자가 고치는 것은 "풀의 크기"까지다. */
 
-/** 코드의 기본값. DB 에 아무것도 없을 때 이 값이 그대로 쓰인다. */
+/**
+ * 코드의 기본값. DB 에 아무것도 없을 때 이 값이 그대로 쓰인다.
+ *
+ * 프리롤 상금은 시즌마다 다르다 — services/rewards 의 표에서 그대로 가져온다.
+ * 여기서 곱하지 않는다. 다른 값(칩·블라인드·시각)은 시즌과 무관하다. 그건 판의 모양이지
+ * 보상이 아니다.
+ *
+ * 운영자가 [기본 룰 템플릿]에서 값을 저장해 뒀다면 그 값이 이긴다 — 명시한 값을 코드가
+ * 조용히 덮으면 안 된다. 다만 시즌이 올라 기본값이 커졌는데 저장된 값만 옛날에 머물러
+ * 있으면 공지한 것과 실제가 어긋나므로, multiplierBehindSeason 이 그 사실을 알려 준다.
+ */
 export function defaultConfig(): TournamentConfig {
+  const r = rewards();
   return {
     regOpenMin: T.REG_OPEN_HOUR * 60,
     startMin: T.START_HOUR * 60,
@@ -42,8 +54,8 @@ export function defaultConfig(): TournamentConfig {
     lateRegMin: Math.round(T.LATE_REG_SEC / 60),
     startingStack: T.STARTING_STACK,
     levelMin: Math.round(T.LEVEL_DURATION_SEC / 60),
-    weekdayMultiplier: T.WEEKDAY_MULTIPLIER,
-    weekendMultiplier: T.WEEKEND_MULTIPLIER,
+    weekdayMultiplier: r.freerollPerHead,
+    weekendMultiplier: r.freerollPerHeadWeekend,
     prizeFixed: 0,
     buyIn: 0,
   };
@@ -137,9 +149,44 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
   });
 }
 
-/** 설정을 전부 지워 코드 기본값으로 되돌린다. */
+/** 이 표에 함께 사는 열쇠들. 되돌리기가 건드릴 것과 아닌 것을 여기서 가른다. */
+const CONFIG_KEYS = [
+  'regOpenMin', 'startMin', 'graceMin', 'lateRegMin', 'startingStack', 'levelMin',
+  'weekdayMultiplier', 'weekendMultiplier', 'prizeFixed', 'buyIn',
+  // 예전 표기(시 단위). 남아 있으면 되돌린 뒤에도 그 값이 읽히므로 함께 지운다
+  'regOpenHour', 'startHour',
+];
+
+/**
+ * 템플릿을 코드 기본값으로 되돌린다.
+ *
+ * 열쇠를 하나씩 지운다. 예전에는 `DELETE FROM holdem_settings` 로 표를 통째로 비웠는데,
+ * 그 표에는 반복 개최 설정(recurEnabled·recurMode…)과 "어느 차례까지 만들었는가"
+ * (recurLastAt)도 함께 산다. 그래서 [기본값으로]를 한 번 누르면
+ *   · 켜 두었던 반복 개최가 조용히 꺼지고,
+ *   · 이미 만든 차례의 표시가 사라져 지웠던 대회가 다시 만들어졌다.
+ * 두 번째가 특히 나쁘다 — 되살아남을 막으려고 둔 장치가 관계없는 버튼에 풀렸다.
+ */
 export function resetConfig(): void {
-  run(`DELETE FROM holdem_settings`);
+  return tx(() => {
+    for (const k of CONFIG_KEYS) run(`DELETE FROM holdem_settings WHERE key = ?`, k);
+  });
+}
+
+/**
+ * 시즌의 기본 상금이 올랐는데 저장된 값만 그 아래에 멈춰 있는가.
+ *
+ * 운영자가 명시한 값은 코드가 덮지 않는다(그게 옳다). 다만 시즌 1이 열려 기본 상금이
+ * 올랐는데 저장된 값이 오픈베타 시절 그대로면, 공지한 것과 실제가 어긋난다.
+ * 조용히 어긋나 있는 것이 제일 나쁘므로 화면이 이 사실을 띄운다.
+ */
+export function multiplierBehindSeason(): { behind: true; now: number; expected: number } | null {
+  const v = raw();
+  if (v.weekdayMultiplier == null) return null;      // 저장된 값이 없으면 기본값이 그대로 쓰인다
+  const now = Number(v.weekdayMultiplier);
+  const expected = rewards().freerollPerHead;
+  if (!Number.isFinite(now) || now >= expected) return null;
+  return { behind: true, now, expected };
 }
 
 /** 아직 시작하지 않은 대회가 있으면 그 행에도 새 설정을 반영한다(다음 대회 = 아직 안 연 판). */

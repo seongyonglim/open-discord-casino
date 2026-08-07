@@ -13,10 +13,15 @@
 //    대기 시간을 없앨 수 있고, 파산한 채로 방치하면 저절로 자격이 차오르는 것도 이상하다.
 //  · 지급 조건 검사와 실제 지급은 queries.claimRelief가 한 트랜잭션에서 처리한다(이중 지급 방지).
 import { claimRelief } from '../db/queries';
+import { rewards } from './rewards';
 
-export const RELIEF_AMOUNT = 200;
+/* 지급액은 시즌마다 다르다 — services/rewards 의 표를 보라. 여기서 곱하지 않는다.
+   반드시 reliefAmount() 로 읽는다: 어딘가에 숫자를 직접 적으면 안내에 쓰인 금액과
+   실제로 들어오는 금액이 갈라진다. */
 export const RELIEF_COOLDOWN_SEC = 2 * 60 * 60;
 
+export const reliefAmount = () => rewards().relief;
+
 export function claim(userId: string) {
-  return claimRelief(userId, RELIEF_AMOUNT, RELIEF_COOLDOWN_SEC);
+  return claimRelief(userId, reliefAmount(), RELIEF_COOLDOWN_SEC);
 }

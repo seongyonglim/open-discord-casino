@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
 import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
 import { checkIn, rewardSummary } from '../services/economy';
-import { claim as claimRelief, RELIEF_AMOUNT, RELIEF_COOLDOWN_SEC } from '../services/relief';
+import { claim as claimRelief, reliefAmount, RELIEF_COOLDOWN_SEC } from '../services/relief';
 import {
   upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard,
   getBoard, setBoard, clearBoard, type BoardKind,
@@ -98,7 +98,7 @@ function boardSpec(kind: BoardKind): BoardSpec {
   return {
     content: '**개인회생 지원금**\n'
       + '포인트를 전부 잃었을 때 다시 시작할 수 있도록 드리는 지원금입니다.\n\n'
-      + `· 지급액 **${RELIEF_AMOUNT.toLocaleString('ko-KR')}P**\n`
+      + `· 지급액 **${reliefAmount().toLocaleString('ko-KR')}P**\n`
       + '· 보유 포인트가 **정확히 0P**일 때만 신청할 수 있습니다\n'
       + `· 한 번 받으면 **${hours}시간** 뒤에 다시 신청할 수 있습니다`,
     label: '지원금 신청', customId: 'relief_claim', style: ButtonStyle.Primary,
@@ -277,7 +277,7 @@ async function handleReliefClaim(interaction: any, res: ServerResponse): Promise
 
   // 출석과 마찬가지로 누가 신청했는지 채널에 공개로 남긴다
   ackSilently(res);
-  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(RELIEF_AMOUNT)}\n`
+  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(reliefAmount())}\n`
     + `잔액 ${pts(r.balance)} · 다음 신청 <t:${r.nextAvailableAt}:R>`;
   await postChannelMessage(interaction.channel_id, log)
     .catch((e: unknown) => console.error('지원금 로그 게시 실패:', e));

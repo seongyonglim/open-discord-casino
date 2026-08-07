@@ -338,6 +338,17 @@ export function placeBet(userId: string, gameType: string, betAmount: number, in
    집계가 어디로 갈지 정해져 있어야 하기 때문이다.
    이 함수가 season.ts 가 아니라 여기 있는 이유: bumpGameStats 가 이걸 부르는데,
    season.ts 는 core 를 가져다 쓴다. 반대로도 가져오면 순환이 된다. */
+/**
+ * 지금 시즌의 번호. 시즌마다 다른 보상 금액을 이 값으로 고른다 — services/rewards.
+ *
+ * id 가 아니라 번호를 쓰는 이유: id 는 행이 만들어진 순서일 뿐이고, "몇 번째 시즌인가"는
+ * number 가 답한다. 둘이 우연히 같더라도 뜻이 다르므로 섞어 쓰면 언젠가 어긋난다.
+ */
+export function currentSeasonNumber(): number {
+  return one<{ number: number }>(
+    `SELECT number FROM seasons WHERE id = ?`, currentSeasonId())?.number ?? 0;
+}
+
 export function currentSeasonId(): number {
   const open = one<{ id: number }>(
     `SELECT id FROM seasons WHERE closed_at IS NULL ORDER BY number DESC LIMIT 1`);
