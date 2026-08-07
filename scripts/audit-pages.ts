@@ -114,6 +114,10 @@ async function main(): Promise<void> {
   await sleep(400);
 
   upsertUser('a_pages', '페이지감사', null);
+  /* 운영자로 만든다 — 아래 [2b] 가 어드민 화면의 마크업을 읽어야 하기 때문이다.
+     운영자가 아니면 /admin 이 404 라 검사할 요소가 통째로 빠지고, 그러면 검사가
+     "볼 것이 없어서" 통과한다(실제로 그렇게 통과했다). */
+  (require('../src/db/queries') as typeof import('../src/db/queries')).ensureSeedAdmin('a_pages');
   if ((getWebUser('a_pages')?.balance ?? 0) <= 0) adjustBalance('a_pages', 10_000, 'test:seed');
   const token = randomBytes(16).toString('hex');
   createSession(token, 'a_pages', Math.floor(Date.now() / 1000) + 3600);
@@ -277,6 +281,115 @@ async function main(): Promise<void> {
   /* 대회가 없을 때의 화면. 이 감사 환경에는 대회가 하나도 없으므로(자동 생성이 없다)
      홀덤 화면은 언제나 이 경로를 그린다 — 그래서 여기서 확인할 수 있다.
      빈 화면이 나오면 서비스가 죽은 것처럼 보이는데, 그건 눈으로 보기 전에는 모른다. */
+  /* hidden 속성이 정말 감추는가.
+     브라우저 기본 스타일의 [hidden]{display:none} 은 우선순위가 가장 낮다. 그래서
+     어떤 요소에 display 를 직접 정해 두면 el.hidden = true 를 해도 화면에서 사라지지
+     않는다 — 코드는 감췄다고 믿고, 화면에는 그대로 남는다.
+
+     이 함정을 두 번 밟았다. 참가 방식에 안 맞는 입력 줄이 "0 P"로 남았고(.ad-grid),
+     사전 액션의 선택지 넷이 늘 다 보였다(.ht-pre label). 둘 다 아무 에러가 없어서
+     el.hidden 만 찍어 보면 true 가 나온다 — 실제로 그렇게 확인하고 넘어갔다.
+
+     그래서 규칙으로 만든다: 코드가 hidden 을 켜는 요소의 클래스에 display 규칙이
+     있으면, 같은 클래스의 [hidden] 규칙도 반드시 있어야 한다. */
+  console.log('\n[2b] hidden 이 실제로 감추는가 (display 를 직접 정한 요소)');
+  {
+    const { readFileSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const cssDir = join(process.cwd(), 'src', 'web', 'assets', 'css');
+    const css = readdirSync(cssDir).filter(f => f.endsWith('.css'))
+      .map(f => readFileSync(join(cssDir, f), 'utf8')).join('\n');
+
+    /* 검사 대상은 "코드가 hidden 을 켜는 요소"다. 그 목록을 손으로 적으면 새 요소가
+       늘 때 빠지므로, display 를 직접 정해 둔 클래스를 전부 훑어 [hidden] 짝을 본다. */
+    const withDisplay = new Set<string>();
+    const tagsWithDisplay = new Set<string>();
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sel = m[1], body = m[2];
+      const dm = body.match(/(?:^|;)\s*display\s*:\s*([a-z-]+)/);
+      if (!dm || dm[1] === 'none') continue;
+      if (/\[hidden\]/.test(sel)) continue;
+      for (const cls of sel.matchAll(/\.([a-zA-Z][\w-]*)/g)) withDisplay.add(cls[1]);
+      /* 태그로 잡는 규칙(.ht-pre label 처럼)도 센다 — 클래스가 없는 요소는 이쪽으로만
+         잡히고, 놓치면 그 요소는 검사에서 통째로 빠진다.
+
+         조상 클래스까지 함께 기록한다. 태그 이름만 모으면 `.ht-grid > div` 하나 때문에
+         모든 div 가 대상이 되어 엉뚱한 곳이 걸린다(실제로 그랬다). "어느 클래스 안의
+         어떤 태그인가"로 좁힌다. */
+      for (const one of sel.split(',')) {
+        const parts = one.trim().split(/[\s>+~]+/).filter(Boolean);
+        const last = parts[parts.length - 1] ?? '';
+        if (!/^[a-z]+$/.test(last)) continue;
+        const anc = parts.slice(0, -1).join(' ').match(/\.([a-zA-Z][\w-]*)/g) ?? [];
+        // 조상이 없는 순수 태그 규칙(label{...})은 어디서든 걸리므로 빈 조상으로 기록
+        if (anc.length === 0) tagsWithDisplay.add('|' + last);
+        else for (const a of anc) tagsWithDisplay.add(a.slice(1) + '|' + last);
+      }
+    }
+    /* 짝이 있는가. 셀렉터 모양이 제각각이라(`.x[hidden]`, `.a .x[hidden]`)
+       "그 클래스가 [hidden] 과 같은 셀렉터에 나오는가"로 본다. */
+    const hasHiddenRule = (cls: string) =>
+      new RegExp(`\\.${cls}\\b[^{,]*\\[hidden\\]|\\[hidden\\][^{,]*\\.${cls}\\b`).test(css)
+      || new RegExp(`\\.${cls}\\[hidden\\]`).test(css);
+
+    /* 화면 코드가 실제로 hidden 을 켜는 요소만 본다 — display 를 정한 클래스는 수백 개이고
+       그 전부에 [hidden] 규칙을 요구할 이유는 없다. id 로 찾아 켜는 것들을 모은다. */
+    const src = ['admin.ts', 'leaderboard.ts', 'pages.ts'].map(f =>
+      readFileSync(join(process.cwd(), 'src', 'web', f), 'utf8')).join('\n')
+      + readdirSync(join(process.cwd(), 'src', 'web', 'games', 'holdem-client'))
+        .map(f => readFileSync(join(process.cwd(), 'src', 'web', 'games', 'holdem-client', f), 'utf8'))
+        .join('\n');
+    /* 실제로 hidden 을 "대입하는" 요소만 모은다. getElementById 로 찾기만 한 것까지 세면
+       감출 생각이 없는 요소에까지 [hidden] 규칙을 요구하게 된다(실제로 그랬다). 두 모양이 있다:
+         document.getElementById('x').hidden = ...
+         var v = document.getElementById('x');  …  v.hidden = ... */
+    const ids = new Set<string>();
+    for (const m of src.matchAll(/getElementById\('([a-zA-Z][\w]*)'\)\s*\.hidden\s*=/g)) ids.add(m[1]);
+    const varOf = new Map<string, string>();
+    for (const m of src.matchAll(/var\s+([A-Za-z_$][\w$]*)\s*=\s*document\.getElementById\('([a-zA-Z][\w]*)'\)/g)) {
+      varOf.set(m[1], m[2]);
+    }
+    for (const [v, id] of varOf) {
+      if (new RegExp(`\\b${v}\\.hidden\\s*=`).test(src)) ids.add(id);
+    }
+
+    const pageHtml = (await get('/admin', cookie)).text + (await get('/leaderboard', cookie)).text
+      + (await get('/games/holdem', cookie)).text;
+    /* 판정은 클래스가 아니라 "요소" 단위다. 한 요소가 클래스를 여럿 갖고 있으면 그중
+       하나만 [hidden] 규칙을 가져도 감춰진다(.hta[hidden] 이 `class="hta back"` 을 덮는다).
+       클래스별로 보면 그런 요소가 전부 거짓 경보로 잡힌다 — 실제로 셋이 그랬다. */
+    let checked = 0;
+    const bad: string[] = [];
+    /* 클래스가 없는 요소도 봐야 한다. `.ht-pre label{display:flex}` 처럼 태그로 잡는
+       규칙이 있으면 그 요소에도 hidden 이 안 먹는데, 클래스만 보면 통째로 건너뛴다 —
+       실제로 사전 액션 선택지 넷이 그렇게 빠져나갔다. */
+    const tagHasHidden = (t: string) => new RegExp(`\\b${t}\\[hidden\\]`).test(css);
+
+    for (const id of ids) {
+      const m = pageHtml.match(new RegExp(`<([a-z]+)[^>]*\\bid="${id}"[^>]*>`));
+      if (!m) continue;                         // 그 화면을 못 읽었다 — 아래 "대상이 있다"가 잡는다
+      const tagName = m[1];
+      const cls = m[0].match(/class="([^"]+)"/)?.[1] ?? '';
+      const list = cls.split(/\s+/).filter(Boolean);
+      const byClass = list.some(c => withDisplay.has(c));
+      /* 클래스가 없는 요소는 "어느 클래스 안에 있는가"로 판단한다. 마크업에서 이 요소
+         바로 앞에 나오는 class 를 조상으로 본다 — 생성된 마크업이라 이 근사로 충분하다. */
+      const at = pageHtml.indexOf(m[0]);
+      const nearCls = pageHtml.slice(0, at).match(/class="([^"]+)"(?![\s\S]*class=")/)?.[1] ?? '';
+      const byTag = list.length === 0 && (
+        tagsWithDisplay.has('|' + tagName)
+        || nearCls.split(/\s+/).some(a => tagsWithDisplay.has(a + '|' + tagName)));
+      if (!byClass && !byTag) continue;         // display 를 직접 정한 규칙이 없다
+      checked++;
+      const safe = list.some(c => hasHiddenRule(c)) || (byTag && tagHasHidden(tagName));
+      if (!safe) bad.push(`#${id}(${cls || '<' + tagName + '>'})`);
+    }
+    ck('hidden 을 켜는 요소에 [hidden] 규칙이 빠지지 않았다', bad.length === 0,
+      bad.length ? bad.join(', ') + ' — display 를 정해 둬서 hidden 이 안 먹는다' : '');
+    // 이 검사가 실제로 무언가를 보고 있는지 (대상이 0개면 통과가 무의미하다)
+    ck('검사 대상이 실제로 있다', checked > 0, `${checked}개 요소`);
+  }
+
   console.log('\n[3] 대회가 없을 때의 홀덤 화면');
   {
     const ht = (await get('/games/holdem', cookie)).text;
