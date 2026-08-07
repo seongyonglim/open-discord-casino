@@ -141,7 +141,7 @@ const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 function todaySchedule(now: number, cfg = getConfig()): T.TournamentSchedule {
   return T.scheduleForDate(T.kstDateStr(now * 1000), {
-    regOpenHour: cfg.regOpenHour, startHour: cfg.startHour, graceSec: cfg.graceMin * 60,
+    regOpenMin: cfg.regOpenMin, startMin: cfg.startMin, graceSec: cfg.graceMin * 60,
     weekdayMultiplier: cfg.weekdayMultiplier, weekendMultiplier: cfg.weekendMultiplier,
   });
 }

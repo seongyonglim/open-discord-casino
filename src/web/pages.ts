@@ -9,7 +9,7 @@ import {
 } from '../db/queries';
 import { recentHoldemWinners, type HoldemStatus } from '../db/holdem';
 import * as T from '../services/tournament';
-import { NOTICES, type Notice } from './notices';
+import { listNotices, noticeNeighbors, type Notice } from '../db/notices';
 
 /* 로비의 게임 목록.
    ── 아이콘
@@ -230,7 +230,7 @@ function newsSection(): string {
      순이익을 제대로 내려면 게임별 라운드 표(ladder_bets·crash_bets·... 각각 amount와
      payout이 있다)를 여섯 개 합쳐야 한다. 그럴 가치가 있다고 판단되면 그때 만든다. */
 
-  const notice = NOTICES[0];
+  const notice = listNotices()[0];
   if (notice) {
     items.push(`<li><span class="nw-k">공지</span>
       <span class="nw-v"><a href="/notices/${esc(notice.id)}">${esc(notice.title)}</a></span></li>`);
@@ -409,7 +409,7 @@ function noticeBody(n: Notice): string {
 }
 
 export function noticeListPage(): string {
-  const rows = NOTICES.map(n => `
+  const rows = listNotices().map(n => `
     <a class="nt-row" href="/notices/${esc(n.id)}">
       <span class="nt-kind k-${esc(n.kind)}">${esc(n.kind)}</span>
       <span class="nt-mid">
@@ -428,9 +428,8 @@ export function noticeListPage(): string {
 }
 
 export function noticeDetailPage(n: Notice): string {
-  const idx = NOTICES.findIndex(x => x.id === n.id);
-  const prev = idx >= 0 && idx + 1 < NOTICES.length ? NOTICES[idx + 1] : null;   // 더 과거 글
-  const next = idx > 0 ? NOTICES[idx - 1] : null;                                 // 더 최신 글
+  // 앞뒤 글은 목록과 같은 순서를 써야 넘길 때 어긋나지 않는다 (db/notices)
+  const { prev, next } = noticeNeighbors(n.id);
   const nav = [
     next ? `<a class="nt-nav" href="/notices/${esc(next.id)}">← 다음 글 · ${esc(next.title)}</a>` : '',
     prev ? `<a class="nt-nav" href="/notices/${esc(prev.id)}">이전 글 · ${esc(prev.title)} →</a>` : '',

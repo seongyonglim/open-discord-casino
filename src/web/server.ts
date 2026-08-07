@@ -5,13 +5,14 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { lobbyPage, noticeListPage, noticeDetailPage } from './pages';
 import { leaderboardPage, handleRankApi } from './leaderboard';
-import { findNotice } from './notices';
+import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
   handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill,
   handleAdminConfig, handleAdminConfigReset,
+  handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
 } from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -187,6 +188,9 @@ function notFound(res: http.ServerResponse): void {
 
 export function startWebServer(): void {
   const port = Number(process.env.PORT ?? 8080);
+  /* 빈 DB 로 처음 뜨면 코드에 있던 공지를 한 번 심는다. 이미 글이 있으면 아무것도 안 한다 —
+     운영자가 지운 글이 서버를 다시 띄울 때마다 되살아나면 지우기가 지우기가 아니게 된다. */
+  seedNoticesOnce();
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -254,13 +258,17 @@ export function startWebServer(): void {
         if (path === '/api/admin/season/backfill' && req.method === 'POST') return await handleAdminSeasonBackfill(req, res);
         if (path === '/api/admin/config' && req.method === 'POST') return await handleAdminConfig(req, res);
         if (path === '/api/admin/config/reset' && req.method === 'POST') return await handleAdminConfigReset(req, res);
+        if (path === '/api/admin/notice/create' && req.method === 'POST') return await handleAdminNoticeCreate(req, res);
+        if (path === '/api/admin/notice/update' && req.method === 'POST') return await handleAdminNoticeUpdate(req, res);
+        if (path === '/api/admin/notice/toggle' && req.method === 'POST') return await handleAdminNoticeToggle(req, res);
+        if (path === '/api/admin/notice/delete' && req.method === 'POST') return await handleAdminNoticeDelete(req, res);
         if (path === '/api/admin/tournament/test' && req.method === 'POST') {
           return await handleAdminTestTournament(req, res);
         }
         return sendJson(res, 404, { error: 'not found' });
       }
 
-      /* 공지사항 — 글은 코드(web/notices.ts)에 있다. 목록과 개별 글. */
+      /* 공지사항 — 글은 DB(notices)에 있고 운영자 화면에서 고친다. 목록과 개별 글. */
       if (path === '/notices') return send(res, 200, noticeListPage());
       if (path.startsWith('/notices/')) {
         const found = findNotice(decodeURIComponent(path.slice('/notices/'.length)));

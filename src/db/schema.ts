@@ -438,6 +438,30 @@ function initSchema(): void {
        한 줄만 더하면 되고, 값이 없으면 코드의 기본값이 그대로 쓰인다(폴백).
        여기 값을 바꿔도 이미 만들어진 대회는 흔들리지 않는다 — 대회를 만들 때 그 시점의
        설정을 대회 행에 박아 두고, 진행 중에는 행의 값만 본다. */
+    /* 공지사항.
+       원래는 코드(web/notices.ts)에 있었다. "글이 자주 올라오는 곳이 아니고, 코드에 두면
+       배포와 함께 버전 관리된다"는 판단이었는데, 글 한 줄을 고치려고 배포를 해야 하는 것이
+       실제로는 더 컸다. 이제 DB 에 두고 운영자 화면에서 고친다.
+
+       본문 구조(sections)는 코드에 있던 모양을 그대로 옮긴다 — 제목·문단·목록·표.
+       JSON 으로 넣는 이유는 절 하나당 표까지 들어갈 수 있어서 열로 펴면 표가 세 벌 되기
+       때문이다. 화면이 읽는 모양은 예전과 같으므로 보이는 것은 달라지지 않는다.
+
+       id 는 URL 에 그대로 쓰인다. 한 번 정하면 바꾸지 않는다 — 링크를 공유한 사람의
+       주소가 깨진다. 그래서 지우기와 별개로 '숨김'을 둔다. */
+    CREATE TABLE IF NOT EXISTS notices (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,                    -- 'YYYY-MM-DD' (KST)
+      kind TEXT NOT NULL,                    -- 업데이트|밸런스|버그 수정|신규|점검|이벤트
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      sections_json TEXT NOT NULL,           -- NoticeSection[] 그대로
+      active INTEGER NOT NULL DEFAULT 1,     -- 0이면 목록에도 상세에도 안 나온다
+      sort_at INTEGER NOT NULL,              -- 정렬 기준(최신이 위). 같은 날짜의 순서를 정한다
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_notices_order ON notices(active, sort_at DESC);
+
     CREATE TABLE IF NOT EXISTS holdem_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,

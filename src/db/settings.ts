@@ -14,8 +14,9 @@ import { one, all, run, tx } from './queries';
 import * as T from '../services/tournament';
 
 export interface TournamentConfig {
-  regOpenHour: number;      // 등록이 열리는 시각 (KST, 0~23)
-  startHour: number;        // 시작 예정 시각 (KST, 0~23)
+  /* 자정으로부터의 분(0~1439). 시간만 받으면 22:30 같은 일정을 만들 수 없다. */
+  regOpenMin: number;       // 등록이 열리는 시각 (KST)
+  startMin: number;         // 시작 예정 시각 (KST)
   graceMin: number;         // 최소 인원을 기다리는 시간 (분). 시작 시각 이후로 잰다
   lateRegMin: number;       // 실제 시작 후 늦은 등록을 받는 시간 (분)
   startingStack: number;    // 시작 칩
@@ -30,8 +31,8 @@ export interface TournamentConfig {
 /** 코드의 기본값. DB 에 아무것도 없을 때 이 값이 그대로 쓰인다. */
 export function defaultConfig(): TournamentConfig {
   return {
-    regOpenHour: T.REG_OPEN_HOUR,
-    startHour: T.START_HOUR,
+    regOpenMin: T.REG_OPEN_HOUR * 60,
+    startMin: T.START_HOUR * 60,
     graceMin: Math.round(T.GRACE_SEC / 60),
     lateRegMin: Math.round(T.LATE_REG_SEC / 60),
     startingStack: T.STARTING_STACK,
@@ -57,8 +58,10 @@ export function getConfig(): TournamentConfig {
     return v[k] != null && Number.isFinite(n) ? n : fallback;
   };
   return {
-    regOpenHour: numOf('regOpenHour', d.regOpenHour),
-    startHour: numOf('startHour', d.startHour),
+    /* 예전에는 시간 단위(regOpenHour)로 저장했다. 그 값이 남아 있으면 분으로 올려 읽는다 —
+       설정을 다시 저장하지 않아도 예전과 같은 시각이 나와야 한다. */
+    regOpenMin: numOf('regOpenMin', numOf('regOpenHour', d.regOpenMin / 60) * 60),
+    startMin: numOf('startMin', numOf('startHour', d.startMin / 60) * 60),
     graceMin: numOf('graceMin', d.graceMin),
     lateRegMin: numOf('lateRegMin', d.lateRegMin),
     startingStack: numOf('startingStack', d.startingStack),
@@ -82,13 +85,14 @@ export function validateConfig(c: TournamentConfig): string[] {
   const int = (n: number) => Number.isFinite(n) && Math.floor(n) === n;
   const hour = (n: number) => int(n) && n >= 0 && n <= 23;
 
-  if (!hour(c.regOpenHour)) bad.push('등록 시작 시각은 0~23 사이의 정수여야 합니다');
-  if (!hour(c.startHour)) bad.push('대회 시작 시각은 0~23 사이의 정수여야 합니다');
-  if (hour(c.regOpenHour) && hour(c.startHour) && c.regOpenHour >= c.startHour) {
+  const clock = (n: number) => int(n) && n >= 0 && n <= 23 * 60 + 59;
+  if (!clock(c.regOpenMin)) bad.push('등록 시작 시각이 올바르지 않습니다');
+  if (!clock(c.startMin)) bad.push('대회 시작 시각이 올바르지 않습니다');
+  if (clock(c.regOpenMin) && clock(c.startMin) && c.regOpenMin >= c.startMin) {
     bad.push('등록 시작 시각은 대회 시작 시각보다 앞서야 합니다');
   }
   if (!int(c.graceMin) || c.graceMin <= 0) bad.push('대기 시간은 1분 이상이어야 합니다');
-  if (hour(c.startHour) && int(c.graceMin) && c.startHour * 60 + c.graceMin > 24 * 60) {
+  if (clock(c.startMin) && int(c.graceMin) && c.startMin + c.graceMin > 24 * 60) {
     bad.push('대기 마감이 자정을 넘습니다 — 하루에 대회 하나라는 구조가 어긋납니다');
   }
   if (!int(c.lateRegMin) || c.lateRegMin <= 0) bad.push('레이트 레지 시간은 1분 이상이어야 합니다');
@@ -109,8 +113,8 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
     const put = (k: string, v: string) =>
       run(`INSERT INTO holdem_settings (key, value, updated_at) VALUES (?, ?, unixepoch())
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, k, v);
-    put('regOpenHour', String(c.regOpenHour));
-    put('startHour', String(c.startHour));
+    put('regOpenMin', String(c.regOpenMin));
+    put('startMin', String(c.startMin));
     put('graceMin', String(c.graceMin));
     put('lateRegMin', String(c.lateRegMin));
     put('startingStack', String(c.startingStack));
