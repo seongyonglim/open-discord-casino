@@ -17,6 +17,7 @@ import { readJson, sendJson } from './http';
 import {
   listTournaments, purgeTournament, openTestTournament, searchUsers, grantPoints,
 } from '../db/admin';
+import { listSeasons, updateSeason, closeSeason, seasonPlayers } from '../db/queries';
 import type { WebUser } from '../db/queries';
 
 /** 바꾸는 동작의 두 번째 잠금. 토큰이 설정돼 있지 않으면 무조건 잠긴다. */
@@ -61,6 +62,17 @@ export function adminPage(user: WebUser): string {
     </tr>`;
   }).join('');
 
+  const seasons = listSeasons();
+  const cur = seasons.find(s => s.closed_at == null);
+  const seasonRows = seasons.map(s => `<tr>
+      <td>시즌 ${s.number}${s.closed_at == null ? ' <span class="ad-live">진행 중</span>' : ''}</td>
+      <td>${esc(s.name || '—')}</td>
+      <td>${kst(s.started_at)}</td>
+      <td>${s.closed_at != null ? kst(s.closed_at) : s.ends_at != null ? kst(s.ends_at) + ' 예정' : '미정'}</td>
+      <td class="r">${num(seasonPlayers(s.id))}</td>
+      <td>${esc(s.reward || '—')}</td>
+    </tr>`).join('');
+
   const body = `
   <div class="ad-wrap">
     <h1 class="ad-h">운영자 화면</h1>
@@ -93,6 +105,28 @@ export function adminPage(user: WebUser): string {
             <th class="r">배수</th><th class="r">지급</th><th></th></tr></thead>
           <tbody id="adTBody">${rows}</tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="ad-card">
+      <h2>시즌</h2>
+      <p class="ad-note">시즌을 닫으면 <b>그 순간의 잔액이 성적표로 찍히고</b>, 전원 잔액이 0으로
+        초기화되며 다음 시즌이 열립니다. 게임별 전적은 지우지 않습니다 — 시즌이 열쇠에 들어 있어
+        새 시즌은 저절로 비어 있고 지난 시즌 기록은 그대로 남습니다.
+        지원금 쿨다운도 함께 풀립니다(0에서 시작하므로 바로 받을 수 있어야 합니다).</p>
+      <div class="ad-scroll"><table class="ad-tbl">
+        <thead><tr><th>시즌</th><th>이름</th><th>시작</th><th>종료</th><th class="r">참여</th><th>보상</th></tr></thead>
+        <tbody>${seasonRows}</tbody>
+      </table></div>
+      <div class="ad-row" style="margin-top:12px">
+        <input type="text" id="adSName" placeholder="현재 시즌 이름 (예: 오픈베타)" autocomplete="off">
+        <input type="text" id="adSReward" placeholder="보상 안내" autocomplete="off">
+        <input type="date" id="adSEnd">
+        <button type="button" id="adSSave">안내 저장</button>
+      </div>
+      <div class="ad-row">
+        <button type="button" id="adSClose" class="danger">시즌 종료 · 다음 시즌 열기</button>
+        <span class="ad-note">되돌릴 수 없습니다.</span>
       </div>
     </section>
 
@@ -184,6 +218,27 @@ export function adminPage(user: WebUser): string {
         });
     });
 
+    document.getElementById('adSSave').addEventListener('click', function(){
+      var d = document.getElementById('adSEnd').value;
+      post('/api/admin/season/update', {
+        name: document.getElementById('adSName').value,
+        reward: document.getElementById('adSReward').value,
+        // 날짜만 받고 그날 끝으로 본다 — 시각까지 고르게 하면 KST 환산 실수가 늘어난다
+        endsAt: d ? Math.floor(new Date(d + 'T23:59:59+09:00').getTime() / 1000) : null,
+      }).then(function(r){ if (shout(r)) location.reload(); });
+    });
+
+    document.getElementById('adSClose').addEventListener('click', function(){
+      confirmThen('시즌을 끝낼까요?',
+        '지금 잔액이 성적표로 찍히고, 전원 잔액이 0으로 초기화되며 다음 시즌이 열립니다. '
+        + '게임별 전적은 시즌별로 남습니다. 되돌릴 수 없습니다.',
+        function(){
+          post('/api/admin/season/close', {})
+            .then(function(r){ if (shout(r)) { alert('시즌 ' + r.d.closed + ' 종료 · '
+              + r.d.ranked + '명 기록 · 시즌 ' + r.d.nextNumber + ' 시작'); location.reload(); } });
+        });
+    });
+
     var uBody = document.getElementById('adUBody');
     function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -270,4 +325,27 @@ export async function handleAdminTestTournament(
   const r = openTestTournament();
   if (!r.ok) return sendJson(res, 400, { error: '진행 중인 대회가 있습니다' });
   return sendJson(res, 200, { ok: true, id: r.id });
+}
+
+export async function handleAdminSeasonUpdate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { name?: unknown; reward?: unknown; endsAt?: unknown } | null;
+  const cur = listSeasons().find(s => s.closed_at == null);
+  if (!cur) return sendJson(res, 400, { error: '진행 중인 시즌이 없습니다' });
+  const endsAt = b?.endsAt == null ? null : Math.floor(Number(b.endsAt));
+  const ok = updateSeason(cur.id, {
+    name: String(b?.name ?? '').slice(0, 40),
+    reward: String(b?.reward ?? '').slice(0, 200),
+    endsAt: endsAt != null && Number.isFinite(endsAt) ? endsAt : null,
+  });
+  return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 400, { error: '고칠 수 없습니다' });
+}
+
+export async function handleAdminSeasonClose(
+  _req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  /* 시작 잔액은 0 이다. 시즌은 0 에서 시작하고, 거기서부터는 지원금과 출석으로 올린다 —
+     closeSeason 이 지원금 쿨다운도 함께 풀어 모두가 같은 출발선에 선다. */
+  const r = closeSeason({ seed: 0 });
+  if (!r.ok) return sendJson(res, 400, { error: '진행 중인 시즌이 없습니다' });
+  return sendJson(res, 200, { ok: true, closed: r.closed, ranked: r.ranked, nextNumber: r.nextNumber });
 }

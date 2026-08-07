@@ -3,12 +3,14 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { lobbyPage, leaderboardPage, noticeListPage, noticeDetailPage } from './pages';
+import { lobbyPage, noticeListPage, noticeDetailPage } from './pages';
+import { leaderboardPage, handleRankApi } from './leaderboard';
 import { findNotice } from './notices';
 import { setRequestUser, LOGO_SVG } from './views';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
+  handleAdminSeasonUpdate, handleAdminSeasonClose,
 } from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -225,7 +227,8 @@ export function startWebServer(): void {
       if (path === '/' || path === '/lobby') {
         return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null));
       }
-      if (path === '/leaderboard') return send(res, 200, leaderboardPage(getLeaderboard(10), me?.id ?? null));
+      if (path === '/leaderboard') return send(res, 200, leaderboardPage(me));
+      if (path === '/api/leaderboard' && req.method === 'GET') return await handleRankApi(req, res, url, me);
 
       /* 운영자 화면. 보기는 admin 역할만, 바꾸는 동작은 admin + ADMIN_TOKEN 두 겹이다.
          로그인 안 한 사람에게는 이 경로의 존재를 알리지 않는다 — 다른 화면과 같이
@@ -245,6 +248,8 @@ export function startWebServer(): void {
         if (!adminTokenOk(req)) return sendJson(res, 403, { error: '운영 토큰이 맞지 않습니다' });
         if (path === '/api/admin/points' && req.method === 'POST') return await handleAdminPoints(req, res);
         if (path === '/api/admin/tournament/purge' && req.method === 'POST') return await handleAdminPurge(req, res);
+        if (path === '/api/admin/season/update' && req.method === 'POST') return await handleAdminSeasonUpdate(req, res);
+        if (path === '/api/admin/season/close' && req.method === 'POST') return await handleAdminSeasonClose(req, res);
         if (path === '/api/admin/tournament/test' && req.method === 'POST') {
           return await handleAdminTestTournament(req, res);
         }

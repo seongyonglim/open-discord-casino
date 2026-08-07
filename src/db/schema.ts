@@ -386,6 +386,52 @@ function initSchema(): void {
       PRIMARY KEY (user_id, game)
     );
     CREATE INDEX IF NOT EXISTS idx_gstats_rank ON game_stats(game, profit DESC);
+
+    /* ── 시즌 ────────────────────────────────────────────────────────
+       시즌이 넘어가면 전부 초기화된다 — 잔액도, 게임별 전적도. 그래서 "지운다"가 아니라
+       "시즌을 열쇠에 넣는다". 새 시즌은 행이 없으니 저절로 0에서 시작하고, 지난 시즌은
+       그대로 남아 언제든 다시 볼 수 있다. 지우는 설계였다면 지난 시즌을 못 보여준다. */
+    CREATE TABLE IF NOT EXISTS seasons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number INTEGER NOT NULL UNIQUE,        -- 화면에 적는 번호 (0부터)
+      name TEXT NOT NULL,                    -- '오픈베타' 처럼 번호 옆에 붙는 이름
+      reward TEXT NOT NULL DEFAULT '',       -- 보상 안내 문구 (자유 형식)
+      started_at INTEGER NOT NULL,
+      ends_at INTEGER,                       -- 예정 종료 시각 (안내용, 없으면 미정)
+      closed_at INTEGER                      -- 실제로 닫힌 시각. NULL 이면 진행 중
+    );
+
+    /* 게임별 전적을 시즌 단위로 쌓는다. game_stats 와 열이 같지만 따로 두는 이유가 있다 —
+       game_stats 는 통산 기록이고 여기는 시즌 기록이라 뜻이 다르다. 한 테이블에 시즌을
+       끼워 넣으려면 기본키를 바꿔야 하는데 SQLite 는 그걸 못 하고, 옮기는 과정에서
+       통산 기록이 위험해진다. 쓰는 곳은 bumpGameStats 한 군데뿐이라 둘을 함께 올린다. */
+    CREATE TABLE IF NOT EXISTS season_stats (
+      season_id INTEGER NOT NULL,
+      user_id  TEXT NOT NULL,
+      game     TEXT NOT NULL,
+      rounds   INTEGER NOT NULL DEFAULT 0,
+      rated    INTEGER NOT NULL DEFAULT 0,
+      wins     INTEGER NOT NULL DEFAULT 0,
+      pushes   INTEGER NOT NULL DEFAULT 0,
+      staked   INTEGER NOT NULL DEFAULT 0,
+      returned INTEGER NOT NULL DEFAULT 0,
+      profit   INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (season_id, user_id, game)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sstats_rank ON season_stats(season_id, game, profit DESC);
+
+    /* 시즌이 닫힐 때 찍는 성적표. 시즌 점수는 "종료 시점 잔액"이라, 닫는 순간을 놓치면
+       영영 알 수 없다 — 잔액은 다음 시즌이 시작되면서 초기화되기 때문이다.
+       진행 중인 시즌의 순위는 이 표가 아니라 users.balance 를 실시간으로 본다. */
+    CREATE TABLE IF NOT EXISTS season_results (
+      season_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      balance INTEGER NOT NULL,              -- 종료 시점 잔액 = 그 시즌의 점수
+      rank INTEGER NOT NULL,
+      PRIMARY KEY (season_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sres_rank ON season_results(season_id, rank);
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)

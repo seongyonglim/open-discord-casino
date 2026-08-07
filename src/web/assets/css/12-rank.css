@@ -1,0 +1,118 @@
+  /* ── 시즌 랭킹 ───────────────────────────────────────────────────
+     시즌이 스무 개가 되고 게임이 넷 더 붙어도 레이아웃이 무너지지 않아야 한다.
+     그래서 늘어나는 축(시즌 목록·게임 카테고리)은 전부 스크롤로 흡수하고,
+     고정된 축(포디움 3칸·표의 열)만 자리를 차지한다. */
+  .lb{max-width:860px;margin:0 auto;padding:4px 0 96px;transition:opacity .12s}
+  .lb.busy{opacity:.55}
+  .lb-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .lb-title{font-size:20px;font-weight:800;margin:0}
+
+  /* 시즌 선택 — 목록이 길어지므로 메뉴 자체가 스크롤된다 */
+  .lb-sel{position:relative;margin-left:auto}
+  .lb-selbtn{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;
+    font-family:inherit;font-size:13px;font-weight:700;color:var(--txt);transition:border-color .12s}
+  .lb-selbtn:hover{border-color:var(--gold)}
+  .lb-selmenu{position:absolute;top:calc(100% + 6px);right:0;min-width:220px;max-height:320px;
+    overflow-y:auto;z-index:200;background:var(--panel);border:1px solid var(--line);
+    border-radius:11px;padding:5px;box-shadow:0 16px 40px rgba(0,0,0,.6)}
+  .lb-selmenu[hidden]{display:none}
+  .lb-selitem{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;
+    border-radius:8px;padding:9px 10px;cursor:pointer;font-family:inherit;font-size:13px;
+    font-weight:600;color:var(--muted);text-align:left}
+  .lb-selitem:hover{background:rgba(212,175,55,.1);color:var(--txt)}
+  .lb-selitem.on{color:var(--gold)}
+  .lb-live{margin-left:auto;font-size:10px;font-weight:800;color:var(--win);
+    border:1px solid rgba(46,204,113,.4);border-radius:4px;padding:1px 5px;flex:none}
+  .lb-done{margin-left:auto;font-size:10px;font-weight:700;color:var(--muted);
+    border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex:none}
+
+  /* 시즌 요약 배너 */
+  .lb-banner{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;margin-bottom:12px}
+  .lb-bname{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;margin-bottom:10px}
+  .lb-bname .lb-live{margin-left:0}
+  .lb-brow{display:flex;gap:22px;flex-wrap:wrap}
+  .lb-bi{display:flex;flex-direction:column;gap:3px}
+  .lb-bi .k{font-size:11px;color:var(--muted);font-weight:700}
+  .lb-bi .v{font-size:13.5px;font-weight:700}
+  .lb-bi .v.gold{color:var(--gold);font-family:var(--mono)}
+
+  /* 카테고리 칩 — 게임이 늘어나면 가로로 흐르고 넘치면 스크롤된다.
+     줄바꿈으로 쌓으면 게임이 늘수록 표가 아래로 밀려 첫 화면에서 사라진다. */
+  .lb-chips{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;
+    scrollbar-width:none;-ms-overflow-style:none}
+  .lb-chips::-webkit-scrollbar{display:none}
+  .lb-chip{flex:none;background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+    padding:7px 14px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;
+    color:var(--muted);white-space:nowrap;transition:border-color .12s,color .12s,background .12s}
+  .lb-chip:hover{border-color:var(--gold-dim);color:var(--txt)}
+  .lb-chip.on{background:rgba(212,175,55,.12);border-color:var(--gold);color:var(--gold)}
+  .lb-chip i{font-style:normal;font-size:11px;opacity:.7;margin-left:6px;font-family:var(--mono)}
+
+  /* 포디움 — 2·1·3 순으로 놓아 1위가 가운데에서 가장 높다 */
+  .lb-podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:10px;align-items:end;
+    margin-bottom:14px}
+  .lb-podium:empty{display:none}
+  .lb-pod{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:14px 10px 16px;text-align:center;position:relative}
+  .lb-pod.p1{border-color:var(--gold);background:linear-gradient(180deg,rgba(212,175,55,.12),var(--panel) 60%);
+    padding-top:20px;padding-bottom:22px}
+  .lb-pod.p2{border-color:rgba(200,200,210,.35)}
+  .lb-pod.p3{border-color:rgba(196,138,86,.4)}
+  .lb-medal{font-size:22px;line-height:1;margin-bottom:8px}
+  .lb-pod.p1 .lb-medal{font-size:28px}
+  .lb-pav{width:48px;height:48px;border-radius:14px;object-fit:cover;display:block;margin:0 auto 8px;
+    background:#5865f2;color:#fff;align-items:center;justify-content:center;font-size:19px;font-weight:800}
+  .lb-pav.ph{display:flex}
+  .lb-pod.p1 .lb-pav{width:60px;height:60px;font-size:23px}
+  .lb-pname{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb-pscore{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--gold);margin-top:3px}
+  .lb-pod.p1 .lb-pscore{font-size:18px}
+  .lb-psub{font-size:11px;color:var(--muted);margin-top:3px}
+
+  /* 4위부터의 표 */
+  .lb-listwrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .lb-tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .lb-tbl th{text-align:left;color:var(--muted);font-size:11.5px;font-weight:700;
+    padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .lb-tbl td{padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .lb-tbl tr:last-child td{border-bottom:0}
+  .lb-tbl .c{text-align:center}
+  .lb-tbl .r{text-align:right}
+  .lb-tbl .n{font-family:var(--mono)}
+  .lb-tbl .rk{color:var(--muted);font-family:var(--mono);width:52px}
+  .lb-tbl .n.pos{color:var(--win)}
+  .lb-tbl .n.neg{color:var(--lose)}
+  .lb-tbl tr.me{background:rgba(212,175,55,.07)}
+  .lb-who{display:flex;align-items:center;gap:8px;min-width:0}
+  .lb-av{width:24px;height:24px;border-radius:7px;flex:none;object-fit:cover;
+    background:#5865f2;color:#fff;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+  .lb-av.ph{display:inline-flex}
+  .lb-empty{color:var(--muted);font-size:13px;text-align:center;padding:28px 0}
+
+  /* 내 순위 고정바 — 100위 밖이면 표에 없으므로 이게 없으면 내 등수를 알 방법이 없다 */
+  .lb-mebar{position:sticky;bottom:0;z-index:150;padding:10px 16px 14px;
+    background:linear-gradient(180deg,rgba(5,5,6,0),var(--bg) 40%)}
+  .lb-mebar[hidden]{display:none}
+  .lb-mebox{max-width:860px;margin:0 auto;display:flex;align-items:center;gap:12px;
+    background:var(--panel2);border:1px solid var(--gold-dim);border-radius:12px;
+    padding:10px 14px;box-shadow:0 -4px 24px rgba(0,0,0,.5)}
+  .lb-merk{font-family:var(--mono);font-size:16px;font-weight:800;color:var(--gold);flex:none}
+  .lb-merk span{font-size:11px;color:var(--muted);font-weight:600}
+  .lb-mename{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb-mescore{margin-left:auto;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--gold);flex:none}
+  .lb-mesub{font-size:11.5px;color:var(--muted);font-family:var(--mono);flex:none}
+
+  @media(max-width:560px){
+    .lb-head{flex-wrap:wrap}
+    .lb-sel{margin-left:0;width:100%}
+    .lb-selbtn{width:100%;justify-content:space-between}
+    .lb-selmenu{left:0;right:auto;width:100%}
+    .lb-brow{gap:14px}
+    .lb-podium{gap:6px}
+    .lb-pav{width:40px;height:40px}
+    .lb-pod.p1 .lb-pav{width:48px;height:48px}
+    .lb-tbl th,.lb-tbl td{padding:8px 9px}
+    .lb-tbl .rk{width:38px}
+  }
