@@ -268,6 +268,20 @@ function statePayload(st: HoldemStatus, userId: string) {
       // 남은 인원·평균 스택은 실제로 살아 있는 사람만 센다 (표시용 좌석 목록과 다르다)
       remaining: living.length,
       avgStack: living.length ? Math.floor(totalChips / living.length) : 0,
+      /* 탈락자. 칩 순위에서 아예 지우지 않고 아래에 남겨 두려고 내려보낸다 —
+         누가 언제 나갔는지가 대회의 절반이고, 명단에서 사라지면 그 기록이 없어진다.
+         늦게 탈락한 사람이 위다(오래 버텼다). 카드는 담지 않는다 — 탈락자의 홀 카드는
+         공개 대상이 아니고, 여기 필요한 것은 이름과 순서뿐이다. */
+      busted: (() => {
+        const av = getEntryAvatars(t.id);
+        return entries
+          .filter(e => e.eliminated_at != null)
+          .sort((a, b) => (b.elim_seq ?? 0) - (a.elim_seq ?? 0))
+          .map(e => ({
+            userId: e.user_id, username: e.username,
+            avatar: av.get(e.user_id) ?? null, place: e.finish_place,
+          }));
+      })(),
       seats: shownSeats.map(s => {
         const h = bySeat.get(s.seat);
         return {
@@ -703,7 +717,7 @@ export function holdemPage(user: WebUser): string {
     ${helpDialog('htHelp', '홀덤 프리롤 규칙', helpBody())}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
-      'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide',
+      'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide','myturn',
       'potwin','clockwarn','allinbgm'];</script>
   <script>
   (function(){

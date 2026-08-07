@@ -209,14 +209,19 @@ export function adminPage(user: WebUser): string {
         : `<b>대회는 저절로 열리지 않습니다.</b> 여기서 직접 여셔야 합니다 —
            열지 않으면 그날은 대회가 없습니다. 정기적으로 열려면 아래 [개최 방식]에서 반복을 켜세요.`}
         칩·블라인드·대기·레이트 레지는 <b>[기본 룰 템플릿]</b>의 값을 그대로 씁니다.</p>
-      <div class="ad-sub2">지금 열 수 있는가 <span>${live
-        ? '지금 돌고 있는 대회가 있어 만들 수 없습니다 — 끝난 뒤에 열립니다'
-        : nextStart == null
-          ? '예정된 대회가 없습니다 — 지금 열 수 있습니다'
-          : nextStart - nowSec >= 2 * 3600
-            ? `다음 대회 ${kst(nextStart)} 시작 — 두 시간 넘게 남아 하나 더 열 수 있습니다`
-            : `다음 대회가 ${kst(nextStart)}에 시작해 만들 수 없습니다 —
-               한 판이 두 시간까지 갈 수 있어서, 시작까지 두 시간 이상 남았을 때만 열립니다`}</span></div>
+      ${canMake
+        ? `<div class="ad-sub2">지금 열 수 있는가 <span>${nextStart == null
+            ? '예정된 대회가 없습니다 — 지금 열 수 있습니다'
+            : `다음 대회 ${kst(nextStart)} 시작 — 두 시간 넘게 남아 하나 더 열 수 있습니다`}</span></div>`
+        /* 잠겼으면 크게 말한다. 예전에는 작은 회색 한 줄이라 폼은 멀쩡해 보이는데 아무것도
+           안 눌려서 "드롭다운이 고장 났다"로 읽혔다 — 실제로 그런 제보가 왔다.
+           무엇을 기다려야 하는지도 함께 적는다. */
+        : `<p class="ad-warn"><b>지금은 새 대회를 열 수 없어 아래 입력이 잠겨 있습니다.</b>
+             ${live
+               ? '지금 돌고 있는 대회가 있습니다 — 그 판이 끝나면 열립니다.'
+               : `다음 대회가 ${kst(nextStart!)}에 시작합니다. 한 판이 두 시간까지 갈 수 있어서,
+                  시작까지 두 시간 이상 남았을 때만 새로 열 수 있습니다.`}
+             ${live ? '' : '먼저 열고 싶으면 아래 [대회 기록]에서 그 대회를 지우세요.'}</p>`}
       <div class="ad-grid">
         <label>제목<input type="text" id="ncTitle" placeholder="${cfg.buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤'}" ${canMake ? '' : 'disabled'}><i>비우면 방식에 맞는 이름이 붙습니다</i></label>
         <label>참가 방식<select id="ncKind" ${canMake ? '' : 'disabled'}>
@@ -251,7 +256,7 @@ export function adminPage(user: WebUser): string {
         <b>이미 다 쓴 사람은 잔액이 음수가 됩니다</b>(지원금으로 갚아 나갈 수 있습니다).
         참가비를 걷은 판도 같습니다 — 지우려면 걷은 돈을 먼저 돌려줘야 합니다.</p>
       <div class="ad-scroll">
-        <table class="ad-tbl">
+        <table class="ad-tbl ad-tour">
           <thead><tr><th>id</th><th>날짜</th><th>제목</th><th>방식</th><th>상태</th>
             <th class="r">참가</th><th class="r">상금 풀</th><th class="r">지급</th><th></th></tr></thead>
           <tbody id="adTBody">${rows}</tbody>
@@ -307,7 +312,7 @@ export function adminPage(user: WebUser): string {
       <div class="ad-sub2">칩과 블라인드</div>
       <div class="ad-grid">
         <label>시작 칩<span class="ad-inx"><input type="number" id="cfStack" min="1" step="500" value="${cfg.startingStack}"><b>칩</b></span><i></i></label>
-        <label>블라인드 주기<span class="ad-inx"><input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><b>분</b></span><i>레벨 11까지 ${cfg.levelMin * 10}분</i></label>
+        <label>블라인드 주기<span class="ad-inx"><input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><b>분</b></span><i>마지막 레벨(16)까지 ${cfg.levelMin * 15}분</i></label>
       </div>
       <div class="ad-sub2">참가 방식과 상금 풀 <span>순위별 분배(ITM 비율)는 고정입니다 — 여기서는 풀의 크기만 정합니다</span></div>
       <div class="ad-grid">

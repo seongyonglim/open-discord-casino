@@ -103,6 +103,13 @@
   /* 원장 — 들어온 것과 나간 것을 색으로 가른다. 부호만으로는 표를 훑을 때 안 잡힌다.
      시각 칸은 숫자라 고정폭으로 세운다(사유 칸은 한글이 섞여 아래 ad-id 규칙을 안 쓴다). */
   .ad-tbl td.n{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px}
+  /* 대회 목록은 열이 아홉이라 좁은 화면에서 마지막 관리 버튼이 잘려 나간다.
+     칸을 조이고 날짜를 등폭으로 세워 폭을 줄인다 — 그래도 넘치면 .ad-scroll 이 받는다.
+     제목은 길이가 제각각이라 여기서만 줄여 쓴다(다른 표의 제목은 짧다). */
+  .ad-tbl.ad-tour td,.ad-tbl.ad-tour th{padding:7px 6px}
+  .ad-tbl.ad-tour td:nth-child(2){font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted)}
+  .ad-tbl.ad-tour td:nth-child(3){max-width:150px;overflow:hidden;text-overflow:ellipsis}
+  .ad-tbl.ad-tour td button{padding:0 9px;height:30px;font-size:12px;margin-right:3px}
   /* 사유에는 운영자가 적은 한글 메모가 섞인다 — 고정폭을 쓰면 그 글자만 폴백으로 떨어진다 */
   .ad-tbl .ad-rsn{font-size:12px;color:#a8a8b0;white-space:normal;word-break:break-all}
   .ad-tbl .r.pos{color:var(--win);font-weight:700}
@@ -146,6 +153,15 @@
     background:#0e0e11;border:1px solid #2f2f35;border-radius:10px;
     padding:9px 12px;color:var(--txt);font-family:inherit;font-size:13.5px;
     transition:border-color .12s,box-shadow .12s;min-height:38px}
+  /* 잠긴 칸은 잠겨 보여야 한다. 예전에는 disabled 에 아무 표시가 없어서 멀쩡한 폼처럼
+     보였고, 눌러도 아무 반응이 없으니 "드롭다운이 고장 났다"로 읽혔다.
+     hover 도 끈다 — 반응하는 것처럼 보이면 안 된다. */
+  .ad-wrap input:disabled,.ad-wrap select:disabled,.ad-wrap textarea:disabled{
+    background:#0b0b0d;color:#6a6a72;border-color:#232327;cursor:not-allowed}
+  .ad-wrap button:disabled{opacity:.45;cursor:not-allowed}
+  .ad-wrap button:disabled:hover{border-color:var(--line)}
+  .ad-wrap input:disabled:hover,.ad-wrap select:disabled:hover,
+  .ad-wrap textarea:disabled:hover{border-color:#232327}
   .ad-wrap input:hover,.ad-wrap select:hover,.ad-wrap textarea:hover{border-color:#3d3d45}
   .ad-wrap input:focus,.ad-wrap select:focus,.ad-wrap textarea:focus{
     outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,175,55,.14)}
@@ -166,8 +182,11 @@
     font-size:11.5px;font-weight:700;color:var(--muted);pointer-events:none}
 
   /* 카드 안의 소제목 — 항목이 열 개를 넘으면 덩어리로 끊어 줘야 읽힌다 */
+  /* 제목은 안 접는다 — "지금 열 수 있 / 는가"처럼 낱말 가운데서 끊기면 읽다가 걸린다.
+     뒤에 붙는 설명(span)만 남은 폭에서 접힌다. */
   .ad-sub2{font-size:12px;font-weight:800;color:var(--gold);margin:14px 0 8px;
-    display:flex;align-items:baseline;gap:8px}
+    display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+  .ad-sub2 span{white-space:normal;min-width:0}
   .ad-sub2:first-of-type{margin-top:4px}
   .ad-sub2 span{font-size:11.5px;font-weight:600;color:var(--muted)}
 

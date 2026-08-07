@@ -455,10 +455,12 @@ section('[12] 등록 · 늦은 등록');
 /* ── 13. 블라인드 구조 ──────────────────────────────────────────── */
 section('[13] 블라인드 구조');
 {
-  ck('11단계', T.BLIND_LEVELS.length === 11, String(T.BLIND_LEVELS.length));
+  ck('16단계', T.BLIND_LEVELS.length === 16, String(T.BLIND_LEVELS.length));
   ck('레벨 1 = 25/50', T.BLIND_LEVELS[0].sb === 25 && T.BLIND_LEVELS[0].bb === 50);
   ck('레벨 11 = 1000/2000 앤티 250',
     T.BLIND_LEVELS[10].sb === 1000 && T.BLIND_LEVELS[10].bb === 2000 && T.BLIND_LEVELS[10].ante === 250);
+  ck('레벨 16 = 8000/16000 앤티 2000',
+    T.BLIND_LEVELS[15].sb === 8000 && T.BLIND_LEVELS[15].bb === 16000 && T.BLIND_LEVELS[15].ante === 2000);
   ck('BB = SB × 2 (전 레벨)', T.BLIND_LEVELS.every(l => l.bb === l.sb * 2));
   ck('블라인드가 단조 증가', T.BLIND_LEVELS.every((l, i) => i === 0 || l.bb > T.BLIND_LEVELS[i - 1].bb));
   ck('앤티가 줄어들지 않는다', T.BLIND_LEVELS.every((l, i) => i === 0 || l.ante >= T.BLIND_LEVELS[i - 1].ante));
@@ -471,12 +473,20 @@ section('[13] 블라인드 구조');
     return l.level === 3 && l.sb === 75 && l.bb === 150 && l.ante === 0;
   })(), JSON.stringify(T.levelAt(960)));
   ck('80분 → 레벨 11', T.levelAt(4800).level === 11);
-  ck('11레벨을 넘겨도 마지막 레벨 유지 (블라인드 폭주 방지)',
-    T.levelAt(99999).level === 11, String(T.levelAt(99999).level));
+  ck('120분 → 레벨 16', T.levelAt(7200).level === 16, String(T.levelAt(7200).level));
+  ck('16레벨을 넘겨도 마지막 레벨 유지 (블라인드 폭주 방지)',
+    T.levelAt(99999).level === 16, String(T.levelAt(99999).level));
   ck('음수 경과도 레벨 1', T.levelAt(-100).level === 1);
   ck('다음 상승까지 (0초 → 480초)', T.nextLevelIn(0) === 480, String(T.nextLevelIn(0)));
   ck('다음 상승까지 (200초 → 280초)', T.nextLevelIn(200) === 280, String(T.nextLevelIn(200)));
-  ck('마지막 레벨이면 null', T.nextLevelIn(4800) === null);
+  ck('마지막 레벨이면 null', T.nextLevelIn(7200) === null);
+  ck('11레벨에서는 아직 다음이 있다', T.nextLevelIn(4800) !== null);
+  /* 헤즈업이 늘어지지 않아야 한다 — 16레벨이 있는 이유가 이것이다.
+     둘이 90,000 을 나눠 갖고 있어도 한 바퀴에 28,000 이 나간다. */
+  ck('16레벨 한 바퀴가 총 칩의 4분의 1을 넘는다 (헤즈업이 끝난다)', (() => {
+    const l = T.BLIND_LEVELS[15];
+    return l.sb + l.bb + l.ante * 2 >= 90000 / 4;
+  })(), String(T.BLIND_LEVELS[15].sb + T.BLIND_LEVELS[15].bb + T.BLIND_LEVELS[15].ante * 2));
 }
 
 /* ── 14. ITM 인원 ───────────────────────────────────────────────── */
