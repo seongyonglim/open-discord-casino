@@ -15,7 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { layout, esc, jsonForScript } from './views';
 import { readJson, sendJson } from './http';
 import {
-  listTournaments, purgeTournament, openTestTournament, searchUsers, grantPoints,
+  listTournaments, purgeTournament, openTestTournament, createTournament, searchUsers, grantPoints,
 } from '../db/admin';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig } from '../db/settings';
@@ -72,6 +72,8 @@ export function adminPage(user: WebUser): string {
 
   const cfg = getConfig();
   const d = defaultConfig();
+  // 살아 있는 판이 있으면 새 대회 칸을 통째로 잠근다 — 눌러 보고 나서 거절당하는 것보다 낫다
+  const live = ts.find(t => t.finished_at == null && t.cancelled_at == null) ?? null;
   const notices = listNoticesAdmin();
   const noticeRows = notices.map(n => `<tr>
       <td class="n">${esc(n.date)}</td>
@@ -133,9 +135,18 @@ export function adminPage(user: WebUser): string {
         대회 설정을 바꾼 뒤 오늘부터 적용하고 싶을 때 쓰세요.
         <b>등록한 사람이 있으면 그 등록도 함께 사라지니 등록 시작 이후에는 쓰지 마세요.</b>
         지난 날짜의 대회는 다시 만들어지지 않습니다(테스트 흔적 지우기는 그쪽입니다).</p>
+      <div class="ad-sub2">새 대회 <span>${live
+        ? '지금 살아 있는 판이 있어 만들 수 없습니다 — 끝나거나 취소된 뒤에 열립니다'
+        : '하루에 여러 판을 열 수 있지만, 살아 있는 판은 한 번에 하나뿐입니다'}</span></div>
+      <div class="ad-grid">
+        <label>제목<input type="text" id="ncTitle" placeholder="임시 프리롤" ${live ? 'disabled' : ''}><i></i></label>
+        <label>등록 시간<span class="ad-inx"><input type="number" id="ncReg" min="0" value="10" ${live ? 'disabled' : ''}><b>분</b></span><i>이 시간 뒤에 시작합니다</i></label>
+        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${live ? 'disabled' : ''}><b>×명</b></span><i>0이면 상금 없음(테스트용)</i></label>
+      </div>
       <div class="ad-row">
-        <button type="button" id="adTest">테스트 대회 열기</button>
-        <span class="ad-note">오늘 자리를 상금 없는 대회로 바꿉니다. 끝나면 이 표에서 지우면 원래대로 돌아옵니다.</span>
+        <button type="button" id="ncMake" ${live ? 'disabled' : ''}>새 대회 만들기</button>
+        <button type="button" id="adTest" ${live ? 'disabled' : ''}>테스트 대회 열기</button>
+        <span class="ad-note">테스트 대회는 상금 배수 0이라 포인트가 한 푼도 안 나갑니다 — 끝나면 이 표에서 지울 수 있습니다.</span>
       </div>
       <div class="ad-scroll">
         <table class="ad-tbl">
@@ -306,6 +317,22 @@ export function adminPage(user: WebUser): string {
       alert(msg);
       return false;
     }
+
+    var ncMake = document.getElementById('ncMake');
+    if (ncMake) ncMake.addEventListener('click', function(){
+      var body = {
+        title: document.getElementById('ncTitle').value,
+        regMin: Math.floor(Number(document.getElementById('ncReg').value)),
+        prizeMultiplier: Math.floor(Number(document.getElementById('ncMult').value)),
+      };
+      if (!isFinite(body.regMin) || body.regMin < 0) { alert('등록 시간을 확인해 주세요.'); return; }
+      if (!isFinite(body.prizeMultiplier) || body.prizeMultiplier < 0) { alert('상금 배수를 확인해 주세요.'); return; }
+      confirmThen('새 대회를 만들까요?',
+        (body.title || '임시 프리롤') + ' — 지금 등록을 열고 ' + body.regMin + '분 뒤에 시작합니다.'
+        + (body.prizeMultiplier === 0 ? ' 상금 배수 0이라 포인트는 나가지 않습니다.' : ''),
+        function(){ post('/api/admin/tournament/create', body)
+          .then(function(r){ if (shout(r)) location.reload(); }); });
+    });
 
     document.getElementById('adTest').addEventListener('click', function(){
       confirmThen('테스트 대회를 열까요?',
@@ -667,4 +694,21 @@ export async function handleAdminNoticeDelete(req: IncomingMessage, res: ServerR
   const r = deleteNotice(String(b?.id ?? ''));
   if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] });
   return sendJson(res, 200, { ok: true });
+}
+
+export async function handleAdminTournamentCreate(
+  req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  const r = createTournament({
+    title: String(b?.title ?? ''),
+    regMin: Math.floor(Number(b?.regMin ?? 10)),
+    prizeMultiplier: Math.floor(Number(b?.prizeMultiplier ?? 0)),
+  });
+  if (!r.ok) {
+    return sendJson(res, 400, {
+      error: '이미 살아 있는 대회가 있습니다 — 끝나거나 취소된 뒤에 만들 수 있습니다',
+    });
+  }
+  return sendJson(res, 200, { ok: true, id: r.id });
 }

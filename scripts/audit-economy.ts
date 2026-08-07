@@ -726,6 +726,7 @@ auditStats('블랙잭 후');
 section('[9] 운영자 동작');
 {
   const A = require('../src/db/admin') as typeof import('../src/db/admin');
+  const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
   const db = getDb();
 
   // 포인트 — 원장을 함께 쓰는가, 음수 잔액을 막는가
@@ -742,6 +743,37 @@ section('[9] 운영자 동작');
   ck('잔액을 음수로 만드는 차감은 거절', !A.grantPoints('ad_u', -99999, '검증').ok);
   ck('0 지급은 거절', !A.grantPoints('ad_u', 0, '검증').ok);
   ck('없는 사용자는 거절', !A.grantPoints('no_such_user', 100, '검증').ok);
+
+  /* 하루 하나를 강제하던 유니크 인덱스를 걷어냈다. 대신 남은 규칙은 하나다 —
+     살아 있는 판(끝나지도 취소되지도 않은 것)은 한 번에 하나뿐이다. */
+  for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  {
+    const a = A.createTournament({ title: '첫 판', regMin: 5 });
+    ck('대회를 만들 수 있다', a.ok, JSON.stringify(a));
+    const b = A.createTournament({ title: '둘째 판' });
+    ck('살아 있는 판이 있으면 새로 못 만든다',
+      !b.ok && b.error === 'live_exists', JSON.stringify(b));
+
+    // 끝내면 다시 만들 수 있다 — 같은 날짜에 두 번째 판이 선다
+    if (a.ok) db.prepare(`UPDATE holdem_tournaments SET finished_at = unixepoch() WHERE id = ?`).run(a.id);
+    const c = A.createTournament({ title: '둘째 판' });
+    ck('앞 판이 끝나면 같은 날에 또 만들 수 있다 (유니크 인덱스 제거)',
+      c.ok, JSON.stringify(c));
+    ck('같은 날짜 행이 둘이 된다',
+      (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 2);
+
+    // 대기 상태도 살아 있는 것으로 친다 — 등록을 받고 있기 때문이다
+    const dd = A.createTournament({ title: '셋째 판' });
+    ck('아직 시작 안 한 판도 살아 있는 것으로 친다', !dd.ok && dd.error === 'live_exists');
+
+    // 자동 생성은 이미 있는 오늘 판을 다시 만들지 않는다
+    const before = (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n;
+    HD.advanceHoldem(); HD.advanceHoldem();
+    ck('자동 생성이 오늘 판을 두 번 만들지 않는다',
+      (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === before,
+      String(before));
+  }
+  for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
 
   // 대회 — 상금이 나간 판은 지울 수 없어야 한다
   for (const t of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
