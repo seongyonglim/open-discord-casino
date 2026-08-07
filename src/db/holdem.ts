@@ -17,6 +17,7 @@ import { one, all, run, tx } from './queries';
 import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
+import { ensureRecurring } from './recurrence';
 
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
@@ -139,12 +140,7 @@ const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 /* ── 조회 ─────────────────────────────────────────────────────────── */
 
-function todaySchedule(now: number, cfg = getConfig()): T.TournamentSchedule {
-  return T.scheduleForDate(T.kstDateStr(now * 1000), {
-    regOpenMin: cfg.regOpenMin, startMin: cfg.startMin, graceSec: cfg.graceMin * 60,
-    weekdayMultiplier: cfg.weekdayMultiplier, weekendMultiplier: cfg.weekendMultiplier,
-  });
-}
+
 
 /* 이미 만들어진 토너먼트의 일정은 저장된 값을 쓴다.
    매번 날짜에서 다시 계산하면 저장한 컬럼이 죽은 데이터가 되고, 특정 판의 시각을
@@ -379,39 +375,15 @@ function saveViews(handId: number, views: G.SeatView[]): void {
 /* ── 토너먼트 상태 ─────────────────────────────────────────────────── */
 
 export interface HoldemStatus {
-  tournament: HtRow;
-  schedule: T.TournamentSchedule;
-  status: T.TournamentStatus;
+  /** 대회가 하나도 없을 수 있다. 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다. */
+  tournament: HtRow | null;
+  schedule: T.TournamentSchedule | null;
+  status: T.TournamentStatus | 'NONE';
   registered: number;
   seated: number;
 }
 
-/** 오늘 토너먼트 행을 확보한다(없으면 만든다). */
-function ensureTournament(now: number): HtRow {
-  /* 대회를 만드는 이 순간의 설정을 행에 박는다. 진행 중인 대회를 보호하는 장치가
-     바로 이것이다 — 운영자가 나중에 값을 바꿔도 이미 만들어진 행은 안 흔들린다. */
-  const cfg = getConfig();
-  const s = todaySchedule(now, cfg);
-  /* 오늘 판이 이미 있으면 그것을 쓴다 — 끝났든 취소됐든 마찬가지다.
-     여기서 상태를 따지면 오늘 판이 끝나는 순간 새 판이 저절로 열려서, 대회가 끝나자마자
-     다음 등록이 시작된다. 하루 여러 판은 운영자가 여는 것이지 저절로 열리는 게 아니다.
-     (여러 개 있으면 findTournament 가 가장 최근 것을 준다.) */
-  const found = findTournament(s.dateStr);
-  if (found) return found;
-  /* 어제 판이 아직 도는 중이어도 오늘 행은 만든다. activeTournament 가 "오늘 등록이
-     열리기 전까지는 어제 판을 쓴다"로 판단하고, 열리는 순간 어제 판을 버린다 —
-     그 판단이 성립하려면 오늘 행의 reg_open_at 이 있어야 한다.
-     여기서 만들기를 막았더니 그 자정 방어가 통째로 죽었다(감사 [6b]가 잡았다). */
-  try {
-    run(`INSERT INTO holdem_tournaments
-           (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
-            starting_stack, level_sec, late_reg_sec, prize_fixed)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      s.dateStr, s.title, s.regOpenAt, s.scheduledStartAt, s.graceEndsAt, s.prizeMultiplier,
-      cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, cfg.prizeFixed);
-  } catch { /* 경합 — 아래에서 다시 읽는다 */ }
-  return findTournament(s.dateStr)!;
-}
+
 
 /**
  * 지금 다뤄야 할 토너먼트.
@@ -431,19 +403,33 @@ function ensureTournament(now: number): HtRow {
  * 두는 것보다 정확하다 — 충돌이 생길 수 있는 시점이 정확히 그 순간이기 때문이다.
  * 그 전까지는(자정을 넘겨도) 진행 중인 판이 우선이다.
  */
-function activeTournament(now: number): HtRow {
-  const running = one<HtRow>(
+/**
+ * 지금 다뤄야 할 대회. 없으면 null.
+ *
+ * 자동 생성을 없앤 뒤로 규칙이 아주 단순해졌다 — 살아 있는 판이 있으면 그것이고,
+ * 없으면 방금 끝난 판(결과를 보여 주는 동안)이고, 그것도 없으면 대회가 없는 것이다.
+ *
+ * 날짜가 판단에서 완전히 빠졌다. 예전에는 "오늘 판"을 날짜로 찾았고, 그래서 자정을
+ * 넘기면 진행 중인 판이 화면에서 사라지는 문제가 있었다(그걸 막는 특별 규칙이 따로 있었다).
+ * 이제 살아 있는 판을 곧바로 고르므로 그 문제가 생길 자리가 없다.
+ *
+ * 살아 있는 판이 여럿일 수는 없다 — 만드는 쪽(db/admin.ts 의 createTournament)이 막는다.
+ * 그래도 최근 것을 고르게 해 둔다. 어긋난 데이터가 화면을 죽이는 것보다는 낫다.
+ */
+function activeTournament(): HtRow | null {
+  const live = one<HtRow>(
     `SELECT * FROM holdem_tournaments
-      WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL
+      WHERE finished_at IS NULL AND cancelled_at IS NULL
       ORDER BY id DESC LIMIT 1`);
-  const today = ensureTournament(now);
-  if (!running || running.id === today.id) return today;
-  // 오늘 등록이 아직 열리지 않았다면 어제 판이 진행 중이어도 문제될 게 없다.
-  // 판단 기준은 저장된 값이다 — 매번 날짜에서 다시 계산하면 감사가 시각을 조절할 수 없다.
-  if (now < today.reg_open_at) return running;
-  run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`,
-    now, running.id);
-  return today;
+  if (live) return live;
+  /* 막 끝난 판. 결과 화면을 띄울 시간을 준다 — 끝나는 순간 화면이 대회를 떠나면
+     우승 연출도 마지막 쇼다운도 못 본다.
+     유예로 묶는 이유: 안 묶으면 마지막 판이 영원히 "지금 대회"로 남아, 다음 대회를
+     열기 전까지 로비가 며칠 전 결과를 계속 보여 준다. 그 시간이 지나면 대회는 없는 것이다. */
+  return one<HtRow>(
+    `SELECT * FROM holdem_tournaments
+      WHERE finished_at IS NOT NULL AND finished_at > ?
+      ORDER BY finished_at DESC LIMIT 1`, nowSec() - T.FINISH_LINGER_SEC) ?? null;
 }
 
 /* 대회 행에 박아 둔 운영 설정. 0 이면 '코드 기본값을 쓴다'는 뜻이다 —
@@ -498,9 +484,9 @@ export function advanceHoldem(userId?: string): HoldemStatus {
   return tx(() => {
     const now = nowSec();
     /* 방금 끝난 판에 앉아 있던 사람에게는 그 판을 돌려준다 — seatedTournament 를 보라.
-       전진시킬 것은 없다(끝난 판이다). 여기서 바로 돌아가는 이유는 아래에서
-       activeTournament 가 "오늘 판"으로 갈아치우는 것을 막기 위해서다.
-       userId 가 없는 호출(로비)은 예전과 똑같이 시계에서 유도한다. */
+       전진시킬 것은 없다(끝난 판이다). 여기서 바로 돌아가는 이유는, 그 사이에 운영자가
+       새 대회를 열었을 때 화면이 그쪽으로 갈아치워지는 것을 막기 위해서다 —
+       마지막 판의 쇼다운과 우승 화면을 보고 있는 중이다. */
     if (userId != null) {
       const mine = seatedTournament(userId, now);
       if (mine != null) {
@@ -514,7 +500,14 @@ export function advanceHoldem(userId?: string): HoldemStatus {
         };
       }
     }
-    let t = activeTournament(now);
+    /* 반복 개최를 켜 뒀으면 다음 판을 미리 만들어 둔다. 꺼져 있으면 아무 일도 없다.
+       서버 타이머가 없으므로 이런 일은 전부 요청이 들어올 때 따라잡는다. */
+    ensureRecurring(now);
+
+    let t = activeTournament();
+    /* 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
+       전진시킬 것도, 판정할 것도 없다. 화면은 이 상태를 "예정된 대회 없음"으로 그린다. */
+    if (!t) return { tournament: null, schedule: null, status: 'NONE', registered: 0, seated: 0 };
     const s = scheduleOf(t);
     let regs = getEntries(t.id);
 
@@ -1118,7 +1111,8 @@ export function unregisterHoldem(userId: string):
   return tx(() => {
     const st = advanceHoldem();
     const t = st.tournament;
-    if (t.finished_at != null || t.cancelled_at != null) return { ok: false, error: 'closed' };
+    // 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다
+    if (!t || t.finished_at != null || t.cancelled_at != null) return { ok: false, error: 'closed' };
 
     run(`DELETE FROM holdem_entries
           WHERE user_id = ? AND tournament_id = (
@@ -1143,6 +1137,7 @@ export function registerHoldem(userId: string, username: string):
   return tx(() => {
     const st = advanceHoldem();
     const t = st.tournament;
+    if (!t || !st.schedule) return { ok: false, error: 'closed' };
     const can = T.canRegister(nowSec(), st.schedule, facts(t), st.registered, st.seated,
       tuning(t).lateRegSec);
     if (!can.ok) return { ok: false, error: can.reason };
@@ -1200,8 +1195,9 @@ export function holdemAction(
              JOIN holdem_tournaments t ON t.id = tb.tournament_id
             WHERE t.finished_at IS NULL AND t.cancelled_at IS NULL)`, nowSec(), userId);
     const st = advanceHoldem();
-    if (st.status !== 'RUNNING') return { ok: false, error: 'no_tournament' };
-    const table = getTable(st.tournament.id);
+    if (st.status !== 'RUNNING' || !st.tournament) return { ok: false, error: 'no_tournament' };
+    const tour = st.tournament;
+    const table = getTable(tour.id);
     if (!table) return { ok: false, error: 'no_tournament' };
     const seatRow = getSeats(table.id).find(s => s.user_id === userId && s.presence !== 'OUT');
     if (!seatRow) return { ok: false, error: 'not_seated' };
@@ -1230,7 +1226,7 @@ export function holdemAction(
     const fresh = one<HtHandRow>(`SELECT * FROM holdem_hands WHERE id = ?`, hand.id)!;
     setToAct(fresh, views, seatRow.seat, now);
     // 이 액션으로 라운드가 끝났을 수 있다 — 바로 이어서 전진시킨다
-    advanceTable(st.tournament, reload(table.id), now);
+    advanceTable(tour, reload(table.id), now);
     return { ok: true };
   });
 }

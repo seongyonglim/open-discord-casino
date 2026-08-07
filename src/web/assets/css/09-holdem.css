@@ -1376,4 +1376,40 @@
     color:#6f7a73}
   .ht-win-row.out .ht-win-av{opacity:.55}
   .ht-win-close{width:100%}
-
+
+  /* ── 예정된 대회가 없을 때 ──────────────────────────────────────
+     대회가 저절로 열리지 않게 되면서 "아무것도 없는 상태"가 정상이 됐다.
+     빈 카드 하나만 남으면 서비스가 멈춘 것처럼 보이므로 세 조각을 쌓는다:
+     다음 대회 안내 · 지난 대회 결과 · 안내 문구. 앞의 둘은 없을 수 있고
+     안내 문구는 언제나 나온다. 카드끼리는 세로 간격을 직접 준다
+     (.ht-card 는 margin:0 auto 라 연달아 놓으면 붙어 버린다). */
+  .ht-next,.ht-recap{margin-bottom:14px}
+  .ht-next-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .ht-next-when{font-size:12.5px;color:var(--muted)}
+  .ht-next-count{font-family:var(--mono);font-size:30px;font-weight:800;color:var(--gold);
+    letter-spacing:-.5px;margin:12px 0 4px}
+  .ht-next-sub{font-size:12px;color:var(--muted)}
+
+  .ht-recap .ht-h3{margin-top:0}
+  .ht-champ{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;
+    background:rgba(212,175,55,.07);border:1px solid rgba(212,175,55,.18)}
+  .ht-champ-av{width:46px;height:46px;border-radius:50%;object-fit:cover;flex:none;
+    border:2px solid var(--gold)}
+  .ht-champ-av.ph{display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.07);font-weight:800;font-size:18px;color:var(--gold)}
+  .ht-champ-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ht-champ-tag{font-size:10.5px;font-weight:800;letter-spacing:.6px;color:var(--gold)}
+  .ht-champ-txt strong{font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ht-champ-sub{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .ht-recap-rest{list-style:none;margin:10px 0 0;padding:0}
+  .ht-recap-rest li{display:flex;align-items:center;gap:10px;padding:6px 14px;font-size:12.5px}
+  .ht-recap-rest .pl{font-family:var(--mono);font-weight:800;color:var(--muted);flex:none;width:34px}
+  .ht-recap-rest .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ht-recap-rest .pz{font-family:var(--mono);color:var(--gold);flex:none}
+  .ht-recap-foot{margin-top:12px;padding-top:10px;font-size:11.5px;color:var(--muted);
+    border-top:1px solid rgba(255,255,255,.06)}
+
+  .ht-empty{text-align:center;padding:30px 24px;margin-bottom:14px}
+  .ht-empty-ico{font-size:40px;color:rgba(255,255,255,.13);line-height:1}
+  .ht-empty-msg{margin:14px 0 4px;font-size:15px;font-weight:700}
+  .ht-empty-sub{margin:0;font-size:12.5px;color:var(--muted)}

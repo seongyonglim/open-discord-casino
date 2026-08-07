@@ -748,9 +748,14 @@ section('[9] 운영자 동작');
      살아 있는 판(끝나지도 취소되지도 않은 것)은 한 번에 하나뿐이다. */
   for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
   {
-    /* 오늘의 정규 판이 대기 상태로 앉아 있는 상황을 만든다 — 실제로 늘 그렇다. */
-    const daily = HD.advanceHoldem().tournament;
-    ck('정규 판이 대기 상태로 있다', daily.started_at == null);
+    /* 예약된 판이 대기 상태로 앉아 있는 상황을 만든다.
+       예전에는 advanceHoldem 이 "오늘 판"을 저절로 만들어 줬지만, 자동 생성을 없앤
+       뒤로는 운영자(또는 반복 규칙)가 열어야 생긴다. 그래서 여기서 직접 연다. */
+    const t0 = Math.floor(Date.now() / 1000);
+    const opened = A.createTournament({ title: '예약 판', regOpenAt: t0 + 3600, startAt: t0 + 7200 });
+    ck('예약 판을 열 수 있다', opened.ok, JSON.stringify(opened));
+    const daily = HD.advanceHoldem().tournament!;
+    ck('예약 판이 대기 상태로 있다', daily.started_at == null);
 
     /* 대기 판이 있어도 임시 판을 만들 수 있어야 한다. 처음에는 이것도 막았는데,
        정규 판이 늘 대기 중이라 임시 판을 영영 못 만들었다 — 지우면 1초 안에 되살아났다.
@@ -760,7 +765,7 @@ section('[9] 운영자 동작');
     db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ? WHERE id = ?`)
       .run(now0 + 30 * 60, daily.id);
     const near = A.createTournament({ title: '너무 가까움' });
-    ck('정규 판 시작이 가까우면 거절한다 (30분 뒤)',
+    ck('예약 판 시작이 가까우면 거절한다 (30분 뒤)',
       !near.ok && near.error === 'too_close', JSON.stringify(near));
 
     db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ? WHERE id = ?`)
@@ -772,7 +777,7 @@ section('[9] 운영자 동작');
     const a = A.createTournament({ title: '임시 판', regMin: 0 });
     ck('두 시간 넘게 남았으면 만들 수 있다', a.ok, JSON.stringify(a));
     ck('임시 판이 골라진다 (더 최근이다)',
-      HD.advanceHoldem().tournament.id === (a.ok ? a.id : -1));
+      HD.advanceHoldem().tournament!.id === (a.ok ? a.id : -1));
 
     // 돌고 있는 판이 있으면 막는다 — 카드가 도는 판이 둘일 수는 없다
     if (a.ok) db.prepare(`UPDATE holdem_tournaments SET started_at = unixepoch() WHERE id = ?`).run(a.id);
@@ -780,22 +785,23 @@ section('[9] 운영자 동작');
     ck('돌고 있는 판이 있으면 새로 못 만든다',
       !b.ok && b.error === 'live_exists', JSON.stringify(b));
 
-    /* 여기가 핵심이다 — 임시 판이 끝나면 대기 중이던 정규 판으로 돌아와야 한다.
-       "가장 최근 것"만 보면 끝난 임시 판이 계속 골라져 정규 판이 영영 안 열린다. */
+    /* 여기가 핵심이다 — 임시 판이 끝나면 대기 중이던 예약 판으로 돌아와야 한다.
+       "가장 최근 것"만 보면 끝난 임시 판이 계속 골라져 예약 판이 영영 안 열린다. */
     if (a.ok) db.prepare(`UPDATE holdem_tournaments SET finished_at = unixepoch() WHERE id = ?`).run(a.id);
-    ck('임시 판이 끝나면 정규 판으로 돌아온다',
-      HD.advanceHoldem().tournament.id === daily.id,
-      `${HD.advanceHoldem().tournament.id} (기대 ${daily.id})`);
-    ck('정규 판을 지우지 않아도 된다 (같은 날짜에 둘이 공존)',
+    ck('임시 판이 끝나면 예약 판으로 돌아온다',
+      HD.advanceHoldem().tournament!.id === daily.id,
+      `${HD.advanceHoldem().tournament!.id} (기대 ${daily.id})`);
+    ck('예약 판을 지우지 않아도 된다 (같은 날짜에 둘이 공존)',
       (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === 2);
 
     const c = A.createTournament({ title: '셋째 판' });
     ck('끝난 뒤에는 또 만들 수 있다', c.ok, JSON.stringify(c));
 
-    // 자동 생성은 이미 있는 오늘 판을 다시 만들지 않는다
+    /* 요청이 들어와도 대회가 저절로 늘지 않는다. advanceHoldem 은 요청마다 불리므로,
+       여기가 새면 로비를 새로고침하는 것만으로 대회가 무한히 생긴다. */
     const before = (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n;
     HD.advanceHoldem(); HD.advanceHoldem();
-    ck('자동 생성이 오늘 판을 두 번 만들지 않는다',
+    ck('요청이 대회를 저절로 만들지 않는다',
       (db.prepare(`SELECT COUNT(*) AS n FROM holdem_tournaments`).get() as { n: number }).n === before,
       String(before));
   }
@@ -1132,8 +1138,13 @@ section('[10d] 대회 설정');
   for (const t of ['holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
   ck('올바른 설정은 저장된다',
     S.saveConfig({ ...d, startingStack: 33333, levelMin: 3, lateRegMin: 7, prizeFixed: 12345 }).ok);
+  /* 대회는 저절로 생기지 않으므로 직접 연다 — 설정이 "다음에 만들어질 대회"에
+     박히는지가 이 검사의 요지이고, 그 "만들기"를 이제 사람이 한다. */
+  const A2 = require('../src/db/admin') as typeof import('../src/db/admin');
+  const nw = Math.floor(Date.now() / 1000);
+  A2.createTournament({ title: '설정 검사', regOpenAt: nw + 3600, startAt: nw + 7200 });
   const st = HD.advanceHoldem();
-  const t = st.tournament;
+  const t = st.tournament!;
   ck('새 대회에 설정이 박힌다',
     t.starting_stack === 33333 && t.level_sec === 180 && t.late_reg_sec === 420
     && t.prize_fixed === 12345,

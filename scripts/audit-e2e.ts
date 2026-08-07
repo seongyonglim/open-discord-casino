@@ -303,6 +303,19 @@ async function main(): Promise<void> {
     ck('페이지에 덱이 섞여 나오지 않음',
       !/deck_json|deck_pos/.test(page.text));
 
+    /* 대회가 없으면 없다고 답해야 한다 — 자동 생성을 없앤 뒤로는 이것이 기본 상태다.
+       예전에는 이 요청 하나가 오늘 판을 만들어 냈고, 그래서 아래 검사들이 그냥 이어졌다. */
+    const empty = (await state(sessions[0].c)).body;
+    ck('대회가 없으면 tournament 가 null 이다',
+      empty?.ok === true && empty.tournament === null, JSON.stringify(empty?.tournament));
+    ck('그때도 안내할 것을 함께 준다 (recap · upcoming 자리)',
+      empty != null && 'recap' in empty && 'upcoming' in empty);
+
+    // 이제 운영자가 열어야 판이 생긴다
+    const Adm = require('../src/db/admin') as typeof import('../src/db/admin');
+    const made = Adm.createTournament({ title: 'e2e 프리롤', regOpenAt: nowSec() - 60, startAt: nowSec() + 600 });
+    ck('운영자가 대회를 연다', made.ok, JSON.stringify(made));
+
     let s0 = (await state(sessions[0].c)).body;
     ck('상태 응답 정상', s0?.ok === true && s0.tournament != null, JSON.stringify(s0?.tournament?.status));
 

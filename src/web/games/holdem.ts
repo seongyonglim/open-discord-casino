@@ -18,6 +18,9 @@ import {
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
 import { getWebUser } from '../../db/queries';
+import { recentRecap } from '../../db/holdem-recap';
+import { upcomingHint } from '../../db/recurrence';
+import { getConfig } from '../../db/settings';
 import { readJson, sendJson } from '../http';
 import { layout, jsonForScript, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
@@ -30,7 +33,7 @@ import { stateFragment } from './holdem-client/state';
 import { CELEBRATE } from './holdem-client/celebrate';
 import { RECORDS } from './holdem-client/records';
 import { FORMAT } from './holdem-client/format';
-import { LOBBY } from './holdem-client/lobby';
+import { LOBBY, LOBBY_EMPTY } from './holdem-client/lobby';
 import { SEATS } from './holdem-client/seats';
 import { EQUITY } from './holdem-client/equity';
 import { BADGES } from './holdem-client/badges';
@@ -72,6 +75,20 @@ export const FINISH_LINGER_SEC = T.FINISH_LINGER_SEC;
 function statePayload(st: HoldemStatus, userId: string) {
   const now = Math.floor(Date.now() / 1000);
   const t = st.tournament;
+  /* 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
+     화면은 이 응답을 "예정된 대회 없음"으로 그린다. tournament 를 null 로 두는 대신
+     status 만 NONE 으로 주면 화면이 빈 값을 읽다가 죽으므로, 통째로 없는 것으로 준다. */
+  if (!t) {
+    /* 빈 화면 대신 두 가지를 준다 — 지난 판이 어땠는지(recap)와 다음이 언제인지(upcoming).
+       둘 다 없을 수도 있고, 그때는 화면이 안내 문구만 그린다. */
+    const up = upcomingHint(now);
+    return {
+      ok: true, me: userId, balance: getWebUser(userId)?.balance ?? 0,
+      serverNow: now, tournament: null, results: [], table: null,
+      recap: recentRecap(),
+      upcoming: up ? { regOpenAt: up.regOpenAt, startAt: up.startAt, dateStr: up.dateStr } : null,
+    };
+  }
   const table = getTable(t.id);
   const entries = getEntries(t.id);
   const tune = tuning(t);
@@ -294,7 +311,7 @@ export async function handleState(
      "지금 등록할 수 있는 판"은 사람이 앉았던 자리와 무관하다. */
   const st = advanceHoldem(userId);
   // 폴링 자체가 "접속 중" 신호다. SIT_OUT은 여기서 풀지 않는다 — 본인이 복귀를 눌러야 한다.
-  const table = getTable(st.tournament.id);
+  const table = st.tournament ? getTable(st.tournament.id) : undefined;
   if (table) touchHoldemPresence(userId, table.id);
   return sendJson(res, 200, statePayload(st, userId));
 }
@@ -364,7 +381,7 @@ export async function handleSitIn(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
   const st = advanceHoldem();
-  const table = getTable(st.tournament.id);
+  const table = st.tournament ? getTable(st.tournament.id) : undefined;
   if (!table) return sendJson(res, 400, { error: '진행 중인 테이블이 없습니다' });
   holdemSitIn(userId, table.id);
   return sendJson(res, 200, { ok: true });
@@ -390,16 +407,28 @@ export async function handleShow(
 
 /* ── 도움말 ──────────────────────────────────────────────────────── */
 
-const HELP_BODY = `
+/* 도움말의 숫자는 전부 [대회 설정]에서 온다.
+   예전에는 21:00 · 22:00 · 10,000칩 · 8분이 문장 안에 박혀 있었는데, 운영자가 그 값을
+   바꿀 수 있게 된 순간부터 이 글이 조용히 거짓말을 하기 시작했다. 규칙을 설명하는
+   글이 실제 규칙과 다른 것은 설명이 없는 것보다 나쁘다. */
+function helpBody(): string {
+  const cfg = getConfig();
+  const clock = (min: number) =>
+    `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  const num = (n: number) => n.toLocaleString('ko-KR');
+  return `
   <h4>어떤 대회인가요</h4>
   <p>참가비가 없는 <b>프리롤</b>입니다. 포인트를 잃지 않고, 상위 입상자만 상금을 받습니다.
-     평일은 참가자 1인당 1,000P, 주말은 2,000P가 상금 풀에 쌓입니다.</p>
+     평일은 참가자 1인당 ${num(cfg.weekdayMultiplier)}P, 주말은 ${num(cfg.weekendMultiplier)}P가
+     상금 풀에 쌓입니다.</p>
   <ul>
-    <li>등록 <b>21:00</b> · 시작 <b>22:00</b> (KST)</li>
-    <li>최소 3명 · 최대 9명 (한 테이블)</li>
-    <li>22:00에 3명이 안 되면 <b>23:00</b>까지 기다리고, 그래도 미달이면 취소됩니다</li>
-    <li>시작 후 <b>24분</b>까지 늦은 등록이 가능합니다 (빈자리가 있을 때)</li>
-    <li>시작 스택 10,000칩 · 블라인드는 8분마다 오릅니다</li>
+    <li>대회가 열리는 시각은 그때그때 다릅니다 — 로비의 <b>다음 대회</b> 안내를 보세요
+        (지금 설정은 등록 <b>${clock(cfg.regOpenMin)}</b> · 시작 <b>${clock(cfg.startMin)}</b> KST)</li>
+    <li>최소 ${T.MIN_PLAYERS}명 · 최대 ${T.MAX_PLAYERS}명 (한 테이블)</li>
+    <li>시작 시각에 ${T.MIN_PLAYERS}명이 안 되면 <b>${cfg.graceMin}분</b> 더 기다리고,
+        그래도 미달이면 취소됩니다</li>
+    <li>시작 후 <b>${cfg.lateRegMin}분</b>까지 늦은 등록이 가능합니다 (빈자리가 있을 때)</li>
+    <li>시작 스택 ${num(cfg.startingStack)}칩 · 블라인드는 ${cfg.levelMin}분마다 오릅니다</li>
   </ul>
 
   <h4>상금</h4>
@@ -422,6 +451,7 @@ const HELP_BODY = `
      나가는 일을 막기 위한 안전장치입니다.</p>
   <p>스택 표시는 <b>칩</b>과 <b>BB</b>(빅블라인드 배수) 중에서 고를 수 있습니다.</p>
 `;
+}
 /* ── 페이지 ──────────────────────────────────────────────────────────
  *
  * 배치 규칙(참고 디자인을 그대로 따른 것 — 여기서 어긋나면 화면이 무너진다):
@@ -604,14 +634,14 @@ export function holdemPage(user: WebUser): string {
       </div>
     </div>
 
-    ${helpDialog('htHelp', '홀덤 프리롤 규칙', HELP_BODY)}
+    ${helpDialog('htHelp', '홀덤 프리롤 규칙', helpBody())}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
       'actallin','actbet','actcall','actcheck','actraise','actfold',
       'potwin','clockwarn','allinbgm'];</script>
   <script>
   (function(){
-${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}
+${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY_EMPTY}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}
   })();
   </script>`;
   return layout('홀덤 프리롤', 'lobby', body);

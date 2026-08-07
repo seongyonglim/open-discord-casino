@@ -18,7 +18,7 @@ export const LOOP = `    function render(){
          예전에는 내 자리가 사라지는 순간 로비로 튕겨서, 내가 어떻게 죽었는지 본 다음의
          이야기 — 남은 사람들의 승부와 대회를 결정짓는 마지막 판 — 을 하나도 못 봤다.
          참가했던 사람만 대상이다. 구경만 하러 온 사람은 로비에서 [관전하기]로 들어온다. */
-      if (st.table != null && st.table.mySeat == null && st.tournament.iRegistered) spectate = true;
+      if (st.table != null && st.table.mySeat == null && st.tournament && st.tournament.iRegistered) spectate = true;
       var showTable = st.table != null && (st.table.mySeat != null || spectate);
       lobbyEl.hidden = showTable;
       lobbyRecEl.hidden = showTable || recEmpty;
