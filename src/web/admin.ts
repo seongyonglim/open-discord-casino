@@ -216,7 +216,13 @@ export function adminPage(user: WebUser): string {
         <label>제목<input type="text" id="ncTitle" placeholder="홀덤 프리롤" ${canMake ? '' : 'disabled'}><i>비우면 "홀덤 프리롤"</i></label>
         <label>등록 시작<input type="datetime-local" id="ncRegAt" value="${localInput(defaultRegAt)}" ${canMake ? '' : 'disabled'}><i>KST · 이때부터 신청을 받습니다</i></label>
         <label>대회 시작<input type="datetime-local" id="ncStartAt" value="${localInput(defaultStartAt)}" ${canMake ? '' : 'disabled'}><i>KST · 3명 이상이면 이때 시작</i></label>
-        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${canMake ? '' : 'disabled'}><b>×명</b></span><i>0이면 상금 없음(테스트용)</i></label>
+        <label>참가 방식<select id="ncKind" ${canMake ? '' : 'disabled'}>
+          <option value="free" selected>프리롤 (참가비 없음)</option>
+          <option value="buyin">바이인 (참가비 있음)</option>
+        </select><i>바이인이면 걷은 돈이 곧 상금입니다</i></label>
+        <label>참가비<span class="ad-inx"><input type="number" id="ncBuyIn" min="0" step="100" value="0" ${canMake ? '' : 'disabled'}><b>P</b></span><i>바이인일 때만 · 취소되면 전액 환불</i></label>
+        <label>상금 배수<span class="ad-inx"><input type="number" id="ncMult" min="0" step="100" value="${cfg.weekdayMultiplier}" ${canMake ? '' : 'disabled'}><b>×명</b></span><i>프리롤일 때만 · 0이면 상금 없음</i></label>
+        <label>보장 상금 (GTD)<span class="ad-inx"><input type="number" id="ncGtd" min="0" step="1000" value="0" ${canMake ? '' : 'disabled'}><b>P</b></span><i>바이인일 때 · 걷은 돈이 모자라면 채웁니다</i></label>
       </div>
       <div class="ad-row">
         <button type="button" id="ncMake" class="primary" ${canMake ? '' : 'disabled'}>대회 열기</button>
@@ -488,26 +494,40 @@ export function adminPage(user: WebUser): string {
         var ms = v ? new Date(v).getTime() : NaN;
         return isFinite(ms) ? Math.floor(ms / 1000) : NaN;
       }
+      var buyin = document.getElementById('ncKind').value === 'buyin';
       var body = {
         title: document.getElementById('ncTitle').value,
         regOpenAt: at('ncRegAt'),
         startAt: at('ncStartAt'),
-        prizeMultiplier: Math.floor(Number(document.getElementById('ncMult').value)),
+        /* 참가 방식이 정한 쪽만 보낸다. 두 값을 다 보내면 서버가 어느 쪽을 믿어야 할지
+           모호해지고, 화면에서 프리롤을 골라 놓고 참가비가 붙는 일이 생긴다. */
+        buyIn: buyin ? Math.floor(Number(document.getElementById('ncBuyIn').value)) : 0,
+        prizeMultiplier: buyin ? 0 : Math.floor(Number(document.getElementById('ncMult').value)),
+        prizeFixed: buyin ? Math.floor(Number(document.getElementById('ncGtd').value)) : 0,
       };
       if (!isFinite(body.regOpenAt) || !isFinite(body.startAt)) { alert('시각을 넣어 주세요.'); return; }
       if (body.regOpenAt > body.startAt) {
         alert('등록 시작이 대회 시작보다 늦습니다 — 아무도 신청할 수 없는 대회가 됩니다.'); return;
       }
       if (!isFinite(body.prizeMultiplier) || body.prizeMultiplier < 0) { alert('상금 배수를 확인해 주세요.'); return; }
+      if (!isFinite(body.buyIn) || body.buyIn < 0) { alert('참가비를 확인해 주세요.'); return; }
+      if (!isFinite(body.prizeFixed) || body.prizeFixed < 0) { alert('보장 상금을 확인해 주세요.'); return; }
+      if (buyin && body.buyIn === 0) {
+        alert('바이인을 골랐으면 참가비를 1P 이상 넣어 주세요. 참가비가 없으면 프리롤입니다.'); return;
+      }
       var fmt = function(sec){
         var d = new Date(sec * 1000);
         return (d.getMonth() + 1) + '/' + d.getDate() + ' '
           + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
       };
+      var money = buyin
+        ? ' 참가비 ' + body.buyIn.toLocaleString('ko-KR') + 'P — 걷은 돈이 그대로 상금이 됩니다'
+          + (body.prizeFixed > 0 ? ' (보장 ' + body.prizeFixed.toLocaleString('ko-KR') + 'P).' : '.')
+          + ' 인원 미달로 취소되면 전액 환불됩니다.'
+        : body.prizeMultiplier === 0 ? ' 상금 배수 0이라 포인트는 나가지 않습니다.' : '';
       confirmThen('대회를 열까요?',
-        (body.title || '홀덤 프리롤') + ' — 등록 ' + fmt(body.regOpenAt)
-        + ' · 시작 ' + fmt(body.startAt) + '.'
-        + (body.prizeMultiplier === 0 ? ' 상금 배수 0이라 포인트는 나가지 않습니다.' : ''),
+        (body.title || (buyin ? '홀덤 토너먼트' : '홀덤 프리롤')) + ' — 등록 ' + fmt(body.regOpenAt)
+        + ' · 시작 ' + fmt(body.startAt) + '.' + money,
         function(){ post('/api/admin/tournament/create', body)
           .then(function(r){ if (shout(r)) location.reload(); }); });
     });
@@ -995,6 +1015,12 @@ export async function handleAdminNoticeDelete(req: IncomingMessage, res: ServerR
   return sendJson(res, 200, { ok: true });
 }
 
+/** 돈으로 쓰일 값은 정수 0 이상만 받는다. NaN·음수·소수가 원장까지 흘러가면 안 된다. */
+function clampMoney(v: unknown): number {
+  const n = Math.floor(Number(v ?? 0));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export async function handleAdminTournamentCreate(
   req: IncomingMessage, res: ServerResponse
 ): Promise<void> {
@@ -1004,6 +1030,10 @@ export async function handleAdminTournamentCreate(
     regOpenAt: b?.regOpenAt != null ? Math.floor(Number(b.regOpenAt)) : undefined,
     startAt: b?.startAt != null ? Math.floor(Number(b.startAt)) : undefined,
     prizeMultiplier: Math.floor(Number(b?.prizeMultiplier ?? 0)),
+    /* 참가비는 사람의 잔액에서 실제로 빠져나가는 돈이다. 음수·소수·NaN 이 들어오면
+       그대로 원장에 남으므로 여기서 정수 0 이상으로 못 박는다. */
+    buyIn: clampMoney(b?.buyIn),
+    prizeFixed: clampMoney(b?.prizeFixed),
   });
   if (!r.ok) return sendJson(res, 400, { error: createErrorText(r) });
   return sendJson(res, 200, { ok: true, id: r.id });

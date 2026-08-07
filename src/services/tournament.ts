@@ -279,10 +279,24 @@ export function prizeAmounts(pool: number, players: number): number[] {
   return out;
 }
 
-/** 총 상금 = 누적 참가자 수 × 배수 (동시 접속자가 아니다 — 스펙 3항) */
-/* fixed 가 0보다 크면 인원과 무관하게 그 금액을 쓴다. 참가 인원이 적어도 상금이
-   보장되는 대회를 열 수 있게 하려는 것이다. 0 이면 예전처럼 인원 × 배수. */
-export function prizePool(uniqueRegistered: number, multiplier: number, fixed = 0): number {
+/**
+ * 총 상금. 참가비가 있느냐로 계산이 갈린다.
+ *
+ * 프리롤(buyIn = 0) — 예전 그대로다. fixed 가 0보다 크면 인원과 무관하게 그 금액을 쓰고,
+ * 아니면 누적 참가자 수 × 배수다(동시 접속자가 아니다 — 스펙 3항). 이 돈은 서비스가
+ * 새로 발행하는 포인트다.
+ *
+ * 참가비 대회(buyIn > 0) — 걷은 돈이 곧 상금이다. 참가자끼리 주고받는 것이므로 서비스가
+ * 새로 발행하는 포인트가 없다. 다만 fixed 가 있으면 보장 상금(GTD)으로 쓴다: 걷은 돈이
+ * 그에 못 미치면 모자란 만큼만 서비스가 얹는다. 배수는 보지 않는다 — 그건 "머릿수당
+ * 얼마를 얹어 주는가"라는 프리롤의 개념이고, 여기서는 참가비가 그 자리를 대신한다.
+ * 한 칸에 두 가지 뜻을 담으면 운영자도 우리도 곧 헷갈린다.
+ */
+export function prizePool(
+  uniqueRegistered: number, multiplier: number, fixed = 0, buyIn = 0
+): number {
+  const n = Math.max(0, Math.floor(uniqueRegistered));
+  if (buyIn > 0) return Math.max(n * Math.floor(buyIn), Math.max(0, Math.floor(fixed)));
   if (fixed > 0) return Math.floor(fixed);
-  return Math.max(0, Math.floor(uniqueRegistered) * multiplier);
+  return Math.max(0, n * multiplier);
 }

@@ -10,6 +10,7 @@
 import { one, all, run, tx, adjustBalance } from './queries';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
+import { refundEntries } from './holdem';
 
 /* ── 대회 ─────────────────────────────────────────────────────────── */
 
@@ -56,9 +57,14 @@ export function purgeTournament(id: number): { ok: true; removed: number } | { o
     if (t.started_at != null && t.finished_at == null && t.cancelled_at == null) {
       return { ok: false as const, error: 'running' as const };
     }
-    const paid = one<{ n: number }>(
-      `SELECT COALESCE(SUM(prize), 0) AS n FROM holdem_entries WHERE tournament_id = ?`, id)!;
-    if (paid.n > 0) return { ok: false as const, error: 'paid' as const };
+    /* 상금이 나갔거나 참가비를 걷은 채로 남아 있으면 거절한다.
+       둘 다 원장에 이미 기록된 돈이라, 대회 행만 지우면 근거 없는 포인트가 남는다.
+       (인원 미달로 취소된 판은 그때 이미 돌려주고 paid_in 을 0 으로 내렸으므로
+       여기서는 걸리지 않는다 — 지울 수 있다.) */
+    const money = one<{ prize: number; fees: number }>(
+      `SELECT COALESCE(SUM(prize), 0) AS prize, COALESCE(SUM(paid_in), 0) AS fees
+         FROM holdem_entries WHERE tournament_id = ?`, id)!;
+    if (money.prize > 0 || money.fees > 0) return { ok: false as const, error: 'paid' as const };
 
     return { ok: true as const, removed: removeTournamentRows(id) };
   });
@@ -100,7 +106,7 @@ function removeTournamentRows(id: number): number {
  * 진행 중인 대회는 여전히 거절한다. 사람이 앉아 카드를 보고 있는 판이다.
  */
 export function revokePrizesAndPurge(id: number):
-  { ok: true; revoked: number; users: number; removed: number }
+  { ok: true; revoked: number; refunded: number; users: number; removed: number }
   | { ok: false; error: 'not_found' | 'running' } {
   return tx(() => {
     const t = one<{ started_at: number | null; finished_at: number | null; cancelled_at: number | null }>(
@@ -119,7 +125,13 @@ export function revokePrizesAndPurge(id: number):
       adjustBalance(p.user_id, -p.n, 'tournament:revoke:' + id);
       revoked += p.n;
     }
-    return { ok: true as const, revoked, users: paid.length, removed: removeTournamentRows(id) };
+    /* 참가비도 되돌린다. 상금만 걷어 가고 참가비를 안 돌려주면, 이 판에 나갔던 사람은
+       돈만 잃는다 — 없던 일로 만드는 것이 이 동작의 뜻이므로 양쪽 다 되돌려야 한다. */
+    const refunded = refundEntries(id, 'tournament:refund:');
+    return {
+      ok: true as const, revoked, refunded, users: paid.length,
+      removed: removeTournamentRows(id),
+    };
   });
 }
 
@@ -156,6 +168,10 @@ export function createTournament(o: {
   /** 시작 시각(unix초). 안 주면 regMin 분 뒤 */
   startAt?: number;
   regMin?: number;
+  /** 참가비. 0(기본)이면 프리롤 — 지금까지의 대회는 전부 이쪽이다 */
+  buyIn?: number;
+  /** 보장 상금(GTD). 참가비 대회에서 걷은 돈이 이에 못 미치면 모자란 만큼 얹는다 */
+  prizeFixed?: number;
 }):
   { ok: true; id: number }
   | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number }
@@ -189,15 +205,19 @@ export function createTournament(o: {
       return { ok: false as const, error: 'bad_time' as const };
     }
     const mult = Math.max(0, Math.floor(o.prizeMultiplier ?? cfg.weekdayMultiplier));
+    const buyIn = Math.max(0, Math.floor(o.buyIn ?? 0));
+    const fixed = Math.max(0, Math.floor(o.prizeFixed ?? cfg.prizeFixed));
+    /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이다. */
+    const title = (o.title ?? '').trim() || (buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
     /* date_str 은 이제 "하루 하나"의 열쇠가 아니다(유니크 인덱스를 걷어냈다).
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
-            starting_stack, level_sec, late_reg_sec, prize_fixed)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      T.kstDateStr(startAt * 1000), (o.title ?? '').trim() || '홀덤 프리롤',
+            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      T.kstDateStr(startAt * 1000), title,
       regOpenAt, startAt, startAt + cfg.graceMin * 60, mult,
-      cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, cfg.prizeFixed);
+      cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, fixed, buyIn);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
 }
@@ -230,7 +250,7 @@ export function openTestTournament() {
  * 중단된 판은 원장을 건드리지 않았고, 따라서 경제도 어긋나지 않는다.
  */
 export function cancelRunningTournament():
-  { ok: true; id: number } | { ok: false; error: 'none_running' } {
+  { ok: true; id: number; refunded: number } | { ok: false; error: 'none_running' } {
   return tx(() => {
     const t = one<{ id: number }>(
       `SELECT id FROM holdem_tournaments
@@ -238,7 +258,10 @@ export function cancelRunningTournament():
         ORDER BY id DESC LIMIT 1`);
     if (!t) return { ok: false as const, error: 'none_running' as const };
     run(`UPDATE holdem_tournaments SET cancelled_at = unixepoch() WHERE id = ?`, t.id);
-    return { ok: true as const, id: t.id };
+    /* 참가비를 걷었으면 돌려준다. 판이 끝까지 가지 않아 상금이 나가지 않았으므로,
+       돌려주지 않으면 걷기만 하고 아무에게도 주지 않은 돈이 된다. */
+    const refunded = refundEntries(t.id, 'holdem:abort:');
+    return { ok: true as const, id: t.id, refunded };
   });
 }
 

@@ -1125,6 +1125,177 @@ console.log('\n[13] 반복 개최 (자동 생성은 켰을 때만 · 지운 판�
   ck('중단할 판이 없으면 거절한다', !A.cancelRunningTournament().ok);
 }
 
+console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 누적합)');
+{
+  const wipe = () => {
+    for (const tb of ['holdem_hand_seats', 'holdem_hands', 'holdem_seats',
+      'holdem_tables', 'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${tb}`).run();
+    db.prepare(`DELETE FROM holdem_settings`).run();
+  };
+  const bal = (id: string) => Q.getWebUser(id)!.balance;
+  const ledger = (id: string) => (db.prepare(
+    `SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE user_id = ?`)
+    .get(id) as { n: number }).n;
+  /* 이 검사의 뼈대. 어떤 경로를 지나든 이것이 깨지면 그건 표시가 아니라 경제 사고다. */
+  const ledgerOk = (ids: string[]) => ids.every(id => bal(id) === ledger(id));
+
+  const FEE = 500;
+  const users = ['bi0', 'bi1', 'bi2', 'bi3'];
+  for (const u of users) {
+    mkUser(u);
+    const cur = Q.getWebUser(u)?.balance ?? 0;
+    if (cur !== 10_000) Q.adjustBalance(u, 10_000 - cur, 'test:seed');
+  }
+
+  /* ── 걷는다 ─────────────────────────────────────────────────── */
+  wipe();
+  const made = A.createTournament({
+    title: '바이인 판', buyIn: FEE, regOpenAt: nowSec() - 60, startAt: nowSec() + 3600,
+  });
+  ck('참가비 대회를 열 수 있다', made.ok, JSON.stringify(made));
+  const tid = made.ok ? made.id : -1;
+
+  const before = bal('bi0');
+  ck('등록이 받아진다', HD.registerHoldem('bi0', 'bi0').ok);
+  ck('참가비만큼 잔액이 줄었다', bal('bi0') === before - FEE, `${bal('bi0')} (기대 ${before - FEE})`);
+  ck('걷은 것이 원장에 남았다 (잔액 = 원장 누적합)', ledgerOk(['bi0']));
+  ck('걷은 금액이 참가 행에 남았다',
+    (db.prepare(`SELECT paid_in FROM holdem_entries WHERE tournament_id = ? AND user_id = 'bi0'`)
+      .get(tid) as { paid_in: number }).paid_in === FEE);
+
+  /* ── 못 내면 못 들어온다 ──────────────────────────────────────── */
+  mkUser('bi_poor');
+  {
+    const cur = Q.getWebUser('bi_poor')?.balance ?? 0;
+    if (cur !== FEE - 1) Q.adjustBalance('bi_poor', (FEE - 1) - cur, 'test:seed');
+  }
+  const poor = HD.registerHoldem('bi_poor', 'bi_poor');
+  ck('참가비가 모자라면 거절한다', !poor.ok && poor.error === 'no_funds', JSON.stringify(poor));
+  ck('거절된 사람의 돈은 그대로다', bal('bi_poor') === FEE - 1, String(bal('bi_poor')));
+  /* 거절과 함께 참가 행도 남지 않아야 한다 — 남으면 안 낸 사람이 참가자로 잡힌다 */
+  ck('거절된 사람의 참가 행이 없다',
+    (db.prepare(`SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ? AND user_id = 'bi_poor'`)
+      .get(tid) as { n: number }).n === 0);
+
+  /* ── 스스로 물리면 돌려준다 ───────────────────────────────────── */
+  const beforeCancel = bal('bi0');
+  ck('신청을 물릴 수 있다', HD.unregisterHoldem('bi0').ok);
+  ck('물리면 참가비가 돌아온다', bal('bi0') === beforeCancel + FEE,
+    `${bal('bi0')} (기대 ${beforeCancel + FEE})`);
+  ck('되돌린 것도 원장에 남았다 (잔액 = 원장 누적합)', ledgerOk(['bi0']));
+  ck('결국 낸 것과 받은 것이 같다 (10,000 그대로)', bal('bi0') === 10_000, String(bal('bi0')));
+
+  /* ── 인원 미달 취소 → 전액 환불 ───────────────────────────────── */
+  wipe();
+  for (const u of users) {
+    const cur = Q.getWebUser(u)!.balance;
+    if (cur !== 10_000) Q.adjustBalance(u, 10_000 - cur, 'test:seed');
+  }
+  const t2 = A.createTournament({
+    title: '미달 판', buyIn: FEE, regOpenAt: nowSec() - 60, startAt: nowSec() + 60,
+  });
+  ck('둘째 판을 열 수 있다', t2.ok, JSON.stringify(t2));
+  HD.registerHoldem('bi0', 'bi0');
+  HD.registerHoldem('bi1', 'bi1');          // 둘뿐이라 최소 인원(3)에 못 미친다
+  ck('둘이 참가비를 냈다', bal('bi0') === 9_500 && bal('bi1') === 9_500,
+    `${bal('bi0')} / ${bal('bi1')}`);
+
+  // 대기 마감을 지나게 해서 "인원 미달 취소"를 실제로 통과시킨다
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?, grace_ends_at = ?`)
+    .run(nowSec() - 120, nowSec() - 60);
+  const after = HD.advanceHoldem();
+  ck('인원 미달로 취소됐다', after.status === 'NONE' || after.tournament?.cancelled_at != null,
+    after.status);
+  ck('취소되면 전액 돌려받는다', bal('bi0') === 10_000 && bal('bi1') === 10_000,
+    `${bal('bi0')} / ${bal('bi1')}`);
+  ck('환불도 원장에 남았다 (잔액 = 원장 누적합)', ledgerOk(users));
+
+  /* 두 번 돌려주면 없던 포인트가 생긴다. 취소된 판을 또 전진시키는 경로가 실제로 있다
+     (요청마다 advanceHoldem 이 돈다) — 여기가 새면 새로고침만으로 돈이 불어난다. */
+  HD.advanceHoldem(); HD.advanceHoldem();
+  ck('여러 번 지나가도 두 번 돌려주지 않는다', bal('bi0') === 10_000, String(bal('bi0')));
+
+  /* ── 취소된 판은 지울 수 있다 (되돌릴 돈이 남아 있지 않다) ────────── */
+  const t2id = t2.ok ? t2.id : -1;
+  ck('환불이 끝난 판은 지울 수 있다', A.purgeTournament(t2id).ok);
+
+  /* ── 참가비를 걷은 채로는 못 지운다 ──────────────────────────── */
+  wipe();
+  for (const u of users) {
+    const cur = Q.getWebUser(u)!.balance;
+    if (cur !== 10_000) Q.adjustBalance(u, 10_000 - cur, 'test:seed');
+  }
+  const t3 = A.createTournament({
+    title: '걷은 판', buyIn: FEE, regOpenAt: nowSec() - 60, startAt: nowSec() + 3600,
+  });
+  HD.registerHoldem('bi0', 'bi0');
+  const t3id = t3.ok ? t3.id : -1;
+  const nope = A.purgeTournament(t3id);
+  ck('참가비를 걷은 판은 그냥 못 지운다', !nope.ok && nope.error === 'paid', JSON.stringify(nope));
+  const rv = A.revokePrizesAndPurge(t3id);
+  ck('회수 삭제는 참가비까지 돌려준다', rv.ok && rv.refunded === FEE, JSON.stringify(rv));
+  ck('돌려받아 원래 잔액이다', bal('bi0') === 10_000, String(bal('bi0')));
+  ck('그 뒤에도 잔액 = 원장 누적합', ledgerOk(users));
+
+  /* ── 상금 풀 = 걷은 돈 (보장 상금이 있으면 그보다 낮아지지 않는다) ── */
+  ck('참가비 대회의 상금 풀은 걷은 돈이다', T.prizePool(4, 0, 0, FEE) === 4 * FEE,
+    String(T.prizePool(4, 0, 0, FEE)));
+  ck('보장 상금이 바닥을 만든다', T.prizePool(2, 0, 5000, FEE) === 5000,
+    String(T.prizePool(2, 0, 5000, FEE)));
+  ck('걷은 돈이 보장을 넘으면 걷은 돈을 쓴다', T.prizePool(20, 0, 5000, FEE) === 10_000,
+    String(T.prizePool(20, 0, 5000, FEE)));
+  ck('참가비 대회는 배수를 보지 않는다', T.prizePool(4, 99_999, 0, FEE) === 4 * FEE,
+    String(T.prizePool(4, 99_999, 0, FEE)));
+  // 프리롤은 예전 그대로여야 한다 — 이 변경이 기존 대회를 건드리면 안 된다
+  ck('프리롤은 예전 그대로 (인원 × 배수)', T.prizePool(5, 1000, 0, 0) === 5000);
+  ck('프리롤의 고정 상금도 그대로', T.prizePool(5, 1000, 7777, 0) === 7777);
+
+  /* ── 끝까지 돌려서 경제가 맞는지 ─────────────────────────────── */
+  wipe();
+  for (const u of users) {
+    const cur = Q.getWebUser(u)!.balance;
+    if (cur !== 10_000) Q.adjustBalance(u, 10_000 - cur, 'test:seed');
+  }
+  const t4 = A.createTournament({
+    title: '끝까지', buyIn: FEE, regOpenAt: nowSec() - 60, startAt: nowSec() + 600,
+  });
+  for (const u of users) HD.registerHoldem(u, u);
+  const collected = FEE * users.length;
+  ck('넷이 참가비를 냈다', users.every(u => bal(u) === 10_000 - FEE),
+    users.map(u => bal(u)).join(','));
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+  ck('대회가 시작됐다', HD.advanceHoldem().status === 'RUNNING');
+
+  /* 끝까지 돌린다. 구동 방식은 [8]의 것을 그대로 쓴다 — 여기서 새로 짜면 판이 안 끝나고,
+     그러면 "경제가 맞는가"가 아니라 "내 루프가 맞는가"를 검사하게 된다. */
+  const t4id = t4.ok ? t4.id : -1;
+  const tbl = HD.getTable(t4id)!;
+  for (let steps = 0; steps < 4000; steps++) {
+    if (HD.advanceHoldem().status !== 'RUNNING') break;
+    const h = HD.getCurrentHand(tbl.id);
+    if (!h) break;
+    if (h.ended_at != null) { expireNextHand(); continue; }
+    if (h.to_act_seat == null) { expireAction(); continue; }
+    const seat = HD.getSeats(tbl.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+    if (!seat) { expireAction(); continue; }
+    openAction();
+    if (!HD.holdemAction(seat.user_id, 'allin', 0).ok
+      && !HD.holdemAction(seat.user_id, 'call', 0).ok
+      && !HD.holdemAction(seat.user_id, 'check', 0).ok) expireAction();
+  }
+  ck('대회가 끝났다', HD.advanceHoldem().status === 'FINISHED', HD.advanceHoldem().status);
+  const paidOut = (db.prepare(
+    `SELECT COALESCE(SUM(prize),0) AS n FROM holdem_entries WHERE tournament_id = ?`)
+    .get(t4id) as { n: number }).n;
+  /* 참가비 대회는 참가자끼리 주고받는 것이라 서비스가 새로 발행하는 포인트가 없다.
+     걷은 돈과 나간 상금이 같아야 한다 — 여기가 어긋나면 포인트가 생기거나 사라진 것이다. */
+  ck('걷은 돈 = 나간 상금 (새로 발행된 포인트가 없다)', paidOut === collected,
+    `${paidOut} vs ${collected}`);
+  const total = users.reduce((a, u) => a + bal(u), 0);
+  ck('넷의 잔액 합이 그대로다 (40,000)', total === 40_000, String(total));
+  ck('끝난 뒤에도 잔액 = 원장 누적합', ledgerOk(users));
+}
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 try { rmSync(process.env.DB_PATH!, { recursive: true, force: true }); } catch { /* OS가 정리 */ }
 process.exit(fail ? 1 : 0);

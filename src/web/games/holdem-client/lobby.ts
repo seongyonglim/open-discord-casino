@@ -166,7 +166,12 @@ export const LOBBY = `    function renderLobby(){
           '<div class="ht-grid">' +
             '<div><span class="k">참가자</span><span class="v">' + t.registered + ' / ' + t.maxPlayers + '</span></div>' +
             '<div><span class="k">상금 풀</span><span class="v gold">' + num(t.prizePool) + 'P</span></div>' +
-            '<div><span class="k">1인당</span><span class="v">' + num(t.multiplier) + 'P</span></div>' +
+            /* 참가비가 있으면 그 자리에 참가비를 적는다. "1인당 배수"는 프리롤에서
+               서비스가 얹어 주는 금액이라 참가비 대회에서는 뜻이 없다 — 두 값을 나란히
+               두면 어느 쪽이 내 돈인지 헷갈린다. */
+            (t.buyIn > 0
+              ? '<div><span class="k">참가비</span><span class="v warn">' + num(t.buyIn) + 'P</span></div>'
+              : '<div><span class="k">1인당</span><span class="v">' + num(t.multiplier) + 'P</span></div>') +
             '<div><span class="k">시작 스택</span><span class="v">' + num(t.startingStack) + '</span></div>' +
             '<div><span class="k">지급 인원</span><span class="v">' + t.itm + '명</span></div>' +
             '<div><span class="k">최소 인원</span><span class="v">' + t.minPlayers + '명</span></div>' +
@@ -177,6 +182,11 @@ export const LOBBY = `    function renderLobby(){
 
       var join = document.getElementById('htJoin');
       if (join) join.addEventListener('click', function(){
+        /* 돈이 나가는 신청이면 먼저 묻는다. 프리롤은 잃을 것이 없어 그냥 넣지만,
+           참가비 대회는 누르는 순간 잔액이 줄어든다 — 얼마인지 모르고 눌리면 안 된다. */
+        if (t.buyIn > 0 &&
+            !confirm('참가비 ' + num(t.buyIn) + 'P를 내고 신청합니다.\\n'
+              + '시작 전에 취소하거나 대회가 인원 미달로 취소되면 전액 돌려받습니다.')) return;
         join.disabled = true;
         post('/api/games/holdem/register', {}).then(function(r){
           if (!r.ok) { alert(r.d && r.d.error ? r.d.error : '등록할 수 없습니다'); join.disabled = false; }
@@ -186,7 +196,8 @@ export const LOBBY = `    function renderLobby(){
       var spec = document.getElementById('htSpectate');
       var leave = document.getElementById('htLeave');
       if (leave) leave.addEventListener('click', function(){
-        if (!confirm('참가 신청을 취소할까요?')) return;
+        if (!confirm('참가 신청을 취소할까요?'
+          + (t.buyIn > 0 ? '\\n참가비 ' + num(t.buyIn) + 'P는 돌려드립니다.' : ''))) return;
         leave.disabled = true;
         post('/api/games/holdem/unregister', {}).then(function(r){
           if (!r.ok) alert(r.d && r.d.error ? r.d.error : '취소할 수 없습니다');

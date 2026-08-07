@@ -506,7 +506,16 @@ function initSchema(): void {
     'level_sec INTEGER NOT NULL DEFAULT 0',
     'late_reg_sec INTEGER NOT NULL DEFAULT 0',
     'prize_fixed INTEGER NOT NULL DEFAULT 0',      // 0보다 크면 인원과 무관한 고정 상금 풀
+    /* 참가비. 0 이면 프리롤이고, 그게 기본값이라 이미 있는 행은 전부 프리롤로 읽힌다.
+       0보다 크면 등록할 때 그만큼 걷고, 걷은 돈이 상금 풀이 된다. */
+    'buy_in INTEGER NOT NULL DEFAULT 0',
   ]) {
     try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
   }
+  /* 실제로 걷은 금액을 참가 행에 남긴다.
+     설정의 참가비를 다시 읽어 되돌리면 그 사이에 값이 바뀌었을 때 걷은 것과 다른 액수를
+     돌려주게 된다 — "잔액 = 원장 누적합"이 그 자리에서 깨진다. 받은 만큼만 돌려준다. */
+  try {
+    d.exec(`ALTER TABLE holdem_entries ADD COLUMN paid_in INTEGER NOT NULL DEFAULT 0`);
+  } catch { /* 이미 있다 */ }
 }
