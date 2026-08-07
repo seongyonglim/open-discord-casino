@@ -11,7 +11,7 @@ import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
   handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill,
-  handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate,
+  handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
   handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
 } from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
@@ -263,6 +263,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/notice/toggle' && req.method === 'POST') return await handleAdminNoticeToggle(req, res);
         if (path === '/api/admin/notice/delete' && req.method === 'POST') return await handleAdminNoticeDelete(req, res);
         if (path === '/api/admin/tournament/create' && req.method === 'POST') return await handleAdminTournamentCreate(req, res);
+        if (path === '/api/admin/tournament/revoke' && req.method === 'POST') return await handleAdminTournamentRevoke(req, res);
         if (path === '/api/admin/tournament/test' && req.method === 'POST') {
           return await handleAdminTestTournament(req, res);
         }

@@ -15,6 +15,8 @@ import { getConfig } from './settings';
 
 export interface AdminTournamentRow {
   id: number; date_str: string; title: string;
+  /** 화면이 "새 판을 열 수 있는가"를 판단하는 데 쓴다 — 다음 시작까지의 여유 */
+  scheduled_start_at: number;
   started_at: number | null; finished_at: number | null; cancelled_at: number | null;
   prize_multiplier: number;
   entries: number;
@@ -58,44 +60,113 @@ export function purgeTournament(id: number): { ok: true; removed: number } | { o
       `SELECT COALESCE(SUM(prize), 0) AS n FROM holdem_entries WHERE tournament_id = ?`, id)!;
     if (paid.n > 0) return { ok: false as const, error: 'paid' as const };
 
-    /* 지우는 순서는 자식부터다. 외래키 제약을 걸어 두지 않은 스키마라 순서를 틀려도
-       에러가 안 나고 고아 행만 남는다 — 그게 더 나쁘다. */
-    const tables = all<{ id: number }>(`SELECT id FROM holdem_tables WHERE tournament_id = ?`, id);
-    let removed = 0;
-    for (const tb of tables) {
-      const hands = all<{ id: number }>(`SELECT id FROM holdem_hands WHERE table_id = ?`, tb.id);
-      for (const h of hands) {
-        run(`DELETE FROM holdem_hand_seats WHERE hand_id = ?`, h.id);
-        removed++;
-      }
-      run(`DELETE FROM holdem_hands WHERE table_id = ?`, tb.id);
-      run(`DELETE FROM holdem_seats WHERE table_id = ?`, tb.id);
+    return { ok: true as const, removed: removeTournamentRows(id) };
+  });
+}
+
+/* 지우는 순서는 자식부터다. 외래키 제약을 걸어 두지 않은 스키마라 순서를 틀려도
+   에러가 안 나고 고아 행만 남는다 — 그게 더 나쁘다.
+   호출하는 쪽이 "지워도 되는가"를 이미 판단했다고 본다. */
+function removeTournamentRows(id: number): number {
+  const tables = all<{ id: number }>(`SELECT id FROM holdem_tables WHERE tournament_id = ?`, id);
+  let removed = 0;
+  for (const tb of tables) {
+    const hands = all<{ id: number }>(`SELECT id FROM holdem_hands WHERE table_id = ?`, tb.id);
+    for (const h of hands) {
+      run(`DELETE FROM holdem_hand_seats WHERE hand_id = ?`, h.id);
+      removed++;
     }
-    run(`DELETE FROM holdem_tables WHERE tournament_id = ?`, id);
-    run(`DELETE FROM holdem_entries WHERE tournament_id = ?`, id);
-    run(`DELETE FROM holdem_tournaments WHERE id = ?`, id);
-    return { ok: true as const, removed };
+    run(`DELETE FROM holdem_hands WHERE table_id = ?`, tb.id);
+    run(`DELETE FROM holdem_seats WHERE table_id = ?`, tb.id);
+  }
+  run(`DELETE FROM holdem_tables WHERE tournament_id = ?`, id);
+  run(`DELETE FROM holdem_entries WHERE tournament_id = ?`, id);
+  run(`DELETE FROM holdem_tournaments WHERE id = ?`, id);
+  return removed;
+}
+
+/**
+ * 상금을 회수하고 대회를 지운다.
+ *
+ * 지우기와 다른 일이다. 지우기는 경제에 흔적이 없는 판만 다루지만, 여기서는 이미 나간
+ * 포인트를 사람에게서 도로 가져온다. 그래서 원장에 역방향으로 남긴다 — 잔액을 직접
+ * 고치면 "잔액 = 원장 누적합"이 깨지고, 그 불변식은 감사가 매번 검사한다.
+ *
+ * 잔액이 음수가 되는 것을 허용한다. 상금을 받고 이미 다 쓴 사람이 있으면 회수할 방법이
+ * 그것뿐이고, 막으면 그런 사람이 한 명만 있어도 정리가 통째로 불가능해진다.
+ * 대신 음수가 막다른 길이 되지 않게 지원금 조건을 balance <= 0 으로 열어 뒀다
+ * (queries/core.ts 의 claimRelief) — 빚이 있어도 받을 수 있고, 받은 만큼 빚이 줄어든다.
+ *
+ * 진행 중인 대회는 여전히 거절한다. 사람이 앉아 카드를 보고 있는 판이다.
+ */
+export function revokePrizesAndPurge(id: number):
+  { ok: true; revoked: number; users: number; removed: number }
+  | { ok: false; error: 'not_found' | 'running' } {
+  return tx(() => {
+    const t = one<{ started_at: number | null; finished_at: number | null; cancelled_at: number | null }>(
+      `SELECT started_at, finished_at, cancelled_at FROM holdem_tournaments WHERE id = ?`, id);
+    if (!t) return { ok: false as const, error: 'not_found' as const };
+    if (t.started_at != null && t.finished_at == null && t.cancelled_at == null) {
+      return { ok: false as const, error: 'running' as const };
+    }
+    /* 한 사람이 한 대회에서 상금을 두 번 받을 수는 없지만, 합쳐서 한 번에 되돌린다 —
+       원장에 같은 사유가 두 줄 남는 것보다 한 줄이 읽기 쉽다. */
+    const paid = all<{ user_id: string; n: number }>(
+      `SELECT user_id, SUM(prize) AS n FROM holdem_entries
+        WHERE tournament_id = ? AND prize > 0 GROUP BY user_id`, id);
+    let revoked = 0;
+    for (const p of paid) {
+      adjustBalance(p.user_id, -p.n, 'tournament:revoke:' + id);
+      revoked += p.n;
+    }
+    return { ok: true as const, revoked, users: paid.length, removed: removeTournamentRows(id) };
   });
 }
 
 /**
  * 대회를 하나 더 연다.
  *
- * 하루 하나를 강제하던 유니크 인덱스는 걷어냈다. 대신 지켜야 할 규칙이 하나 남는다 —
- * 살아 있는 판(끝나지도 취소되지도 않은 것)은 한 번에 하나뿐이다. 둘이 동시에 살아
- * 있으면 "지금 어느 판인가"가 사라지고 등록이 어느 쪽으로 가는지도 알 수 없다.
- * 아직 시작 안 한 대기 상태도 살아 있는 것으로 친다 — 등록을 받고 있기 때문이다.
+ * 막는 조건이 둘이다.
+ *
+ * 1. 이미 돌고 있는 판. 카드가 돌고 사람이 앉아 있는 판이 둘일 수는 없다.
+ *
+ * 2. 곧 시작할 판. 아직 시작 안 한 대기 판이 있어도 만들 수는 있지만, 그 판의 시작
+ *    시각이 가까우면 안 된다 — 임시 판이 끝나기 전에 정규 판의 시작 시각이 와 버리면
+ *    정규 판이 뒤로 밀린다(findTournament 가 살아 있는 판 중 최근 것을 고른다).
+ *    한 판이 아무리 길어도 두 시간을 넘지 않으므로, 두 시간이 남아 있으면 임시 판이
+ *    먼저 끝난다. 그게 이 여유의 근거다.
+ *
+ * 처음에는 대기 판이 있으면 무조건 막았는데, 오늘의 정규 판이 늘 대기 상태로 앉아 있어서
+ * 임시 판을 영영 만들 수 없었다 — 지우면 ensureTournament 가 1초 안에 다시 만들기 때문에
+ * 빠져나갈 구멍이 없었다. 반대로 아무 때나 열게 하면 위 2번이 터진다.
+ *
+ * 임시 판이 끝나면 대기 중이던 정규 판이 다시 골라져 제 시각에 열린다.
+ * 그래서 임시 판을 돌리려고 정규 판을 지울 필요가 없다.
  *
  * 시각은 "지금부터"로 잡는다. 오늘의 정규 판은 21시/22시라는 고정 일정이 있지만,
  * 여기서 여는 판은 운영자가 지금 열려는 것이라 그 일정을 따를 이유가 없다.
  */
+/** 다음 판 시작까지 이만큼은 남아 있어야 임시 판을 연다. 한 판의 최대 길이에서 왔다. */
+export const CREATE_GAP_SEC = 2 * 60 * 60;
+
 export function createTournament(o: { title?: string; prizeMultiplier?: number; regMin?: number }):
-  { ok: true; id: number } | { ok: false; error: 'live_exists' } {
+  { ok: true; id: number }
+  | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number } {
   return tx(() => {
-    const live = one<{ id: number; started_at: number | null }>(
-      `SELECT id, started_at FROM holdem_tournaments
-        WHERE finished_at IS NULL AND cancelled_at IS NULL LIMIT 1`);
-    if (live) return { ok: false as const, error: 'live_exists' as const };
+    const running = one<{ id: number }>(
+      `SELECT id FROM holdem_tournaments
+        WHERE started_at IS NOT NULL AND finished_at IS NULL AND cancelled_at IS NULL LIMIT 1`);
+    if (running) return { ok: false as const, error: 'live_exists' as const };
+
+    /* 대기 중인 판 가운데 가장 빨리 시작하는 것을 본다. 여럿일 수 있고, 막아야 할 기준은
+       "가장 가까운 시작"이다 — 그보다 뒤의 판은 자동으로 여유가 더 크다. */
+    const soon = one<{ scheduled_start_at: number }>(
+      `SELECT MIN(scheduled_start_at) AS scheduled_start_at FROM holdem_tournaments
+        WHERE started_at IS NULL AND finished_at IS NULL AND cancelled_at IS NULL`);
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (soon?.scheduled_start_at != null && soon.scheduled_start_at - nowSec < CREATE_GAP_SEC) {
+      return { ok: false as const, error: 'too_close' as const, startsAt: soon.scheduled_start_at };
+    }
 
     const now = Math.floor(Date.now() / 1000);
     const cfg = getConfig();
@@ -123,9 +194,9 @@ export function createTournament(o: { title?: string; prizeMultiplier?: number; 
  * 예전에는 오늘 행을 덮어썼다 — 하루 하나라는 유니크 인덱스 때문에 나란히 만들 수가
  * 없었다. 이제 인덱스가 없으니 그냥 새로 만든다. 대신 살아 있는 판이 있으면 거절한다.
  */
-export function openTestTournament(): { ok: true; id: number } | { ok: false; error: 'running' } {
-  const r = createTournament({ title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0 });
-  return r.ok ? r : { ok: false, error: 'running' };
+export function openTestTournament() {
+  // 만드는 조건은 하나뿐이므로 결과를 그대로 넘긴다 — 여기서 뭉개면 거절 이유를 못 알려 준다
+  return createTournament({ title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0 });
 }
 
 /* ── 사용자 · 포인트 ──────────────────────────────────────────────── */
