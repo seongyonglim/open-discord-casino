@@ -2,12 +2,25 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { gzipSync } from 'node:zlib';
 
+/* 본문을 읽어 JSON 으로 준다. 못 읽으면 null 이다 — 던지지 않는다.
+   호출하는 쪽이 전부 `await readJson(req)` 뒤에 곧바로 응답을 만들기 때문에,
+   이 프로미스는 어떤 경우에도 반드시 풀려야 한다. 예전에는 100KB 를 넘겨 destroy 한
+   경우에 end 도 error 도 안 오면 영영 안 풀렸다 — 소켓은 이미 끊겨서 눈에 보이지는
+   않지만, 그 요청의 async 함수가 통째로 매달린 채 남는다.
+   그래서 close 까지 받고, 한 번만 푼다(먼저 온 것이 이긴다). */
 export function readJson(req: IncomingMessage): Promise<any> {
   return new Promise((resolve) => {
     let body = '';
-    req.on('data', (c) => { body += c; if (body.length > 1e5) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch { resolve(null); } });
-    req.on('error', () => resolve(null));
+    let settled = false;
+    const settle = (v: unknown): void => { if (!settled) { settled = true; resolve(v); } };
+    req.on('data', (c) => {
+      body += c;
+      // 먼저 풀고 끊는다 — destroy 뒤에 아무 이벤트도 안 오는 경우가 있다
+      if (body.length > 1e5) { settle(null); req.destroy(); }
+    });
+    req.on('end', () => { try { settle(JSON.parse(body || '{}')); } catch { settle(null); } });
+    req.on('error', () => settle(null));
+    req.on('close', () => settle(null));
   });
 }
 

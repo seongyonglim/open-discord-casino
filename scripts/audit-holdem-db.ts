@@ -1435,6 +1435,34 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     `${paidOut} vs ${collected}`);
   const total = users.reduce((a, u) => a + bal(u), 0);
   ck('넷의 잔액 합이 그대로다 (40,000)', total === 40_000, String(total));
+
+  /* ── 정산이 두 번 돌아도 두 번 주지 않는다 ────────────────────────
+     payPrizes 는 "이미 지급된 항목은 건드리지 않는다"를 조건부 UPDATE 로 막는다.
+     그 판단을 값 다시 읽기로 하면 "내가 방금 넣었다"와 "원래 그 값이었다"를 구분하지
+     못해서, 이미 같은 금액이 들어 있을 때 잔액만 한 번 더 올라간다.
+
+     끝난 대회의 finished_at 만 지우고 다시 전진시켜 그 상황을 만든다 — 등수와 상금은
+     그대로 둔다. 지금 구조에서는 요청이 동기라 이 일이 저절로 일어나지는 않지만,
+     막고 있다고 적어 둔 것이 실제로 막는지는 확인할 수 있어야 한다.
+     여기가 뚫리면 원장에 근거 없는 포인트가 남고, 그건 이 서비스의 유일한 불변식
+     (잔액 = 원장 누적합)이 깨진다는 뜻이다. */
+  {
+    const balBefore = users.map(u => bal(u));
+    const paidBefore = paidOut;
+    db.prepare(`UPDATE holdem_tournaments SET finished_at = NULL WHERE id = ?`).run(t4id);
+    for (let i = 0; i < 5; i++) HD.advanceHoldem();
+    const paidAfter = (db.prepare(
+      `SELECT COALESCE(SUM(prize),0) AS n FROM holdem_entries WHERE tournament_id = ?`)
+      .get(t4id) as { n: number }).n;
+    ck('정산을 다시 돌려도 상금 합이 그대로다', paidAfter === paidBefore,
+      `${paidAfter} vs ${paidBefore}`);
+    ck('정산을 다시 돌려도 잔액이 그대로다',
+      users.every((u, i) => bal(u) === balBefore[i]),
+      users.map(u => bal(u)).join(',') + ' vs ' + balBefore.join(','));
+    ck('다시 돌린 뒤에도 잔액 = 원장 누적합', ledgerOk(users));
+    ck('넷의 잔액 합도 그대로다 (40,000)',
+      users.reduce((a, u) => a + bal(u), 0) === 40_000);
+  }
   ck('끝난 뒤에도 잔액 = 원장 누적합', ledgerOk(users));
 }
 
