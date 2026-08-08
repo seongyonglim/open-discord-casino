@@ -464,7 +464,18 @@ export function startWebServer(): void {
       notFound(res);
     } catch (e) {
       console.error('웹 요청 처리 오류:', e);
-      send(res, 500, '<!doctype html><meta charset="utf-8"><body style="background:#050506;color:#8b8b92;font-family:sans-serif;text-align:center;padding:80px">일시적인 오류가 발생했습니다</body>');
+      /* 응답이 이미 나갔으면 500 을 덧씌울 수 없다. res.writeHead 가
+         ERR_HTTP_HEADERS_SENT 로 던지는데, 그 던짐이 이 catch 안에서 나므로 어디에도
+         안 잡히고 async 핸들러의 미처리 거부가 된다 — 노드 기본값에서 그건 프로세스가
+         죽는다는 뜻이다. 요청 하나의 오류로 접속자 전원이 끊긴다.
+         이미 시작된 응답은 끊는 수밖에 없다(클라이언트는 다음 폴링에서 회복한다). */
+      if (res.headersSent) { res.destroy(); return; }
+      try {
+        send(res, 500, '<!doctype html><meta charset="utf-8"><body style="background:#050506;color:#8b8b92;font-family:sans-serif;text-align:center;padding:80px">일시적인 오류가 발생했습니다</body>');
+      } catch (e2) {
+        console.error('오류 응답도 실패:', e2);
+        res.destroy();
+      }
     }
   });
 

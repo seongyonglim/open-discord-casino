@@ -1093,10 +1093,15 @@ function payPrizes(t: HtRow, now: number): void {
   amounts.forEach((amount, i) => {
     const e = ranked[i];
     if (!e || amount <= 0) return;
-    // 이미 지급된 항목은 건드리지 않는다 (조건부 UPDATE로 이중 지급 차단)
+    /* 이미 지급된 항목은 건드리지 않는다 (조건부 UPDATE로 이중 지급 차단).
+       실제로 이 UPDATE 가 줄을 바꿨는지를 changes() 로 본다. 예전에는 값을 다시 읽어
+       비교했는데, 그것으로는 "내가 방금 넣었다"와 "원래 그 값이었다"를 구분하지 못한다 —
+       이미 같은 금액이 들어 있으면 UPDATE 는 아무것도 안 했는데 검사는 통과해서
+       잔액만 한 번 더 올라간다. 지급이 두 번 나가면 원장에 근거 없는 포인트가 남고,
+       그건 이 서비스의 유일한 불변식(잔액 = 원장 누적합)이 깨진다는 뜻이다.
+       베팅 차감·캐시아웃이 쓰는 것과 같은 방식으로 맞춘다. */
     run(`UPDATE holdem_entries SET prize = ? WHERE id = ? AND prize = 0`, amount, e.id);
-    const changed = one<{ n: number }>(`SELECT prize AS n FROM holdem_entries WHERE id = ?`, e.id);
-    if (!changed || changed.n !== amount) return;
+    if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
     run(`UPDATE users SET balance = balance + ? WHERE id = ?`, amount, e.user_id);
     const after = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, e.user_id);
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,

@@ -173,6 +173,28 @@ async function main(): Promise<void> {
     const stillWorks = await req('POST', '/api/games/ladder/bet', { cookie: c, body: { betAmount: 10, startGuess: 'L' } });
     ck('거대 본문 이후에도 정상 베팅 처리', stillWorks.status === 200 || stillWorks.status === 400, String(stillWorks.status));
     await req('POST', '/api/games/ladder/cancel', { cookie: c, body: {} });
+
+    /* readJson 이 어떤 경우에도 반드시 풀리는가.
+       위의 검사는 "서버가 살아 있는가"만 본다. 그것으로는 잡히지 않는 것이 하나 있다 —
+       본문이 한도를 넘어 소켓을 끊었는데 end 도 error 도 안 오면, 그 프로미스는 영영
+       대기하고 요청의 async 함수가 통째로 매달린 채 남는다. 밖에서는 안 보이고
+       요청마다 조금씩 쌓인다. 그래서 함수를 직접 부른다.
+       close 만 오는 경우가 실제로 그 상황이다(끊긴 뒤 아무 이벤트도 안 오는 환경). */
+    const { readJson } = require('../src/web/http') as typeof import('../src/web/http');
+    const { EventEmitter } = require('node:events') as typeof import('node:events');
+    const fake = Object.assign(new EventEmitter(), { destroy(): void { /* 소켓만 끊는다 */ } });
+    const settled = readJson(fake as never);
+    fake.emit('data', 'x'.repeat(200_000));
+    fake.emit('close');
+    const timeout = new Promise(r => setTimeout(() => r('멈춤'), 1000));
+    ck('한도 초과 본문에서도 readJson 이 풀린다', await Promise.race([settled, timeout]) !== '멈춤');
+
+    // 끝까지 정상으로 온 본문은 그대로 파싱된다 (위 수정이 정상 경로를 망가뜨리지 않았는가)
+    const ok = Object.assign(new EventEmitter(), { destroy(): void { } });
+    const parsed = readJson(ok as never);
+    ok.emit('data', '{"a":1}');
+    ok.emit('end');
+    ck('정상 본문은 그대로 파싱된다', (await parsed)?.a === 1);
   }
 
   /* ── 5. XSS ─────────────────────────────────────────────────── */
@@ -249,6 +271,43 @@ async function main(): Promise<void> {
     ck('일반 유저 페이지에 ADMIN 배지 없음', !page.text.includes('>ADMIN<'), 'ADMIN 노출');
     const role = getWebUser('s_norm')!.role;
     ck('DB 역할이 member', role === 'member', role);
+  }
+
+  /* ── 9. 죽지 않기 ───────────────────────────────────────────── */
+  section('[9] 프로세스 — 예외 하나로 전원이 끊기지 않는가');
+  {
+    /* 요청 처리는 server.ts 가 통째로 감싸지만 그 바깥의 던짐은 프로세스를 죽인다.
+       판에 앉아 있던 사람 전원이 그 순간 끊긴다 — 그래서 index.ts 에 그물을 뒀다.
+       여기서는 그 그물이 실제로 잡는지를 본다. 이 감사 프로세스에는 그물이 없으므로
+       같은 핸들러를 직접 걸어 두고, 던진 뒤에도 서버가 응답하는지 확인한다. */
+    const seen: string[] = [];
+    const onRej = (r: unknown): void => { seen.push('rejection:' + String(r)); };
+    const onExc = (e: unknown): void => { seen.push('exception:' + String(e)); };
+    process.on('unhandledRejection', onRej);
+    process.on('uncaughtException', onExc);
+
+    Promise.reject(new Error('감사가 일부러 낸 거부'));
+    setTimeout(() => { throw new Error('감사가 일부러 낸 예외'); }, 0);
+    await new Promise(r => setTimeout(r, 300));
+
+    ck('미처리 거부를 잡는다', seen.some(s => s.startsWith('rejection:')), seen.join(' | '));
+    ck('미처리 예외를 잡는다', seen.some(s => s.startsWith('exception:')), seen.join(' | '));
+    const alive = await req('GET', '/health');
+    ck('그 뒤에도 서버가 응답한다', alive.text === 'ok', alive.text);
+    process.off('unhandledRejection', onRej);
+    process.off('uncaughtException', onExc);
+
+    /* index.ts 에 그 그물이 실제로 걸려 있는가. 위 검사는 "노드가 이런 식으로 잡을 수
+       있다"까지만 보여 준다 — 운영에서 도는 프로세스에 등록돼 있지 않으면 소용이 없다. */
+    const idx = require('node:fs').readFileSync('src/index.ts', 'utf8') as string;
+    ck('index.ts 가 미처리 거부를 등록한다', idx.includes("process.on('unhandledRejection'"));
+    ck('index.ts 가 미처리 예외를 등록한다', idx.includes("process.on('uncaughtException'"));
+
+    /* 응답이 이미 나간 뒤에 500 을 덧씌우려 하면 writeHead 가 던지고, 그 던짐이
+       catch 안에서 나므로 어디에도 안 잡혀 프로세스가 죽는다. headersSent 를 보고
+       비켜야 한다. */
+    const srv = require('node:fs').readFileSync('src/web/server.ts', 'utf8') as string;
+    ck('server.ts 가 headersSent 를 확인한다', srv.includes('res.headersSent'));
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
