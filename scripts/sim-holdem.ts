@@ -47,6 +47,16 @@ const nowSec = () => Math.floor(Date.now() / 1000);
      SIM_SPEED=3 npx tsx scripts/sim-holdem.ts   (세 배 빠르게)
    기다리는 시간만 줄인다 — 게임 규칙(액션 간격·블라인드 주기)은 서버가 정하므로 그대로다. */
 const SPEED = Math.max(0.2, Math.min(20, Number(process.env.SIM_SPEED ?? 1)));
+
+/* 우승 화면만 보고 싶을 때.
+     SIM_WIN=1 npx tsx scripts/sim-holdem.ts
+   앞의 각본(ACT 1~6)을 건너뛰고 곧장 마지막 판으로 간다. 그리고 미리보기(사람)가
+   반드시 이기게 판을 짠다 — 우승 연출과 [확인] 뒤의 로비 전환을 확인하는 것이 목적인데,
+   그걸 운에 맡기면 열 번을 돌려도 사람이 3등으로 끝날 수 있다.
+   짜는 방법은 스택을 옮기는 것뿐이다(카드는 건드리지 않는다) — 봇을 1칩까지 내리고
+   그 차액을 사람에게 준다. 사람이 한 판에 잃을 수 있는 최대는 봇들의 스택 합이라
+   수학적으로 탈락할 수 없고, 봇은 블라인드도 못 내서 곧 자리를 뜬다. */
+const WIN_ONLY = process.env.SIM_WIN === '1';
 const sleep = (ms: number) => new Promise(r => setTimeout(r, Math.round(ms / SPEED)));
 
 /* ── 등장 인물 ────────────────────────────────────────────────────────
@@ -110,11 +120,25 @@ const TABLE = HD.getTable(TID)!;
    앞 구간(앤티가 붙는 6레벨 등)을 보려면 SIM_LEVEL 로 지정한다. */
 const START_LEVEL = Math.max(1, Math.min(T.BLIND_LEVELS.length, Number(process.env.SIM_LEVEL ?? 11)));
 if (START_LEVEL > 1) {
-  db.prepare(`UPDATE holdem_tournaments SET started_at = started_at - ? WHERE id = ?`)
-    .run((START_LEVEL - 1) * T.LEVEL_DURATION_SEC, TID);
-  const lv = T.BLIND_LEVELS[START_LEVEL - 1];
-  console.log(`\n  시작 레벨 ${lv.level} — 블라인드 ${lv.sb}/${lv.bb}`
-    + (lv.ante > 0 ? ` · 앤티 ${lv.ante}` : ' · 앤티 없음'));
+  /* started_at 이 아직 NULL 이면 빼기의 답도 NULL 이라 시작 시각이 통째로 지워진다.
+     그러면 다음 advanceHoldem 이 "아직 시작 안 한 대회"로 보고 지금 시각을 다시 넣어서
+     레벨 1로 되돌아간다 — 콘솔에는 "시작 레벨 11"이 찍혀 있는데 화면은 25/50이었다.
+     그래서 값이 들어있을 때만 고치고, 결과를 DB 에서 다시 읽어 확인한다.
+     레벨 길이도 이 대회 행의 값을 쓴다(템플릿이 기본과 다를 수 있다). */
+  const row = db.prepare(`SELECT started_at, level_sec FROM holdem_tournaments WHERE id = ?`)
+    .get(TID) as { started_at: number | null; level_sec: number };
+  const levelSec = row.level_sec > 0 ? row.level_sec : T.LEVEL_DURATION_SEC;
+  if (row.started_at == null) {
+    console.log('\n  ⚠ 대회가 아직 시작되지 않아 시작 레벨을 옮기지 못했습니다 (레벨 1로 갑니다)');
+  } else {
+    db.prepare(`UPDATE holdem_tournaments SET started_at = ? WHERE id = ?`)
+      .run(row.started_at - (START_LEVEL - 1) * levelSec, TID);
+    const after = db.prepare(`SELECT started_at FROM holdem_tournaments WHERE id = ?`)
+      .get(TID) as { started_at: number };
+    const lv = T.levelAt(nowSec() - after.started_at, levelSec);
+    console.log(`\n  시작 레벨 ${lv.level} — 블라인드 ${lv.sb}/${lv.bb}`
+      + (lv.ante > 0 ? ` · 앤티 ${lv.ante}` : ' · 앤티 없음'));
+  }
 }
 
 const pool = T.prizePool(ALL.length, st0.tournament.prize_multiplier);
@@ -213,7 +237,10 @@ function botMove(userId: string, handId: number, seat: number): void {
    그래서 기본을 끈다. 20초가 그대로 흐르고 0초에 서버가 자동 체크한다(실제와 같다).
    내 자리는 그 뒤 자리 비움으로 내려가므로, 계속 플레이하려면 [게임 복귀]를 누른다.
    옛 동작이 필요하면 SIM_ME_GRACE=6 으로 켠다. */
-const ME_GRACE_SEC = Number(process.env.SIM_ME_GRACE ?? 0);
+/* 우승 확인 모드에서는 기본을 6초로 되돌린다. 사람이 20초를 다 흘려보내면 서버가
+   자동 폴드하고 자리 비움으로 내리는데, 그러면 판이 끝나지 않고 계속 돈다 — 보러 온
+   화면(우승 연출)에 영영 못 닿는다. 14초는 직접 눌러볼 시간으로 충분하다. */
+const ME_GRACE_SEC = Number(process.env.SIM_ME_GRACE ?? (WIN_ONLY ? 6 : 0));
 let mePlayedFor = 0;
 
 /* 래빗·패공개를 눌러볼 수 있게 다음 판을 미뤄 두는 시간.
@@ -323,8 +350,59 @@ function checkChips(when: string): void {
   }
 }
 
+/* 사람이 이길 수밖에 없는 판으로 만든다.
+   스택은 판 사이에만 고칠 수 있고, 반드시 "옮기기"여야 한다 — 한쪽만 올리면 없던 칩이
+   생겨서 화면의 팟 합계가 안 맞고, 그건 게임이 칩을 흘리는 것처럼 보인다.
+   봇은 1칩만 남긴다. 블라인드보다 적으므로 다음 판에 강제 올인으로 들어가고, 사람이
+   콜하면 그대로 탈락한다. 사람은 잃어봐야 봇들의 스택 합(=봇 수)이라 탈락할 수 없다. */
+async function rigMeToWin(): Promise<void> {
+  act('우승 확인 모드 — 미리보기가 이기도록 판을 짭니다', [
+    '봇들의 스택을 1칩까지 내리고 그 차액을 미리보기에게 옮깁니다 (총 칩은 그대로)',
+    '카드는 건드리지 않습니다 — 스택만 옮겨서 탈락 순서를 정합니다',
+    '봇이 강제 올인으로 들어오면 [콜]을 누르세요. 14초 안에 안 누르면 대신 눌러 줍니다',
+  ]);
+  /* 판 사이를 실제로 붙잡고 나서 고쳐야 한다.
+     waitHandEnd 가 돌아온 직후에 바로 쓰면 늦는다 — await 이 풀리는 사이에 진행 루프나
+     브라우저 폴링이 advanceHoldem 을 불러 다음 판을 시작해 버리고, 그러면 스택은
+     holdem_hand_seats 쪽이 진짜가 되어 여기 쓴 값이 판 끝에 덮어써진다. 처음에 그렇게
+     만들었다가 1칩짜리 봇이 우승하는 것을 봤다.
+     붙잡는 방법은 next_hand_at 을 미래로 미는 것뿐이다(서버에 타이머가 없고 이 값만 본다).
+     밀어 놓고 다시 확인해서, 그 사이에 다음 판이 시작됐으면 다음 판이 끝나길 기다린다. */
+  await waitHandEnd();          // 먼저 이번 판이 끝나야 붙잡을 자리가 생긴다
+  let held = false;
+  for (let i = 0; i < 200 && !held; i++) {
+    const h = HD.getCurrentHand(TABLE.id);
+    if (h && h.ended_at != null) {
+      db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() + 60, TABLE.id);
+      const again = HD.getCurrentHand(TABLE.id);
+      held = again != null && again.id === h.id && again.ended_at != null;
+    }
+    if (!held) await sleep(300);
+  }
+  if (!held) { note('판 사이를 못 잡았습니다 — 각본대로 갑니다'); return; }
+
+  const seats = HD.getSeats(TABLE.id).filter(s => s.presence !== 'OUT' && s.stack > 0);
+  const mine = seats.find(s => s.user_id === ME.id);
+  if (!mine) { note('미리보기가 이미 탈락해서 짤 수가 없습니다 — 각본대로 갑니다'); return; }
+  let moved = 0;
+  for (const s of seats) {
+    if (s.user_id === ME.id || s.stack <= 1) continue;
+    moved += s.stack - 1;
+    db.prepare(`UPDATE holdem_seats SET stack = 1 WHERE table_id = ? AND seat = ?`)
+      .run(TABLE.id, s.seat);
+  }
+  db.prepare(`UPDATE holdem_seats SET stack = stack + ? WHERE table_id = ? AND seat = ?`)
+    .run(moved, TABLE.id, mine.seat);
+  note(`봇 → 미리보기 로 ${moved.toLocaleString('ko-KR')} 옮겼습니다`);
+  note(stacks());
+  checkChips('우승 확인 모드 조작 후');
+  db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(nowSec() - 1, TABLE.id);
+}
+
 async function main(): Promise<void> {
   await sleep(1500);
+  /* 우승 화면만 보러 왔으면 앞의 각본을 통째로 건너뛴다 */
+  if (WIN_ONLY) { await finale(); return; }
 
   /* ── ACT 1 ── 기본 화면 전부 */
   act('평범한 한 판 — 딜링부터 쇼다운까지', [
@@ -515,7 +593,12 @@ async function main(): Promise<void> {
   }
   await sleep(3000);
 
-  /* ── ACT 7 ── 종료 */
+  await finale();
+}
+
+/* ── ACT 7 ── 종료 ─────────────────────────────────────────────────── */
+async function finale(): Promise<void> {
+  if (WIN_ONLY) await rigMeToWin();
   act('대회 종료 — 마지막 판을 보여주고 나서 우승 연출', [
     '한 명만 남을 때까지 올인으로 몰아붙입니다',
     '종료된 뒤에도 12초는 테이블에 머물러 마지막 판의 쇼다운을 보여줍니다',

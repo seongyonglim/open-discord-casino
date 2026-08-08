@@ -11,6 +11,11 @@
 export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같은 id로 초기화된다) 축하가 영구히 억제된다.
        실제로 이 때문에 "우승 연출이 안 뜬다"는 제보가 나왔다. */
     function celebrateKey(t){ return 'od_ht_win_' + t.id + ':' + (t.finishedAt || 0); }
+    /* 팝업을 닫고 나온 기록. 축하 열쇠와 같은 모양이어야 한다 — 대회 id만 쓰면 같은 id가
+       다시 살아났을 때(운영자가 진행 중인 대회를 되감으면 finished_at 이 지워지고 id는
+       그대로다) "이미 나온 대회"로 읽혀 테이블에 영영 못 들어간다. 시뮬레이션에서 실제로
+       그랬다 — DB 를 새로 만들어도 id 가 1부터라 지난 실행의 기록이 화면을 막았다. */
+    function leftKey(t){ return 'od_ht_left_' + t.id + ':' + (t.finishedAt || 0); }
     /* 마지막 판의 정산 연출이 100% 끝났나.
        예전에는 서버가 준 링거(고정 초)만 보고 넘어갔다. 고정 시간이라 판마다 어긋난다 —
        폴드로 끝난 판에서는 한참 남아 빈 테이블을 보고 있었고, 프리플랍 올인으로 끝난
@@ -85,7 +90,7 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       winEl.hidden = true;
       if (t) {
         leftTableTid = t.id;
-        try { sessionStorage.setItem('od_ht_left_' + t.id, '1'); } catch (e) { /* 없어도 동작한다 */ }
+        try { sessionStorage.setItem(leftKey(t), '1'); } catch (e) { /* 없어도 동작한다 */ }
       }
       render();      // 테이블을 접고 로비를 그린다
       poll();        // 결과·역대 전적을 최신으로 한 번 당겨온다
