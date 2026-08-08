@@ -11,6 +11,7 @@ import { one, all, run, tx, adjustBalance } from './queries';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
 import { refundEntries } from './holdem';
+import { notifyUser } from './notifications';
 
 /* ── 대회 ─────────────────────────────────────────────────────────── */
 
@@ -368,7 +369,18 @@ export function grantPoints(userId: string, delta: number, memo: string):
     const u = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId);
     if (!u) return { ok: false as const, error: 'no_user' as const };
     if (u.balance + amount < 0) return { ok: false as const, error: 'would_go_negative' as const };
-    const reason = 'admin:' + (memo.trim().slice(0, 40) || 'manual');
-    return { ok: true as const, balance: adjustBalance(userId, amount, reason) };
+    const note = memo.trim().slice(0, 40);
+    const reason = 'admin:' + (note || 'manual');
+    const balance = adjustBalance(userId, amount, reason);
+    /* 받은 사람에게 알린다. 사유를 함께 담는 것이 핵심이다 — 잔액만 달라져 있으면
+       받은 쪽은 그것이 선물인지 정산 오류인지 알 수 없다.
+       회수(음수)도 알린다. 조용히 줄어드는 쪽이 훨씬 나쁘다. */
+    const gave = amount > 0;
+    notifyUser(userId,
+      'POINT_GIFT',
+      gave ? '포인트를 받았습니다' : '포인트가 회수되었습니다',
+      (gave ? '+' : '') + amount.toLocaleString('ko-KR') + 'P'
+      + (note ? ' · ' + note : ''));
+    return { ok: true as const, balance };
   });
 }

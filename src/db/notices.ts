@@ -9,6 +9,7 @@
  * 그래서 '숨김'(active=0)을 따로 둔다. 지우는 것과 내리는 것은 다른 일이다.
  */
 import { one, all, run, tx } from './queries';
+import { notifyAll } from './notifications';
 import { NOTICES as SEED, type Notice, type NoticeSection } from '../web/notices';
 
 export type { Notice, NoticeSection };
@@ -192,6 +193,13 @@ export function createNotice(n: NoticeInput): { ok: true } | { ok: false; error:
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       n.id, n.date, n.kind, n.title.trim(), n.summary.trim(),
       JSON.stringify(n.sections), n.active ? 1 : 0, top + 1);
+    /* 전체 알림을 함께 만든다. 공지는 올려 두는 것만으로는 아무도 모른다 —
+       공지 탭을 눌러 본 사람만 읽고, 그건 이미 찾아온 사람이다.
+       숨김으로 올린 글은 알리지 않는다(아직 보여줄 준비가 안 된 글이다).
+       한 줄만 넣는다 — 사람 수만큼 복사하면 사람이 늘 때마다 비용이 는다. */
+    if (n.active) {
+      notifyAll('ANNOUNCEMENT', '새 공지사항', `[${n.kind}] ${n.title.trim()}`, '/notices/' + n.id);
+    }
     return { ok: true as const };
   });
 }

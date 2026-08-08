@@ -472,6 +472,57 @@ function initSchema(): void {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    /* ── 도전과제 ────────────────────────────────────────────────────
+       과제 목록은 데이터다. 새 과제를 만들 때 이 표에 줄을 넣으면 화면에 바로 뜬다 —
+       화면은 game_type 으로 묶어 보여줄 뿐 과제를 하나도 알지 못한다. */
+    CREATE TABLE IF NOT EXISTS achievements (
+      id TEXT PRIMARY KEY,
+      game_type TEXT NOT NULL,               -- ALL|HOLDEM|BLACKJACK|CRASH|MINES|BACCARAT|POKER|LADDER
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      icon_url TEXT,                         -- 비우면 화면이 game_type 의 기본 아이콘을 쓴다
+      is_hidden INTEGER NOT NULL DEFAULT 0,  -- 1이면 달성 전까지 이름과 설명을 감춘다
+      min_bet INTEGER NOT NULL DEFAULT 100,  -- 이 금액 이상 건 판에서만 판정한다
+      sort_at INTEGER NOT NULL DEFAULT 0,    -- 같은 분류 안에서의 순서
+      active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_ach_list ON achievements(active, game_type, sort_at);
+
+    /* 이 표는 시즌이 바뀌어도 지우지 않는다. 잔액은 모두 같은 자리에서 다시 시작하지만
+       "무엇을 해냈는가"는 계정에 남는 기록이다 — 지우면 시즌 리셋이 아니라 벌칙이 된다.
+       closeSeason 이 이 표를 건드리지 않는지는 감사가 검사한다. */
+    CREATE TABLE IF NOT EXISTS user_achievements (
+      user_id TEXT NOT NULL,
+      achievement_id TEXT NOT NULL,
+      is_unlocked INTEGER NOT NULL DEFAULT 1,
+      unlocked_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (user_id, achievement_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_uach_user ON user_achievements(user_id, unlocked_at DESC);
+
+    /* ── 알림 ────────────────────────────────────────────────────────
+       user_id 가 NULL 이면 전체 알림이다. 그래서 읽음 표시를 이 줄에 둘 수 없다 —
+       한 줄을 여러 사람이 보는데 is_read 는 하나뿐이라, 한 사람이 읽으면 모두가 읽은
+       것이 된다. 개인 알림의 읽음만 여기 두고, 전체 알림은 아래 표로 사람마다 적는다. */
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT,                          -- NULL = 전체 유저
+      type TEXT NOT NULL,                    -- ANNOUNCEMENT|ACHIEVEMENT|POINT_GIFT|SYSTEM
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      link TEXT,                             -- 누르면 갈 곳 (없으면 안 눌린다)
+      is_read INTEGER NOT NULL DEFAULT 0,    -- 개인 알림에만 쓴다
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_noti_user ON notifications(user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS notification_reads (
+      user_id TEXT NOT NULL,
+      notification_id INTEGER NOT NULL,
+      read_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (user_id, notification_id)
+    );
   `);
 
   // 기존 DB에도 컬럼을 비파괴적으로 추가 (discord-lol과 동일한 additive 마이그레이션 방식)

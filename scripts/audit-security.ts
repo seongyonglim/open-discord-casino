@@ -273,6 +273,51 @@ async function main(): Promise<void> {
     ck('DB 역할이 member', role === 'member', role);
   }
 
+  /* ── 8-1. 도전과제 · 알림 ───────────────────────────────────── */
+  section('[8-1] 도전과제 · 알림 — 남의 것과 감춘 것');
+  {
+    const AC = require('../src/db/achievements') as typeof import('../src/db/achievements');
+    const NT = require('../src/db/notifications') as typeof import('../src/db/notifications');
+    AC.upsertAchievement({ id: 'sec-open', gameType: 'HOLDEM', title: '공개', description: '보임' });
+    AC.upsertAchievement({ id: 'sec-hid', gameType: 'CRASH', title: '비밀 이름', description: '비밀 조건', isHidden: true });
+
+    const c = mkSession('s_ach', 500);
+    const page = await req('GET', '/achievements', { cookie: c });
+    ck('도전과제 화면이 열린다', page.status === 200, String(page.status));
+    /* 화면에서 가리는 것으로는 안 된다 — HTML 에 들어 있으면 소스 보기로 그대로 읽힌다 */
+    ck('감춘 과제의 이름이 HTML 에 없다', !page.text.includes('비밀 이름'));
+    ck('감춘 과제의 조건도 HTML 에 없다', !page.text.includes('비밀 조건'));
+    ck('공개 과제는 보인다', page.text.includes('공개'));
+
+    /* 달성자 명단. 화면에서 버튼을 안 그리는 것만으로는 부족하다 — 주소를 직접 치면 나온다. */
+    const hid = await req('GET', '/api/achievements/unlockers?id=sec-hid', { cookie: c });
+    ck('감춘 과제의 달성자는 403', hid.status === 403, String(hid.status));
+    ck('403 응답에 과제 이름이 없다', !hid.text.includes('비밀 이름'));
+    const open = await req('GET', '/api/achievements/unlockers?id=sec-open', { cookie: c });
+    ck('공개 과제의 달성자는 200', open.status === 200, String(open.status));
+    const none = await req('GET', '/api/achievements/unlockers?id=no-such-thing', { cookie: c });
+    ck('없는 과제는 404', none.status === 404, String(none.status));
+
+    // 로그인 없이 알림에 손댈 수 없다 — 전부 본인 것만 다루는 API 다
+    for (const [m, p] of [['GET', '/api/notifications'], ['POST', '/api/notifications/read-all'],
+      ['POST', '/api/notifications/read']] as const) {
+      const r = await req(m, p, { body: m === 'POST' ? { id: 1 } : undefined });
+      ck(`로그인 없이 ${p} 는 401`, r.status === 401, String(r.status));
+    }
+
+    /* 남의 알림을 id 만 바꿔 가며 읽음으로 만들 수 있으면 안 된다 */
+    const victim = mkSession('s_noti_a', 100);
+    void victim;
+    NT.notifyUser('s_noti_a', 'SYSTEM', '개인', '내용');
+    const mine = NT.listNotifications('s_noti_a');
+    const attacker = mkSession('s_noti_b', 100);
+    await req('POST', '/api/notifications/read', { cookie: attacker, body: { id: mine[0].id } });
+    ck('남이 읽어도 주인의 안 읽음은 그대로', NT.unreadCount('s_noti_a') === 1,
+      String(NT.unreadCount('s_noti_a')));
+    const listed = await req('GET', '/api/notifications', { cookie: attacker });
+    ck('남의 알림은 목록에도 안 나온다', !listed.text.includes('개인'), listed.text.slice(0, 120));
+  }
+
   /* ── 9. 죽지 않기 ───────────────────────────────────────────── */
   section('[9] 프로세스 — 예외 하나로 전원이 끊기지 않는가');
   {

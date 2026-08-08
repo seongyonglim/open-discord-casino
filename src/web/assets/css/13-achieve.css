@@ -1,0 +1,174 @@
+/* 도전과제 · 알림 종 · 토스트.
+   ORDER.txt 의 마지막 조각이라 앞의 규칙을 덮을 수 있다 — 여기서 정의하는 클래스는
+   다른 조각에 없는 이름들이므로 실제로 덮는 것은 없다. */
+
+/* ── 도전과제 ─────────────────────────────────────────────────────── */
+.ac-wrap { display: flex; flex-direction: column; gap: 14px; }
+.ac-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ac-head h2 { margin: 0 0 4px; }
+.ac-lead { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+.ac-sum { text-align: right; flex: 0 0 auto; }
+.ac-sum-n { font-size: 22px; color: var(--dim); letter-spacing: .02em; }
+.ac-sum-n b { color: var(--gold); font-size: 27px; }
+.ac-sum-l { font-size: 11px; color: var(--dim); letter-spacing: .12em; }
+
+/* 진행률 바. 채워진 부분만 금색이라 한눈에 어디까지 왔는지 읽힌다. */
+.ac-bar { height: 9px; border-radius: 99px; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.07); overflow: hidden; }
+.ac-bar-in { height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #8a6d2c, var(--gold));
+  transition: width .5s cubic-bezier(.22,1,.36,1); }
+.ac-bar-cap { font-size: 12px; color: var(--dim); margin-top: -6px; }
+.ac-bar-cap b { color: #e8e8ee; }
+
+/* 탭. 가로로 넘치면 스크롤한다 — 모바일에서 여섯 개가 한 줄에 안 들어간다. */
+.ac-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+  scrollbar-width: none; }
+.ac-tabs::-webkit-scrollbar { display: none; }
+.ac-tab { flex: 0 0 auto; padding: 7px 13px; border-radius: 99px; cursor: pointer;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  color: var(--dim); font-size: 13px; font-weight: 600; white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s; }
+.ac-tab:hover { color: #d8d8de; background: rgba(255,255,255,.07); }
+.ac-tab.on { background: rgba(212,175,55,.14); border-color: rgba(212,175,55,.42); color: var(--gold); }
+
+.ac-grid { display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+/* 카드. 달성한 것만 색이 살아 있다 — 목록을 훑을 때 "내가 한 것"이 먼저 눈에 들어온다. */
+.ac-card { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+  gap: 4px 12px; padding: 13px 14px; border-radius: 12px;
+  background: rgba(255,255,255,.028); border: 1px solid rgba(255,255,255,.07); }
+.ac-card[hidden] { display: none; }
+.ac-card.on { background: linear-gradient(180deg, rgba(212,175,55,.10), rgba(212,175,55,.03));
+  border-color: rgba(212,175,55,.34); }
+.ac-ic { grid-column: 1; grid-row: 1 / span 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; border-radius: 12px; background: rgba(0,0,0,.28);
+  border: 1px solid rgba(255,255,255,.06); }
+.ac-ic-emo { font-size: 26px; line-height: 1; }
+.ac-ic-img { width: 46px; height: 46px; border-radius: 9px; object-fit: cover; }
+/* 잠긴 카드는 아이콘을 흑백으로 눌러 둔다 (스팀과 같은 규칙) */
+.ac-card.off .ac-ic { filter: grayscale(1); opacity: .45; }
+.ac-card.off .ac-title { color: #9a9aa4; }
+.ac-title { font-weight: 700; font-size: 14px; color: #ecd9a0; letter-spacing: -.01em; }
+.ac-card.on .ac-title { color: var(--gold); }
+.ac-desc { font-size: 12px; color: var(--dim); line-height: 1.5; }
+.ac-card.secret .ac-desc { font-style: italic; }
+.ac-foot { grid-column: 2; grid-row: 2; }
+.ac-date { font-size: 11px; color: rgba(212,175,55,.8); }
+.ac-lock { font-size: 11px; color: #6f6f78; letter-spacing: .06em; }
+
+/* ── 달성자 ───────────────────────────────────────────────────────── */
+/* 카드 맨 아래 한 줄. 얼굴 다섯까지만 — 여섯부터는 줄이 두 줄이 되고, 격자에서
+   한 장만 키가 커지면 그 줄 전체가 어긋난다. */
+.ac-who { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px;
+  margin-top: 9px; padding: 7px 8px 0; border: 0; border-top: 1px solid rgba(255,255,255,.06);
+  background: none; color: inherit; text-align: left; width: 100%; }
+button.ac-who { cursor: pointer; }
+button.ac-who:hover .ac-who-n { color: var(--gold); }
+.ac-who.none { padding-left: 8px; }
+.ac-faces { display: flex; }
+/* 얼굴을 조금씩 겹쳐 늘어놓는다 — 다섯이 나란히 서면 줄이 넓어져 글자 자리가 없다 */
+.ac-face { width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
+  border: 1.5px solid #14141a; margin-left: -6px;
+  background: #2a2a33; color: #c9c9d2; font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; }
+.ac-faces .ac-face:first-child { margin-left: 0; }
+.ac-face.more { background: rgba(212,175,55,.16); color: var(--gold); font-size: 9px; }
+.ac-face.lg { width: 28px; height: 28px; margin-left: 0; font-size: 12px; }
+.ac-who-n { font-size: 11px; color: #82828c; }
+
+/* 전체 명단 창 */
+.ac-dlg { border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 18px;
+  background: #14141a; color: #e6e6ec; width: min(380px, calc(100vw - 32px)); }
+.ac-dlg::backdrop { background: rgba(0,0,0,.62); }
+.ac-dlg h3 { margin: 0 0 12px; font-size: 15px; color: var(--gold); }
+.ac-who-list { max-height: min(50vh, 380px); overflow-y: auto; }
+.ac-who-row { display: grid; grid-template-columns: 22px auto minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 7px 2px;
+  border-bottom: 1px solid rgba(255,255,255,.05); }
+.ac-who-i { grid-column: 1; font-size: 11px; color: #6f6f78; text-align: right; }
+.ac-who-nm { grid-column: 3; font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-who-d { grid-column: 4; font-size: 11px; color: #6f6f78; white-space: nowrap; }
+.ac-who-empty { padding: 22px 4px; text-align: center; color: var(--dim); font-size: 13px; }
+.ac-dlg-row { display: flex; justify-content: flex-end; margin-top: 12px; }
+.ac-dlg-row button { padding: 7px 15px; border-radius: 8px; cursor: pointer;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: #e6e6ec; }
+
+.ac-empty { text-align: center; padding: 40px 16px; color: var(--dim); }
+.ac-empty-ic { font-size: 34px; opacity: .5; }
+.ac-empty-t { margin-top: 10px; font-weight: 700; color: #c9c9d2; }
+.ac-empty-s { margin-top: 4px; font-size: 13px; }
+
+/* ── 알림 종 ──────────────────────────────────────────────────────── */
+.belwrap { position: relative; display: inline-flex; }
+.belbtn { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: var(--dim);
+  transition: color .15s, background .15s; }
+.belbtn:hover, .belbtn.open { color: var(--gold); background: rgba(255,255,255,.06); }
+/* 배지는 개수를 담으므로 폭이 늘어난다 — 원이 아니라 알약이어야 두 자리도 안 잘린다 */
+.belbadge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px;
+  padding: 0 4px; border-radius: 99px; background: #d64848; color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 15px; text-align: center;
+  border: 1.5px solid var(--bg, #0c0c10); }
+.belbadge[hidden] { display: none; }
+
+.belmenu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: min(340px, calc(100vw - 28px));
+  background: #14141a; border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.6); overflow: hidden; }
+.belmenu[hidden] { display: none; }
+.bel-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 13px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 13px; }
+.bel-all { background: none; border: 0; color: var(--dim); font-size: 12px; cursor: pointer; }
+.bel-all:hover { color: var(--gold); }
+.bel-list { max-height: min(420px, 60vh); overflow-y: auto; }
+/* 세 칸을 전부 명시한다. 시각에만 grid-row 를 적었더니 자동 배치가 그것을 먼저
+   2열에 놓고 본문을 3열로 밀어내서, 시간이 왼쪽에 오고 글이 오른쪽에 붙었다.
+   그리드에서 한 항목만 위치를 정하면 나머지의 자리도 같이 흔들린다. */
+.bel-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px;
+  align-items: start; padding: 10px 13px; text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  color: inherit; text-decoration: none; }
+a.bel-row:hover { background: rgba(255,255,255,.04); }
+/* 안 읽은 줄만 왼쪽에 금색 선. 배지를 내린 뒤에도 무엇이 새 것이었는지는 보여야 한다. */
+.bel-row.unread { box-shadow: inset 2px 0 0 var(--gold); background: rgba(212,175,55,.045); }
+.bel-ic { grid-column: 1; grid-row: 1; font-size: 15px; line-height: 1.35; }
+.bel-mid { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; }
+.bel-t { font-size: 13px; font-weight: 700; color: #e6e6ec; }
+.bel-m { font-size: 12px; color: var(--dim); line-height: 1.45;
+  overflow-wrap: anywhere; }
+/* 시각은 오른쪽 끝에 붙되 본문을 밀지 않는다 — 본문 칸이 minmax(0,1fr) 이라 먼저 줄인다 */
+.bel-w { grid-column: 3; grid-row: 1; font-size: 11px; color: #6f6f78;
+  white-space: nowrap; padding-top: 1px; }
+.bel-empty { padding: 26px 13px; text-align: center; color: var(--dim); font-size: 13px; }
+
+/* ── 토스트 ───────────────────────────────────────────────────────── */
+/* 오른쪽 위. 게임 화면 위에 뜨므로 어떤 패널보다도 앞이어야 한다. */
+.toast-stack { position: fixed; top: 14px; right: 14px; z-index: 200;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { display: grid; grid-template-columns: auto 1fr; gap: 2px 11px;
+  align-items: center; padding: 12px 16px 12px 13px; border-radius: 12px;
+  min-width: 240px; max-width: min(360px, calc(100vw - 28px));
+  background: linear-gradient(135deg, #2a2210, #17140c);
+  border: 1px solid rgba(212,175,55,.5);
+  box-shadow: 0 14px 38px rgba(0,0,0,.55), 0 0 22px rgba(212,175,55,.13);
+  transform: translateX(calc(100% + 20px)); opacity: 0;
+  transition: transform .42s cubic-bezier(.22,1,.36,1), opacity .42s; }
+.toast.in { transform: translateX(0); opacity: 1; }
+/* 여기도 칸을 전부 명시한다 — 한 항목만 위치를 정하면 나머지가 밀린다(알림 줄에서 겪었다) */
+.toast-ic { grid-column: 1; grid-row: 1; font-size: 24px; line-height: 1; }
+.toast-mid { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; }
+.toast-t { font-size: 12px; font-weight: 800; color: var(--gold); letter-spacing: .04em; }
+.toast-m { font-size: 14px; font-weight: 700; color: #f0e6cd; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  .ac-grid { grid-template-columns: 1fr; }
+  .toast-stack { left: 14px; right: 14px; }
+  .toast { max-width: none; }
+}

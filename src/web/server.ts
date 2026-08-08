@@ -5,6 +5,10 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { lobbyPage, noticeListPage, noticeDetailPage } from './pages';
 import { leaderboardPage, handleRankApi } from './leaderboard';
+import { achievementsPage, handleAchievements, handleUnlockers } from './achievements';
+import {
+  handleNotifications, handleNotificationsReadAll, handleNotificationRead,
+} from './notifications-api';
 import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
 import {
@@ -60,8 +64,8 @@ const SFX_FILES = new Set([
   // 홀덤은 포인트가 아니라 토너먼트 칩을 다루므로 "동전 넣는" 소리가 아니라
   // 칩을 테이블에 내려놓는 소리를 쓴다. 두 종류를 무작위로 번갈아 낸다.
   'chip-bet.mp3', 'chip-bet2.mp3', 'chips-to-winner.mp3',
-  // 우승 음원은 아직 파일이 없다 — 넣는 순간 서빙되도록 목록에만 올려 둔다
-  'tournament-win.mp3',
+  // 우승·해금 음원은 아직 파일이 없다 — 넣는 순간 서빙되도록 목록에만 올려 둔다
+  'tournament-win.mp3', 'achievement-unlock.mp3',
   /* 홀덤 액션 음성. 칩 소리를 대체하는 게 아니라 그 위에 겹쳐 낸다 —
      칩 소리는 "돈이 나갔다", 이건 "무슨 행동을 했다"로 역할이 다르다.
      체크는 칩이 나가지 않으므로 이 소리만 난다. */
@@ -240,6 +244,30 @@ export function startWebServer(): void {
         return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null));
       }
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(me));
+
+      /* 도전과제. 로그인 없이도 목록은 보인다 — 무엇을 할 수 있는 곳인지 알아야
+         들어올 마음이 생긴다. 달성 표시만 비어 있게 나온다. */
+      if (path === '/achievements') return send(res, 200, achievementsPage(me));
+      if (path === '/api/achievements' && req.method === 'GET') {
+        return await handleAchievements(req, res, me?.id ?? null);
+      }
+      if (path === '/api/achievements/unlockers' && req.method === 'GET') {
+        return await handleUnlockers(req, res, url, me?.id ?? null);
+      }
+
+      /* 알림 — 전부 본인 것만 다룬다. 로그인 없이는 볼 것도 읽을 것도 없다. */
+      if (path === '/api/notifications' && req.method === 'GET') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await handleNotifications(req, res, me.id);
+      }
+      if (path === '/api/notifications/read-all' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await handleNotificationsReadAll(req, res, me.id);
+      }
+      if (path === '/api/notifications/read' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await handleNotificationRead(req, res, me.id);
+      }
       if (path === '/api/leaderboard' && req.method === 'GET') return await handleRankApi(req, res, url, me);
 
       /* 운영자 화면. 보기는 admin 역할만, 바꾸는 동작은 admin + ADMIN_TOKEN 두 겹이다.

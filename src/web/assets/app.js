@@ -206,6 +206,10 @@
        없으면 playSample이 false를 돌려주고 기존 팡파레로 대체되므로 지금도 동작한다.
        파일을 넣는 순간 자동으로 그쪽이 쓰인다(SFX_NORM에 보정값만 재서 넣으면 된다). */
     victory: ['tournament-win'],
+    /* 도전과제 해금 — 음원 파일(public/sfx/achievement-unlock.mp3)은 아직 없다.
+       우승 음원과 같은 방식으로, 없으면 아래의 합성 팡파레가 대신 울리고 파일을 넣는
+       순간 자동으로 그쪽이 쓰인다. */
+    achievement: ['achievement-unlock'],
     /* 홀덤 액션 음성. 칩 소리를 "대체"하지 않고 그 위에 겹쳐 낸다 —
        칩 소리는 "돈이 나갔다", 이 소리는 "무슨 행동을 했다"로 역할이 다르다.
        체크는 칩이 나가지 않으므로 이 소리만 난다(그래서 체크가 조용하지 않게 된다). */
@@ -425,6 +429,19 @@
     /* 내 차례가 열렸다. 부르는 쪽(홀덤 화면)이 "내 차례인가"를 판단해서 부른다 —
        여기서는 누구의 차례인지 알 수 없고, 알 필요도 없다. */
     myTurn: function(){ playSample('myturn', 1); },
+    /* 도전과제 해금 — 짧게 올라가는 네 음. 승리음(win)과 달라야 한다:
+       그건 "이 판을 이겼다"이고 이건 "계정에 뭔가 남았다"라 성격이 다르다.
+       그래서 더 밝고(장3화음 위로) 더 짧게 끝낸다. 음원 파일이 들어오면 그쪽이 이긴다. */
+    achievement: function(){
+      if (playSample('achievement', 1)) return;
+      var c = ac(); if (!c) return;
+      var t = c.currentTime;
+      var notes = [783.99, 987.77, 1174.7, 1567.98];   // G5 B5 D6 G6
+      notes.forEach(function(f, i){
+        tone(c, f, t + i * 0.07, 0.20, 0.070 - i * 0.008, 'triangle');
+      });
+      tone(c, 1975.5, t + 0.30, 0.42, 0.030, 'sine');  // 끝에 남는 반짝임 (B6)
+    },
     /* 올인 음악. 판을 통째로 거는 순간에만 부른다 — 남의 올인에 콜했는데 그게
        우연히 내 스택 전부였던 경우는 부르지 않는다(그건 콜이다).
        더 큰 금액으로 다시 올인하면 다시 부르면 되고, 상한이 1이라 앞 음악이 끊긴다. */
@@ -651,4 +668,188 @@
     } else close();
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+})();
+
+/* ── 알림 종 ────────────────────────────────────────────────────────
+   머리에 달린 종. 안 읽은 개수를 배지로 띄우고, 누르면 목록을 연다.
+
+   개수를 서버가 처음 그릴 때 넣지 않는 이유: 모든 페이지가 같은 머리를 쓰는데 거기에
+   사람마다 다른 숫자가 들어가면 산출물을 바이트로 비교하는 검사가 매번 다르다고 한다.
+   그래서 열자마자 한 번 받아 채운다.
+
+   주기적으로 다시 묻지 않는다. 알림은 초를 다투는 정보가 아니고, 페이지를 오갈 때마다
+   새로 받으므로 그것으로 충분하다 — 1초 폴링을 하나 더 얹으면 그만큼 요금이 된다.
+   달성 팝업만은 게임 쪽에서 즉시 띄운다(casinoNotify.toast). */
+(function(){
+  function el(id){ return document.getElementById(id); }
+  /* 요소를 여기서 붙잡아 두면 안 된다. 이 파일은 <head> 에서 동기로 실행되므로
+     그 시점에는 헤더가 아직 파싱되기 전이고, getElementById 는 전부 null 이다 —
+     처음에 그렇게 만들었다가 종이 통째로 죽었다(배지도 목록도 영영 안 떴다).
+     그래서 쓸 때마다 찾고, 클릭은 document 위임으로 받는다(프로필 메뉴와 같은 이유다). */
+  function btnEl(){ return el('belBtn'); }
+  function menuEl(){ return el('belMenu'); }
+  var loaded = false;
+
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function ago(sec){
+    var d = Math.floor(Date.now() / 1000) - sec;
+    if (d < 60) return '방금';
+    if (d < 3600) return Math.floor(d / 60) + '분 전';
+    if (d < 86400) return Math.floor(d / 3600) + '시간 전';
+    return Math.floor(d / 86400) + '일 전';
+  }
+  var TYPE_ICON = {
+    ANNOUNCEMENT: '📢', ACHIEVEMENT: '🏆', POINT_GIFT: '🎁', SYSTEM: '⚙️'
+  };
+
+  function paintBadge(n){
+    var badge = el('belBadge');
+    if (!badge) return;
+    if (n > 0) { badge.textContent = n > 99 ? '99+' : String(n); badge.hidden = false; }
+    else badge.hidden = true;
+  }
+  function paint(d){
+    var items = (d && d.items) || [];
+    paintBadge(d ? d.unread : 0);
+    var list = el('belList');
+    if (!list) return;
+    if (!items.length) { list.innerHTML = '<div class="bel-empty">알림이 없습니다</div>'; return; }
+    list.innerHTML = items.map(function(n){
+      var ic = TYPE_ICON[n.type] || '•';
+      var inner = '<span class="bel-ic">' + ic + '</span>'
+        + '<span class="bel-mid"><span class="bel-t">' + esc(n.title) + '</span>'
+        + '<span class="bel-m">' + esc(n.message) + '</span></span>'
+        + '<span class="bel-w">' + ago(n.createdAt) + '</span>';
+      var cls = 'bel-row' + (n.read ? '' : ' unread');
+      return n.link
+        ? '<a class="' + cls + '" href="' + esc(n.link) + '">' + inner + '</a>'
+        : '<div class="' + cls + '">' + inner + '</div>';
+    }).join('');
+  }
+  function load(){
+    if (!btnEl()) return Promise.resolve();   // 로그인 안 한 화면에는 종이 없다
+    return fetch('/api/notifications')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ if (d && d.ok) { loaded = true; paint(d); } })
+      .catch(function(){ /* 실패해도 화면은 그대로 둔다 */ });
+  }
+  /* 배지만 먼저 채운다 — 목록은 열 때 받는다.
+     헤더가 만들어진 뒤여야 하므로 DOM 이 준비되면 부른다. */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ load(); });
+  } else load();
+
+  function close(){
+    var menu = menuEl(), btn = btnEl();
+    if (!menu || !btn) return;
+    menu.setAttribute('hidden', '');
+    btn.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  function open(){
+    var menu = menuEl(), btn = btnEl();
+    if (!menu || !btn) return;
+    menu.removeAttribute('hidden');
+    btn.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    if (!loaded) load();
+    /* 연 것 자체를 읽음으로 본다. 줄마다 눌러야 지워지면 배지가 며칠씩 남는다 —
+       배지는 "새 소식이 있다"는 뜻이지 "처리할 일이 있다"는 뜻이 아니다.
+       화면의 굵은 표시는 그대로 두고 배지만 내린다(무엇이 새 것이었는지는 보여야 한다). */
+    fetch('/api/notifications/read-all', { method: 'POST' })
+      .then(function(){ paintBadge(0); })
+      .catch(function(){ });
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    var inBtn = t.closest ? t.closest('#belBtn') : null;
+    var inMenu = t.closest ? t.closest('#belMenu') : null;
+    if (inMenu) {
+      if (t.closest && t.closest('#belAllRead')) {
+        fetch('/api/notifications/read-all', { method: 'POST' }).then(load);
+      }
+      return;
+    }
+    if (!inBtn) return close();
+    var menu = menuEl();
+    if (menu && menu.hasAttribute('hidden')) open(); else close();
+  });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+
+  /* ── 달성 토스트 ──────────────────────────────────────────────────
+     오른쪽 위에서 미끄러져 들어온다. 게임 쪽이 응답에서 달성을 받으면 부른다:
+       window.casinoNotify.toast({ title: '도전과제 달성!', message: '...' })
+     여러 개가 한꺼번에 와도 겹치지 않게 세로로 쌓는다. */
+  /* 어떤 게임의 응답이든 달성이 실려 오면 잡는다.
+     게임마다 따로 배선하면 어떤 게임은 팝업이 뜨고 어떤 게임은 조용해진다 — 게임이
+     일곱 개인데 새 과제를 붙일 때마다 일곱 곳을 확인해야 한다는 뜻이다.
+     그래서 fetch 를 한 겹 감싸 같은 서버의 /api/ 응답만 들여다본다.
+
+     반드시 clone() 으로 읽어야 한다. 원본 본문을 읽으면 게임 쪽에서 다시 못 읽어
+     화면이 통째로 죽는다. 실패는 전부 삼킨다 — 이건 곁다리 기능이라, 여기서 나는
+     오류가 게임을 멈추게 해서는 안 된다. */
+  var origFetch = window.fetch;
+  if (typeof origFetch === 'function') {
+    window.fetch = function(input, init){
+      var out = origFetch.apply(this, arguments);
+      try {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (url.indexOf('/api/') !== 0) return out;
+        // 알림 API 자신은 건너뛴다 — 스스로를 다시 부르는 고리를 만들지 않는다
+        if (url.indexOf('/api/notifications') === 0) return out;
+        return out.then(function(r){
+          try {
+            var ct = r.headers && r.headers.get && r.headers.get('content-type');
+            if (r.ok && ct && ct.indexOf('json') >= 0) {
+              r.clone().json().then(function(d){
+                var list = d && d.unlocked;
+                if (list && list.length) {
+                  list.forEach(function(a, i){
+                    // 둘이 동시에 달성되면 겹치지 않게 조금씩 늦춘다
+                    setTimeout(function(){
+                      window.casinoNotify.toast({ title: '도전과제 달성!', message: a.title });
+                    }, i * 700);
+                  });
+                }
+              }).catch(function(){ });
+            }
+          } catch (e) { }
+          return r;
+        });
+      } catch (e) { return out; }
+    };
+  }
+
+  var stack = null;
+  function ensureStack(){
+    if (stack) return stack;
+    stack = document.createElement('div');
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+    return stack;
+  }
+  window.casinoNotify = {
+    refresh: load,
+    toast: function(o){
+      var s = ensureStack();
+      var d = document.createElement('div');
+      d.className = 'toast ach';
+      d.innerHTML = '<span class="toast-ic">🏆</span>'
+        + '<span class="toast-mid"><span class="toast-t">' + esc((o && o.title) || '도전과제 달성!') + '</span>'
+        + '<span class="toast-m">' + esc((o && o.message) || '') + '</span></span>';
+      s.appendChild(d);
+      // 다음 프레임에 클래스를 붙여야 들어오는 동작이 보인다 (붙인 채로 넣으면 이미 제자리다)
+      requestAnimationFrame(function(){ d.classList.add('in'); });
+      if (window.casinoSfx && window.casinoSfx.achievement) window.casinoSfx.achievement();
+      setTimeout(function(){
+        d.classList.remove('in');
+        setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 400);
+      }, 5000);
+      load();
+    }
+  };
 })();

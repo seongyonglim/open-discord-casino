@@ -19,11 +19,12 @@ let _reqUser: HeaderUser | null = null;
 export function setRequestUser(u: HeaderUser | null): void { _reqUser = u; }
 
 // 게임 선택은 로비에서 하므로 별도 '게임' 탭은 두지 않는다. 게임 플레이 화면은 로비 탭을 활성으로 표시.
-export type Tab = 'lobby' | 'leaderboard' | 'notices';
+export type Tab = 'lobby' | 'leaderboard' | 'notices' | 'achievements';
 
 const TABS: { key: Tab; label: string; href: string }[] = [
   { key: 'lobby', label: '로비', href: '/' },
   { key: 'leaderboard', label: '랭킹', href: '/leaderboard' },
+  { key: 'achievements', label: '도전과제', href: '/achievements' },
   { key: 'notices', label: '공지사항', href: '/notices' },
 ];
 
@@ -311,8 +312,24 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
           </a>
           <div class="pm-sep"></div>` : '';
 
+  /* 알림 종. 로그인한 사람에게만 보인다.
+     개수는 서버가 처음 그릴 때 넣지 않는다 — 모든 페이지가 같은 머리를 쓰는데 여기에
+     사람마다 다른 숫자가 들어가면 페이지를 바이트로 비교하는 검사(scripts/golden.ts)가
+     매번 다르다고 말한다. 대신 app.js 가 열자마자 한 번 받아 채운다. */
+  const bellBtn = `<div class="belwrap">
+        <button class="belbtn" id="belBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="알림">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="belbadge" id="belBadge" hidden></span>
+        </button>
+        <div class="belmenu" id="belMenu" hidden>
+          <div class="bel-head"><b>알림</b><button type="button" class="bel-all" id="belAllRead">모두 읽음</button></div>
+          <div class="bel-list" id="belList"><div class="bel-empty">불러오는 중…</div></div>
+        </div>
+      </div>`;
+
   const authBox = u
     ? `<div class="profwrap">
+        ${bellBtn}
         ${sfxBtn}
         <button class="prof" id="profBtn" type="button" aria-haspopup="true" aria-expanded="false">
           ${ava}<span class="pname">${esc(u.username)}</span>
