@@ -517,10 +517,14 @@ function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_noti_user ON notifications(user_id, created_at DESC);
 
+    /* 사람별 표시. 읽음과 치움을 함께 둔다 — 전체 알림은 한 줄을 여럿이 보므로
+       둘 다 그 줄에 적을 수 없다. 개인 알림도 치움은 여기에 적는다: 지우는 것이 아니라
+       "이 사람 목록에서 뺀다"는 뜻이라, 줄 자체는 남아 있어야 기록이 사라지지 않는다. */
     CREATE TABLE IF NOT EXISTS notification_reads (
       user_id TEXT NOT NULL,
       notification_id INTEGER NOT NULL,
       read_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      dismissed_at INTEGER,
       PRIMARY KEY (user_id, notification_id)
     );
   `);
@@ -553,6 +557,9 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_seat INTEGER`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
+  /* 알림 "치움". 읽음과 따로 둔다 — 읽은 것을 목록에서 빼는 것과 읽었다고 표시하는 것은
+     다른 동작이고, 나중에 둘을 따로 되돌릴 수도 있어야 한다. */
+  try { d.exec(`ALTER TABLE notification_reads ADD COLUMN dismissed_at INTEGER`); } catch { /* 이미 있다 */ }
 
   /* 대회를 만들 때의 설정을 그 대회 행에 박아 둔다.
      일정과 상금 배수는 원래부터 행에 있었지만 스타팅 칩·블라인드 주기·레이트 레지는

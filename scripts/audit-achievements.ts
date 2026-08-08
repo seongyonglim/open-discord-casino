@@ -194,6 +194,46 @@ function main(): void {
     ck('b2 목록에는 안 읽음으로 나온다', !N.listNotifications('b2')[0].read);
     N.markAllRead('b1');
     ck('두 번 읽어도 터지지 않는다', N.unreadCount('b1') === 0);
+
+    /* 여는 것과 정리하는 것은 다르다. 열었다고 목록까지 비면 읽을 새도 없이 사라진다. */
+    ck('읽음만으로는 목록에 남는다', N.listNotifications('b1').length === 1,
+      String(N.listNotifications('b1').length));
+  }
+
+  /* ── 6-1. 치우기 ────────────────────────────────────────────── */
+  section('[6-1] 알림 — [모두 지우기]는 목록에서 뺀다');
+  {
+    wipe();
+    mkUser('d1'); mkUser('d2');
+    N.notifyAll('ANNOUNCEMENT', '전체', '내용');
+    N.notifyUser('d1', 'POINT_GIFT', '개인', '+100P');
+    ck('둘 다 보인다 (검사 전제)', N.listNotifications('d1').length === 2,
+      String(N.listNotifications('d1').length));
+
+    N.dismissAll('d1');
+    ck('치우면 목록이 빈다', N.listNotifications('d1').length === 0,
+      String(N.listNotifications('d1').length));
+    ck('안 읽음도 0', N.unreadCount('d1') === 0);
+    /* 전체 알림은 한 줄을 여럿이 보므로 지울 수가 없다 — 치움은 사람에게 달린 표시다 */
+    ck('남의 목록은 그대로', N.listNotifications('d2').length === 1,
+      String(N.listNotifications('d2').length));
+    ck('남의 안 읽음도 그대로', N.unreadCount('d2') === 1);
+    ck('줄 자체는 남아 있다', (db.prepare(
+      `SELECT COUNT(*) AS n FROM notifications`).get() as { n: number }).n === 2);
+
+    // 새로 오는 것은 당연히 다시 쌓인다 — 치움은 그때까지 온 것에만 붙는 표시다
+    N.notifyUser('d1', 'SYSTEM', '새 알림', '내용');
+    ck('치운 뒤 온 알림은 보인다', N.listNotifications('d1').length === 1);
+    ck('배지도 다시 올라간다', N.unreadCount('d1') === 1);
+    N.dismissAll('d1');
+    ck('두 번 치워도 터지지 않는다', N.listNotifications('d1').length === 0);
+
+    // 치운 공지는 팝업도 뜨지 않는다
+    wipe();
+    N.notifyAll('ANNOUNCEMENT', '공지', '내용');
+    ck('치우기 전에는 팝업 대상', N.popupNotifications('d1').length === 1);
+    N.dismissAll('d1');
+    ck('치우면 팝업하지 않는다', N.popupNotifications('d1').length === 0);
   }
 
   /* ── 7. 새로 온 사람 ────────────────────────────────────────── */

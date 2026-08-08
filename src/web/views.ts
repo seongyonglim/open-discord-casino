@@ -322,7 +322,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
           <span class="belbadge" id="belBadge" hidden></span>
         </button>
         <div class="belmenu" id="belMenu" hidden>
-          <div class="bel-head"><b>알림</b><button type="button" class="bel-all" id="belAllRead">모두 읽음</button></div>
+          <div class="bel-head"><b>알림</b><button type="button" class="bel-all" id="belAllRead">모두 지우기</button></div>
           <div class="bel-list" id="belList"><div class="bel-empty">불러오는 중…</div></div>
         </div>
       </div>`;

@@ -3,7 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { sendJson, readJson } from './http';
 import {
-  listNotifications, unreadCount, markAllRead, markRead, popupNotifications,
+  listNotifications, unreadCount, markAllRead, markRead, popupNotifications, dismissAll,
 } from '../db/notifications';
 
 export async function handleNotifications(
@@ -19,11 +19,20 @@ export async function handleNotifications(
   });
 }
 
+/** 종을 열었을 때 — 배지만 내린다. 목록은 그대로 둔다(읽을 새도 없이 사라지면 안 된다). */
 export async function handleNotificationsReadAll(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
   markAllRead(userId);
   return sendJson(res, 200, { ok: true, unread: 0 });
+}
+
+/** [모두 읽음] 버튼 — 읽음 처리하고 목록에서도 치운다. */
+export async function handleNotificationsDismissAll(
+  _req: IncomingMessage, res: ServerResponse, userId: string
+): Promise<void> {
+  dismissAll(userId);
+  return sendJson(res, 200, { ok: true, unread: 0, items: [] });
 }
 
 export async function handleNotificationRead(

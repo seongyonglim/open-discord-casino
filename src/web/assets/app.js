@@ -777,7 +777,9 @@
     var inMenu = t.closest ? t.closest('#belMenu') : null;
     if (inMenu) {
       if (t.closest && t.closest('#belAllRead')) {
-        fetch('/api/notifications/read-all', { method: 'POST' }).then(load);
+        /* 목록에서도 치운다 — 표시만 지우고 남겨 두면 "정리했는데 그대로 있다"가 된다.
+           줄 자체는 서버에 남고 "이 사람이 치웠다"만 기록된다. */
+        fetch('/api/notifications/dismiss-all', { method: 'POST' }).then(load);
       }
       return;
     }

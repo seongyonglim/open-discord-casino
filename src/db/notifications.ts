@@ -41,12 +41,16 @@ function joinedAt(userId: string): number {
 
 export function listNotifications(userId: string, limit = LIST_LIMIT): NotiView[] {
   const since = joinedAt(userId);
+  /* 치운 것은 안 보여 준다. 지우는 것이 아니라 이 사람 목록에서만 빼는 것이라
+     줄은 그대로 남는다 — 전체 알림은 한 줄을 여럿이 보므로 지울 수가 없고,
+     개인 알림도 기록은 남겨 두는 편이 낫다. */
   return all<NotiRow & { read_at: number | null }>(
     `SELECT n.*, r.read_at
        FROM notifications n
        LEFT JOIN notification_reads r
          ON r.notification_id = n.id AND r.user_id = ?
-      WHERE n.user_id = ? OR (n.user_id IS NULL AND n.created_at >= ?)
+      WHERE (n.user_id = ? OR (n.user_id IS NULL AND n.created_at >= ?))
+        AND r.dismissed_at IS NULL
       ORDER BY n.created_at DESC, n.id DESC
       LIMIT ?`, userId, userId, since, Math.min(100, Math.max(1, limit)))
     .map(n => ({
@@ -64,8 +68,9 @@ export function unreadCount(userId: string): number {
        FROM notifications n
        LEFT JOIN notification_reads r
          ON r.notification_id = n.id AND r.user_id = ?
-      WHERE (n.user_id = ? AND n.is_read = 0)
-         OR (n.user_id IS NULL AND n.created_at >= ? AND r.read_at IS NULL)`,
+      WHERE r.dismissed_at IS NULL
+        AND ((n.user_id = ? AND n.is_read = 0)
+          OR (n.user_id IS NULL AND n.created_at >= ? AND r.read_at IS NULL))`,
     userId, userId, since)!.n;
 }
 
@@ -91,6 +96,7 @@ export function popupNotifications(userId: string, now = Math.floor(Date.now() /
          ON r.notification_id = n.id AND r.user_id = ?
       WHERE n.type = 'ANNOUNCEMENT'
         AND n.created_at >= ?
+        AND r.dismissed_at IS NULL
         AND ((n.user_id = ? AND n.is_read = 0)
           OR (n.user_id IS NULL AND r.read_at IS NULL))
       ORDER BY n.created_at ASC, n.id ASC`, userId, since, userId)
@@ -100,7 +106,12 @@ export function popupNotifications(userId: string, now = Math.floor(Date.now() /
     }));
 }
 
-/** 전부 읽음으로. 개인 알림은 줄을 고치고, 전체 알림은 읽은 기록을 남긴다. */
+/**
+ * 읽음으로 표시한다. 목록에서 치우지는 않는다.
+ *
+ * 종을 여는 것만으로 이것이 돈다 — 열어 봤으면 배지는 내려가야 한다. 여는 것과
+ * 정리하는 것은 다른 동작이라, 열었다고 목록까지 비면 읽을 새도 없이 사라진다.
+ */
 export function markAllRead(userId: string): void {
   const since = joinedAt(userId);
   return tx(() => {
@@ -109,6 +120,31 @@ export function markAllRead(userId: string): void {
          SELECT ?, n.id FROM notifications n
           WHERE n.user_id IS NULL AND n.created_at >= ?
          ON CONFLICT(user_id, notification_id) DO NOTHING`, userId, since);
+  });
+}
+
+/**
+ * [모두 읽음] 버튼 — 읽음으로 표시하고 목록에서도 치운다.
+ *
+ * 표시만 지우고 목록에 남기면 "정리했는데 그대로 있다"로 읽힌다. 누른 사람이 기대하는
+ * 것은 빈 목록이다. 대신 줄 자체는 지우지 않는다 — 전체 알림은 한 줄을 여럿이 보므로
+ * 지울 수 없고, 개인 알림도 무슨 일이 있었는지는 남겨 두는 편이 낫다.
+ * 그래서 "이 사람이 치웠다"만 사람별로 적는다.
+ *
+ * 새 알림은 당연히 다시 쌓인다 — 치움은 그때까지 온 것에만 붙는 표시다.
+ */
+export function dismissAll(userId: string): void {
+  const since = joinedAt(userId);
+  return tx(() => {
+    markAllRead(userId);
+    /* 개인 알림의 치움도 여기에 적는다 — 치움은 줄이 아니라 사람에게 달린 표시라
+       한곳에 모아야 목록을 거를 때 한 번만 조인하면 된다. */
+    run(`INSERT INTO notification_reads (user_id, notification_id, dismissed_at)
+         SELECT ?, n.id, unixepoch() FROM notifications n
+          WHERE (n.user_id = ? OR (n.user_id IS NULL AND n.created_at >= ?))
+         ON CONFLICT(user_id, notification_id)
+         DO UPDATE SET dismissed_at = COALESCE(notification_reads.dismissed_at, unixepoch())`,
+      userId, userId, since);
   });
 }
 

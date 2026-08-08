@@ -8,6 +8,7 @@ import { leaderboardPage, handleRankApi } from './leaderboard';
 import { achievementsPage, handleAchievements, handleUnlockers } from './achievements';
 import {
   handleNotifications, handleNotificationsReadAll, handleNotificationRead,
+  handleNotificationsDismissAll,
 } from './notifications-api';
 import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
@@ -263,6 +264,10 @@ export function startWebServer(): void {
       if (path === '/api/notifications/read-all' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await handleNotificationsReadAll(req, res, me.id);
+      }
+      if (path === '/api/notifications/dismiss-all' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await handleNotificationsDismissAll(req, res, me.id);
       }
       if (path === '/api/notifications/read' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
