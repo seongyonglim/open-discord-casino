@@ -19,8 +19,8 @@ import type { WebUser } from '../db/queries';
 /* 아이콘이 없는 과제에 쓸 기본 그림. 분류마다 다르게 둔다 — 전부 같은 모양이면
    목록이 한 덩어리로 보여서 어느 게임 것인지 카드를 읽어야만 알 수 있다. */
 const TYPE_ICON: Record<string, string> = {
-  HOLDEM: '♠️', BLACKJACK: '🃏', MINES: '💣', CRASH: '📈',
-  BACCARAT: '🀄', POKER: '🎴', LADDER: '🪜', ALL: '🎲',
+  HOLDEM: '♠️', BACCARAT: '🀄', BLACKJACK: '🃏', POKER: '🎴',
+  MINES: '💣', CRASH: '📈', LADDER: '🪜', ALL: '🎰',
 };
 
 function kstDate(sec: number): string {
@@ -146,7 +146,11 @@ export function achievementsPage(me: WebUser | null): string {
     }
     tabsEl.addEventListener('click', function(ev){
       var b = ev.target.closest ? ev.target.closest('.ac-tab') : null;
-      if (b) show(b.getAttribute('data-tab'));
+      if (!b) return;
+      show(b.getAttribute('data-tab'));
+      /* 탭이 아홉이라 좁은 화면에서는 줄이 넘친다. 고른 탭이 반쯤 잘린 채로 남으면
+         지금 어느 탭인지 확인하려고 다시 옆으로 밀어야 한다. */
+      if (b.scrollIntoView) b.scrollIntoView({ inline: 'nearest', block: 'nearest' });
     });
 
     /* 달성자 전체 명단. 카드에는 얼굴 다섯까지만 보이므로 나머지를 여기서 본다.

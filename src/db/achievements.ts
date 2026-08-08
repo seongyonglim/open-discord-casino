@@ -10,23 +10,34 @@
 import { one, all, run, tx } from './queries';
 import { notifyUser } from './notifications';
 
-/* 분류. 화면의 탭이 이 순서로 그려진다.
-   'ALL' 은 게임을 가리지 않는 과제(출석·누적 등)이고, 탭에서는 [기타]에 들어간다 —
-   [전체] 탭은 필터가 아니라 "전부 보기"라 따로 둔다. */
+/* 분류. 'ALL' 은 게임을 가리지 않는 과제(출석·누적 등)이고 탭에서는 [공통]에 들어간다 —
+   [전체] 탭은 필터가 아니라 "전부 보기"라 따로 둔다.
+   나머지는 게임 하나씩이고, 이름은 로비의 게임 키와 같은 뜻으로 쓴다. */
 export const GAME_TYPES = [
-  'ALL', 'HOLDEM', 'BLACKJACK', 'MINES', 'CRASH', 'BACCARAT', 'POKER', 'LADDER',
+  'ALL', 'HOLDEM', 'BACCARAT', 'BLACKJACK', 'POKER', 'MINES', 'CRASH', 'LADDER',
 ] as const;
 export type GameType = typeof GAME_TYPES[number];
 
-/* 탭. 요청받은 여섯 개다. 나머지 게임(바카라·포커 플립·사다리)은 [기타]로 묶인다 —
-   탭을 게임 수만큼 늘리면 한 줄에 안 들어가고, 과제가 없는 탭이 대부분 빈칸이 된다. */
+/* 탭. 게임마다 하나씩, 이름과 순서는 로비의 게임 목록을 그대로 따른다 —
+   같은 게임을 로비에서는 "그래프게임", 여기서는 "그래프"라고 부르면 같은 것인지
+   확인해야 한다. 예전에는 뒤쪽 셋을 [기타]로 묶었는데, 자기 게임의 과제를 찾는 사람에게
+   [기타]는 "여기 있는지 없는지 눌러 봐야 아는 칸"이다.
+
+   탭이 아홉이라 한 줄에 안 들어가지만 가로로 넘겨 볼 수 있게 해 뒀다(.ac-tabs).
+   과제가 없는 탭은 빈 화면이 되는데, 그건 "아직 없다"는 사실을 그대로 보여주는 것이라
+   묶어서 감추는 것보다 낫다. */
 export const ACH_TABS: { key: string; label: string; types: GameType[] }[] = [
   { key: 'all', label: '전체', types: [] },   // 빈 배열 = 거르지 않는다
-  { key: 'holdem', label: '♠️ 홀덤', types: ['HOLDEM'] },
+  { key: 'holdem', label: '♠️ 홀덤 프리롤', types: ['HOLDEM'] },
+  { key: 'baccarat', label: '🀄 바카라', types: ['BACCARAT'] },
   { key: 'blackjack', label: '🃏 블랙잭', types: ['BLACKJACK'] },
+  { key: 'poker', label: '🎴 포커 플립', types: ['POKER'] },
   { key: 'mines', label: '💣 지뢰찾기', types: ['MINES'] },
-  { key: 'crash', label: '📈 그래프', types: ['CRASH'] },
-  { key: 'etc', label: '🎲 기타', types: ['ALL', 'BACCARAT', 'POKER', 'LADDER'] },
+  { key: 'crash', label: '📈 그래프게임', types: ['CRASH'] },
+  { key: 'ladder', label: '🪜 사다리게임', types: ['LADDER'] },
+  /* 게임을 가리지 않는 과제(출석·누적 등)가 갈 곳. [전체]는 "전부 보기"라 필터가
+     아니므로 여기가 따로 있어야 한다 — 이름을 "전체"로 두면 첫 탭과 헷갈린다. */
+  { key: 'common', label: '🎰 공통', types: ['ALL'] },
 ];
 
 /** 판정이 도는 최소 베팅액. 과제마다 따로 정할 수 있고, 안 정하면 이 값이다. */
