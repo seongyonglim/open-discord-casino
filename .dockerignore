@@ -29,6 +29,9 @@ scripts/
 # (flyctl ssh console 로 들어가 DB_PATH=/data 로 돌린다)
 !scripts/grant-points.ts
 !scripts/backfill-stats.ts
+# 공지 글은 DB 에 있으므로 배포만으로는 안 올라간다. 같은 글을 로컬과 운영에 똑같이
+# 넣으려면 이 스크립트가 머신 안에 있어야 한다 — 손으로 옮겨 적으면 두 곳이 달라진다.
+!scripts/seed-notices-2026-08.ts
 
 *.log
 *.tmp.*

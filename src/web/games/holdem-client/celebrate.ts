@@ -24,11 +24,9 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
        실측으로 팝업 t=119.7초, WIN 배지 t=123.8초, 칩 이동 t=126.3초였다.
        그래서 판 자체를 본다: 상금이 걸린 판이면 아직 시작 전이어도 기다린다. */
     var WIN_POPUP_AFTER_MS = 500;
-    /* 우승 팝업이 저절로 닫히기까지. 결과를 읽을 시간은 주되 붙들어 두지는 않는다 —
-       팝업은 등수와 상금만 담고 있어서 2.8초면 충분히 읽힌다. 더 보고 싶으면 로비의
-       결과표에 같은 내용이 그대로 남아 있다. */
-    var WIN_AUTO_CLOSE_MS = 2800;
-    var winAutoTimer = null;
+    /* 팝업은 저절로 닫지 않는다. 잠깐 자리를 비운 사이에 결과가 사라지면 무슨 일이
+       있었는지 알 방법이 없다 — 읽는 속도는 사람마다 다르고, 그걸 초로 정할 이유가 없다.
+       [확인]을 누를 때만 닫힌다. */
     function settleDone(tb){
       /* potDoneAt은 반드시 이 판의 것이어야 한다. 판 번호를 같이 안 보면 직전 판에서
          남은 값(이미 지난 시각)이 "이 판도 끝났다"로 읽힌다 — 실제로 그래서 마지막
@@ -74,18 +72,21 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       if (window.casinoSfx && window.casinoSfx.victory) window.casinoSfx.victory();
       // 우승 기록이 하나 늘었다 — 역대 전적을 다시 받아 온다
       if (recAsked) loadRecords(true);
-      /* 가만히 둬도 곧 로비로 넘어간다. 예전에는 [확인]을 눌러야 팝업이 사라졌고, 눌러도
-         서버가 30초 동안 테이블을 계속 주는 탓에 화면은 테이블에 멈춰 있었다 —
-         대회가 끝났는데 아무 데도 못 가는 상태였다. */
-      clearTimeout(winAutoTimer);
-      winAutoTimer = setTimeout(function(){ closeWin(t); }, WIN_AUTO_CLOSE_MS);
     }
-    /* 팝업을 닫고 로비로 나간다. 버튼을 눌렀을 때와 저절로 닫힐 때가 같은 길을 지나야
-       한다 — 두 벌로 두면 한쪽만 고치게 된다. */
+    /* 팝업을 닫고 곧바로 로비로 나간다.
+       서버는 끝난 뒤에도 잠시 테이블을 계속 내려보내는데(마지막 쇼다운을 보여주려는
+       창이다), 그동안 화면이 테이블에 붙들려 있으면 팝업만 사라지고 갈 데가 없다.
+       그래서 이 대회의 테이블은 더 그리지 않겠다고 표시해 둔다.
+
+       표시는 sessionStorage 에도 남긴다. 탭을 새로 고치거나 다른 화면을 들렀다 와도
+       이미 끝난 판의 테이블로 되돌아가지 않아야 한다 — 메모리에만 두면 새로고침 한 번에
+       풀린다. 열쇠는 축하 팝업이 쓰는 것과 같다(대회 id + 끝난 시각). */
     function closeWin(t){
-      clearTimeout(winAutoTimer);
       winEl.hidden = true;
-      if (t) leftTableTid = t.id;
+      if (t) {
+        leftTableTid = t.id;
+        try { sessionStorage.setItem('od_ht_left_' + t.id, '1'); } catch (e) { /* 없어도 동작한다 */ }
+      }
       render();      // 테이블을 접고 로비를 그린다
       poll();        // 결과·역대 전적을 최신으로 한 번 당겨온다
     }

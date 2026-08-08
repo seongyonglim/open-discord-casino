@@ -21,7 +21,7 @@ export const LOOP = `    function render(){
       if (st.table != null && st.table.mySeat == null && st.tournament && st.tournament.iRegistered) spectate = true;
       /* 우승 팝업을 닫았으면 그 대회의 테이블은 더 보여주지 않는다. 안 그러면 서버가
          30초 동안 테이블을 계속 주는 탓에 팝업만 사라지고 화면은 그대로 멈춰 있다. */
-      var left = st.tournament != null && leftTableTid === st.tournament.id;
+      var left = st.tournament != null && (leftTableTid === st.tournament.id || leftStored(st.tournament));
       var showTable = !left && st.table != null && (st.table.mySeat != null || spectate);
       lobbyEl.hidden = showTable;
       lobbyRecEl.hidden = showTable || recEmpty;
