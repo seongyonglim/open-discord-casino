@@ -69,6 +69,37 @@ export function unreadCount(userId: string): number {
     userId, userId, since)!.n;
 }
 
+/* 팝업으로 띄울 창. 이보다 오래된 공지는 종에만 남는다.
+   하루로 잡는 이유: 공지는 올라온 그날 알아야 의미가 있는 정보다. 사흘 뒤에 들어온
+   사람에게 튀어나오면 그건 새 소식이 아니라 방해가 된다. */
+export const POPUP_WINDOW_SEC = 24 * 60 * 60;
+
+/**
+ * 접속하자마자 팝업으로 띄울 것들.
+ *
+ * 공지만 대상이다. 도전과제 달성은 그 순간에 이미 띄웠고, 포인트 지급은 받은 사실이
+ * 잔액에 남아 있어 놓쳐도 사라지지 않는다. 공지는 안 보면 그냥 지나간다.
+ *
+ * "안 읽음"이 조건이다 — 종을 열어 본 사람에게 다시 튀어나오면 안 읽은 것을 알리는
+ * 장치가 아니라 그냥 반복 재생이 된다.
+ */
+export function popupNotifications(userId: string, now = Math.floor(Date.now() / 1000)): NotiView[] {
+  const since = Math.max(joinedAt(userId), now - POPUP_WINDOW_SEC);
+  return all<NotiRow>(
+    `SELECT n.* FROM notifications n
+       LEFT JOIN notification_reads r
+         ON r.notification_id = n.id AND r.user_id = ?
+      WHERE n.type = 'ANNOUNCEMENT'
+        AND n.created_at >= ?
+        AND ((n.user_id = ? AND n.is_read = 0)
+          OR (n.user_id IS NULL AND r.read_at IS NULL))
+      ORDER BY n.created_at ASC, n.id ASC`, userId, since, userId)
+    .map(n => ({
+      id: n.id, type: n.type, title: n.title, message: n.message, link: n.link,
+      read: false, createdAt: n.created_at,
+    }));
+}
+
 /** 전부 읽음으로. 개인 알림은 줄을 고치고, 전체 알림은 읽은 기록을 남긴다. */
 export function markAllRead(userId: string): void {
   const since = joinedAt(userId);

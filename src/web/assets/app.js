@@ -734,7 +734,14 @@
     if (!btnEl()) return Promise.resolve();   // 로그인 안 한 화면에는 종이 없다
     return fetch('/api/notifications')
       .then(function(r){ return r.json(); })
-      .then(function(d){ if (d && d.ok) { loaded = true; paint(d); } })
+      .then(function(d){
+        if (!d || !d.ok) return;
+        loaded = true;
+        paint(d);
+        /* 하루 안에 올라온, 아직 안 읽은 공지는 접속하자마자 띄운다 —
+           종에만 넣어 두면 배지를 안 누른 사람에게는 없는 것과 같다. */
+        if (window.__casinoPopups) window.__casinoPopups(d.popup);
+      })
       .catch(function(){ /* 실패해도 화면은 그대로 둔다 */ });
   }
   /* 배지만 먼저 채운다 — 목록은 열 때 받는다.
@@ -832,24 +839,64 @@
     document.body.appendChild(stack);
     return stack;
   }
+  /* 종류마다 모양이 다르다. 달성은 금색 트로피에 소리가 나고, 공지는 조용히 뜬다 —
+     같은 소리를 내면 "뭔가 해냈다"와 "읽을 것이 있다"가 구분되지 않는다. */
+  var TOAST_KIND = {
+    ACHIEVEMENT: { cls: 'ach', ic: '🏆', head: '도전과제 달성!', sfx: true },
+    ANNOUNCEMENT: { cls: 'noti', ic: '📢', head: '새 공지사항', sfx: false },
+    POINT_GIFT: { cls: 'noti', ic: '🎁', head: '포인트', sfx: false },
+    SYSTEM: { cls: 'noti', ic: '⚙️', head: '알림', sfx: false }
+  };
+  function toast(o){
+    o = o || {};
+    var k = TOAST_KIND[o.type] || TOAST_KIND.ACHIEVEMENT;
+    var s = ensureStack();
+    /* 누를 곳이 있으면 링크로 만든다 — 공지 팝업은 "가서 읽어라"가 요점이라
+       띄워 놓고 갈 방법이 없으면 종을 다시 열어 찾아야 한다. */
+    var d = document.createElement(o.link ? 'a' : 'div');
+    d.className = 'toast ' + k.cls;
+    if (o.link) d.setAttribute('href', o.link);
+    d.innerHTML = '<span class="toast-ic">' + k.ic + '</span>'
+      + '<span class="toast-mid"><span class="toast-t">' + esc(o.title || k.head) + '</span>'
+      + '<span class="toast-m">' + esc(o.message || '') + '</span></span>';
+    s.appendChild(d);
+    // 다음 프레임에 클래스를 붙여야 들어오는 동작이 보인다 (붙인 채로 넣으면 이미 제자리다)
+    requestAnimationFrame(function(){ d.classList.add('in'); });
+    if (k.sfx && window.casinoSfx && window.casinoSfx.achievement) window.casinoSfx.achievement();
+    setTimeout(function(){
+      d.classList.remove('in');
+      setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 400);
+    }, o.link ? 8000 : 5000);   // 누를 것이 있으면 조금 더 세워 둔다
+  }
+
+  /* 공지 팝업은 이 브라우저에서 한 번만 뜬다.
+     서버에 "띄웠다"를 적지 않는 이유: 그러려면 읽음으로 표시해야 하는데, 그러면 배지가
+     같이 사라져서 아직 안 읽은 공지가 안 읽은 것으로 안 보이게 된다. 팝업을 봤다는 것과
+     내용을 읽었다는 것은 다르다. 그래서 표시는 이 브라우저에만 남긴다 —
+     기기가 둘이면 양쪽에서 한 번씩 뜨는데, 그건 오히려 맞는 동작이다. */
+  function popped(id){
+    try { return localStorage.getItem('od_noti_pop_' + id) === '1'; } catch (e) { return false; }
+  }
+  function markPopped(id){
+    try { localStorage.setItem('od_noti_pop_' + id, '1'); } catch (e) { }
+  }
+  function showPopups(list){
+    if (!list || !list.length) return;
+    var n = 0;
+    list.forEach(function(item){
+      if (popped(item.id)) return;
+      markPopped(item.id);
+      // 여럿이면 겹치지 않게 조금씩 늦춘다
+      setTimeout(function(){
+        toast({ type: item.type, title: item.title, message: item.message, link: item.link });
+      }, n * 700);
+      n++;
+    });
+  }
+
   window.casinoNotify = {
     refresh: load,
-    toast: function(o){
-      var s = ensureStack();
-      var d = document.createElement('div');
-      d.className = 'toast ach';
-      d.innerHTML = '<span class="toast-ic">🏆</span>'
-        + '<span class="toast-mid"><span class="toast-t">' + esc((o && o.title) || '도전과제 달성!') + '</span>'
-        + '<span class="toast-m">' + esc((o && o.message) || '') + '</span></span>';
-      s.appendChild(d);
-      // 다음 프레임에 클래스를 붙여야 들어오는 동작이 보인다 (붙인 채로 넣으면 이미 제자리다)
-      requestAnimationFrame(function(){ d.classList.add('in'); });
-      if (window.casinoSfx && window.casinoSfx.achievement) window.casinoSfx.achievement();
-      setTimeout(function(){
-        d.classList.remove('in');
-        setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 400);
-      }, 5000);
-      load();
-    }
+    toast: function(o){ toast(o); load(); }
   };
+  window.__casinoPopups = showPopups;   // load() 가 응답을 받으면 넘겨준다
 })();

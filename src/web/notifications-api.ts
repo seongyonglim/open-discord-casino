@@ -2,13 +2,20 @@
    목록·개수는 한 번에 준다(종을 열면 둘 다 필요하다), 읽음은 두 갈래로 나눈다. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { sendJson, readJson } from './http';
-import { listNotifications, unreadCount, markAllRead, markRead } from '../db/notifications';
+import {
+  listNotifications, unreadCount, markAllRead, markRead, popupNotifications,
+} from '../db/notifications';
 
 export async function handleNotifications(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
   return sendJson(res, 200, {
-    ok: true, unread: unreadCount(userId), items: listNotifications(userId),
+    ok: true,
+    unread: unreadCount(userId),
+    items: listNotifications(userId),
+    /* 접속하자마자 띄울 것. 화면이 다시 물어보지 않아도 되게 목록과 함께 준다 —
+       종은 어차피 페이지를 열 때마다 한 번 받아 간다. */
+    popup: popupNotifications(userId),
   });
 }
 

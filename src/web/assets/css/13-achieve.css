@@ -160,6 +160,14 @@ a.bel-row:hover { background: rgba(255,255,255,.04); }
   transform: translateX(calc(100% + 20px)); opacity: 0;
   transition: transform .42s cubic-bezier(.22,1,.36,1), opacity .42s; }
 .toast.in { transform: translateX(0); opacity: 1; }
+a.toast { text-decoration: none; pointer-events: auto; cursor: pointer; }
+a.toast:hover { border-color: rgba(212,175,55,.8); }
+/* 공지·지급은 조용한 톤. 금색 트로피와 같은 모양이면 "뭔가 해냈다"와
+   "읽을 것이 있다"가 구분되지 않는다. */
+.toast.noti { background: linear-gradient(135deg, #1b1e26, #131519);
+  border-color: rgba(255,255,255,.16); box-shadow: 0 14px 38px rgba(0,0,0,.55); }
+.toast.noti .toast-t { color: #9fb6d8; }
+.toast.noti .toast-m { color: #e2e2ea; font-weight: 600; }
 /* 여기도 칸을 전부 명시한다 — 한 항목만 위치를 정하면 나머지가 밀린다(알림 줄에서 겪었다) */
 .toast-ic { grid-column: 1; grid-row: 1; font-size: 24px; line-height: 1; }
 .toast-mid { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 2px;

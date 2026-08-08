@@ -212,6 +212,58 @@ function main(): void {
     ck('가입 후 것은 보인다', N.listNotifications('late').length === 1);
   }
 
+  /* ── 7-1. 공지 팝업 ─────────────────────────────────────────── */
+  section('[7-1] 알림 — 하루 안의 안 읽은 공지만 팝업');
+  {
+    wipe();
+    mkUser('p1');
+    N.notifyAll('ANNOUNCEMENT', '새 공지사항', '오늘 것');
+    ck('오늘 공지는 팝업 대상', N.popupNotifications('p1').length === 1,
+      String(N.popupNotifications('p1').length));
+
+    /* 사흘 뒤에 들어온 사람에게 튀어나오면 그건 새 소식이 아니라 방해다.
+       유저의 가입 시각도 같이 민다 — 공지만 밀면 "가입 전 공지"가 되어 목록에서도
+       빠지고, 그러면 팝업이 아니라 가입 규칙을 검사하게 된다. */
+    db.prepare(`UPDATE notifications SET created_at = created_at - ?`).run(N.POPUP_WINDOW_SEC + 60);
+    db.prepare(`UPDATE users SET created_at = created_at - ? WHERE id = 'p1'`)
+      .run(N.POPUP_WINDOW_SEC + 120);
+    ck('하루가 지난 공지는 팝업하지 않는다', N.popupNotifications('p1').length === 0);
+    ck('그래도 종에는 남는다', N.listNotifications('p1').length === 1);
+
+    /* 종을 열어 본 사람에게 다시 튀어나오면 안 읽은 것을 알리는 장치가 아니라
+       그냥 반복 재생이 된다 */
+    wipe();
+    N.notifyAll('ANNOUNCEMENT', '새 공지사항', '읽을 것');
+    ck('안 읽었으면 팝업', N.popupNotifications('p1').length === 1);
+    N.markAllRead('p1');
+    ck('읽으면 팝업하지 않는다', N.popupNotifications('p1').length === 0);
+
+    /* 공지만 튀어나온다. 달성은 그 순간에 이미 띄웠고, 포인트는 받은 사실이 잔액에
+       남아 있어 놓쳐도 사라지지 않는다 — 공지는 안 보면 그냥 지나간다. */
+    wipe();
+    A.upsertAchievement({ id: 'pop-a', gameType: 'ALL', title: '과제', description: '' });
+    A.unlockAchievement('p1', 'pop-a');
+    N.notifyUser('p1', 'POINT_GIFT', '포인트', '+100P');
+    N.notifyUser('p1', 'SYSTEM', '시스템', '점검');
+    ck('달성·지급·시스템은 팝업 대상이 아니다', N.popupNotifications('p1').length === 0,
+      JSON.stringify(N.popupNotifications('p1').map(x => x.type)));
+    ck('그것들도 종에는 남는다', N.listNotifications('p1').length === 3,
+      String(N.listNotifications('p1').length));
+
+    // 개인 공지도 같은 규칙을 따른다
+    wipe();
+    N.notifyUser('p1', 'ANNOUNCEMENT', '개인 공지', '내용');
+    ck('개인 공지도 팝업 대상', N.popupNotifications('p1').length === 1);
+    ck('남에게는 팝업하지 않는다', (mkUser('p2'), N.popupNotifications('p2').length === 0));
+
+    // 가입 전 공지는 팝업도 목록도 없다
+    wipe();
+    N.notifyAll('ANNOUNCEMENT', '옛 공지', '내용');
+    db.prepare(`UPDATE notifications SET created_at = created_at - 600`).run();
+    mkUser('p3');
+    ck('가입 전 공지는 팝업하지 않는다', N.popupNotifications('p3').length === 0);
+  }
+
   /* ── 8. 세 갈래 연동 ────────────────────────────────────────── */
   section('[8] 연동 — 공지 · 포인트 지급 · 달성');
   {
