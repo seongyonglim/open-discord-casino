@@ -166,7 +166,7 @@ export function adminPage(user: WebUser): string {
      전부 로드 시점에 getElementById 로 묶이기 때문에, 안 보이는 화면을 아예 안 그리면
      그 묶기가 통째로 끊긴다 — 지금 잘 도는 것을 건드리지 않는 길이 이쪽이다. */
   const MENU: { key: string; label: string; sub: string }[] = [
-    { key: 'tour', label: '대회 관리', sub: '개설 · 개최 방식 · 기록' },
+    { key: 'tour', label: '대회 관리', sub: '개설 · 자동 개최 · 기록' },
     { key: 'season', label: '시즌 / 랭킹', sub: '시즌 설정 · 마감' },
     { key: 'user', label: '유저 / 재화', sub: '조회 · 지급 · 원장' },
     { key: 'sys', label: '공지 / 시스템', sub: '공지 · 운영 토큰' },
@@ -211,8 +211,8 @@ export function adminPage(user: WebUser): string {
       <p class="ad-note">${rec.enabled
         ? `<b>반복 개최가 켜져 있습니다</b> — ${recText}. 그 밖의 판을 여기서 직접 엽니다.`
         : `<b>대회는 저절로 열리지 않습니다.</b> 여기서 직접 여셔야 합니다 —
-           열지 않으면 그날은 대회가 없습니다. 정기적으로 열려면 아래 [개최 방식]에서 반복을 켜세요.`}
-        칩·블라인드·대기·레이트 레지는 <b>[기본 룰 템플릿]</b>의 값을 그대로 씁니다.</p>
+           열지 않으면 그날은 대회가 없습니다. 정기적으로 열려면 아래 [자동 개최 설정]에서 반복을 켜세요.`}
+        여기서 여는 판은 <b>아래 적힌 값 그대로</b> 열립니다 — 나중에 템플릿을 고쳐도 흔들리지 않습니다.</p>
       ${canMake
         ? `<div class="ad-sub2">지금 열 수 있는가 <span>${nextStart == null
             ? '예정된 대회가 없습니다 — 지금 열 수 있습니다'
@@ -244,6 +244,21 @@ export function adminPage(user: WebUser): string {
         <label>참가비<span class="ad-inx"><input type="number" id="ncBuyIn" min="0" step="100" value="${cfg.buyIn}" ${canMake ? '' : 'disabled'}><b>P</b></span><i>걷은 돈이 그대로 상금 · 취소되면 전액 환불</i></label>
         <label>보장 상금 (GTD)<span class="ad-inx"><input type="number" id="ncGtd" min="0" step="1000" value="${cfg.prizeFixed}" ${canMake ? '' : 'disabled'}><b>P</b></span><i>걷은 돈이 이보다 적으면 모자란 만큼 채웁니다</i></label>
       </div>
+      <!-- 판의 모양. 예전에는 이 네 값이 템플릿에만 있어서, 오늘 한 판만 짧게 돌리려 해도
+           템플릿을 고쳤다가 되돌려야 했다 — 그 사이에 자동 개최가 걸리면 엉뚱한 판이 열린다. -->
+      <div class="ad-sub2">이 대회의 룰 <span>템플릿과 무관하게 이 판에만 적용됩니다</span></div>
+      <div class="ad-grid">
+        <label>시작 칩<span class="ad-inx"><input type="number" id="ncStack" min="1" step="500" value="${cfg.startingStack}" ${canMake ? '' : 'disabled'}><b>칩</b></span><i></i></label>
+        <label>블라인드 주기<span class="ad-inx"><input type="number" id="ncLevel" min="1" value="${cfg.levelMin}" ${canMake ? '' : 'disabled'}><b>분</b></span><i>마지막 레벨(16)까지 <span id="ncLevelTotal">${cfg.levelMin * 15}</span>분</i></label>
+        <label>레이트 레지<span class="ad-inx"><input type="number" id="ncLateReg" min="1" value="${cfg.lateRegMin}" ${canMake ? '' : 'disabled'}><b>분</b></span><i>실제 시작 이후</i></label>
+        <label>최소 인원 대기<span class="ad-inx"><input type="number" id="ncGrace" min="1" value="${cfg.graceMin}" ${canMake ? '' : 'disabled'}><b>분</b></span><i>시작 시각 이후 · 3명 미달이면 취소</i></label>
+      </div>
+      <div class="ad-row">
+        <button type="button" id="ncLoadTpl" ${canMake ? '' : 'disabled'}>자동 개최 템플릿 값 불러오기</button>
+        <span class="ad-note">칩 ${num(cfg.startingStack)} · 블라인드 ${cfg.levelMin}분 ·
+          레이트 ${cfg.lateRegMin}분 · 대기 ${cfg.graceMin}분 ·
+          ${cfg.buyIn > 0 ? `참가비 ${num(cfg.buyIn)}P` : `배수 ${num(cfg.weekdayMultiplier)}×명`}</span>
+      </div>
       <div class="ad-row">
         <button type="button" id="ncMake" class="primary" ${canMake ? '' : 'disabled'}>대회 열기</button>
         <button type="button" id="adTest" ${canMake ? '' : 'disabled'}>테스트 대회 (지금 · 상금 없음)</button>
@@ -269,9 +284,10 @@ export function adminPage(user: WebUser): string {
     </section>
 
     <section class="ad-card" data-pane="tour">
-      <h2>개최 방식</h2>
-      <p class="ad-note">반복을 켜면 시작 <b>12시간 전</b>에 다음 판이 자동으로 만들어집니다.
-        시각·칩·상금은 아래 [대회 설정]의 값을 그대로 씁니다 — 여기서는 <b>어느 날 여는지</b>만 정합니다.
+      <h2>자동 개최 설정</h2>
+      <p class="ad-note">자동 개최 스케줄과, 그 주기마다 적용될 전용 룰을 설정합니다 —
+        <b>여기서는 어느 날 여는지</b>만 정하고, 시각·칩·상금은 아래 [자동 개최 전용 템플릿]이 정합니다.
+        켜 두면 시작 <b>12시간 전</b>에 다음 판이 자동으로 만들어집니다.
         이미 돌고 있는 판이 있으면 만들지 않고 끝난 뒤에 따라잡습니다.
         <b>지운 판은 되살아나지 않습니다</b> — 만든 차례를 따로 적어 두기 때문입니다.</p>
       <div class="ad-grid">
@@ -292,7 +308,7 @@ export function adminPage(user: WebUser): string {
         <label>날짜 (매월)<span class="ad-inx"><input type="number" id="rcDay" min="1" max="31" value="${rec.day}"><b>일</b></span><i>그 달에 없는 날이면 건너뜁니다</i></label>
       </div>
       <div class="ad-row">
-        <button type="button" id="rcSave" class="primary">개최 방식 저장</button>
+        <button type="button" id="rcSave" class="primary">자동 개최 설정 저장</button>
         <span class="ad-note">${rec.enabled && nextRecur
           ? `다음 자동 개최 — ${kst(nextRecur.startAt)} 시작 (등록 ${kst(nextRecur.regOpenAt)})`
           : '지금은 자동으로 열리지 않습니다'}</span>
@@ -300,9 +316,10 @@ export function adminPage(user: WebUser): string {
     </section>
 
     <section class="ad-card" data-pane="tour">
-      <h2>기본 룰 템플릿</h2>
-      <p class="ad-note">대회를 열 때마다 다시 입력하지 않도록 <b>기본값을 여기 한 번만</b> 정해 둡니다.
-        위 [새 대회 열기]와 [개최 방식]이 이 값을 그대로 불러 씁니다.
+      <h2>자동 개최 전용 템플릿</h2>
+      <p class="ad-note"><b>[자동 개최 설정]이 여는 판에만</b> 적용됩니다. 손으로 여는 판은
+        [새 대회 열기]에 적은 값 그대로 열리므로 여기를 고쳐도 흔들리지 않습니다 —
+        그쪽에서 <b>[자동 개최 템플릿 값 불러오기]</b>를 누르면 이 값이 폼에 채워집니다.
         바꾼 값은 <b>다음에 만들어질 대회부터</b> 적용됩니다 — 진행 중인 대회는 만들어질 때의 값을
         자기 행에 갖고 있어서 흔들리지 않습니다(블라인드가 갑자기 뛰거나 늦게 온 사람만 다른
         스택을 받는 일이 없습니다). 순위별 분배(ITM 비율)는 검증된 산식이라 고정입니다.</p>
@@ -543,6 +560,38 @@ export function adminPage(user: WebUser): string {
     ncKind.addEventListener('change', ncSyncRows);
     ncSyncRows();
 
+    /* 자동 개최 전용 템플릿의 지금 값. 서버가 그린 페이지에 박아 둔다 —
+       [불러오기]를 누를 때마다 요청을 보내면, 템플릿을 저장한 뒤 이 페이지를
+       새로고침하지 않은 상태에서 눌렀을 때 화면과 다른 값이 들어온다. */
+    var NC_TPL = ${JSON.stringify({
+      startingStack: cfg.startingStack, levelMin: cfg.levelMin,
+      lateRegMin: cfg.lateRegMin, graceMin: cfg.graceMin,
+      kind: cfg.buyIn > 0 ? 'buyin' : 'free',
+      mult: cfg.weekdayMultiplier, buyIn: cfg.buyIn, gtd: cfg.prizeFixed,
+    })};
+    function ncLevelHint(){
+      var v = Math.floor(Number(document.getElementById('ncLevel').value));
+      var el = document.getElementById('ncLevelTotal');
+      if (el) el.textContent = isFinite(v) && v > 0 ? String(v * 15) : '—';
+    }
+    document.getElementById('ncLevel').addEventListener('input', ncLevelHint);
+    var ncLoadTpl = document.getElementById('ncLoadTpl');
+    if (ncLoadTpl) ncLoadTpl.addEventListener('click', function(){
+      var set = function(id, v){ document.getElementById(id).value = String(v); };
+      set('ncStack', NC_TPL.startingStack);
+      set('ncLevel', NC_TPL.levelMin);
+      set('ncLateReg', NC_TPL.lateRegMin);
+      set('ncGrace', NC_TPL.graceMin);
+      /* 상금 쪽도 같이 채운다. 룰만 채우고 참가 방식은 그대로 두면 "템플릿을 불러왔다"고
+         읽은 운영자가 프리롤 템플릿으로 바이인 판을 여는 일이 생긴다. */
+      ncKind.value = NC_TPL.kind;
+      set('ncMult', NC_TPL.mult);
+      set('ncBuyIn', NC_TPL.buyIn);
+      set('ncGtd', NC_TPL.gtd);
+      ncSyncRows();
+      ncLevelHint();
+    });
+
     var ncMake = document.getElementById('ncMake');
     if (ncMake) ncMake.addEventListener('click', function(){
       /* datetime-local 은 'YYYY-MM-DDTHH:MM' 을 준다. 브라우저의 시간대로 해석되므로
@@ -562,6 +611,12 @@ export function adminPage(user: WebUser): string {
         buyIn: buyin ? Math.floor(Number(document.getElementById('ncBuyIn').value)) : 0,
         prizeMultiplier: buyin ? 0 : Math.floor(Number(document.getElementById('ncMult').value)),
         prizeFixed: buyin ? Math.floor(Number(document.getElementById('ncGtd').value)) : 0,
+        /* 판의 모양은 늘 보낸다. 안 보내면 서버가 템플릿 값을 쓰는데, 그러면 화면에
+           적힌 것과 실제로 열리는 판이 달라진다. */
+        startingStack: Math.floor(Number(document.getElementById('ncStack').value)),
+        levelMin: Math.floor(Number(document.getElementById('ncLevel').value)),
+        lateRegMin: Math.floor(Number(document.getElementById('ncLateReg').value)),
+        graceMin: Math.floor(Number(document.getElementById('ncGrace').value)),
       };
       if (!isFinite(body.regOpenAt) || !isFinite(body.startAt)) { alert('시각을 넣어 주세요.'); return; }
       if (body.regOpenAt > body.startAt) {
@@ -572,6 +627,12 @@ export function adminPage(user: WebUser): string {
       if (!isFinite(body.prizeFixed) || body.prizeFixed < 0) { alert('보장 상금을 확인해 주세요.'); return; }
       if (buyin && body.buyIn === 0) {
         alert('바이인을 골랐으면 참가비를 1P 이상 넣어 주세요. 참가비가 없으면 프리롤입니다.'); return;
+      }
+      var rules = [['startingStack', '시작 칩'], ['levelMin', '블라인드 주기'],
+        ['lateRegMin', '레이트 레지 시간'], ['graceMin', '최소 인원 대기 시간']];
+      for (var ri = 0; ri < rules.length; ri++) {
+        var rv = body[rules[ri][0]];
+        if (!isFinite(rv) || rv < 1) { alert(rules[ri][1] + '을(를) 1 이상으로 넣어 주세요.'); return; }
       }
       var fmt = function(sec){
         var d = new Date(sec * 1000);
@@ -585,7 +646,11 @@ export function adminPage(user: WebUser): string {
         : body.prizeMultiplier === 0 ? ' 상금 배수 0이라 포인트는 나가지 않습니다.' : '';
       confirmThen('대회를 열까요?',
         (body.title || (buyin ? '홀덤 토너먼트' : '홀덤 프리롤')) + ' — 등록 ' + fmt(body.regOpenAt)
-        + ' · 시작 ' + fmt(body.startAt) + '.' + money,
+        + ' · 시작 ' + fmt(body.startAt) + '.' + money
+        /* 룰을 함께 읽힌다. 이제 이 판에만 적용되는 값이라, 확인 창이 마지막으로
+           눈에 들어오는 자리다 — 템플릿과 다르게 열어 놓고 모르는 일이 없어야 한다. */
+        + ' 칩 ' + num(body.startingStack) + ' · 블라인드 ' + body.levelMin + '분'
+        + ' · 레이트 ' + body.lateRegMin + '분 · 대기 ' + body.graceMin + '분.',
         function(){ post('/api/admin/tournament/create', body)
           .then(function(r){ if (shout(r)) location.reload(); }); });
     });
@@ -789,7 +854,7 @@ export function adminPage(user: WebUser): string {
         '다음에 만들어질 대회부터 적용됩니다. 진행 중인 대회는 바뀌지 않습니다.',
         function(){ post('/api/admin/config', c).then(function(r){ if (shout(r)) location.reload(); }); });
     });
-    /* 개최 방식. 켰는데 주기가 '수동'이면 아무 일도 안 일어난다 — 서버도 막지만
+    /* 자동 개최 설정. 켰는데 주기가 '수동'이면 아무 일도 안 일어난다 — 서버도 막지만
        그 조합을 저장해 두고 기다리게 두면 운영자는 켰다고 믿는다. 여기서 먼저 말한다. */
     document.getElementById('rcSave').addEventListener('click', function(){
       var rcSel = document.getElementById('rcWeekday');
@@ -807,8 +872,8 @@ export function adminPage(user: WebUser): string {
         : body.mode === 'weekly' ? '매주 ' + rcSel.options[rcSel.selectedIndex].text + '에 자동으로 열립니다.'
         : body.mode === 'monthly' ? '매월 ' + body.day + '일에 자동으로 열립니다.'
         : '매일 자동으로 열립니다.';
-      confirmThen('개최 방식을 저장할까요?',
-        what + ' 시각과 칩·상금은 [대회 설정]의 값을 씁니다. 이미 만들어진 대회는 바뀌지 않습니다.',
+      confirmThen('자동 개최 설정을 저장할까요?',
+        what + ' 시각과 칩·상금은 [자동 개최 전용 템플릿]의 값을 씁니다. 이미 만들어진 대회는 바뀌지 않습니다.',
         function(){ post('/api/admin/recurrence', body).then(function(r){ if (shout(r)) location.reload(); }); });
     });
     document.getElementById('cfReset').addEventListener('click', function(){
@@ -1109,6 +1174,22 @@ function clampMoney(v: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * 판의 모양(칩·블라인드·레이트 레지·대기)을 요청에서 골라낸다.
+ *
+ * 안 보낸 값은 키 자체를 빼서 넘긴다 — undefined 를 넣어 보내면 createTournament 의
+ * `?? 템플릿값` 이 그대로 먹지만, "안 보냈다"와 "0을 보냈다"를 여기서 갈라 두지 않으면
+ * 0 이 조용히 템플릿 값으로 바뀐다. 0 은 잘못된 입력이고 거절돼야 하는 값이다.
+ */
+function ruleFields(b: Record<string, unknown> | null):
+  { startingStack?: number; levelMin?: number; lateRegMin?: number; graceMin?: number } {
+  const out: Record<string, number> = {};
+  for (const k of ['startingStack', 'levelMin', 'lateRegMin', 'graceMin'] as const) {
+    if (b?.[k] != null) out[k] = Math.floor(Number(b[k]));
+  }
+  return out;
+}
+
 export async function handleAdminTournamentCreate(
   req: IncomingMessage, res: ServerResponse
 ): Promise<void> {
@@ -1122,6 +1203,9 @@ export async function handleAdminTournamentCreate(
        그대로 원장에 남으므로 여기서 정수 0 이상으로 못 박는다. */
     buyIn: clampMoney(b?.buyIn),
     prizeFixed: clampMoney(b?.prizeFixed),
+    /* 판의 모양은 안 보내면 템플릿을 쓴다(반복 개최가 그 길이다). 화면은 늘 채워 보내므로
+       손으로 여는 판은 화면에 적힌 그대로 열린다 — 템플릿을 나중에 고쳐도 안 흔들린다. */
+    ...ruleFields(b),
   });
   if (!r.ok) return sendJson(res, 400, { error: createErrorText(r) });
   return sendJson(res, 200, { ok: true, id: r.id });
@@ -1131,9 +1215,11 @@ export async function handleAdminTournamentCreate(
    하는지 알 수 없다 — 곧 시작할 판 때문이라면 그 시각을 알려 주는 것이 답이다. */
 function createErrorText(
   r: { error: 'live_exists' } | { error: 'too_close'; startsAt: number } | { error: 'bad_time' }
+    | { error: 'bad_rules'; detail: string }
 ): string {
   if (r.error === 'live_exists') return '지금 돌고 있는 대회가 있습니다 — 끝난 뒤에 만들 수 있습니다';
   if (r.error === 'bad_time') return '등록 시작이 대회 시작보다 늦습니다 — 아무도 신청할 수 없는 대회가 됩니다';
+  if (r.error === 'bad_rules') return r.detail;
   const at = new Date((r.startsAt + 9 * 3600) * 1000).toISOString().slice(11, 16);
   return `곧 시작할 대회가 있습니다 (${at} 시작) — 한 판이 두 시간까지 갈 수 있어서,`
     + ' 다음 대회 시작까지 두 시간 이상 남았을 때만 새로 만들 수 있습니다';

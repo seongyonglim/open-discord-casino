@@ -175,10 +175,17 @@ export function createTournament(o: {
   buyIn?: number;
   /** 보장 상금(GTD). 참가비 대회에서 걷은 돈이 이에 못 미치면 모자란 만큼 얹는다 */
   prizeFixed?: number;
+  /* 판의 모양. 안 주면 자동 개최 전용 템플릿의 값을 쓴다 — 반복 개최가 그 길로 들어온다.
+     운영자가 손으로 여는 판은 화면에서 네 값을 늘 채워 보내므로 템플릿을 타지 않는다.
+     그래서 템플릿을 고쳐도 지금 손으로 여는 판이 조용히 따라 바뀌는 일이 없다. */
+  startingStack?: number;
+  levelMin?: number;
+  lateRegMin?: number;
+  graceMin?: number;
 }):
   { ok: true; id: number }
   | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number }
-  | { ok: false; error: 'bad_time' } {
+  | { ok: false; error: 'bad_time' } | { ok: false; error: 'bad_rules'; detail: string } {
   return tx(() => {
     const running = one<{ id: number }>(
       `SELECT id FROM holdem_tournaments
@@ -207,8 +214,24 @@ export function createTournament(o: {
     if (!Number.isFinite(regOpenAt) || !Number.isFinite(startAt) || regOpenAt > startAt) {
       return { ok: false as const, error: 'bad_time' as const };
     }
+    /* 판의 모양은 대회 행에 박힌다 — 한 번 시작하면 그 판은 끝까지 이 값만 본다.
+       그래서 여기가 마지막 문이다. 0이나 소수가 지나가면 블라인드가 안 오르거나
+       (levelSec 0) 칩 없이 앉는 판이 만들어지고, 그건 사람이 앉은 뒤에야 드러난다. */
+    const rule = (v: number | undefined, fallback: number, label: string) => {
+      if (v == null) return { n: fallback };
+      const n = Math.floor(Number(v));
+      if (!Number.isFinite(n) || n < 1) return { n: 0, bad: `${label}은(는) 1 이상이어야 합니다` };
+      return { n };
+    };
+    const stack = rule(o.startingStack, cfg.startingStack, '시작 칩');
+    const level = rule(o.levelMin, cfg.levelMin, '블라인드 주기');
+    const late = rule(o.lateRegMin, cfg.lateRegMin, '레이트 레지 시간');
+    const grace = rule(o.graceMin, cfg.graceMin, '최소 인원 대기 시간');
+    const badRule = [stack, level, late, grace].find(x => x.bad);
+    if (badRule) return { ok: false as const, error: 'bad_rules' as const, detail: badRule.bad! };
+
     const mult = Math.max(0, Math.floor(o.prizeMultiplier ?? cfg.weekdayMultiplier));
-    /* 안 주면 템플릿([기본 룰 템플릿])의 값을 쓴다. 반복 개최가 이 길로 들어오므로,
+    /* 안 주면 템플릿([자동 개최 전용 템플릿])의 값을 쓴다. 반복 개최가 이 길로 들어오므로,
        템플릿을 바이인으로 바꿔 두면 자동으로 열리는 판도 바이인이 된다.
        테스트 대회는 0 을 명시해서 언제나 프리롤로 남는다 — 지울 수 있어야 하기 때문이다. */
     const buyIn = Math.max(0, Math.floor(o.buyIn ?? cfg.buyIn));
@@ -222,8 +245,8 @@ export function createTournament(o: {
             starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       T.kstDateStr(startAt * 1000), title,
-      regOpenAt, startAt, startAt + cfg.graceMin * 60, mult,
-      cfg.startingStack, cfg.levelMin * 60, cfg.lateRegMin * 60, fixed, buyIn);
+      regOpenAt, startAt, startAt + grace.n * 60, mult,
+      stack.n, level.n * 60, late.n * 60, fixed, buyIn);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
 }
