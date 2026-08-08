@@ -353,6 +353,76 @@ function main(): void {
         .filter(n => n.type === 'ACHIEVEMENT').length) === 1);
   }
 
+  /* ── 8-1. 대회 알림 ─────────────────────────────────────────── */
+  section('[8-1] 대회 — 등록 시작 · 우승');
+  {
+    const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
+    const AD = require('../src/db/admin') as typeof import('../src/db/admin');
+    const nowSec = (): number => Math.floor(Date.now() / 1000);
+    const clear = (): void => {
+      db.exec(`DELETE FROM holdem_hand_seats; DELETE FROM holdem_hands;
+               DELETE FROM holdem_seats; DELETE FROM holdem_tables;
+               DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
+    };
+    const tourNotis = (u: string, type: string): number =>
+      N.listNotifications(u, 100).filter(n => n.type === type).length;
+
+    wipe(); clear();
+    mkUser('t1');
+    /* 등록 창이 아직 안 열린 판. advanceHoldem 이 몇 번 돌아도 알림이 없어야 한다 —
+       "곧 열린다"를 미리 알리면 가 봐야 신청 버튼이 잠겨 있다. */
+    AD.createTournament({ title: '예약 판', regOpenAt: nowSec() + 3600, startAt: nowSec() + 7200 });
+    HD.advanceHoldem();
+    ck('등록 전에는 알리지 않는다', tourNotis('t1', 'TOURNAMENT_OPEN') === 0);
+
+    /* 창이 열린다. 이 게임에는 서버 타이머가 없어서 판정이 요청마다 도는데,
+       한 번 참이 되면 계속 참이라 표시가 없으면 요청마다 알림이 나간다. */
+    wipe(); clear();
+    AD.createTournament({ title: '열린 판', regOpenAt: nowSec() - 60, startAt: nowSec() + 3600 });
+    HD.advanceHoldem();
+    ck('등록이 열리면 알린다', tourNotis('t1', 'TOURNAMENT_OPEN') === 1,
+      String(tourNotis('t1', 'TOURNAMENT_OPEN')));
+    for (let i = 0; i < 5; i++) HD.advanceHoldem();
+    ck('여러 번 돌아도 한 번만 알린다', tourNotis('t1', 'TOURNAMENT_OPEN') === 1,
+      String(tourNotis('t1', 'TOURNAMENT_OPEN')));
+    ck('전체 알림이다 (줄 하나)', (db.prepare(
+      `SELECT COUNT(*) AS n FROM notifications WHERE type = 'TOURNAMENT_OPEN' AND user_id IS NULL`)
+      .get() as { n: number }).n === 1);
+    const open = N.listNotifications('t1', 100).find(n => n.type === 'TOURNAMENT_OPEN')!;
+    ck('시작 시각이 담긴다', /\d{2}:\d{2} 시작/.test(open.message), open.message);
+    ck('누르면 홀덤으로 간다', open.link === '/games/holdem', String(open.link));
+    /* 지금 가면 참가할 수 있다는 신호라 팝업으로 띄운다 */
+    ck('등록 시작은 팝업 대상',
+      N.popupNotifications('t1').some(n => n.type === 'TOURNAMENT_OPEN'));
+
+    /* 시작 시각이 지난 판에는 보내지 않는다. 서버가 몇 시간 죽어 있다가 깨어나면
+       이미 끝난 판의 등록 알림이 뒤늦게 나간다 — 가 봐야 없는 판이다. */
+    wipe(); clear();
+    AD.createTournament({ title: '지난 판', regOpenAt: nowSec() - 7200, startAt: nowSec() - 3600 });
+    HD.advanceHoldem();
+    ck('시작 시각이 지났으면 안 알린다', tourNotis('t1', 'TOURNAMENT_OPEN') === 0,
+      String(tourNotis('t1', 'TOURNAMENT_OPEN')));
+
+    /* 등록 시작 팝업은 두 시간만. 지나고 나서 "등록이 시작됐습니다"가 뜨면
+       가 봐야 이미 끝난 판이다. */
+    wipe(); clear();
+    N.notifyAll('TOURNAMENT_OPEN', '등록 시작', '테스트');
+    ck('방금 것은 팝업', N.popupNotifications('t1').length === 1);
+    db.prepare(`UPDATE notifications SET created_at = created_at - ?`)
+      .run(N.POPUP_WINDOW_TOURNAMENT_SEC + 60);
+    db.prepare(`UPDATE users SET created_at = created_at - ? WHERE id = 't1'`)
+      .run(N.POPUP_WINDOW_TOURNAMENT_SEC + 120);
+    ck('두 시간이 지나면 팝업하지 않는다', N.popupNotifications('t1').length === 0);
+    ck('그래도 종에는 남는다', tourNotis('t1', 'TOURNAMENT_OPEN') === 1);
+
+    /* 우승은 지나간 일이라 팝업하지 않는다 — 우승자 본인은 이미 게임 화면에서 봤다 */
+    wipe(); clear();
+    N.notifyAll('TOURNAMENT_WIN', '우승', '테스트');
+    ck('우승은 팝업 대상이 아니다', N.popupNotifications('t1').length === 0);
+    ck('종에는 남는다', tourNotis('t1', 'TOURNAMENT_WIN') === 1);
+    clear();
+  }
+
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */
   section('[9] 과제 등록 — 잘못된 값 거절');
   {

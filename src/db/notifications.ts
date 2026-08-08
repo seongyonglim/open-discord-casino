@@ -10,7 +10,13 @@
  */
 import { one, all, run, tx } from './queries';
 
-export const NOTI_TYPES = ['ANNOUNCEMENT', 'ACHIEVEMENT', 'POINT_GIFT', 'SYSTEM'] as const;
+/* 대회는 둘로 나눈다. 등록 시작은 "지금 오라"는 신호라 시간이 지나면 쓸모가 없고,
+   우승은 지나간 일을 알리는 것이라 급하지 않다 — 팝업 여부가 갈리므로 종류도 갈린다.
+   한 종류로 묶고 내용으로 구분하려 하면 그 판단이 문자열 비교가 된다. */
+export const NOTI_TYPES = [
+  'ANNOUNCEMENT', 'ACHIEVEMENT', 'POINT_GIFT', 'SYSTEM',
+  'TOURNAMENT_OPEN', 'TOURNAMENT_WIN',
+] as const;
 export type NotiType = typeof NOTI_TYPES[number];
 
 export interface NotiRow {
@@ -74,32 +80,39 @@ export function unreadCount(userId: string): number {
     userId, userId, since)!.n;
 }
 
-/* 팝업으로 띄울 창. 이보다 오래된 공지는 종에만 남는다.
-   하루로 잡는 이유: 공지는 올라온 그날 알아야 의미가 있는 정보다. 사흘 뒤에 들어온
-   사람에게 튀어나오면 그건 새 소식이 아니라 방해가 된다. */
+/* 팝업으로 띄울 창. 종류마다 다르다 — 얼마나 오래 쓸모가 있는 정보인가로 정한다.
+   · 공지는 올라온 그날 알아야 의미가 있다. 사흘 뒤에 들어온 사람에게 튀어나오면
+     그건 새 소식이 아니라 방해다.
+   · 등록 시작은 그 대회가 시작하기 전까지만 쓸모가 있다. 기본 일정이 등록 21시 ·
+     시작 22시라 한 시간이지만, 늦은 등록을 받는 시간까지 감안해 두 시간으로 잡는다.
+     지나고 나서 "등록이 시작됐습니다"가 뜨면 가 봐야 이미 끝난 판이다. */
 export const POPUP_WINDOW_SEC = 24 * 60 * 60;
+export const POPUP_WINDOW_TOURNAMENT_SEC = 2 * 60 * 60;
 
 /**
  * 접속하자마자 팝업으로 띄울 것들.
  *
- * 공지만 대상이다. 도전과제 달성은 그 순간에 이미 띄웠고, 포인트 지급은 받은 사실이
- * 잔액에 남아 있어 놓쳐도 사라지지 않는다. 공지는 안 보면 그냥 지나간다.
+ * 놓치면 그냥 지나가는 것만 띄운다 — 새 공지와 대회 등록 시작. 도전과제 달성은 그
+ * 순간에 이미 띄웠고, 포인트 지급은 받은 사실이 잔액에 남아 있어 놓쳐도 사라지지 않는다.
+ * 우승 소식도 지나간 일이라 종에서 보면 된다.
  *
  * "안 읽음"이 조건이다 — 종을 열어 본 사람에게 다시 튀어나오면 안 읽은 것을 알리는
  * 장치가 아니라 그냥 반복 재생이 된다.
  */
 export function popupNotifications(userId: string, now = Math.floor(Date.now() / 1000)): NotiView[] {
-  const since = Math.max(joinedAt(userId), now - POPUP_WINDOW_SEC);
+  const joined = joinedAt(userId);
+  const sinceNotice = Math.max(joined, now - POPUP_WINDOW_SEC);
+  const sinceTour = Math.max(joined, now - POPUP_WINDOW_TOURNAMENT_SEC);
   return all<NotiRow>(
     `SELECT n.* FROM notifications n
        LEFT JOIN notification_reads r
          ON r.notification_id = n.id AND r.user_id = ?
-      WHERE n.type = 'ANNOUNCEMENT'
-        AND n.created_at >= ?
-        AND r.dismissed_at IS NULL
+      WHERE r.dismissed_at IS NULL
+        AND ((n.type = 'ANNOUNCEMENT' AND n.created_at >= ?)
+          OR (n.type = 'TOURNAMENT_OPEN' AND n.created_at >= ?))
         AND ((n.user_id = ? AND n.is_read = 0)
           OR (n.user_id IS NULL AND r.read_at IS NULL))
-      ORDER BY n.created_at ASC, n.id ASC`, userId, since, userId)
+      ORDER BY n.created_at ASC, n.id ASC`, userId, sinceNotice, sinceTour, userId)
     .map(n => ({
       id: n.id, type: n.type, title: n.title, message: n.message, link: n.link,
       read: false, createdAt: n.created_at,

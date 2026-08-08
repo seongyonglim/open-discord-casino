@@ -1407,6 +1407,11 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     users.map(u => bal(u)).join(','));
   db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
   ck('대회가 시작됐다', HD.advanceHoldem().status === 'RUNNING');
+  /* 이 감사는 앞에서 여러 대회를 끝까지 돌린다 — 알림 표에 그만큼 쌓여 있으므로
+     전체 개수가 아니라 이 판이 늘린 개수를 봐야 한다. */
+  const winsBefore = (db.prepare(
+    `SELECT COUNT(*) AS n FROM notifications WHERE type = 'TOURNAMENT_WIN'`)
+    .get() as { n: number }).n;
 
   /* 끝까지 돌린다. 구동 방식은 [8]의 것을 그대로 쓴다 — 여기서 새로 짜면 판이 안 끝나고,
      그러면 "경제가 맞는가"가 아니라 "내 루프가 맞는가"를 검사하게 된다. */
@@ -1426,6 +1431,34 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
       && !HD.holdemAction(seat.user_id, 'check', 0).ok) expireAction();
   }
   ck('대회가 끝났다', HD.advanceHoldem().status === 'FINISHED', HD.advanceHoldem().status);
+
+  /* ── 우승 알림 ────────────────────────────────────────────────
+     끝까지 돌린 판에만 붙일 수 있는 검사다. 우승자 이름과 상금은 정산이 끝나야 정해지고,
+     정산은 대회당 한 번만 도는 자리 안쪽에 있다 — 그 자리가 곧 "한 번만 알린다"의 근거다. */
+  {
+    const NT = require('../src/db/notifications') as typeof import('../src/db/notifications');
+    const wins = (db.prepare(
+      `SELECT title, message, link, user_id FROM notifications
+        WHERE type = 'TOURNAMENT_WIN' ORDER BY id DESC LIMIT 1`).get()) as
+      { title: string; message: string; link: string | null; user_id: string | null } | undefined;
+    const added = (db.prepare(
+      `SELECT COUNT(*) AS n FROM notifications WHERE type = 'TOURNAMENT_WIN'`)
+      .get() as { n: number }).n - winsBefore;
+    ck('이 판이 우승 알림을 하나 만들었다', added === 1, String(added));
+    const champ = (db.prepare(
+      `SELECT username, prize FROM holdem_entries
+        WHERE tournament_id = ? AND finish_place = 1`).get(t4id)) as
+      { username: string; prize: number } | undefined;
+    ck('우승자 이름이 담긴다', !!champ && !!wins?.message.includes(champ.username), wins?.message);
+    ck('참가 인원이 담긴다', !!wins?.message.includes(`${users.length}명 참가`), wins?.message);
+    ck('상금이 담긴다',
+      !!champ && !!wins?.message.includes(champ.prize.toLocaleString('ko-KR')), wins?.message);
+    ck('전체 알림이다 (사람마다 복사하지 않는다)', wins?.user_id === null);
+    ck('누르면 홀덤으로 간다', wins?.link === '/games/holdem', String(wins?.link));
+    /* 지나간 일이라 팝업하지 않는다 — 우승자 본인은 이미 게임 화면에서 우승 연출을 봤다 */
+    ck('우승은 팝업하지 않는다',
+      NT.popupNotifications(users[0]).every(n => n.type !== 'TOURNAMENT_WIN'));
+  }
   const paidOut = (db.prepare(
     `SELECT COALESCE(SUM(prize),0) AS n FROM holdem_entries WHERE tournament_id = ?`)
     .get(t4id) as { n: number }).n;
@@ -1463,6 +1496,7 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     ck('넷의 잔액 합도 그대로다 (40,000)',
       users.reduce((a, u) => a + bal(u), 0) === 40_000);
   }
+
   ck('끝난 뒤에도 잔액 = 원장 누적합', ledgerOk(users));
 }
 

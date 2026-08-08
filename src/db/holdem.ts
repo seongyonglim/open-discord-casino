@@ -18,6 +18,14 @@ import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
 import { ensureRecurring } from './recurrence';
+import { notifyAll } from './notifications';
+
+/* 알림 문구에 쓸 KST 시:분. 화면이 아니라 알림 본문에 들어가는 값이라 여기서 만든다 —
+   받는 사람의 기기 시간대가 무엇이든 우리 대회 시각은 KST 하나다. */
+function kstHM(sec: number): string {
+  const d = new Date((sec + 9 * 3600) * 1000);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
 
 /** 액션 제한 시간. 스펙에 숫자가 없어 온라인 포커의 통상값(20초)으로 잡았다. */
 export const ACTION_SEC = 20;
@@ -108,6 +116,8 @@ export interface HtRow {
   prize_fixed: number;
   /** 참가비. 0 이면 프리롤 — 기본값이라 예전 행은 전부 프리롤로 읽힌다 */
   buy_in: number;
+  /** 등록 시작 알림을 보낸 시각. 서버 타이머가 없어서 "한 번만"을 이 열로 지킨다 */
+  reg_notified_at: number | null;
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -523,6 +533,23 @@ export function advanceHoldem(userId?: string): HoldemStatus {
     if (!t) return { tournament: null, schedule: null, status: 'NONE', registered: 0, seated: 0 };
     const s = scheduleOf(t);
     let regs = getEntries(t.id);
+
+    /* 등록 창이 열렸다고 알린다.
+       이 게임에는 서버 타이머가 없어서 "열렸다"를 요청이 들어올 때 알아채는데, 그 판정은
+       한 번 참이 되면 계속 참이라 표시가 없으면 요청마다 알림이 나간다. 그래서 조건부
+       UPDATE 로 먼저 자리를 차지하고, 실제로 줄을 바꾼 요청만 알린다.
+       아직 시작도 취소도 안 한 판에만 보낸다 — 서버가 몇 시간 죽어 있다가 깨어나면
+       이미 끝난 판의 등록 알림이 뒤늦게 나갈 수 있다. */
+    if (t.reg_notified_at == null && t.started_at == null && t.cancelled_at == null
+        && now >= s.regOpenAt && now < s.scheduledStartAt) {
+      run(`UPDATE holdem_tournaments SET reg_notified_at = ?
+            WHERE id = ? AND reg_notified_at IS NULL`, now, t.id);
+      if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 1) {
+        notifyAll('TOURNAMENT_OPEN', '홀덤 프리롤 등록 시작',
+          `${t.title} · ${kstHM(s.scheduledStartAt)} 시작`, '/games/holdem');
+      }
+      t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
+    }
 
     // 시작: 예정 시각이 지났고 최소 인원이 찼는데 아직 시작 기록이 없다
     if (t.started_at == null && t.cancelled_at == null && now >= s.scheduledStartAt
@@ -1076,6 +1103,30 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
   const fresh = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
   if (fresh.finished_at !== now) return;
   payPrizes(fresh, now);
+  announceWinner(fresh);
+}
+
+/**
+ * 우승 소식을 전체에 알린다.
+ *
+ * 정산이 끝난 뒤에 부른다 — 상금 금액을 담아야 하는데 그 값은 payPrizes 가 정한다.
+ * finishTournament 의 이중 정산 가드 안쪽이라 대회당 한 번만 지나간다.
+ *
+ * 팝업으로 띄우지는 않는다(TOURNAMENT_WIN). 지나간 일이라 놓쳐도 사라지지 않고,
+ * 우승자 본인은 이미 게임 화면에서 우승 연출을 봤다.
+ */
+function announceWinner(t: HtRow): void {
+  const win = one<{ username: string; prize: number }>(
+    `SELECT username, prize FROM holdem_entries
+      WHERE tournament_id = ? AND finish_place = 1 LIMIT 1`, t.id);
+  if (!win) return;
+  /* 참가자가 몇 명이었는지 함께 적는다. "3명 중 1등"과 "9명 중 1등"은 다른 소식이고,
+     숫자가 없으면 그 판이 어느 정도였는지 알 수 없다. */
+  const entries = one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ?`, t.id)!.n;
+  const prize = win.prize > 0 ? ` · ${win.prize.toLocaleString('ko-KR')}P` : '';
+  notifyAll('TOURNAMENT_WIN', '홀덤 프리롤 우승',
+    `${win.username} 님 우승 (${entries}명 참가)${prize}`, '/games/holdem');
 }
 
 /**

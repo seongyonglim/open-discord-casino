@@ -703,7 +703,8 @@
     return Math.floor(d / 86400) + '일 전';
   }
   var TYPE_ICON = {
-    ANNOUNCEMENT: '📢', ACHIEVEMENT: '🏆', POINT_GIFT: '🎁', SYSTEM: '⚙️'
+    ANNOUNCEMENT: '📢', ACHIEVEMENT: '🏆', POINT_GIFT: '🎁', SYSTEM: '⚙️',
+    TOURNAMENT_OPEN: '♠️', TOURNAMENT_WIN: '👑'
   };
 
   function paintBadge(n){
@@ -847,7 +848,11 @@
     ACHIEVEMENT: { cls: 'ach', ic: '🏆', head: '도전과제 달성!', sfx: true },
     ANNOUNCEMENT: { cls: 'noti', ic: '📢', head: '새 공지사항', sfx: false },
     POINT_GIFT: { cls: 'noti', ic: '🎁', head: '포인트', sfx: false },
-    SYSTEM: { cls: 'noti', ic: '⚙️', head: '알림', sfx: false }
+    SYSTEM: { cls: 'noti', ic: '⚙️', head: '알림', sfx: false },
+    /* 등록 시작은 "지금 오라"는 신호라 눈에 띄어야 한다 — 초록 테두리로 공지와 가른다.
+       소리는 안 낸다: 다른 게임을 하는 중에 울리면 그 게임의 소리를 덮는다. */
+    TOURNAMENT_OPEN: { cls: 'tour', ic: '♠️', head: '홀덤 프리롤 등록 시작', sfx: false },
+    TOURNAMENT_WIN: { cls: 'noti', ic: '👑', head: '홀덤 프리롤 우승', sfx: false }
   };
   function toast(o){
     o = o || {};

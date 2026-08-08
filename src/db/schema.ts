@@ -560,6 +560,9 @@ function initSchema(): void {
   /* 알림 "치움". 읽음과 따로 둔다 — 읽은 것을 목록에서 빼는 것과 읽었다고 표시하는 것은
      다른 동작이고, 나중에 둘을 따로 되돌릴 수도 있어야 한다. */
   try { d.exec(`ALTER TABLE notification_reads ADD COLUMN dismissed_at INTEGER`); } catch { /* 이미 있다 */ }
+  /* 등록 시작 알림을 이미 보냈나. 이 게임에는 서버 타이머가 없어서 "등록 창이 열렸다"를
+     요청이 들어올 때 알아채는데, 그 판정은 요청마다 참이라 표시가 없으면 매번 보낸다. */
+  try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN reg_notified_at INTEGER`); } catch { /* 이미 있다 */ }
 
   /* 대회를 만들 때의 설정을 그 대회 행에 박아 둔다.
      일정과 상금 배수는 원래부터 행에 있었지만 스타팅 칩·블라인드 주기·레이트 레지는
