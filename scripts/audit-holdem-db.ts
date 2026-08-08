@@ -1000,8 +1000,16 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
       ck('다음 사람의 차례도 최소 간격만큼 뒤에 열린다',
         open2 - nowSec() >= HD.ACT_GAP_SEC - 1, `${open2 - nowSec()}초 후`);
       const who2 = HD.getSeats(tG.id).find(s => s.seat === h2.to_act_seat)!;
-      ck('그 사이에는 다음 사람도 행동할 수 없다',
-        HD.holdemAction(who2.user_id, 'call', 0).error === 'too_soon');
+      /* 창이 아직 안 지났을 때만 물어본다. ACT_GAP_SEC 이 1초라, 앞 줄을 지나는 사이에
+         초가 한 번 넘어가면 창이 이미 열려 있어 액션이 정상 수락된다 — 그러면 이 검사만
+         실패한다. 실제로 그렇게 한 번 붉게 떴고, 다시 돌리니 통과했다. 가끔 실패하는
+         검사는 없느니만 못하다(진짜 실패를 가린다). 창이 지났으면 지났다고 적는다. */
+      if (nowSec() < open2) {
+        ck('그 사이에는 다음 사람도 행동할 수 없다',
+          HD.holdemAction(who2.user_id, 'call', 0).error === 'too_soon');
+      } else {
+        console.log('  SKIP  그 사이에는 다음 사람도 행동할 수 없다 — 재는 사이에 1초 창이 지났다');
+      }
     } else {
       ck('다음 차례를 검사할 수 있었다', false, `to_act=${h2.to_act_seat}`);
     }
@@ -1331,6 +1339,56 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     R.ensureRecurring(start2 - 3600);
     ck('반복 개최로 열린 판에도 참가비가 붙는다', HD.liveTournament()?.buy_in === 500,
       String(HD.liveTournament()?.buy_in));
+
+    /* ── 손으로 여는 판은 템플릿을 타지 않는다 ──────────────────────
+       [새 대회 열기]에 적은 값이 그대로 판에 박혀야 한다. 여기가 안 이어지면
+       운영자는 화면에 칩 30,000을 적어 놓고 템플릿의 10,000짜리 판이 열리는 것을 본다.
+       그게 예전 동작이었고, 그래서 한 판만 짧게 돌리려 해도 템플릿을 고쳤다 되돌려야 했다. */
+    wipe();
+    S.saveConfig({
+      ...S.defaultConfig(),
+      startingStack: 10_000, levelMin: 8, lateRegMin: 30, graceMin: 20,
+    });
+    const own = A.createTournament({
+      title: '직접 연 판', regOpenAt: nowSec() + 60, startAt: nowSec() + 7200,
+      startingStack: 30_000, levelMin: 3, lateRegMin: 5, graceMin: 7,
+    });
+    const lt = HD.liveTournament();
+    ck('시작 칩은 적은 값이 이긴다', own.ok && lt?.starting_stack === 30_000, String(lt?.starting_stack));
+    ck('블라인드 주기도 적은 값이 이긴다', lt?.level_sec === 3 * 60, String(lt?.level_sec));
+    ck('레이트 레지도 적은 값이 이긴다', lt?.late_reg_sec === 5 * 60, String(lt?.late_reg_sec));
+    /* 대기 마감은 시작 시각 + 대기 분으로 만들어진다 — 저장된 열이 아니라 계산 결과라
+       그 산식까지 같이 확인해야 "7분이 들어갔다"를 말할 수 있다. */
+    ck('최소 인원 대기도 적은 값이 이긴다',
+      lt != null && lt.grace_ends_at - lt.scheduled_start_at === 7 * 60,
+      String(lt != null ? lt.grace_ends_at - lt.scheduled_start_at : null));
+
+    // 일부만 적으면 나머지는 템플릿에서 온다 — 반복 개최가 그 길로 들어온다
+    wipe();
+    const part = A.createTournament({
+      title: '일부만', regOpenAt: nowSec() + 60, startAt: nowSec() + 7200, levelMin: 4,
+    });
+    const lp = HD.liveTournament();
+    ck('안 적은 값은 템플릿에서 온다', part.ok && lp?.starting_stack === 10_000, String(lp?.starting_stack));
+    ck('적은 값만 바뀐다', lp?.level_sec === 4 * 60, String(lp?.level_sec));
+
+    /* 0과 음수는 거절한다. levelSec 0 이면 블라인드가 영영 안 오르고 칩 0 이면 앉자마자
+       전원 탈락인데, 둘 다 사람이 앉은 뒤에야 드러난다. */
+    wipe();
+    for (const [k, label] of [['startingStack', '시작 칩'], ['levelMin', '블라인드 주기'],
+      ['lateRegMin', '레이트 레지'], ['graceMin', '대기']] as const) {
+      const bad = A.createTournament({
+        title: '잘못된 룰', regOpenAt: nowSec() + 60, startAt: nowSec() + 7200, [k]: 0,
+      });
+      ck(`${label} 0은 거절한다`, !bad.ok && bad.error === 'bad_rules',
+        bad.ok ? 'ok' : bad.error);
+      const neg = A.createTournament({
+        title: '잘못된 룰', regOpenAt: nowSec() + 60, startAt: nowSec() + 7200, [k]: -1,
+      });
+      ck(`${label} 음수도 거절한다`, !neg.ok && neg.error === 'bad_rules', neg.ok ? 'ok' : neg.error);
+    }
+    ck('거절된 뒤에는 대회가 안 남는다', HD.liveTournament() == null);
+
     db.prepare(`DELETE FROM holdem_settings`).run();
   }
 
