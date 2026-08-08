@@ -21,17 +21,16 @@ export function stateFragment(cardV: string): string {
        이미 끝난 판의 테이블로 되돌아간다 — 결과를 확인하고 나온 사람을 다시 그 방에
        밀어 넣는 셈이다. */
     function leftStored(t){
-      if (!t) return false;
+      /* 끝난 대회에만 해당한다. 진행 중이면 무조건 테이블을 보여준다 — 운영자가 대회를
+         되감으면 같은 id 가 다시 살아나는데, 그때도 막으면 들어갈 방법이 없다. */
+      if (!t || t.status !== 'FINISHED') return false;
       try {
-        if (sessionStorage.getItem('od_ht_left_' + t.id) === '1') return true;
+        if (sessionStorage.getItem(leftKey(t)) === '1') return true;
         /* [확인]을 안 누르고 상단 탭으로 나갔다가 돌아온 경우. 축하 팝업은 대회당 한 번만
            뜨므로(그 사실이 sessionStorage 에 남는다), 이미 떴던 대회에 다시 들어오면
            보여줄 연출이 없다 — 그런데도 테이블을 그리면 끝난 판의 시체를 다시 보게 된다.
            팝업이 지금 떠 있는 중이면 그건 연출을 보고 있는 것이므로 건드리지 않는다. */
-        if (t.status === 'FINISHED' && winEl && winEl.hidden
-          && sessionStorage.getItem('od_ht_win_' + t.id + ':' + (t.finishedAt || 0)) === '1') {
-          return true;
-        }
+        if (winEl && winEl.hidden && sessionStorage.getItem(celebrateKey(t)) === '1') return true;
       } catch (e) { /* 저장을 못 쓰는 환경이면 예전처럼 동작한다 */ }
       return false;
     }
