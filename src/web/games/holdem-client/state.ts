@@ -17,6 +17,24 @@ export function stateFragment(cardV: string): string {
        있으면 팝업을 닫아도 갈 데가 없다. 여기에 대회 id 를 적어 두고 그 대회의 테이블은
        더 그리지 않는다 — 대회가 바뀌면 값이 달라져 저절로 풀린다. */
     var leftTableTid = null;
+    /* 새로고침해도 유지된다. 메모리에만 두면 탭을 다시 열거나 상단 탭으로 돌아왔다 갈 때
+       이미 끝난 판의 테이블로 되돌아간다 — 결과를 확인하고 나온 사람을 다시 그 방에
+       밀어 넣는 셈이다. */
+    function leftStored(t){
+      if (!t) return false;
+      try {
+        if (sessionStorage.getItem('od_ht_left_' + t.id) === '1') return true;
+        /* [확인]을 안 누르고 상단 탭으로 나갔다가 돌아온 경우. 축하 팝업은 대회당 한 번만
+           뜨므로(그 사실이 sessionStorage 에 남는다), 이미 떴던 대회에 다시 들어오면
+           보여줄 연출이 없다 — 그런데도 테이블을 그리면 끝난 판의 시체를 다시 보게 된다.
+           팝업이 지금 떠 있는 중이면 그건 연출을 보고 있는 것이므로 건드리지 않는다. */
+        if (t.status === 'FINISHED' && winEl && winEl.hidden
+          && sessionStorage.getItem('od_ht_win_' + t.id + ':' + (t.finishedAt || 0)) === '1') {
+          return true;
+        }
+      } catch (e) { /* 저장을 못 쓰는 환경이면 예전처럼 동작한다 */ }
+      return false;
+    }
     // 판에 처음 들어온 순간에는 연출 없이 현재 상태를 그대로 보여준다
     var firstTablePaint = true;
 
