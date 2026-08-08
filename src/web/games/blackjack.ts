@@ -24,6 +24,7 @@ import {
   canSurrender, settleSurrender,
 } from '../../services/blackjack';
 import { readJson, sendJson } from '../http';
+import { award, withUnlocked } from '../achieve-hook';
 import { layout, jsonForScript, helpDialog, sidePanel, rankPane, rankJs } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
@@ -193,7 +194,25 @@ export async function handleAction(req: IncomingMessage, res: ServerResponse, us
       : '이미 결정을 마쳤습니다';
     return sendJson(res, 400, { error: msg });
   }
-  return sendJson(res, 200, { ok: true, cards: cardsToStrings(r.cards), status: r.status, bet: r.bet, balance: r.balance });
+  /* ── 도전과제: 김재원이 되어 보자 ──────────────────────────────────
+     20에 만족하지 않고 히트해서 21을 만든다.
+
+     "직전 합"을 다시 재는 대신 방금 받은 카드를 빼고 계산한다 — r.cards 의 마지막 장이
+     이번에 뽑은 카드라, 그것만 덜어 내면 누르기 직전의 손이 그대로 나온다.
+     더블도 카드를 한 장 받지만 그건 20에서 하는 선택이 아니므로 히트만 본다.
+
+     소프트 20(A+9)에서 A 를 받아 21이 되는 경우도 포함된다 — 화면에 21로 보이는 것이
+     이 과제가 말하는 21이다. */
+  const got = action === 'hit'
+    ? award(userId, r.bet, [['bj-hit-21', () => {
+      const before = handTotal(r.cards.slice(0, -1));
+      return before.total === 20 && handTotal(r.cards).total === 21;
+    }]])
+    : [];
+  return sendJson(res, 200, {
+    ok: true, cards: cardsToStrings(r.cards), status: r.status, bet: r.bet, balance: r.balance,
+    ...withUnlocked(got),
+  });
 }
 
 /* ── 화면 ────────────────────────────────────────────────────────────── */

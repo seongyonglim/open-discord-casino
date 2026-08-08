@@ -40,8 +40,14 @@ export const ACH_TABS: { key: string; label: string; types: GameType[] }[] = [
   { key: 'common', label: '🎰 공통', types: ['ALL'] },
 ];
 
-/** 판정이 도는 최소 베팅액. 과제마다 따로 정할 수 있고, 안 정하면 이 값이다. */
-export const DEFAULT_MIN_BET = 100;
+/**
+ * 판정이 도는 최소 베팅액. 과제마다 따로 정할 수 있고, 안 정하면 이 값이다.
+ *
+ * 게임을 해서 깨는 과제는 전부 1,000P 를 기준으로 한다 — 1P 씩 수천 번 돌려 긁어내면
+ * 과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다.
+ * 베팅이 없는 과제(출석·지원금 등)는 이 문을 지날 수 없으므로 0 으로 따로 정한다.
+ */
+export const DEFAULT_MIN_BET = 1_000;
 
 export interface AchievementRow {
   id: string; game_type: string; title: string; description: string;

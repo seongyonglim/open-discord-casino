@@ -257,6 +257,35 @@ export function claimRelief(
   });
 }
 
+/**
+ * 한 게임의 통산 순수익. 없으면 0.
+ *
+ * profit 은 returned - staked 를 미리 더해 둔 열이라 여기서 다시 빼지 않는다 —
+ * 감사가 그 둘이 늘 같은지 검사한다(파생값이지만 정렬 키라서 열로 둔다).
+ */
+export function gameProfit(userId: string, game: string): number {
+  return one<{ n: number }>(
+    `SELECT profit AS n FROM game_stats WHERE user_id = ? AND game = ?`, userId, game)?.n ?? 0;
+}
+
+/**
+ * 오늘(KST) 지원금을 몇 번 받았나.
+ *
+ * 원장에서 센다 — 지원금은 반드시 'disaster_relief' 사유로 한 줄을 남기므로 따로 세어
+ * 둘 표가 필요 없고, 세는 곳과 주는 곳이 갈리지도 않는다(따로 두면 한쪽만 늘어난다).
+ * 하루의 경계는 KST 다. SQLite 에 시간대가 없어 경계 시각을 여기서 만들어 넘긴다.
+ */
+export function reliefCountToday(userId: string, now = Date.now()): number {
+  const kstMidnight = Math.floor(
+    new Date(new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(now)) + 'T00:00:00+09:00').getTime() / 1000);
+  return one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM points_ledger
+      WHERE user_id = ? AND reason = 'disaster_relief' AND created_at >= ?`,
+    userId, kstMidnight)!.n;
+}
+
 export interface LeaderboardRow {
   id: string;
   username: string;

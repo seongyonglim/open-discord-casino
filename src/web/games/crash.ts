@@ -10,11 +10,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import {
   advanceCrashRound, placeCrashBet, cancelCrashBet, cashoutCrashBet,
-  getCrashBets, getMyCrashBet, getRecentCrashResults, getWebUser,
+  getCrashBets, getMyCrashBet, getRecentCrashResults, getWebUser, gameProfit,
   CRASH_REVEAL_SEC,
   type CrashRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
+import { award, withUnlocked } from '../achieve-hook';
 import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
@@ -109,7 +110,30 @@ function statePayload(round: CrashRoundRow, userId: string) {
 }
 
 export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  return sendJson(res, 200, statePayload(advance(), userId));
+  const payload = statePayload(advance(), userId);
+  return sendJson(res, 200, { ...payload, ...crashAwards(userId, payload.myBet) });
+}
+
+/* ── 도전과제 ──────────────────────────────────────────────────────────
+   캐시아웃 자리가 아니라 상태 응답에서 본다. 자동 캐시아웃은 라운드를 전진시키는 쪽에서
+   정산되므로(누구의 요청인지도 정해져 있지 않다) 캐시아웃 핸들러에만 붙이면 그 경로가
+   통째로 빠진다. 상태는 1초마다 오므로 어느 쪽으로 나갔든 곧바로 잡힌다.
+
+   매 폴링마다 도는 자리라 값싸야 한다. 그래서 이미 응답에 들어 있는 값(내 베팅)으로
+   먼저 거르고, 그 문을 지난 경우에만 db 를 본다 — 100배는 1%도 안 되는 판이라
+   실제로 아래 조회가 도는 일은 거의 없다. */
+const CRASH_X100 = 100;
+const CRASH_PROFIT_GOAL = 1_000_000;
+
+function crashAwards(userId: string, myBet: { amount: number; cashout_multiplier: number | null } | null) {
+  // 이번 라운드에 캐시아웃한 판만 본다. 안 걸었거나 터진 판은 볼 것이 없다.
+  if (!myBet || myBet.cashout_multiplier == null) return {};
+  const checks: [string, () => boolean][] = [];
+  if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);
+  /* 순수익은 캐시아웃한 판에만 오를 수 있다 — 잃어서 100만을 넘길 수는 없으므로
+     여기서만 재면 된다. game_stats 의 graph 누적값을 그대로 쓴다. */
+  checks.push(['crash-profit-1m', () => gameProfit(userId, 'graph') >= CRASH_PROFIT_GOAL]);
+  return withUnlocked(award(userId, myBet.amount, checks));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {

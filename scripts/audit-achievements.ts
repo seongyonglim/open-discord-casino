@@ -26,6 +26,14 @@ function ck(name: string, cond: boolean, extra = ''): void {
 }
 function section(s: string): void { console.log('\n' + s); }
 
+/* 씨앗 스크립트를 다시 돌린다. require 는 한 번만 실행되므로(모듈 캐시) 표를 비운 뒤에
+   다시 부르려면 캐시를 지워야 한다 — 처음에 그걸 안 해서 두 번째부터는 빈 표에 대고
+   검사하고 있었고, 그 검사들이 전부 조용히 실패했다. */
+function seedForWiring(): void {
+  delete require.cache[require.resolve('./seed-achievements')];
+  require('./seed-achievements');
+}
+
 function wipe(): void {
   db.exec(`DELETE FROM achievements; DELETE FROM user_achievements;
            DELETE FROM notifications; DELETE FROM notification_reads;`);
@@ -421,6 +429,197 @@ function main(): void {
     ck('우승은 팝업 대상이 아니다', N.popupNotifications('t1').length === 0);
     ck('종에는 남는다', tourNotis('t1', 'TOURNAMENT_WIN') === 1);
     clear();
+  }
+
+  /* ── 8-2. 실제 과제 ─────────────────────────────────────────── */
+  section('[8-2] 실제 과제 — 등록 내용과 판정 조건');
+  {
+    /* 씨앗 스크립트를 부른다. require 는 한 번만 실행되므로(모듈 캐시) 표를 비운 뒤에
+       다시 부르려면 캐시를 지워야 한다 — 처음에 그걸 안 해서 두 번째부터는 빈 표에
+       대고 검사하고 있었다. */
+    const seed = (): void => {
+      delete require.cache[require.resolve('./seed-achievements')];
+      require('./seed-achievements');
+    };
+    wipe();
+    seed();
+    const byId = new Map(A.listAchievements().map(a => [a.id, a]));
+    ck('네 과제가 등록된다', byId.size === 4, String(byId.size));
+    /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
+       과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
+    for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m']) {
+      ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
+    }
+    /* 지원금에는 베팅이 없다. 기준을 그대로 두면 이 과제는 영영 판정되지 않는다. */
+    ck('relief-10-day 만 최소 베팅 0', byId.get('relief-10-day')?.min_bet === 0,
+      String(byId.get('relief-10-day')?.min_bet));
+    ck('건실한 파산러는 히든', byId.get('relief-10-day')?.is_hidden === 1);
+    ck('나머지 셋은 공개', ['bj-hit-21', 'crash-x100', 'crash-profit-1m']
+      .every(id => byId.get(id)?.is_hidden === 0));
+    ck('분류가 맞다',
+      byId.get('bj-hit-21')?.game_type === 'BLACKJACK'
+      && byId.get('crash-x100')?.game_type === 'CRASH'
+      && byId.get('crash-profit-1m')?.game_type === 'CRASH'
+      && byId.get('relief-10-day')?.game_type === 'ALL');
+    // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
+    seed();
+    ck('두 번 돌려도 네 개', A.listAchievements().length === 4,
+      String(A.listAchievements().length));
+
+    /* 1,000P 문지기가 실제로 막는가. 여기가 뚫리면 위의 기준이 글자로만 남는다. */
+    mkUser('r1');
+    ck('999P 로는 안 준다', !A.awardIfBet('r1', 'crash-x100', 999, () => true).unlocked);
+    ck('1,000P 면 준다', A.awardIfBet('r1', 'crash-x100', 1_000, () => true).unlocked);
+
+    /* ── 김재원이 되어 보자 — 판정식 ────────────────────────────
+       판정은 web 핸들러에 있지만 식 자체는 여기서 확인할 수 있다:
+       방금 받은 카드를 뺀 손이 20이고, 받은 뒤가 21. */
+    const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
+    const hit21 = (cards: number[]): boolean =>
+      BJ.handTotal(cards.slice(0, -1)).total === 20 && BJ.handTotal(cards).total === 21;
+    /* 카드 번호는 0..51 이고 랭크는 card >> 2 다 — 0='2' … 7='9', 8='T', 11='K', 12='A'.
+       같은 랭크가 넉 장이므로 무늬를 바꾸려면 1씩 더한다. */
+    const card = (rank: number, suit = 0): number => rank * 4 + suit;
+    const ACE = 12, TEN = 8, NINE = 7, TWO = 0;
+    ck('10+10 에서 A 를 받아 21 → 달성',
+      hit21([card(TEN), card(TEN, 1), card(ACE)]));
+    ck('A+9(소프트 20)에서 A 를 받아 21 → 달성',
+      hit21([card(ACE), card(NINE), card(ACE, 1)]));
+    ck('19에서 2를 받아 21 → 아니다 (20이 아니었다)',
+      hit21([card(TEN), card(NINE), card(TWO)]) === false);
+    ck('20에서 2를 받아 버스트 → 아니다',
+      hit21([card(TEN), card(TEN, 1), card(TWO)]) === false);
+    ck('처음부터 21(블랙잭) → 아니다 (히트가 아니다)',
+      hit21([card(ACE), card(TEN)]) === false);
+    ck('20에서 10을 받아 버스트 → 아니다',
+      hit21([card(TEN), card(TEN, 1), card(TEN, 2)]) === false);
+    /* 검사 전제 — 위 손들이 정말 그 합인지 확인한다. 카드 번호 규칙을 잘못 알면
+       위의 검사들이 전부 "우연히 통과"가 된다. */
+    ck('검사 전제: 10+10 은 20', BJ.handTotal([card(TEN), card(TEN, 1)]).total === 20);
+    ck('검사 전제: A+9 는 20', BJ.handTotal([card(ACE), card(NINE)]).total === 20);
+    ck('검사 전제: A+10 은 21', BJ.handTotal([card(ACE), card(TEN)]).total === 21);
+
+    /* ── 그래프의 신 — 경계 ─────────────────────────────────── */
+    wipe();
+    seed();
+    mkUser('g1');
+    Q.bumpGameStats('g1', 'graph', 1_000, 1_000_000);      // 순수익 999,000
+    ck('99만대에서는 안 준다',
+      !A.awardIfBet('g1', 'crash-profit-1m', 1_000,
+        () => Q.gameProfit('g1', 'graph') >= 1_000_000).unlocked,
+      String(Q.gameProfit('g1', 'graph')));
+    Q.bumpGameStats('g1', 'graph', 1_000, 2_000);          // 순수익 1,000,000
+    ck('정확히 100만이면 준다',
+      A.awardIfBet('g1', 'crash-profit-1m', 1_000,
+        () => Q.gameProfit('g1', 'graph') >= 1_000_000).unlocked,
+      String(Q.gameProfit('g1', 'graph')));
+    /* 다른 게임의 수익은 안 센다 — "그래프의 신"이다 */
+    wipe();
+    seed();
+    mkUser('g2');
+    Q.bumpGameStats('g2', 'mines', 1_000, 3_000_000);
+    ck('다른 게임 수익은 안 센다',
+      !A.awardIfBet('g2', 'crash-profit-1m', 1_000,
+        () => Q.gameProfit('g2', 'graph') >= 1_000_000).unlocked);
+
+    /* ── 건실한 파산러 — 하루 경계 ──────────────────────────── */
+    wipe();
+    seed();
+    mkUser('rr');
+    const relief = (n: number, at: number): void => {
+      for (let i = 0; i < n; i++) {
+        db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
+                    VALUES (?, ?, 'disaster_relief', 0, ?)`).run('rr', 1, at);
+      }
+    };
+    const nowMs = Date.now();
+    relief(9, Math.floor(nowMs / 1000));
+    ck('9번은 아직 아니다', Q.reliefCountToday('rr', nowMs) === 9,
+      String(Q.reliefCountToday('rr', nowMs)));
+    ck('9번에서는 안 준다',
+      !A.awardIfBet('rr', 'relief-10-day', 0, () => Q.reliefCountToday('rr', nowMs) >= 10).unlocked);
+    relief(1, Math.floor(nowMs / 1000));
+    ck('10번이면 준다',
+      A.awardIfBet('rr', 'relief-10-day', 0, () => Q.reliefCountToday('rr', nowMs) >= 10).unlocked);
+
+    /* 어제 받은 것은 오늘 것이 아니다. 하루의 경계는 KST 이고, 그 경계가 틀리면
+       자정 전후로 "왜 안 되냐"가 나온다. */
+    wipe();
+    seed();
+    mkUser('rr2');
+    const yesterday = Math.floor(nowMs / 1000) - 26 * 3600;
+    for (let i = 0; i < 12; i++) {
+      db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
+                  VALUES ('rr2', 1, 'disaster_relief', 0, ?)`).run(yesterday);
+    }
+    ck('어제 12번은 오늘 0번', Q.reliefCountToday('rr2', nowMs) === 0,
+      String(Q.reliefCountToday('rr2', nowMs)));
+    /* 지원금 말고 다른 사유는 안 센다 */
+    for (let i = 0; i < 12; i++) {
+      db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
+                  VALUES ('rr2', 1, 'attendance', 0, ?)`).run(Math.floor(nowMs / 1000));
+    }
+    ck('다른 사유는 안 센다', Q.reliefCountToday('rr2', nowMs) === 0,
+      String(Q.reliefCountToday('rr2', nowMs)));
+  }
+
+  /* ── 8-3. 배선 ──────────────────────────────────────────────── */
+  section('[8-3] 배선 — 게임 코드가 실제로 판정을 부르는가');
+  {
+    /* 조건식이 맞아도 그것을 부르는 자리가 없으면 과제는 영영 잠긴 채로 남는다.
+       판정을 게임 안에서 재현하려면 라운드를 통째로 돌려야 하는데(카드가 무작위라
+       20에서 A 를 뽑을 때까지 돌려야 한다), 그건 이 감사가 할 일이 아니다.
+       대신 "부르는 자리가 있는가"를 소스에서 확인한다 — 배선이 빠지는 것이 실제로
+       일어나는 사고이고, 그건 이 방법으로 잡힌다. */
+    const read = (p: string): string => require('node:fs').readFileSync(p, 'utf8') as string;
+    const bj = read('src/web/games/blackjack.ts');
+    ck('블랙잭이 판정을 부른다', bj.includes("'bj-hit-21'"));
+    ck('블랙잭이 결과를 응답에 싣는다', bj.includes('withUnlocked'));
+    /* 히트일 때만 본다 — 더블도 카드를 한 장 받지만 20에서 하는 선택이 아니다 */
+    ck('히트일 때만 판정한다', /action === 'hit'[\s\S]{0,120}bj-hit-21/.test(bj));
+
+    const cr = read('src/web/games/crash.ts');
+    ck('그래프가 100배를 판정한다', cr.includes("'crash-x100'"));
+    ck('그래프가 순수익을 판정한다', cr.includes("'crash-profit-1m'"));
+    ck('그래프가 결과를 응답에 싣는다', cr.includes('withUnlocked'));
+    /* 자동 캐시아웃은 라운드를 전진시키는 쪽에서 정산되므로 캐시아웃 핸들러에만
+       붙이면 그 경로가 통째로 빠진다. 상태 응답에서 봐야 둘 다 잡힌다. */
+    ck('상태 응답에서 판정한다 (자동 캐시아웃도 잡으려면)',
+      /handleState[\s\S]{0,300}crashAwards/.test(cr));
+
+    const dc = read('src/discord/interactions.ts');
+    ck('지원금이 판정을 부른다', dc.includes("'relief-10-day'"));
+    ck('지급에 성공한 뒤에만 판정한다', /if \(!r\.ok\)[\s\S]*relief-10-day/.test(dc));
+
+    /* 씨앗에 있는 과제는 전부 어딘가에서 판정되어야 한다. 표에만 넣고 배선을 잊으면
+       화면에는 뜨는데 아무도 못 깨는 과제가 된다 — 그게 제일 알아채기 어렵다. */
+    wipe();
+    seedForWiring();
+    const wired = bj + cr + dc;
+    const unwired = A.listAchievements().filter(a => !wired.includes(`'${a.id}'`));
+    ck('배선이 빠진 과제가 없다', unwired.length === 0, unwired.map(a => a.id).join(','));
+
+    /* 설명이 약속한 숫자와 코드가 쓰는 숫자가 같은가.
+       배선이 있어도 기준값이 어긋나면 "100배 이상"이라고 적어 놓고 50배에 주게 된다 —
+       화면과 코드가 다른 말을 하는 것이라 아무도 이상하다고 못 느낀다. */
+    const num = (src: string, name: string): number | null => {
+      const m = src.match(new RegExp(name + '\\s*=\\s*([\\d_]+)'));
+      return m ? Number(m[1].replace(/_/g, '')) : null;
+    };
+    const byId2 = new Map(A.listAchievements().map(a => [a.id, a]));
+    ck('100배 기준이 설명과 같다',
+      num(cr, 'CRASH_X100') === 100 && !!byId2.get('crash-x100')?.description.includes('100배'),
+      String(num(cr, 'CRASH_X100')));
+    ck('순수익 기준이 설명과 같다',
+      num(cr, 'CRASH_PROFIT_GOAL') === 1_000_000
+      && !!byId2.get('crash-profit-1m')?.description.includes('100만'),
+      String(num(cr, 'CRASH_PROFIT_GOAL')));
+    ck('지원금 횟수가 설명과 같다',
+      /reliefCountToday\([^)]*\) >= 10/.test(dc)
+      && !!byId2.get('relief-10-day')?.description.includes('10번'));
+    ck('블랙잭 판정이 20 → 21 이다',
+      /before\.total === 20[\s\S]{0,80}=== 21/.test(bj)
+      && !!byId2.get('bj-hit-21')?.description.includes('21'));
   }
 
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */

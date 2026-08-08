@@ -8,9 +8,10 @@ import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
 import { checkIn, rewardSummary } from '../services/economy';
 import { claim as claimRelief, reliefAmount, RELIEF_COOLDOWN_SEC } from '../services/relief';
 import {
-  upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard,
+  upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard, reliefCountToday,
   getBoard, setBoard, clearBoard, type BoardKind,
 } from '../db/queries';
+import { award } from '../web/achieve-hook';
 import { pts, signedPts, reasonLabel, esc } from '../web/views';
 import { env } from '../env';
 
@@ -274,6 +275,16 @@ async function handleReliefClaim(interaction: any, res: ServerResponse): Promise
     }
     return ephemeral(res, '신청 처리 중 문제가 발생했습니다.');
   }
+
+  /* ── 도전과제: 건실한 파산러 ──────────────────────────────────────
+     하루에 지원금을 열 번 이상 받는다. 쿨다운이 2시간이라 하루에 최대 열두 번이고,
+     그 말은 하루를 거의 통째로 파산에 쓴 사람만 닿는다는 뜻이다.
+
+     횟수는 원장에서 센다 — 지원금은 반드시 'disaster_relief' 사유로 한 줄을 남기므로
+     따로 세어 둘 표가 필요 없고, 세는 곳과 주는 곳이 갈리지도 않는다.
+     하루의 경계는 KST 다(다른 날짜 기준이 이 서비스에 없다).
+     지원금에는 베팅이 없으므로 이 과제만 최소 베팅이 0 이다. */
+  award(caller.id, 0, [['relief-10-day', () => reliefCountToday(caller.id) >= 10]]);
 
   // 출석과 마찬가지로 누가 신청했는지 채널에 공개로 남긴다
   ackSilently(res);
