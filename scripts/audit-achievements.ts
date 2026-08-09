@@ -449,14 +449,16 @@ async function main(): Promise<void> {
     ck('열두 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
-    for (const id of ['bj-double-21', 'crash-x100', 'crash-profit-1m', 'la-right-7',
+    for (const id of ['bj-double-21', 'crash-x100', 'la-right-7',
       'mi-1-of-25', 'mi-24-of-24']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
     /* 베팅이 없거나, 금액이 뜻을 갖지 않는 과제는 기준도 0 이어야 한다. 그대로 두면
        영영 판정되지 않거나(지원금·프리롤) 상관없는 문지기가 하나 서 있게 된다.
-       0.01초의 광기는 손 속도를 재는 과제라 얼마를 걸었는지가 아무 상관이 없다. */
-    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-x1-01']) {
+       0.01초의 광기는 손 속도를 재는 과제라 얼마를 걸었는지가 아무 상관이 없고,
+       그래프의 신은 한 판이 아니라 한 시즌의 합계를 재는 과제라 마지막 판의 금액이
+       아무 뜻이 없다 — 문구를 읽은 사람이 실제로 "이게 왜 붙어 있냐"고 물었다. */
+    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-x1-01', 'crash-profit-1m']) {
       ck(`${id} 은 최소 베팅 0`, byId.get(id)?.min_bet === 0, String(byId.get(id)?.min_bet));
     }
     /* 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는 "씨앗이 실제로 무엇을
@@ -562,6 +564,21 @@ async function main(): Promise<void> {
     ck('다른 게임 수익은 안 센다',
       !A.awardIfBet('g2', 'crash-profit-1m', 1_000,
         () => Q.seasonGameProfit('g2', 'graph') >= 1_000_000).unlocked);
+
+    /* 이 과제에는 최소 베팅이 없다. 재는 것이 한 판이 아니라 한 시즌의 합계라서다 —
+       기준을 붙여 두면 100만을 이미 넘겨 놓고도 마지막 판을 999P 로 걸었다는 이유로
+       안 열린다. 카드의 «베팅 1,000P 이상»과 «한 시즌 순수익»을 같이 읽을 방법도 없다. */
+    wipe();
+    seed();
+    mkUser('g4');
+    Q.bumpGameStats('g4', 'graph', 1_000, 2_000_000);
+    ck('소액 판에서도 열린다 (합계를 재는 과제다)',
+      A.awardIfBet('g4', 'crash-profit-1m', 999,
+        () => Q.seasonGameProfit('g4', 'graph') >= 1_000_000).unlocked,
+      String(Q.seasonGameProfit('g4', 'graph')));
+    /* 대조군 — 한 판을 재는 과제는 999P 에서 그대로 막힌다 */
+    ck('한 판을 재는 과제는 999P 에서 막힌다',
+      !A.awardIfBet('g4', 'crash-x100', 999, () => true).unlocked);
 
     /* 시즌이 바뀌면 0에서 다시 시작한다.
        통산(game_stats)을 보면 지난 시즌에 벌어 둔 것이 합쳐져서, 새 시즌 첫 판에
