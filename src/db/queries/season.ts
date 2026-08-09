@@ -11,6 +11,7 @@
  * 의존은 한 방향이다: season → core. currentSeasonId 가 core 에 있는 이유가 그것이다.
  */
 import { one, all, run, tx, currentSeasonId, adjustBalance } from './core';
+import { rewardsForSeason } from '../../services/rewards';
 
 export interface SeasonRow {
   id: number; number: number; name: string; reward: string;
@@ -354,6 +355,29 @@ export function closeSeason(opts: { seed: number; nextName?: string; nextReward?
     const nextNumber = s.number + 1;
     run(`INSERT INTO seasons (number, name, reward, started_at) VALUES (?, ?, ?, ?)`,
       nextNumber, opts.nextName ?? '', opts.nextReward ?? '', now);
+
+    /* 프리롤 상금을 새 시즌 기본값까지 끌어올린다.
+       상금 배수는 운영자가 템플릿에 저장해 두면 그 값이 시즌 기본값을 이긴다(그게 옳다 —
+       명시한 값을 코드가 조용히 덮으면 안 된다). 그런데 시즌이 오르면 그 규칙 때문에
+       공지한 금액과 실제가 어긋난다: 시즌 1 프리롤을 5배로 올린다고 알려 놓고 저장된
+       옛 값으로 열리는 것이다. multiplierBehindSeason 이 화면에 띄워 주던 그 상황이고,
+       사람이 잊으면 첫 대회가 그대로 나간다.
+
+       올리기만 한다. 새 기본값보다 높게 잡아 둔 값은 건드리지 않는다 — 그건 운영자가
+       일부러 더 준 것이고, 시즌이 바뀌었다고 깎을 이유가 없다. */
+    const r = rewardsForSeason(nextNumber);
+    for (const [key, want] of [
+      ['weekdayMultiplier', r.freerollPerHead],
+      ['weekendMultiplier', r.freerollPerHeadWeekend],
+    ] as const) {
+      const cur = one<{ value: string }>(`SELECT value FROM holdem_settings WHERE key = ?`, key);
+      if (cur == null) continue;                  // 저장된 값이 없으면 기본값이 그대로 쓰인다
+      const n = Number(cur.value);
+      if (Number.isFinite(n) && n < want) {
+        run(`UPDATE holdem_settings SET value = ?, updated_at = unixepoch() WHERE key = ?`,
+          String(want), key);
+      }
+    }
     return { ok: true as const, closed: s.number, ranked: players.length, nextNumber };
   });
 }

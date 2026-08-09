@@ -11,6 +11,7 @@ import {
   upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard, reliefCountToday,
   getBoard, setBoard, clearBoard, type BoardKind,
 } from '../db/queries';
+import { ensureSeasonClosed } from '../db/season-schedule';
 import { award } from '../web/achieve-hook';
 import { pts, signedPts, reasonLabel, esc } from '../web/views';
 import { env } from '../env';
@@ -217,6 +218,12 @@ async function handleCommand(interaction: any, res: ServerResponse): Promise<voi
 }
 
 async function handleComponent(interaction: any, res: ServerResponse): Promise<void> {
+  /* 돈이 나가기 전에 시즌 예약을 확인한다.
+     보상 금액은 시즌 번호로 정해지므로(services/rewards), 전환이 밀린 사이에 출석하면
+     옛 금액을 받는다. 웹은 요청마다 확인하지만 디스코드 버튼은 그 길로 들어오지
+     않으므로 여기서도 부른다 — 자정에 웹을 아무도 안 열고 출석만 누르는 일이 있다. */
+  ensureSeasonClosed();
+
   const customId = interaction.data?.custom_id;
   if (customId === 'relief_claim') return await handleReliefClaim(interaction, res);
   if (customId !== 'attendance_checkin') return ephemeral(res, '알 수 없는 버튼입니다.');

@@ -25,6 +25,7 @@ import {
   getRecurrence, saveRecurrence, nextOccurrence, WEEKDAY_LABEL, MODE_LABEL,
   type RecurMode,
 } from '../db/recurrence';
+import { getSeasonSchedule, saveSeasonSchedule, clearSeasonSchedule } from '../db/season-schedule';
 import {
   listNoticesAdmin, createNotice, updateNotice, toggleNotice, deleteNotice,
   parseBody, unparseBody, keepTables, NOTICE_KINDS,
@@ -122,6 +123,7 @@ export function adminPage(user: WebUser): string {
   const defaultRegAt = defaultStartAt - (cfg.startMin - cfg.regOpenMin) * 60;
   /* 반복 개최 — 규칙과 그 규칙이 가리키는 다음 차례. 켜져 있을 때만 계산한다. */
   const rec = getRecurrence();
+  const sched = getSeasonSchedule();
   const nextRecur = rec.enabled ? nextOccurrence(rec, nowSec) : null;
   const recText = rec.mode === 'weekly' ? `매주 ${WEEKDAY_LABEL[rec.weekday]}요일`
     : rec.mode === 'monthly' ? `매월 ${rec.day}일`
@@ -392,6 +394,26 @@ export function adminPage(user: WebUser): string {
       <div class="ad-row">
         <button type="button" id="adSClose" class="danger">시즌 종료 · 다음 시즌 열기</button>
         <span class="ad-note">되돌릴 수 없습니다.</span>
+      </div>
+
+      <!-- 예약. 사람이 자정에 깨어 있지 않아도 넘어가게 하려고 둔다.
+           반드시 화면에 보여야 한다 — 예약해 둔 파괴적인 동작이 어디에도 안 보이면
+           그것을 걸어 둔 사실 자체를 잊는다. -->
+      <div class="ad-sub2">종료 예약 <span>서버 타이머가 없어 접속이 있을 때 넘어갑니다 — 자정에 아무도 없으면 첫 접속에서 처리됩니다</span></div>
+      ${sched.closeAt != null
+        ? `<p class="ad-warn"><b>${kst(sched.closeAt)}에 시즌이 종료되도록 예약돼 있습니다.</b>
+             그 시각이 지나면 전원 잔액이 ${num(sched.seed)}P로 초기화되고
+             ${sched.nextName ? `<b>${esc(sched.nextName)}</b>` : '다음 시즌'}이 열립니다.</p>`
+        : `<p class="ad-note">예약이 없습니다. 시각을 넣고 저장하면 그때 자동으로 넘어갑니다.</p>`}
+      <div class="ad-grid">
+        <label>종료 시각<input type="datetime-local" id="adSchAt" value="${sched.closeAt != null ? localInput(sched.closeAt) : ''}"><i>KST</i></label>
+        <label>다음 시즌 이름<input type="text" id="adSchName" value="${esc(sched.nextName)}" placeholder="시즌 1"><i>비우면 이름 없이 열립니다</i></label>
+        <label>다음 시즌 보상 안내<input type="text" id="adSchReward" value="${esc(sched.nextReward)}" placeholder="기본 보상 5배"><i></i></label>
+        <label>시작 잔액<span class="ad-inx"><input type="number" id="adSchSeed" min="0" step="1000" value="${sched.seed}"><b>P</b></span><i>전원이 이 값에서 시작합니다</i></label>
+      </div>
+      <div class="ad-row">
+        <button type="button" id="adSchSave" class="primary">종료 예약 저장</button>
+        <button type="button" id="adSchClear">예약 취소</button>
       </div>
     </section>
 
@@ -696,6 +718,34 @@ export function adminPage(user: WebUser): string {
         .then(function(r){
           if (shout(r)) { alert(num(r.d.revoked) + 'P 를 ' + r.d.users + '명에게서 회수했습니다.'); location.reload(); }
         });
+    });
+
+    /* 시즌 종료 예약. 전원의 잔액이 초기화되는 동작이라 시각과 결과를 그대로 읽어 준다 —
+       확인 창이 마지막으로 눈에 들어오는 자리다. */
+    document.getElementById('adSchSave').addEventListener('click', function(){
+      var raw = document.getElementById('adSchAt').value;
+      if (!raw) { alert('종료 시각을 넣어 주세요. 예약을 없애려면 [예약 취소]를 누르세요.'); return; }
+      var at = Math.floor(new Date(raw).getTime() / 1000);
+      if (!isFinite(at)) { alert('시각을 확인해 주세요.'); return; }
+      var seed = Math.floor(Number(document.getElementById('adSchSeed').value));
+      if (!isFinite(seed) || seed < 0) { alert('시작 잔액을 확인해 주세요.'); return; }
+      var name = document.getElementById('adSchName').value;
+      var when = new Date(at * 1000);
+      confirmThen('시즌 종료를 예약할까요?',
+        (when.getMonth() + 1) + '월 ' + when.getDate() + '일 '
+        + String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0')
+        + ' 이후 첫 접속에서 시즌이 넘어갑니다. 그 순간의 잔액이 성적표로 찍히고 '
+        + '전원 잔액이 ' + num(seed) + 'P로 초기화되며 '
+        + (name || '다음 시즌') + '이 열립니다. 되돌릴 수 없습니다.',
+        function(){
+          post('/api/admin/season/schedule', {
+            closeAt: at, nextName: name,
+            nextReward: document.getElementById('adSchReward').value, seed: seed,
+          }).then(function(r){ if (shout(r)) location.reload(); });
+        });
+    });
+    document.getElementById('adSchClear').addEventListener('click', function(){
+      post('/api/admin/season/schedule', {}).then(function(r){ if (shout(r)) location.reload(); });
     });
 
     document.getElementById('adSSave').addEventListener('click', function(){
@@ -1223,6 +1273,32 @@ function createErrorText(
   const at = new Date((r.startsAt + 9 * 3600) * 1000).toISOString().slice(11, 16);
   return `곧 시작할 대회가 있습니다 (${at} 시작) — 한 판이 두 시간까지 갈 수 있어서,`
     + ' 다음 대회 시작까지 두 시간 이상 남았을 때만 새로 만들 수 있습니다';
+}
+
+/**
+ * 시즌 종료 예약.
+ *
+ * 예약해 두면 그 시각이 지난 뒤 첫 요청에서 시즌이 넘어간다 — 전원의 잔액이 초기화되는
+ * 동작이라, 저장은 운영 토큰을 지난 요청만 받는다(라우터가 이미 막는다).
+ */
+export async function handleAdminSeasonSchedule(
+  req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  /* 시각을 안 주면 예약 취소로 본다 — 빈 칸을 저장했는데 옛 예약이 남아 있으면
+     지웠다고 생각한 사람이 그대로 넘어가는 것을 보게 된다. */
+  if (b?.closeAt == null || b.closeAt === '') {
+    clearSeasonSchedule();
+    return sendJson(res, 200, { ok: true, cleared: true });
+  }
+  const r = saveSeasonSchedule({
+    closeAt: Math.floor(Number(b.closeAt)),
+    nextName: String(b.nextName ?? ''),
+    nextReward: String(b.nextReward ?? ''),
+    seed: Math.floor(Number(b.seed ?? 0)),
+  });
+  if (!r.ok) return sendJson(res, 400, { error: r.error });
+  return sendJson(res, 200, { ok: true });
 }
 
 export async function handleAdminTournamentAbort(

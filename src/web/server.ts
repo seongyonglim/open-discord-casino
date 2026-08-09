@@ -15,7 +15,7 @@ import { setRequestUser, LOGO_SVG } from './views';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminLedger, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
-  handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill,
+  handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill, handleAdminSeasonSchedule,
   handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
   handleAdminRecurrence, handleAdminTournamentAbort,
   handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
@@ -50,6 +50,7 @@ import {
 } from './games/holdem';
 // 로비의 프리롤 카드가 대회 상태를 비추는 데 쓴다 (상태 판정은 이 함수에만 있다)
 import { advanceHoldem } from '../db/holdem';
+import { ensureSeasonClosed } from '../db/season-schedule';
 import { rankingGameOf, handleRanking } from './ranking';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
@@ -211,6 +212,12 @@ export function startWebServer(): void {
       markEncoding(req, res);
 
       if (path === '/health') { res.writeHead(200); res.end('ok'); return; }
+
+      /* 예약해 둔 시각이 지났으면 시즌을 넘긴다. 서버 타이머가 없으므로(fly 가 유휴 시
+         프로세스를 재운다) 이런 일은 전부 요청이 들어올 때 따라잡는다 — 반복 개최와
+         같은 방식이다. 예약이 없으면 설정 한 번 읽고 끝난다.
+         /health 뒤에 두는 이유: 헬스 체크가 시즌을 넘기게 하지는 않는다. */
+      ensureSeasonClosed();
       if (APP_FILES[path]) return serveAppFile(path, res);
       if (path.startsWith('/sfx/')) return serveAsset('sfx', path.slice(5), res);
       if (path.startsWith('/cards/')) return serveAsset('cards', path.slice(7), res);
@@ -300,6 +307,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/tournament/purge' && req.method === 'POST') return await handleAdminPurge(req, res);
         if (path === '/api/admin/season/update' && req.method === 'POST') return await handleAdminSeasonUpdate(req, res);
         if (path === '/api/admin/season/close' && req.method === 'POST') return await handleAdminSeasonClose(req, res);
+        if (path === '/api/admin/season/schedule' && req.method === 'POST') return await handleAdminSeasonSchedule(req, res);
         if (path === '/api/admin/season/backfill' && req.method === 'POST') return await handleAdminSeasonBackfill(req, res);
         if (path === '/api/admin/config' && req.method === 'POST') return await handleAdminConfig(req, res);
         if (path === '/api/admin/recurrence' && req.method === 'POST') return await handleAdminRecurrence(req, res);
