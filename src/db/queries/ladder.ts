@@ -88,6 +88,20 @@ export function settleLadderBets(roundId: number, startSide: string, endSide: st
    "우로만 걸었다"가 성립하지 않는 판이다. */
 const LADDER_STREAK_MIN_BET = 1_000;
 
+/**
+ * 연승을 이어 온 마지막 판의 베팅액. 연승이 없으면 0.
+ *
+ * 과제를 열 때 "그 판에 얼마를 걸었나"로 쓴다. 연승은 1,000P 이상으로만 쌓이므로
+ * 이 값은 반드시 그 이상이고, 그래서 과제 쪽 문지기를 1,000P 로 두어도 막히지 않는다 —
+ * 화면의 «베팅 1,000P 이상» 표시가 실제 규칙과 같은 말이 된다.
+ */
+export function lastRightWinBet(userId: string): number {
+  return one<{ amount: number }>(
+    `SELECT amount FROM ladder_bets
+      WHERE user_id = ? AND start_guess = 'R' AND won = 1
+      ORDER BY id DESC LIMIT 1`, userId)?.amount ?? 0;
+}
+
 function trackRightStreak(
   userId: string, startGuess: string | null, won: boolean, amount: number
 ): void {

@@ -1482,3 +1482,29 @@
   .ht-empty-ico{font-size:40px;color:rgba(255,255,255,.13);line-height:1}
   .ht-empty-msg{margin:14px 0 4px;font-size:15px;font-weight:700}
   .ht-empty-sub{margin:0;font-size:12.5px;color:var(--muted)}
+
+  /* ── 신청자 명단 ─────────────────────────────────────────────────
+     "2 / 9"라는 숫자만으로는 누가 왔는지 알 수 없다. 최소 인원이 모여야 열리는 판이라
+     "누가 있나"가 갈지 말지를 정하는 정보이고, 빈 자리를 함께 그리면 몇 명 더 오면
+     열리는지가 숫자보다 빨리 읽힌다. */
+  .ht-h3sub{margin-left:8px;font-size:11px;color:var(--dim);letter-spacing:0}
+  .ht-regs{display:grid;gap:8px;
+    grid-template-columns:repeat(auto-fill,minmax(84px,1fr))}
+  .ht-reg{display:flex;flex-direction:column;align-items:center;gap:5px;
+    padding:10px 4px;border-radius:10px;
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+  .ht-reg-av{width:32px;height:32px;border-radius:50%;object-fit:cover;
+    background:#2a2a33;color:#c9c9d2;font-size:13px;font-weight:700;
+    display:inline-flex;align-items:center;justify-content:center}
+  /* 이름은 한 줄로 자른다 — 긴 닉네임 하나 때문에 칸 높이가 들쭉날쭉하면 줄이 어긋난다 */
+  .ht-reg-nm{max-width:100%;font-size:11px;color:#c9c9d2;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 내 자리는 초록으로 두른다. 등수 색(금·은·동)과 겹치지 않는 색이라 랭킹과 같은 규칙이다 */
+  .ht-reg.me{background:rgba(88,196,132,.10);border-color:rgba(88,196,132,.45)}
+  .ht-reg.me .ht-reg-nm{color:#6fd39a;font-weight:700}
+  .ht-reg.empty{background:rgba(255,255,255,.015);border-style:dashed}
+  .ht-reg.empty .ht-reg-av{background:rgba(255,255,255,.04)}
+  .ht-reg.empty .ht-reg-nm{color:#5f5f68}
+  /* 최소 인원까지 남은 자리 — 그만큼은 반드시 차야 열린다 */
+  .ht-reg.empty.need{border-color:rgba(212,175,55,.32)}
+  .ht-reg.empty.need .ht-reg-nm{color:rgba(212,175,55,.75)}

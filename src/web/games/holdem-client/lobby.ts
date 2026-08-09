@@ -130,6 +130,43 @@ export const LOBBY = `    function renderLobby(){
       var prizeList = t.prizes || [];
       var resList = st.results || [];
       var rowCount = Math.max(prizeList.length, resList.length);
+      /* ── 신청자 명단 ────────────────────────────────────────────
+         숫자만 "2 / 9"로 적어 두면 누가 왔는지 알 수 없어서, 아는 사람이 있는지 보려고
+         디스코드를 다시 열어야 한다. 최소 인원이 모여야 열리는 판이라 "누가 있나"가
+         갈지 말지를 정하는 정보다.
+
+         빈 자리도 함께 그린다. 몇 명 더 오면 열리는지가 한눈에 보여야 한다 —
+         "2 / 9"라는 숫자보다 빈 칸 일곱 개가 더 빨리 읽힌다.
+         최소 인원까지 남은 자리는 다르게 칠한다(그만큼은 반드시 차야 열린다). */
+      var plist = t.players || [];
+      var roster = '';
+      if (!t.finishedAt) {
+        var slots = '';
+        for (var si = 0; si < t.maxPlayers; si++) {
+          var p = plist[si];
+          if (p) {
+            var isMe = p.userId === MEID;
+            slots += '<div class="ht-reg' + (isMe ? ' me' : '') + '" title="' + esc(p.username) + '">' +
+              avatarHtml(p.userId, p.avatar, p.username, 'ht-reg-av') +
+              '<span class="ht-reg-nm">' + esc(p.username) + '</span></div>';
+          } else {
+            var needed = si < t.minPlayers;
+            slots += '<div class="ht-reg empty' + (needed ? ' need' : '') + '">' +
+              '<span class="ht-reg-av ph"></span>' +
+              '<span class="ht-reg-nm">' + (needed ? '더 필요' : '빈자리') + '</span></div>';
+          }
+        }
+        /* 최소 인원을 채운 것과 자리가 다 찬 것은 다른 말이다. 3/9 에 "인원이 찼습니다"라고
+           적으면 더 못 들어오는 것으로 읽힌다 — 실제로는 여섯 자리가 비어 있다. */
+        var short = Math.max(0, t.minPlayers - plist.length);
+        var sub = short > 0 ? short + '명 더 모이면 열립니다'
+          : t.startedAt ? '진행 중'
+          : plist.length >= t.maxPlayers ? '자리가 모두 찼습니다'
+          : '인원이 모여 예정대로 시작합니다';
+        roster = '<h3 class="ht-h3">신청자 <span class="ht-h3sub">' + sub + '</span></h3>' +
+          '<div class="ht-regs">' + slots + '</div>';
+      }
+
       var payTable = '';
       if (rowCount) {
         var rows = '';
@@ -177,6 +214,7 @@ export const LOBBY = `    function renderLobby(){
             '<div><span class="k">최소 인원</span><span class="v">' + t.minPlayers + '명</span></div>' +
           '</div>' +
           '<div class="ht-actions">' + action + '</div>' +
+          roster +
           payTable +
         '</div>';
 

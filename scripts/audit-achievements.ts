@@ -448,7 +448,7 @@ async function main(): Promise<void> {
     ck('열 과제가 등록된다', byId.size === 10, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
-    for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m']) {
+    for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m', 'la-right-7']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
     /* 베팅이 없는 과제는 기준도 0 이어야 한다. 그대로 두면 영영 판정되지 않는다 —
@@ -1011,6 +1011,14 @@ async function main(): Promise<void> {
     playRound([{ user: 'L1', guess: 'R', amount: 1_000 }], 'R');
     ck('7연승이 됐다', streak() === 7, String(streak()));
     ck('아직은 응답을 안 받아 미달성', !A.hasAchievement('L1', 'la-right-7'));
+
+    /* 과제의 min_bet 이 1,000P 라, 여는 자리에서 "얼마 걸었나"를 같이 넘겨야 한다.
+       연승을 이어 온 마지막 판의 베팅액이 그 값이고, 연승은 1,000P 이상으로만 쌓이므로
+       이 값은 반드시 기준을 넘는다 — 즉 화면의 문구가 실제로 막는 일은 없다.
+       (0 을 넘기면 바로 아래 '응답에 달성이 실려 온다' 가 무너진다) */
+    ck('마지막 우 승리 베팅액을 읽는다', LD.lastRightWinBet('L1') === 1_000,
+      String(LD.lastRightWinBet('L1')));
+    ck('그 값이 과제 기준을 넘는다', LD.lastRightWinBet('L1') >= 1_000);
 
     /* 화면이 폴링하는 그 응답에서 열린다 — 토스트가 뜨려면 unlocked 가 실려야 한다. */
     let body = '';

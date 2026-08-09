@@ -100,10 +100,10 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     gameType: 'LADDER',
     title: '극우 이대남',
     description: '사다리게임에서 출발 «우»에만 걸어 7연승합니다. 쉬어가는 판은 연승이 끊기지 않습니다.',
-    /* 문지기는 연승을 쌓는 자리에 있다(queries/ladder). 1,000P 미만 베팅은 연승에
-       영향을 주지 않으므로, 여기서 다시 재면 "일곱 번째 판을 얼마 걸었나"를 묻는 셈이
-       되어 뜻이 달라진다. */
-    minBet: 0,
+    /* 진짜 문지기는 연승을 쌓는 자리에 있다(queries/ladder) — 1,000P 미만으로 이긴 판은
+       연승에 아예 들어가지 않는다. 여기에도 같은 값을 적는 건 화면 때문이다: 0 으로 두면
+       카드에 «베팅 1,000P 이상»이 안 붙어서, 규칙은 있는데 어디에도 안 적힌 상태가 된다. */
+    minBet: MIN_BET,
     sortAt: 30,
     // 판정: src/web/games/ladder.ts — user_streaks 의 ladder_right_win 이 7 이상일 때
   },

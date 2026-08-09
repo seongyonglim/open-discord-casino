@@ -14,6 +14,7 @@ import {
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked } from '../achieve-hook';
 import { getStreak } from '../../db/streaks';
+import { lastRightWinBet } from '../../db/queries/ladder';
 import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
@@ -114,9 +115,14 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
    연승은 정산 자리에서 쌓인다(그 판의 승패는 거기서만 안다). 여기서는 쌓인 값만 보고
    과제를 연다 — 이 응답으로 나가야 화면이 토스트를 띄운다.
 
-   문지기(1,000P)는 연승을 쌓는 자리에 있다. 과제 쪽 min_bet 을 0 으로 둔 것이 그래서다:
-   여기서 다시 재면 "지금 판의 베팅"을 기준으로 삼게 되는데, 일곱 번째 판을 크게 걸었는지
-   여부는 이 과제와 상관이 없다.
+   문지기(1,000P)는 두 곳에 선다. 진짜 문은 연승을 쌓는 자리다(queries/ladder) — 거기서
+   막지 않으면 소액으로 쌓아 놓고 열 수 있다. 여기서 한 번 더 재는 이유는 화면 때문이다:
+   과제의 min_bet 이 0 이면 카드에 «베팅 1,000P 이상»이 안 붙어서, 규칙이 있는데 어디에도
+   안 적힌 상태가 된다.
+
+   재는 값은 연승을 이어 온 마지막 판의 베팅액이다. 연승은 1,000P 이상으로만 쌓이므로
+   그 값은 반드시 기준을 넘고, 그래서 이 문이 실제로 막는 일은 없다 — 화면에 적힌 말과
+   코드가 같은 말을 하게 만드는 것이 목적이다.
 
    매 폴링마다 도는 자리지만 값싸다 — 연승이 7 미만이면 조회 한 번으로 끝나고,
    7 이상이어도 awardIfBet 이 이미 달성한 사람을 곧바로 걸러 낸다. */
@@ -125,7 +131,7 @@ const RIGHT_STREAK_GOAL = 7;
 function ladderAwards(userId: string): { unlocked?: { id: string; title: string; description: string }[] } {
   const streak = getStreak(userId, 'ladder_right_win');
   if (streak < RIGHT_STREAK_GOAL) return {};
-  return withUnlocked(award(userId, 0, [['la-right-7', () => true]]));
+  return withUnlocked(award(userId, lastRightWinBet(userId), [['la-right-7', () => true]]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {

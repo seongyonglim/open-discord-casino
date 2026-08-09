@@ -129,6 +129,17 @@ function statePayload(st: HoldemStatus, userId: string) {
         startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at,
       }, tune.lateRegSec),
       iRegistered: entries.some(e => e.user_id === userId),
+      /* 신청한 사람들. 숫자만 "2 / 9"로 적어 두면 누가 왔는지 알 수 없어서, 아는 사람이
+         있는지 보려고 디스코드를 다시 열어야 한다 — 최소 인원(3명)이 모여야 열리는
+         판이라 "누가 있나"가 갈지 말지를 정하는 정보다.
+         신청 순서로 준다. 그게 곧 자리 순서는 아니지만(자리는 섞는다), 목록이 폴링마다
+         뒤바뀌지 않으려면 순서가 고정돼야 한다. */
+      players: (() => {
+        const av = getEntryAvatars(t.id);
+        return entries.map(e => ({
+          userId: e.user_id, username: e.username, avatar: av.get(e.user_id) ?? null,
+        }));
+      })(),
     },
     // 결과는 끝난 뒤에만 (진행 중 순위를 흘리면 남은 사람의 정보가 된다)
     results: st.status === 'FINISHED'
