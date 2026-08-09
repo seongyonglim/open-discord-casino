@@ -17,8 +17,9 @@ const MIN_BET = 1_000;
 /* 뜻이 바뀌어 id 째로 갈아엎은 과제. 여기 적어 두면 표에서 지운다 — 안 지우면 예전 줄이
    그대로 남아 아무도 깰 수 없는 칸이 하나 늘어난다(씨앗은 덮어쓸 뿐 지우지는 않는다).
    달성한 사람이 있으면 지우지 않는다. 그때는 id 를 두고 내용만 고쳐야 한다.
-     bj-hit-21 → bj-double-21 : 히트가 아니라 더블다운으로 조건을 바꿨다. */
-const RETIRED = ['bj-hit-21'];
+     bj-hit-21    → bj-double-21 : 히트가 아니라 더블다운으로 조건을 바꿨다.
+     mi-23-of-24  → mi-24-of-24  : 한 칸 남기고 나오는 게 아니라 끝까지 다 여는 것으로 바꿨다. */
+const RETIRED = ['bj-hit-21', 'mi-23-of-24'];
 
 const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
   {
@@ -46,7 +47,7 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     id: 'bj-stand-6',
     gameType: 'BLACKJACK',
     title: '너 버스트할거 잖아',
-    description: '6점 이하에서 카드를 더 받지 않고 서서, 딜러가 버스트해 이깁니다.',
+    description: '6점 이하에서 카드를 더 받지 않고 스탠드 후, 딜러가 버스트해 승리합니다.',
     minBet: MIN_BET,
     sortAt: 11,
     // 판정: src/web/games/blackjack.ts — 선 점수 ≤ 6 · 딜러 버스트 · 승리
@@ -72,13 +73,13 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     // 판정: src/web/games/poker.ts — 마지막 등급 칸(b4) 베팅이 적중했을 때
   },
   {
-    id: 'mi-23-of-24',
+    id: 'mi-24-of-24',
     gameType: 'MINES',
     title: '안전불감증',
-    description: '지뢰 1개 판에서 23칸을 열고, 마지막 한 칸을 남긴 채 캐시아웃합니다.',
+    description: '지뢰 1개 판에서 24칸을 전부 열어 클리어에 성공합니다.',
     minBet: MIN_BET,
     sortAt: 40,
-    // 판정: src/web/games/mines.ts — 지뢰 1개 · 연 칸 23 · 캐시아웃
+    // 판정: src/web/games/mines.ts handleReveal — 지뢰 1개 · 24칸을 다 열어 자동 정산될 때
   },
   {
     id: 'crash-x100',

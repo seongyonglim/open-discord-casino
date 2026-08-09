@@ -1076,16 +1076,37 @@ section('[10] 시즌');
     gr[0].rounds === 2 && gr[0].wins === 1 && gr[0].rated === 2, JSON.stringify(gr[0]));
   ck('순수익이 맞다 (+200 -100 = +100)', gr[0].profit === 100, String(gr[0].profit));
 
-  // 통합 랭킹 — 진행 중이면 실시간 잔액, 안 논 사람은 빠진다
-  mkUser('se_idle', 999999);
+  /* 통합 랭킹 — 진행 중이면 실시간 잔액.
+     기준은 "한 판이라도 한 사람"이 아니라 "이번 시즌에 포인트가 오간 사람"이다.
+     출석만 하고 아직 안 건 사람도 이 카지노의 참가자라, 순위표에서 지워 버리면
+     그 사람 화면에는 자기 이름이 어디에도 없다. */
+  mkUser('se_idle', 999_999);                    // 지급만 받고 안 논 사람
+  mkUser('se_none', 0);                          // 가입만 하고 아무 일도 없던 사람
+  upsertUser('se_checkin', '출석러', null);       // 출석 보상만 받은 사람
+  adjustBalance('se_checkin', 5_000, 'attendance');
   const overall = S.seasonOverall(s0.id);
-  ck('안 논 사람은 통합 랭킹에 안 나온다',
-    !overall.some(r => r.userId === 'se_idle'), JSON.stringify(overall.map(r => r.userId)));
-  ck('통합 랭킹은 잔액 순', overall.length === 2 && overall[0].rank === 1);
+  const ids = overall.map(r => r.userId);
+  ck('출석만 한 사람도 통합 랭킹에 나온다', ids.includes('se_checkin'), JSON.stringify(ids));
+  ck('지급만 받은 사람도 나온다', ids.includes('se_idle'));
+  ck('아무 일도 없던 사람은 안 나온다', !ids.includes('se_none'), JSON.stringify(ids));
+  ck('통합 랭킹은 잔액 순',
+    overall[0].rank === 1
+    && overall.every((r, i) => i === 0 || overall[i - 1].score >= r.score),
+    JSON.stringify(overall.map(r => `${r.userId}:${r.score}`)));
+  /* 잔액이 제일 큰 se_idle 이 맨 위다 — 안 놀았다고 뒤로 밀지 않는다(점수는 잔액이다) */
+  ck('안 논 사람도 잔액대로 선다', overall[0].userId === 'se_idle', overall[0].userId);
 
   const mine = S.mySeasonRank(s0.id, 'se_a', 'mines');
   ck('내 게임 순위가 나온다', mine != null && mine.rank === 1 && mine.total === 2, JSON.stringify(mine));
-  ck('안 논 사람은 내 순위가 없다', S.mySeasonRank(s0.id, 'se_idle', null) == null);
+  /* 게임 탭은 기준이 다르다 — 그 게임을 한 판이라도 해야 오른다(목록과 같은 기준). */
+  ck('지뢰찾기를 안 한 사람은 그 탭에 내 순위가 없다',
+    S.mySeasonRank(s0.id, 'se_checkin', 'mines') == null);
+  ck('출석만 해도 통합에는 내 순위가 있다', S.mySeasonRank(s0.id, 'se_checkin', null) != null);
+  ck('아무 일도 없으면 통합에도 없다', S.mySeasonRank(s0.id, 'se_none', null) == null);
+  /* 고정바의 인원수는 목록 길이와 같아야 한다 — 다르면 "N명 중 M위"가 거짓말이 된다 */
+  ck('고정바의 인원수가 목록과 같다',
+    S.mySeasonRank(s0.id, 'se_checkin', null)!.total === overall.length,
+    `${S.mySeasonRank(s0.id, 'se_checkin', null)!.total} vs ${overall.length}`);
 
   // 시즌을 닫는다 — 점수를 찍고 나서 초기화해야 한다
   const balA = bal('se_a'), balB = bal('se_b');
@@ -1098,10 +1119,14 @@ section('[10] 시즌');
 
   const after = S.seasonOverall(s0.id);
   ck('닫힌 시즌의 점수 = 닫기 직전 잔액',
-    after.length === 2
-    && after.find(r => r.userId === 'se_a')!.score === balA
-    && after.find(r => r.userId === 'se_b')!.score === balB,
-    JSON.stringify(after));
+    after.find(r => r.userId === 'se_a')?.score === balA
+    && after.find(r => r.userId === 'se_b')?.score === balB,
+    JSON.stringify(after.map(r => `${r.userId}:${r.score}`)));
+  /* 성적표도 통합 랭킹과 같은 사람들을 담아야 한다 — 기준이 다르면 시즌이 닫히는
+     그 순간 화면에서 보던 사람이 성적표에서 사라진다. */
+  ck('출석만 한 사람도 성적표에 남는다', after.some(r => r.userId === 'se_checkin'),
+    JSON.stringify(after.map(r => r.userId)));
+  ck('아무 일도 없던 사람은 성적표에도 없다', !after.some(r => r.userId === 'se_none'));
 
   ck('전원 잔액이 0 으로 초기화됐다',
     bal('se_a') === 0 && bal('se_b') === 0 && bal('se_idle') === 0,

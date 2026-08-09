@@ -27,6 +27,25 @@ export function listSeasons(): SeasonRow[] {
   return all<SeasonRow>(`SELECT * FROM seasons ORDER BY number DESC`);
 }
 
+/* ── 누가 이번 시즌의 참가자인가 ──────────────────────────────────────
+   예전 기준은 "한 판이라도 한 사람"이었다. 그런데 출석만 하고 아직 안 건 사람도 이
+   카지노의 참가자다 — 그 사람 화면에는 자기 이름이 순위표 어디에도 없었다.
+   그래서 기준을 "이번 시즌에 포인트가 오간 적이 있는가"로 넓힌다. 출석·파산 지원금·
+   주간 보너스·관리자 지급·게임이 전부 여기 들어온다.
+
+   시즌 초기화 줄(season:reset:*)은 반드시 뺀다. 그 줄은 시즌이 열릴 때 전원에게 한 번씩
+   찍히므로, 세면 가입만 하고 한 번도 안 들어온 사람까지 전부 순위표에 올라온다 —
+   그러면 시작 잔액 그대로인 사람들이 위쪽에 앉아 순위가 아무 뜻이 없어진다.
+
+   u 는 바깥 질의의 users 별칭이다. 이 조각을 쓰는 질의는 users 를 u 로 열어야 한다.
+   묶는 값은 두 개: 시즌 시작 시각, 끝 시각(진행 중이면 아주 먼 미래). */
+const ACTIVE_IN_SEASON = `EXISTS (
+      SELECT 1 FROM points_ledger p
+       WHERE p.user_id = u.id AND p.created_at >= ? AND p.created_at < ?
+         AND p.reason NOT LIKE 'season:reset:%')`;
+const FAR_FUTURE = 9_999_999_999;
+const seasonWindow = (s: SeasonRow): [number, number] => [s.started_at, s.closed_at ?? FAR_FUTURE];
+
 export function getSeason(id: number): SeasonRow | undefined {
   return one<SeasonRow>(`SELECT * FROM seasons WHERE id = ?`, id);
 }
@@ -165,14 +184,11 @@ export function seasonOverall(seasonId: number, limit = 100): SeasonRankRow[] {
          FROM season_results r JOIN users u ON u.id = r.user_id
         WHERE r.season_id = ? ORDER BY r.rank ASC LIMIT ?`, seasonId, limit);
   }
-  /* 진행 중인 시즌은 "그 시즌에 한 판이라도 한 사람"만 센다. 가입만 하고 안 논 사람이
-     시작 잔액 그대로 순위표 위쪽에 앉아 있으면 순위가 아무 뜻이 없다. */
   const rows = all<{ userId: string; username: string; avatar: string | null; score: number }>(
     `SELECT u.id AS userId, u.username, u.avatar, u.balance AS score
        FROM users u
-      WHERE EXISTS (SELECT 1 FROM season_stats s
-                     WHERE s.season_id = ? AND s.user_id = u.id AND s.rounds > 0)
-      ORDER BY u.balance DESC, u.id ASC LIMIT ?`, seasonId, limit);
+      WHERE ${ACTIVE_IN_SEASON}
+      ORDER BY u.balance DESC, u.id ASC LIMIT ?`, ...seasonWindow(s), limit);
   return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
@@ -182,7 +198,12 @@ export interface SeasonGameRankRow {
   rank: number;
 }
 
-/** 게임별 랭킹 — 순수익 순. 승률은 화면에서 rated 를 분모로 계산한다. */
+/** 게임별 랭킹 — 순수익 순. 승률은 화면에서 rated 를 분모로 계산한다.
+ *
+ *  여기는 통합 랭킹과 기준이 다르다: 그 게임을 한 판이라도 한 사람만 오른다.
+ *  통합 랭킹이 "이번 시즌의 참가자"를 보여주는 자리라면, 게임 탭은 "그 게임을 한
+ *  사람들의 성적"이다 — 안 한 사람을 0판으로 채우면 그 게임을 실제로 한 사람이
+ *  0판 줄에 파묻힌다. */
 export function seasonGameRanking(seasonId: number, game: string, limit = 100): SeasonGameRankRow[] {
   const rows = all<Omit<SeasonGameRankRow, 'rank'>>(
     `SELECT s.user_id AS userId, u.username, u.avatar,
@@ -199,6 +220,9 @@ export function mySeasonRank(seasonId: number, userId: string, game: string | nu
   const s = getSeason(seasonId);
   if (!s) return null;
 
+  /* 아래 고정바는 그 탭의 목록과 같은 사람들을 세어야 한다. 기준이 목록과 다르면
+     목록에는 있는데 "내 자리"만 안 보이거나 등수가 어긋난다. 그래서 게임 탭은
+     "한 판이라도 한 사람", 통합은 "이번 시즌 참가자"로 각각 맞춘다. */
   if (game) {
     const mine = one<{ profit: number; rounds: number; rated: number; wins: number; pushes: number }>(
       `SELECT profit, rounds, rated, wins, pushes FROM season_stats
@@ -214,6 +238,7 @@ export function mySeasonRank(seasonId: number, userId: string, game: string | nu
     return { rank: above.n + 1, total: total.n, score: mine.profit,
       rounds: mine.rounds, rated: mine.rated, wins: mine.wins, pushes: mine.pushes };
   }
+  const [from, to] = seasonWindow(s);
 
   if (s.closed_at != null) {
     const r = one<{ rank: number; balance: number }>(
@@ -226,17 +251,17 @@ export function mySeasonRank(seasonId: number, userId: string, game: string | nu
   }
   const me = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, userId);
   if (!me) return null;
-  const played = one<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM season_stats WHERE season_id = ? AND user_id = ? AND rounds > 0`,
-    seasonId, userId)!;
-  if (played.n === 0) return null;
+  /* 목록에 없는 사람에게 등수를 주면 안 된다 — 가입만 하고 아무 일도 없던 사람에게
+     "32명 중 5위"가 뜨는데 정작 목록에는 자기 이름이 없다. */
+  const active = one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM users u WHERE u.id = ? AND ${ACTIVE_IN_SEASON}`,
+    userId, from, to)!.n > 0;
+  if (!active) return null;
   const above = one<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM users u
-      WHERE u.balance > ? AND EXISTS (SELECT 1 FROM season_stats s
-        WHERE s.season_id = ? AND s.user_id = u.id AND s.rounds > 0)`, me.balance, seasonId)!;
+    `SELECT COUNT(*) AS n FROM users u WHERE u.balance > ? AND ${ACTIVE_IN_SEASON}`,
+    me.balance, from, to)!;
   const total = one<{ n: number }>(
-    `SELECT COUNT(DISTINCT user_id) AS n FROM season_stats WHERE season_id = ? AND rounds > 0`,
-    seasonId)!;
+    `SELECT COUNT(*) AS n FROM users u WHERE ${ACTIVE_IN_SEASON}`, from, to)!;
   return { rank: above.n + 1, total: total.n, score: me.balance };
 }
 
@@ -322,13 +347,16 @@ export function closeSeason(opts: { seed: number; nextName?: string }):
     const now = Math.floor(Date.now() / 1000);
     const seed = Math.max(0, Math.floor(opts.seed));
 
-    /* 성적표는 "그 시즌에 한 판이라도 한 사람"만 담는다 — 통합 랭킹과 같은 기준이라야
-       화면에서 보던 순위와 성적표가 어긋나지 않는다. */
+    /* 성적표는 통합 랭킹과 같은 사람들을 담아야 한다 — 기준이 다르면 시즌이 닫히는
+       그 순간 화면에서 보던 사람이 성적표에서 사라진다. 그래서 여기도 ACTIVE_IN_SEASON 이다.
+
+       끝을 now 로 자르지 않는다. 원장의 시각은 초 단위라, 닫히는 그 초에 들어온 판이
+       "미래"로 밀려 통째로 빠진다(감사에서 실제로 전원이 빠졌다). 초기화 줄은 아직
+       찍히지도 않았고, 찍혀도 reason 으로 걸러진다 — 위를 열어 둬도 새어 들어올 것이 없다. */
     const players = all<{ id: string; balance: number }>(
       `SELECT u.id, u.balance FROM users u
-        WHERE EXISTS (SELECT 1 FROM season_stats s
-                       WHERE s.season_id = ? AND s.user_id = u.id AND s.rounds > 0)
-        ORDER BY u.balance DESC, u.id ASC`, s.id);
+        WHERE ${ACTIVE_IN_SEASON}
+        ORDER BY u.balance DESC, u.id ASC`, s.started_at, FAR_FUTURE);
     players.forEach((p, i) => {
       run(`INSERT INTO season_results (season_id, user_id, balance, rank) VALUES (?, ?, ?, ?)
            ON CONFLICT(season_id, user_id) DO UPDATE SET balance = excluded.balance, rank = excluded.rank`,

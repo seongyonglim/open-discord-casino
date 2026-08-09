@@ -116,14 +116,22 @@ export async function handleReveal(req: IncomingMessage, res: ServerResponse, us
     const payout = Math.floor(round.bet_amount * multiplier);
     const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`);
     const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
-    /* ── 도전과제: 1/25의 사나이 ──────────────────────────────────────
-       안전한 칸이 단 하나뿐인 판(지뢰 24개)에서 그 한 칸을 짚었다. 마지막 칸을 열면
-       자동으로 정산되므로 이 판정은 캐시아웃 자리가 아니라 여기 있어야 한다 —
+    /* ── 도전과제 둘 ─────────────────────────────────────────────────
+       여기는 "안전한 칸을 하나도 남기지 않고 다 열었다"는 자리다. 마지막 칸을 열면
+       그 자리에서 자동 정산되므로, 판을 끝까지 간 과제는 전부 여기서 판정해야 한다 —
        handleCashout 에 붙이면 영영 도달하지 않는다.
 
-       조건을 지뢰 개수가 아니라 maxSafe 로 쓴다. "안전 칸이 하나뿐인 판"이 이 과제의
-       뜻이고, 판 크기나 지뢰 선택지를 바꾸는 날에도 그 뜻이 그대로 따라온다. */
-    const got = award(userId, round.bet_amount, [['mi-1-of-25', () => maxSafe === 1]]);
+         · 1/25의 사나이 — 안전 칸이 하나뿐인 판(지뢰 24개)에서 그 한 칸을 짚었다.
+         · 안전불감증   — 지뢰 하나 판에서 24칸을 끝까지 다 열었다. 마지막 한 칸을
+                          남기고 나오는 것이 안전한 선택인데 거기서 한 번 더 눌렀다.
+
+       1/25 쪽은 지뢰 개수가 아니라 maxSafe 로 쓴다 — "안전 칸이 하나뿐인 판"이 그 과제의
+       뜻이라 판 크기나 지뢰 선택지가 바뀌어도 뜻이 따라온다. 안전불감증은 반대로
+       "지뢰 하나짜리 판"이 조건 자체라 지뢰 개수를 그대로 본다. */
+    const got = award(userId, round.bet_amount, [
+      ['mi-1-of-25', () => maxSafe === 1],
+      ['mi-24-of-24', () => state.mineCount === 1 && newState.revealed.length === TILE_COUNT - 1],
+    ]);
     return sendJson(res, 200, {
       ok: true, autoCashedOut: true, balance,
       round: publicRound(settled, newState, true), ...withUnlocked(got),
@@ -146,17 +154,10 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
   const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`,
     state.revealed.length > 0);
   const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
-  /* ── 도전과제: 안전불감증 ────────────────────────────────────────
-     지뢰 하나 모드에서 안전한 24칸 중 23칸을 열고, 마지막 한 칸을 남긴 채 나온다.
-     한 칸만 더 열면 25칸 중 남은 두 칸 가운데 하나가 지뢰라 반반이다 — 그 앞에서
-     멈춘 것이 이 과제의 요점이다.
-
-     칸 수는 코드에서 읽는다(TILE_COUNT). 25 를 적어 두면 판 크기를 바꾸는 날
-     이 과제만 조용히 안 열린다. */
-  const got = award(userId, round.bet_amount, [['mi-23-of-24', () =>
-    state.mineCount === 1 && state.revealed.length === TILE_COUNT - 1 - 1]]);
+  /* 중간에 나오는 자리에는 판정할 과제가 없다. 안전불감증은 "끝까지 다 열었다"로 바뀌면서
+     handleReveal 의 자동 정산 쪽으로 옮겼다 — 다 열면 여기까지 오지 않기 때문이다. */
   return sendJson(res, 200, {
-    ok: true, balance, round: publicRound(settled, state, true), ...withUnlocked(got),
+    ok: true, balance, round: publicRound(settled, state, true),
   });
 }
 

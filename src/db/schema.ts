@@ -601,4 +601,18 @@ function initSchema(): void {
   try {
     d.exec(`ALTER TABLE holdem_entries ADD COLUMN paid_in INTEGER NOT NULL DEFAULT 0`);
   } catch { /* 이미 있다 */ }
+
+  /* 시즌 0 의 시작일 정정 — 표에 찍힌 값이 카지노를 처음 연 날이 아니라 시즌 행을 만든
+     날이었다. 랭킹 배너의 "시작"이 그 값을 그대로 보여준다.
+
+     이 한 줄을 여기 두는 이유는 손댈 다른 길이 없어서다. 운영 DB 는 앱이 도는 동안
+     다른 프로세스에서 열어 쓰지 않는다(예전에 그렇게 하다 통째로 멈춘 적이 있다).
+     스키마를 세우는 이 자리는 앱 자신의 연결에서, 요청을 받기 전에 한 번 돈다.
+
+     조건에 지금 값을 그대로 박아 둔다. 한 번 고쳐지면 다시는 걸리지 않고, 다른 시즌이나
+     손으로 고친 값에는 절대 닿지 않는다. */
+  try {
+    d.prepare(`UPDATE seasons SET started_at = ? WHERE number = 0 AND started_at = ?`)
+      .run(1_785_596_400, 1_786_079_376);       // 2026-08-02 00:00 KST ← 잘못 찍힌 값
+  } catch { /* 시즌 표가 아직 없으면 고칠 것도 없다 */ }
 }

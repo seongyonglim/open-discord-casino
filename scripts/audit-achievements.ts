@@ -449,7 +449,8 @@ async function main(): Promise<void> {
     ck('열두 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
-    for (const id of ['bj-double-21', 'crash-x100', 'crash-profit-1m', 'la-right-7', 'mi-1-of-25']) {
+    for (const id of ['bj-double-21', 'crash-x100', 'crash-profit-1m', 'la-right-7',
+      'mi-1-of-25', 'mi-24-of-24']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
     /* 베팅이 없거나, 금액이 뜻을 갖지 않는 과제는 기준도 0 이어야 한다. 그대로 두면
@@ -473,6 +474,7 @@ async function main(): Promise<void> {
       && byId.get('relief-10-day')?.game_type === 'ALL'
       && byId.get('ho-straight-flush')?.game_type === 'HOLDEM'
       && byId.get('mi-1-of-25')?.game_type === 'MINES'
+      && byId.get('mi-24-of-24')?.game_type === 'MINES'
       && byId.get('la-right-7')?.game_type === 'LADDER');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
@@ -483,10 +485,14 @@ async function main(): Promise<void> {
        판정이 바뀌어 id 째로 갈아엎으면 예전 줄이 표에 그대로 남는다(씨앗은 덮어쓸 뿐
        지우지 않는다). 그러면 화면에 아무도 깰 수 없는 칸이 하나 늘어난 채로 남는다. */
     const OLD = 'bj-hit-21';
-    A.upsertAchievement({ id: OLD, gameType: 'BLACKJACK', title: '옛 과제' });
-    ck('검사 전제: 예전 줄이 표에 있다', !!A.listAchievements().find(a => a.id === OLD));
+    for (const id of [OLD, 'mi-23-of-24']) {
+      A.upsertAchievement({ id, gameType: 'BLACKJACK', title: '옛 과제' });
+      ck(`검사 전제: ${id} 이 표에 있다`, !!A.listAchievements().find(a => a.id === id));
+    }
     seed();
-    ck('폐기한 과제는 씨앗이 지운다', !A.listAchievements().find(a => a.id === OLD));
+    for (const id of [OLD, 'mi-23-of-24']) {
+      ck(`폐기한 ${id} 을 씨앗이 지운다`, !A.listAchievements().find(a => a.id === id));
+    }
     ck('지운 뒤에도 열두 개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
@@ -809,18 +815,38 @@ async function main(): Promise<void> {
       /byHand[\s\S]{0,160}cashout_multiplier === CRASH_MIN_X/.test(cr)
       && /auto_cashout == null \|\| [^\n]*!== [^\n]*auto_cashout/.test(cr));
 
-    /* ── 1/25의 사나이 ────────────────────────────────────────────
-       마지막 칸은 자동으로 정산된다 — 판정이 캐시아웃 자리에 있으면 영영 안 열린다. */
+    /* ── 지뢰찾기 둘 ──────────────────────────────────────────────
+       마지막 칸을 열면 그 자리에서 자동 정산된다 — 판을 끝까지 간 과제의 판정이
+       캐시아웃 자리에 있으면 영영 안 열린다. 둘 다 그 자리에 있어야 한다. */
     const iAuto = mn.indexOf('revealed.length === maxSafe');
     const iMi1 = mn.indexOf("'mi-1-of-25'");
+    const iMi24 = mn.indexOf("'mi-24-of-24'");
     const iCash = mn.indexOf('export async function handleCashout');
-    ck('지뢰 판정이 자동 정산 자리에 있다', iAuto > 0 && iMi1 > iAuto && iMi1 < iCash,
+    ck('1/25 판정이 자동 정산 자리에 있다', iAuto > 0 && iMi1 > iAuto && iMi1 < iCash,
       `auto=${iAuto} award=${iMi1} cashout=${iCash}`);
+    ck('안전불감증 판정도 그 자리에 있다', iMi24 > iAuto && iMi24 < iCash,
+      `award=${iMi24} cashout=${iCash}`);
     ck('안전 칸이 하나뿐인 판만 본다', /'mi-1-of-25',[\s\S]{0,40}maxSafe === 1/.test(mn));
+    /* 지뢰 하나 · 24칸 — 연 칸 수만 세면 지뢰 24개 판과 섞인다 */
+    ck('지뢰 하나 판에서 24칸을 다 연 것만 본다',
+      /'mi-24-of-24',[\s\S]{0,120}mineCount === 1[\s\S]{0,80}TILE_COUNT - 1/.test(mn));
+    ck('캐시아웃 자리에는 판정이 남아 있지 않다',
+      !mn.slice(iCash).includes('award('), mn.slice(iCash, iCash + 400));
     /* 지뢰 24개가 실제로 고를 수 있는 값이어야 안전 칸 1개짜리 판이 존재한다 */
     ck('지뢰 24개 판이 실제로 있다',
       /ALLOWED_MINE_COUNTS = \[[^\]]*\b24\b/.test(mn)
       && !!byId2.get('mi-1-of-25')?.description.includes('24개'));
+    ck('안전불감증 설명이 클리어를 말한다',
+      !!byId2.get('mi-24-of-24')?.description.includes('24칸을 전부')
+      && !!byId2.get('mi-24-of-24')?.description.includes('클리어'),
+      byId2.get('mi-24-of-24')?.description);
+
+    /* 스탠드 과제의 문구도 판정과 같은 말을 해야 한다 — 조건은 안 바뀌었지만
+       "서서"를 "스탠드 후"로 고쳤다. 화면의 말과 코드가 갈리지 않는지 본다. */
+    ck('스탠드 설명이 판정과 같은 말이다',
+      !!byId2.get('bj-stand-6')?.description.includes('스탠드')
+      && !!byId2.get('bj-stand-6')?.description.includes('버스트'),
+      byId2.get('bj-stand-6')?.description);
   }
 
   /* ── 8-4. 진짜 핸들러 ───────────────────────────────────────── */
@@ -1182,34 +1208,14 @@ async function main(): Promise<void> {
     const ids = (d: Record<string, unknown>): string[] =>
       ((d.unlocked ?? []) as { id: string }[]).map(u => u.id);
 
-    /* ── 안전불감증 ─────────────────────────────────────────────
-       지뢰 1개 판에서 23칸을 열고 마지막 한 칸을 남긴 채 나온다. */
     function minesRound(mineCount: number, opened: number, bet: number, uid: string): void {
       db.exec(`DELETE FROM game_rounds WHERE user_id = '${uid}'`);
-      /* 지뢰 위치를 열 칸과 겹치지 않게 놓는다 — 겹치면 그건 이미 터진 판이다. */
+      /* 지뢰 위치를 열 칸과 겹치지 않게 놓는다 — 겹치면 그건 이미 터진 판이다.
+         뒤쪽부터 놓으므로 앞 칸들이 안전한 칸이 된다. */
       const mines = Array.from({ length: mineCount }, (_, i) => 24 - i);
       const revealed = Array.from({ length: opened }, (_, i) => i).filter(t => !mines.includes(t));
       Q.placeBet(uid, 'mines', bet, { mineCount, minePositions: mines, revealed });
     }
-
-    wipe(); seedForWiring(); mkUser('M1', 1_000_000);
-    minesRound(1, 23, 1_000, 'M1');
-    ck('23칸 열고 캐시아웃하면 열린다',
-      ids(await grab(MN.handleCashout, 'M1')).includes('mi-23-of-24'));
-
-    wipe(); seedForWiring(); mkUser('M2', 1_000_000);
-    minesRound(1, 22, 1_000, 'M2');
-    ck('22칸에서는 안 열린다', !ids(await grab(MN.handleCashout, 'M2')).includes('mi-23-of-24'));
-
-    /* 지뢰가 셋이면 안전 칸이 22개뿐이라 23칸이라는 상태가 없다 — 판을 착각하지
-       않는지 본다(연 칸 수만 보면 다른 모드에서도 열릴 수 있다). */
-    wipe(); seedForWiring(); mkUser('M3', 1_000_000);
-    minesRound(3, 22, 1_000, 'M3');
-    ck('지뢰 3개 판에서는 안 열린다', !ids(await grab(MN.handleCashout, 'M3')).includes('mi-23-of-24'));
-
-    wipe(); seedForWiring(); mkUser('M4', 1_000_000);
-    minesRound(1, 23, 999, 'M4');
-    ck('999P 베팅이면 안 열린다', !ids(await grab(MN.handleCashout, 'M4')).includes('mi-23-of-24'));
 
     /* ── 1/25의 사나이 ─────────────────────────────────────────
        안전 칸이 하나뿐인 판(지뢰 24개). 그 한 칸을 열면 더 열 칸이 없어 곧바로 정산되므로,
@@ -1244,14 +1250,38 @@ async function main(): Promise<void> {
     minesRound(24, 0, 999, 'M7');
     ck('999P 로 맞혀도 안 열린다', !ids(await reveal('M7', 0)).includes('mi-1-of-25'));
 
-    /* 지뢰 1개 판에서 24칸을 다 열어도 같은 자동 정산 자리를 지난다 — 그때 안전 칸은
-       24개였으므로 이 과제가 아니다. 연 칸 수만 세면 여기서 잘못 열린다. */
+    /* ── 안전불감증 ─────────────────────────────────────────────
+       지뢰 하나 판에서 24칸을 끝까지 다 연다. 1/25 과 같은 자리(자동 정산)를 지나므로
+       둘이 서로를 잘못 열지 않는지도 여기서 함께 본다 — 연 칸 수만 세면 섞인다. */
     wipe(); seedForWiring(); mkUser('M8', 1_000_000);
     minesRound(1, 23, 1_000, 'M8');
     const all24 = await reveal('M8', 23);
-    ck('지뢰 1개 판을 다 열어도 안 열린다',
-      all24.autoCashedOut === true && !ids(all24).includes('mi-1-of-25'),
+    ck('마지막 칸까지 열면 그 자리에서 정산된다', all24.autoCashedOut === true,
       JSON.stringify(all24.autoCashedOut ?? null));
+    ck('안전불감증이 열린다', ids(all24).includes('mi-24-of-24'), ids(all24).join(','));
+    ck('그 판은 1/25의 사나이가 아니다', !ids(all24).includes('mi-1-of-25'));
+    ck('거꾸로 지뢰 24개 판도 안전불감증이 아니다', !ids(only).includes('mi-24-of-24'),
+      ids(only).join(','));
+
+    /* 한 칸 남기고 나오면 아니다 — 예전 조건이라 여기서 열리면 바뀐 게 아니다.
+       (그 자리에는 이제 판정이 아예 없다: 다 열면 캐시아웃까지 오지 않는다.) */
+    wipe(); seedForWiring(); mkUser('M9', 1_000_000);
+    minesRound(1, 23, 1_000, 'M9');
+    ck('23칸에서 캐시아웃하면 안 열린다',
+      !ids(await grab(MN.handleCashout, 'M9')).includes('mi-24-of-24'));
+
+    /* 지뢰가 셋이면 다 열어도 아니다 — "지뢰 하나짜리 판"이 조건 자체다 */
+    wipe(); seedForWiring(); mkUser('M10', 1_000_000);
+    minesRound(3, 21, 1_000, 'M10');
+    const clear3 = await reveal('M10', 21);
+    ck('검사 전제: 지뢰 3개 판도 다 열렸다', clear3.autoCashedOut === true,
+      JSON.stringify(clear3.autoCashedOut ?? null));
+    ck('지뢰 3개 판을 다 열어도 안 열린다', !ids(clear3).includes('mi-24-of-24'));
+
+    wipe(); seedForWiring(); mkUser('M11', 1_000_000);
+    minesRound(1, 23, 999, 'M11');
+    ck('999P 로 클리어해도 안 열린다',
+      !ids(await reveal('M11', 23)).includes('mi-24-of-24'));
 
     /* ── 한탕주의자 ─────────────────────────────────────────────
        마지막 등급 칸(포카드 이상)에 걸어 맞힌다. */

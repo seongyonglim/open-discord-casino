@@ -95,10 +95,16 @@ function main(): void {
        종료 시점의 보유 포인트가 그대로 있어야 그 약속이 지켜진다. */
     const s0 = S.listSeasons().find(x => x.number === 0)!;
     const rows = S.seasonOverall(s0.id, 100);
-    ck('시즌 0 순위가 남아 있다', rows.length === 3, String(rows.length));
+    /* 앞 절에서 만든 사람들도 원장에 기록이 있어 성적표에 함께 남는다(통합 랭킹 기준이
+       "이번 시즌에 포인트가 오간 사람"이다). 그래서 인원수가 아니라 "이 셋이 그대로
+       있는가"로 본다 — 세 명이라고 못 박아 두면 앞 절을 하나 늘릴 때마다 여기가 깨진다. */
+    const by = new Map(rows.map(r => [r.userId, r]));
+    ck('시즌 0 순위가 남아 있다', ['a', 'b', 'c'].every(u => by.has(u)),
+      rows.map(r => r.userId).join(','));
     ck('1위는 종료 시점 포인트로 기록됐다',
       rows[0].userId === 'a' && rows[0].score === 30_000, JSON.stringify(rows[0]));
-    ck('잔액이 0으로 바뀐 뒤에도 성적표는 안 흔들린다', rows[2].score === 10_000);
+    ck('잔액이 0으로 바뀐 뒤에도 성적표는 안 흔들린다', by.get('c')?.score === 10_000,
+      String(by.get('c')?.score));
   }
 
   /* ── 4. 보상 금액 ───────────────────────────────────────────── */
@@ -230,6 +236,47 @@ function main(): void {
     ck('화면의 여유 시간도 5분이다', /LAZY_SLACK = 300/.test(src));
     ck('예약이 없을 때만 미정이다', src.includes('미정'));
     SS.clearSeasonSchedule();
+  }
+
+  /* ── 8. 시즌 0 시작일 정정 ──────────────────────────────────── */
+  section('[8] 시즌 0 시작일 — 한 번만, 그 줄만');
+  {
+    /* 운영 DB 는 앱이 도는 동안 다른 프로세스에서 열어 쓰지 않는다. 그래서 이 정정은
+       스키마를 세우는 자리(앱 자신의 연결)에서 돈다. 거기 있는 한 줄이 정확히 무엇을
+       하는지가 중요하다 — 잘못 쓰면 시즌 표를 통째로 뭉갠다. */
+    const schema = require('node:fs').readFileSync('src/db/schema.ts', 'utf8') as string;
+    const m = schema.match(
+      /UPDATE seasons SET started_at = \? WHERE number = 0 AND started_at = \?\`\)\s*\n\s*\.run\(([\d_]+), ([\d_]+)\)/);
+    ck('정정이 시즌 0 만, 그것도 지금 값일 때만 돈다', !!m, m ? '' : '(문장을 못 찾음)');
+    const to = Number((m?.[1] ?? '0').replace(/_/g, ''));
+    const from = Number((m?.[2] ?? '0').replace(/_/g, ''));
+    const kst = new Date((to + 9 * 3600) * 1000);
+    ck('새 시작일은 8월 2일 (KST)',
+      kst.getUTCMonth() + 1 === 8 && kst.getUTCDate() === 2 && kst.getUTCHours() === 0,
+      kst.toISOString());
+    ck('예전 값과 다르다', from > 0 && from !== to, `${from} → ${to}`);
+
+    /* 두 번 돌아도 값이 흔들리지 않고, 다른 시즌은 건드리지 않는가.
+       스키마는 앱이 뜰 때마다 도는 자리라 "한 번만"이 규칙이 아니라 성질이어야 한다. */
+    reset();
+    db.prepare(`UPDATE seasons SET started_at = ? WHERE number = 0`).run(from);
+    db.prepare(`INSERT INTO seasons (number, name, reward, started_at) VALUES (1, '시즌 1', '', ?)`)
+      .run(from);
+    const fix = (): void => {
+      db.prepare(`UPDATE seasons SET started_at = ? WHERE number = 0 AND started_at = ?`).run(to, from);
+    };
+    fix();
+    const at0 = (): number =>
+      (db.prepare(`SELECT started_at AS v FROM seasons WHERE number = 0`).get() as { v: number }).v;
+    ck('시즌 0 이 고쳐졌다', at0() === to, String(at0()));
+    fix(); fix();
+    ck('여러 번 돌아도 그대로다', at0() === to, String(at0()));
+    ck('시즌 1 은 안 건드린다',
+      (db.prepare(`SELECT started_at AS v FROM seasons WHERE number = 1`).get() as { v: number }).v === from);
+    /* 사람이 손으로 다른 값을 넣어 뒀으면 그 값을 존중해야 한다 */
+    db.prepare(`UPDATE seasons SET started_at = ? WHERE number = 0`).run(12_345);
+    fix();
+    ck('손으로 고친 값은 덮지 않는다', at0() === 12_345, String(at0()));
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
