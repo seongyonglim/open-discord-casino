@@ -46,7 +46,10 @@ export function ladderParity(endSide: string): 'ODD' | 'EVEN' {
   return endSide === 'L' ? 'ODD' : 'EVEN';
 }
 
-function settleLadderBets(roundId: number, startSide: string, endSide: string): void {
+/* 감사도 이 함수를 직접 부른다 — 라운드를 실제로 굴리려면 시각을 조작해야 하는데,
+   그러면 "내가 만든 흐름"을 검사하게 된다. 정산 자체를 태워야 연승이 진짜 그 자리에서
+   쌓이는지 확인된다. */
+export function settleLadderBets(roundId: number, startSide: string, endSide: string): void {
   const parity = ladderParity(endSide);
   const bets = all<{ id: number; user_id: string; start_guess: string | null; parity_guess: string | null; amount: number }>(
     `SELECT id, user_id, start_guess, parity_guess, amount FROM ladder_bets WHERE round_id = ?`, roundId
@@ -66,7 +69,32 @@ function settleLadderBets(roundId: number, startSide: string, endSide: string): 
     const bal = one<{ balance: number }>(`SELECT balance FROM users WHERE id = ?`, b.user_id)!;
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`, b.user_id, payout, 'game:ladder', bal.balance);
     bumpGameStats(b.user_id, 'ladder', b.amount, payout);
+    trackRightStreak(b.user_id, b.start_guess, won, b.amount);
   }
+}
+
+/* ── 연속 '우' 승리 ────────────────────────────────────────────────
+   [사다리게임] 극우 이대남 — 오른쪽으로만 걸어 일곱 번 이긴다.
+
+   판을 쉬는 것은 끊기는 것이 아니다. 안 건 판에서는 이 함수가 아예 안 불린다
+   (정산은 그 라운드에 건 사람만 훑는다) — 그래서 값이 그대로 남는다. 그것이 곧
+   "쉬어가기 허용"이고, 따로 처리할 것이 없다.
+
+   1,000P 미만 베팅은 연승에 영향을 주지 않는다. 문지기를 여기 두는 이유는, 과제 쪽에
+   두면 이미 쌓인 연승으로 열려 버려서 소액으로 쌓는 것을 막지 못하기 때문이다.
+   그래서 1P 로 걸고 이겨도 연승이 오르지 않고, 1P 로 걸고 져도 끊기지 않는다.
+
+   출발을 안 고르고 홀짝만 건 판(start_guess 가 null)은 끊는 쪽으로 본다 —
+   "우로만 걸었다"가 성립하지 않는 판이다. */
+const LADDER_STREAK_MIN_BET = 1_000;
+
+function trackRightStreak(
+  userId: string, startGuess: string | null, won: boolean, amount: number
+): void {
+  if (amount < LADDER_STREAK_MIN_BET) return;          // 이 판은 없던 것으로 본다
+  const { bumpStreak, resetStreak } = require('../streaks') as typeof import('../streaks');
+  if (startGuess !== 'R' || !won) { resetStreak(userId, 'ladder_right_win'); return; }
+  bumpStreak(userId, 'ladder_right_win');
 }
 
 // 사다리 라운드는 표시용 히스토리(최근 20판) 외에는 보관할 이유가 없다. 무한히 적재되지 않도록

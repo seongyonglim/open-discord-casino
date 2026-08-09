@@ -520,6 +520,17 @@ function initSchema(): void {
     /* 사람별 표시. 읽음과 치움을 함께 둔다 — 전체 알림은 한 줄을 여럿이 보므로
        둘 다 그 줄에 적을 수 없다. 개인 알림도 치움은 여기에 적는다: 지우는 것이 아니라
        "이 사람 목록에서 뺀다"는 뜻이라, 줄 자체는 남아 있어야 기록이 사라지지 않는다. */
+    /* 연승처럼 "지금까지 몇 번 이어졌나"를 세는 값. 과제마다 표를 만들지 않으려고
+       kind 로 나눠 담는다. game_stats 에 열을 붙이지 않는 이유는 그 표가 통산 전적이고
+       이건 전적이 아니라 진행 중인 상태이기 때문이다 — 랭킹에 섞이면 안 된다. */
+    CREATE TABLE IF NOT EXISTS user_streaks (
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,                    -- 'ladder_right_win' 등
+      value INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (user_id, kind)
+    );
+
     CREATE TABLE IF NOT EXISTS notification_reads (
       user_id TEXT NOT NULL,
       notification_id INTEGER NOT NULL,

@@ -445,7 +445,7 @@ async function main(): Promise<void> {
     wipe();
     seed();
     const byId = new Map(A.listAchievements().map(a => [a.id, a]));
-    ck('다섯 과제가 등록된다', byId.size === 5, String(byId.size));
+    ck('여섯 과제가 등록된다', byId.size === 6, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
     for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m']) {
@@ -459,7 +459,7 @@ async function main(): Promise<void> {
     /* 지금은 넷 다 공개다. 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는
        "씨앗이 실제로 무엇을 감췄나"만 본다 — 실수로 감춘 채 올리면 조건을 모르는
        사람에게는 그냥 잠긴 칸 하나가 는 것과 같다. */
-    ck('다섯 다 공개다', [...byId.keys()]
+    ck('여섯 다 공개다', [...byId.keys()]
       .every(id => byId.get(id)?.is_hidden === 0),
       A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id).join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
@@ -467,10 +467,11 @@ async function main(): Promise<void> {
       && byId.get('crash-x100')?.game_type === 'CRASH'
       && byId.get('crash-profit-1m')?.game_type === 'CRASH'
       && byId.get('relief-10-day')?.game_type === 'ALL'
-      && byId.get('ho-straight-flush')?.game_type === 'HOLDEM');
+      && byId.get('ho-straight-flush')?.game_type === 'HOLDEM'
+      && byId.get('la-right-7')?.game_type === 'LADDER');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
-    ck('두 번 돌려도 다섯 개', A.listAchievements().length === 5,
+    ck('두 번 돌려도 여섯 개', A.listAchievements().length === 6,
       String(A.listAchievements().length));
 
     /* 1,000P 문지기가 실제로 막는가. 여기가 뚫리면 위의 기준이 글자로만 남는다. */
@@ -707,7 +708,8 @@ async function main(): Promise<void> {
        화면에는 뜨는데 아무도 못 깨는 과제가 된다 — 그게 제일 알아채기 어렵다. */
     wipe();
     seedForWiring();
-    const wired = bj + cr + dc + ht;
+    const ld = read('src/web/games/ladder.ts');
+    const wired = bj + cr + dc + ht + ld;
     const unwired = A.listAchievements().filter(a => !wired.includes(`'${a.id}'`));
     ck('배선이 빠진 과제가 없다', unwired.length === 0, unwired.map(a => a.id).join(','));
 
@@ -747,6 +749,16 @@ async function main(): Promise<void> {
     ck('기준이 0이면 안 적는다 (0P 이상은 뜻이 없다)', /v\.minBet > 0/.test(page));
     /* 감춘 과제에는 안 적는다 — 베팅으로 깨는 것인지 아닌지도 알려 주면 안 된다 */
     ck('감춘 과제에는 기준을 안 적는다', /hiddenYet[\s\S]{0,60}v\.minBet > 0/.test(page));
+
+    /* 연승은 정산 자리에서 쌓이고 과제는 화면 쪽에서 연다. 문지기(1,000P)가 정산 쪽에
+       있어야 소액으로 쌓는 것을 막는다 — 과제 쪽에 두면 이미 쌓인 연승으로 열려 버린다. */
+    const lad = read('src/db/queries/ladder.ts');
+    ck('연승 문지기가 정산 자리에 있다', /LADDER_STREAK_MIN_BET = 1_000/.test(lad));
+    ck('우가 아니거나 지면 끊는다', /startGuess !== 'R' \|\| !won/.test(lad));
+    ck('7연승 기준이 설명과 같다',
+      /RIGHT_STREAK_GOAL = 7/.test(ld) && !!byId2.get('la-right-7')?.description.includes('7연승'));
+    ck('쉬어가기가 설명에 적혀 있다',
+      !!byId2.get('la-right-7')?.description.includes('쉬어가는 판'));
 
     ck('블랙잭 판정이 20 → 21 이다',
       /before\.total === 20[\s\S]{0,80}=== 21/.test(bj)
@@ -950,6 +962,109 @@ async function main(): Promise<void> {
     db.exec(`DELETE FROM holdem_hand_seats; DELETE FROM holdem_hands;
              DELETE FROM holdem_seats; DELETE FROM holdem_tables;
              DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
+  }
+
+  /* ── 8-6. 사다리 연승 ───────────────────────────────────────── */
+  section('[8-6] 사다리 — 우 7연승 · 쉬어가기는 안 끊긴다');
+  {
+    const LD = require('../src/db/queries/ladder') as typeof import('../src/db/queries/ladder');
+    const LW = require('../src/web/games/ladder') as typeof import('../src/web/games/ladder');
+    const ST = require('../src/db/streaks') as typeof import('../src/db/streaks');
+
+    /* 라운드를 하나 만들어 그 결과를 못 박고 정산시킨다. 실제 settleLadderBets 를 태워야
+       연승이 진짜로 그 자리에서 쌓이는지 확인된다. */
+    function playRound(bets: { user: string; guess: string | null; amount: number }[],
+      startSide: 'L' | 'R'): void {
+      db.exec(`DELETE FROM ladder_bets; DELETE FROM ladder_rounds;`);
+      db.prepare(`INSERT INTO ladder_rounds (phase, betting_ends_at, start_side, end_side, rungs_json)
+                  VALUES ('done', 0, ?, 'R', '[]')`).run(startSide);
+      const rid = (db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id: number }).id;
+      for (const b of bets) {
+        db.prepare(`INSERT INTO ladder_bets (round_id, user_id, username, start_guess, parity_guess, amount)
+                    VALUES (?, ?, ?, ?, NULL, ?)`).run(rid, b.user, b.user, b.guess, b.amount);
+      }
+      LD.settleLadderBets(rid, startSide, 'R');
+    }
+
+    wipe();
+    seedForWiring();
+    mkUser('L1', 1_000_000);
+    const streak = (): number => ST.getStreak('L1', 'ladder_right_win');
+
+    /* 우에 걸고 이기면 쌓인다. 출발이 R 인 라운드에서 R 에 걸면 이긴다. */
+    for (let i = 1; i <= 6; i++) {
+      playRound([{ user: 'L1', guess: 'R', amount: 1_000 }], 'R');
+      ck(`우 승리 ${i}연승`, streak() === i, String(streak()));
+    }
+
+    /* 쉬어가는 판. 안 건 판에서는 정산이 이 사람을 훑지 않으므로 값이 그대로다 —
+       그것이 곧 "쉬어가기 허용"이고 따로 처리할 것이 없다. */
+    playRound([{ user: 'other', guess: 'R', amount: 1_000 }], 'R');
+    ck('쉬어간 판은 연승이 유지된다', streak() === 6, String(streak()));
+    db.exec(`DELETE FROM ladder_bets;`);      // 아무도 안 건 판
+    playRound([], 'R');
+    ck('아무도 안 건 판도 그대로', streak() === 6, String(streak()));
+
+    /* 일곱 번째. 이 순간 과제가 열려야 한다. */
+    playRound([{ user: 'L1', guess: 'R', amount: 1_000 }], 'R');
+    ck('7연승이 됐다', streak() === 7, String(streak()));
+    ck('아직은 응답을 안 받아 미달성', !A.hasAchievement('L1', 'la-right-7'));
+
+    /* 화면이 폴링하는 그 응답에서 열린다 — 토스트가 뜨려면 unlocked 가 실려야 한다. */
+    let body = '';
+    const res = {
+      writeHead() { }, end(c?: unknown) { if (c != null) body += String(c); },
+      getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+    };
+    await LW.handleState({} as never, res as never, 'L1');
+    const out = JSON.parse(body) as { unlocked?: { id: string }[] };
+    ck('상태 응답에 달성이 실려 온다', (out.unlocked ?? []).some(u => u.id === 'la-right-7'),
+      JSON.stringify(out.unlocked ?? null));
+    ck('기록에도 남았다', A.hasAchievement('L1', 'la-right-7'));
+
+    /* ── 끊기는 조건들 ──────────────────────────────────────── */
+    const fresh = (id: string): void => { wipe(); seedForWiring(); mkUser(id, 1_000_000); };
+    const runUp = (id: string, n: number): void => {
+      for (let i = 0; i < n; i++) playRound([{ user: id, guess: 'R', amount: 1_000 }], 'R');
+    };
+
+    fresh('L2'); runUp('L2', 3);
+    ck('검사 전제: 3연승', ST.getStreak('L2', 'ladder_right_win') === 3);
+    playRound([{ user: 'L2', guess: 'R', amount: 1_000 }], 'L');     // 우에 걸었는데 출발이 좌 → 패배
+    ck('우에 걸고 지면 끊긴다', ST.getStreak('L2', 'ladder_right_win') === 0,
+      String(ST.getStreak('L2', 'ladder_right_win')));
+
+    fresh('L3'); runUp('L3', 3);
+    playRound([{ user: 'L3', guess: 'L', amount: 1_000 }], 'L');     // 좌에 걸고 이겨도
+    ck('좌에 걸면 이겨도 끊긴다', ST.getStreak('L3', 'ladder_right_win') === 0,
+      String(ST.getStreak('L3', 'ladder_right_win')));
+
+    fresh('L4'); runUp('L4', 3);
+    playRound([{ user: 'L4', guess: null, amount: 1_000 }], 'R');    // 홀짝만 건 판
+    ck('출발을 안 고르면 끊긴다', ST.getStreak('L4', 'ladder_right_win') === 0,
+      String(ST.getStreak('L4', 'ladder_right_win')));
+
+    /* 1,000P 미만은 아예 없던 판으로 본다 — 소액으로 쌓지도, 소액으로 끊기지도 않는다. */
+    fresh('L5'); runUp('L5', 3);
+    playRound([{ user: 'L5', guess: 'R', amount: 999 }], 'R');
+    ck('999P 승리는 연승을 안 올린다', ST.getStreak('L5', 'ladder_right_win') === 3,
+      String(ST.getStreak('L5', 'ladder_right_win')));
+    playRound([{ user: 'L5', guess: 'L', amount: 999 }], 'L');
+    ck('999P 로는 끊기지도 않는다', ST.getStreak('L5', 'ladder_right_win') === 3,
+      String(ST.getStreak('L5', 'ladder_right_win')));
+
+    /* 6연승에서는 아직 안 열린다 — 기준이 실제로 7 인가. */
+    fresh('L6'); runUp('L6', 6);
+    let b6 = '';
+    const res6 = {
+      writeHead() { }, end(c?: unknown) { if (c != null) b6 += String(c); },
+      getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+    };
+    await LW.handleState({} as never, res6 as never, 'L6');
+    ck('6연승에서는 안 열린다', (JSON.parse(b6) as { unlocked?: unknown }).unlocked === undefined);
+    ck('기록에도 없다', !A.hasAchievement('L6', 'la-right-7'));
+
+    db.exec(`DELETE FROM ladder_bets; DELETE FROM ladder_rounds; DELETE FROM user_streaks;`);
   }
 
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */

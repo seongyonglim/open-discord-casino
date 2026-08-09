@@ -12,6 +12,8 @@ import {
   type LadderRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
+import { award, withUnlocked } from '../achieve-hook';
+import { getStreak } from '../../db/streaks';
 import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
@@ -104,7 +106,26 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
     balance: getWebUser(userId)?.balance ?? 0,
     multiplier: LADDER_MULTIPLIER,
     doubleMultiplier: LADDER_DOUBLE_MULTIPLIER,
+    ...ladderAwards(userId),
   });
+}
+
+/* ── 도전과제: 극우 이대남 ─────────────────────────────────────────
+   연승은 정산 자리에서 쌓인다(그 판의 승패는 거기서만 안다). 여기서는 쌓인 값만 보고
+   과제를 연다 — 이 응답으로 나가야 화면이 토스트를 띄운다.
+
+   문지기(1,000P)는 연승을 쌓는 자리에 있다. 과제 쪽 min_bet 을 0 으로 둔 것이 그래서다:
+   여기서 다시 재면 "지금 판의 베팅"을 기준으로 삼게 되는데, 일곱 번째 판을 크게 걸었는지
+   여부는 이 과제와 상관이 없다.
+
+   매 폴링마다 도는 자리지만 값싸다 — 연승이 7 미만이면 조회 한 번으로 끝나고,
+   7 이상이어도 awardIfBet 이 이미 달성한 사람을 곧바로 걸러 낸다. */
+const RIGHT_STREAK_GOAL = 7;
+
+function ladderAwards(userId: string): { unlocked?: { id: string; title: string; description: string }[] } {
+  const streak = getStreak(userId, 'ladder_right_win');
+  if (streak < RIGHT_STREAK_GOAL) return {};
+  return withUnlocked(award(userId, 0, [['la-right-7', () => true]]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {
