@@ -37,10 +37,13 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     id: 'crash-profit-1m',
     gameType: 'CRASH',
     title: '그래프의 신',
-    description: '그래프게임 순수익 100만 P를 달성합니다.',
+    /* "한 시즌 동안"을 반드시 적는다. 전적과 순수익은 시즌이 바뀌면 0에서 다시 시작하는데,
+       그 말을 안 해 두면 지난 시즌에 벌어 둔 것이 합쳐질 거라고 읽게 된다.
+       달성 기록 자체는 시즌과 무관하게 영구히 남는다 — 그건 목록 맨 위에 적혀 있다. */
+    description: '한 시즌 동안 그래프게임 순수익 100만 P를 달성합니다.',
     minBet: MIN_BET,
     sortAt: 21,
-    // 판정: src/web/games/crash.ts — game_stats 의 graph 누적 순수익(returned - staked)
+    // 판정: src/web/games/crash.ts — season_stats 의 이번 시즌 graph 순수익(returned - staked)
   },
   {
     id: 'relief-10-day',

@@ -8,6 +8,10 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { layout, esc, jsonForScript } from './views';
+import {
+  bombIcon, coinIcon, ladderIcon, chartIcon, flipIcon,
+  baccaratIcon, blackjackIcon, trophyIcon,
+} from './icons';
 import { sendJson } from './http';
 import {
   ACH_TABS, achievementsFor, achievementProgress, unlockersOf, activePlayerCount,
@@ -16,12 +20,20 @@ import {
 } from '../db/achievements';
 import type { WebUser } from '../db/queries';
 
-/* 아이콘이 없는 과제에 쓸 기본 그림. 분류마다 다르게 둔다 — 전부 같은 모양이면
-   목록이 한 덩어리로 보여서 어느 게임 것인지 카드를 읽어야만 알 수 있다. */
+/* 아이콘이 없는 과제에 쓸 기본 그림. 로비의 게임 아이콘을 그대로 쓴다 —
+   같은 게임인데 로비에서는 선 아이콘, 여기서는 이모지면 두 화면이 남처럼 보이고,
+   이모지는 OS 마다 모양과 크기가 달라 줄이 들쭉날쭉해진다(icons.ts 의 첫 줄이 그 이유다).
+   전부 currentColor 기반이라 잠긴 카드에서 회색으로 눌리는 것도 그대로 따라온다. */
 const TYPE_ICON: Record<string, string> = {
-  HOLDEM: '♠️', BACCARAT: '🀄', BLACKJACK: '🃏', POKER: '🎴',
-  MINES: '💣', CRASH: '📈', LADDER: '🪜', ALL: '🎰',
+  HOLDEM: trophyIcon, BACCARAT: baccaratIcon, BLACKJACK: blackjackIcon, POKER: flipIcon,
+  MINES: bombIcon, CRASH: chartIcon, LADDER: ladderIcon, ALL: coinIcon,
 };
+/** 자물쇠(감춘 과제). 나머지와 같은 선 굵기·크기로 그려야 한 줄에 섞여도 튀지 않는다. */
+const LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+  + '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/>'
+  + '<path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>'
+  + '<circle cx="12" cy="15.5" r="1.4" fill="currentColor" stroke="none"/></svg>';
 
 function kstDate(sec: number): string {
   const d = new Date((sec + 9 * 3600) * 1000);
@@ -64,13 +76,22 @@ function unlockerRow(v: AchievementView, total: number): string {
 function card(v: AchievementView, total: number): string {
   const icon = v.iconUrl
     ? `<img class="ac-ic-img" src="${esc(v.iconUrl)}" alt="" width="46" height="46">`
-    : `<span class="ac-ic-emo">${v.unlocked || !v.hidden ? (TYPE_ICON[v.gameType] ?? '🎲') : '🔒'}</span>`;
+    : `<span class="ac-ic-svg">${v.unlocked || !v.hidden
+      ? (TYPE_ICON[v.gameType] ?? coinIcon) : LOCK_ICON}</span>`;
   /* 잠긴 카드는 흑백에 자물쇠다. 달성한 카드만 색이 살아 있어야 목록을 훑을 때
      "내가 한 것"이 먼저 눈에 들어온다. */
   const cls = 'ac-card' + (v.unlocked ? ' on' : ' off') + (v.hidden && !v.unlocked ? ' secret' : '');
-  const foot = v.unlocked
+  /* 최소 베팅을 카드마다 적는다. 안내 문구 한 줄로만 두면 "이 과제도 해당되나"를
+     매번 위로 올라가 확인해야 하고, 과제마다 기준이 다를 수 있으면 그 문구가 거짓이 된다.
+     0 이면 베팅과 무관한 과제라 아무것도 안 적는다 — "0P 이상"은 뜻이 없다.
+     감춘 과제에는 안 적는다: 베팅으로 깨는 것인지 아닌지도 알려 주지 않아야 감춘 것이다. */
+  const hiddenYet = v.hidden && !v.unlocked;
+  const need = !hiddenYet && v.minBet > 0
+    ? `<span class="ac-need num">베팅 ${v.minBet.toLocaleString('ko-KR')}P 이상</span>`
+    : '';
+  const foot = (v.unlocked
     ? `<span class="ac-date num">${kstDate(v.unlockedAt ?? 0)} 달성</span>`
-    : `<span class="ac-lock">잠김</span>`;
+    : `<span class="ac-lock">잠김</span>`) + need;
   return `<div class="${cls}" data-type="${esc(v.gameType)}">
       <div class="ac-ic">${icon}</div>
       <div class="ac-body">
@@ -86,9 +107,13 @@ export function achievementsPage(me: WebUser | null): string {
   const views = achievementsFor(me?.id ?? null);
   const p = achievementProgress(views);
 
-  const tabs = ACH_TABS.map((t, i) =>
-    `<button type="button" class="ac-tab${i === 0 ? ' on' : ''}" data-tab="${esc(t.key)}">${esc(t.label)}</button>`
-  ).join('');
+  /* 탭에도 로비와 같은 아이콘을 단다. [전체]는 특정 게임이 아니라 아이콘이 없다 —
+     아무 그림이나 붙이면 그것도 게임 하나로 읽힌다. */
+  const tabs = ACH_TABS.map((t, i) => {
+    const ic = t.types.length === 1 ? TYPE_ICON[t.types[0]] : null;
+    return `<button type="button" class="ac-tab${i === 0 ? ' on' : ''}" data-tab="${esc(t.key)}">`
+      + (ic ? `<span class="ac-tab-ic">${ic}</span>` : '') + esc(t.label) + `</button>`;
+  }).join('');
   const players = activePlayerCount();
   const cards = views.map(v => card(v, players)).join('');
 
@@ -106,6 +131,8 @@ export function achievementsPage(me: WebUser | null): string {
         <div>
           <h2>도전과제</h2>
           <p class="ac-lead">한 번 달성하면 계정에 영구히 남습니다 — 시즌이 바뀌어도 사라지지 않습니다.</p>
+          <p class="ac-rule"><b>게임 도전과제는 그 판의 베팅이 기준 금액 이상일 때만 판정됩니다.</b>
+            소액으로 여러 번 돌려 얻는 것을 막기 위한 규칙이며, 기준은 카드마다 적혀 있습니다.</p>
         </div>
         <div class="ac-sum">
           <div class="ac-sum-n num"><b id="acDone">${p.unlocked}</b> / <span id="acTotal">${p.total}</span></div>

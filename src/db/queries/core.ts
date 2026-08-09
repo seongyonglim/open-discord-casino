@@ -258,14 +258,20 @@ export function claimRelief(
 }
 
 /**
- * 한 게임의 통산 순수익. 없으면 0.
+ * 이번 시즌 한 게임의 순수익. 없으면 0.
+ *
+ * 통산(game_stats)이 아니라 시즌 장부(season_stats)를 본다. 화면의 랭킹이 그쪽을
+ * 쓰기 때문이다 — 사람이 보고 있는 순수익과 과제가 재는 순수익이 다르면, 랭킹에
+ * 100만이라고 적혀 있는데 과제는 안 열리는 일이 생긴다.
  *
  * profit 은 returned - staked 를 미리 더해 둔 열이라 여기서 다시 빼지 않는다 —
  * 감사가 그 둘이 늘 같은지 검사한다(파생값이지만 정렬 키라서 열로 둔다).
  */
-export function gameProfit(userId: string, game: string): number {
+export function seasonGameProfit(userId: string, game: string): number {
   return one<{ n: number }>(
-    `SELECT profit AS n FROM game_stats WHERE user_id = ? AND game = ?`, userId, game)?.n ?? 0;
+    `SELECT s.profit AS n FROM season_stats s
+      JOIN seasons se ON se.id = s.season_id AND se.closed_at IS NULL
+     WHERE s.user_id = ? AND s.game = ?`, userId, game)?.n ?? 0;
 }
 
 /**

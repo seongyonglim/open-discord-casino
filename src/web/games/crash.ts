@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import {
   advanceCrashRound, placeCrashBet, cancelCrashBet, cashoutCrashBet,
-  getCrashBets, getMyCrashBet, getRecentCrashResults, getWebUser, gameProfit,
+  getCrashBets, getMyCrashBet, getRecentCrashResults, getWebUser, seasonGameProfit,
   CRASH_REVEAL_SEC,
   type CrashRoundRow, type WebUser,
 } from '../../db/queries';
@@ -131,8 +131,11 @@ function crashAwards(userId: string, myBet: { amount: number; cashout_multiplier
   const checks: [string, () => boolean][] = [];
   if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);
   /* 순수익은 캐시아웃한 판에만 오를 수 있다 — 잃어서 100만을 넘길 수는 없으므로
-     여기서만 재면 된다. game_stats 의 graph 누적값을 그대로 쓴다. */
-  checks.push(['crash-profit-1m', () => gameProfit(userId, 'graph') >= CRASH_PROFIT_GOAL]);
+     여기서만 재면 된다.
+     통산이 아니라 이번 시즌 값을 본다. 화면의 랭킹이 시즌 장부를 쓰기 때문이다 —
+     사람이 보고 있는 순수익과 과제가 재는 순수익이 다르면, 랭킹에 100만이라고 적혀
+     있는데 과제는 안 열리는 일이 생긴다. 달성 기록 자체는 시즌과 무관하게 영구히 남는다. */
+  checks.push(['crash-profit-1m', () => seasonGameProfit(userId, 'graph') >= CRASH_PROFIT_GOAL]);
   return withUnlocked(award(userId, myBet.amount, checks));
 }
 

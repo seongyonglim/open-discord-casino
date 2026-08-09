@@ -499,20 +499,20 @@ function main(): void {
     ck('검사 전제: A+9 는 20', BJ.handTotal([card(ACE), card(NINE)]).total === 20);
     ck('검사 전제: A+10 은 21', BJ.handTotal([card(ACE), card(TEN)]).total === 21);
 
-    /* ── 그래프의 신 — 경계 ─────────────────────────────────── */
+    /* ── 그래프의 신 — 경계와 시즌 범위 ──────────────────────── */
     wipe();
     seed();
     mkUser('g1');
     Q.bumpGameStats('g1', 'graph', 1_000, 1_000_000);      // 순수익 999,000
     ck('99만대에서는 안 준다',
       !A.awardIfBet('g1', 'crash-profit-1m', 1_000,
-        () => Q.gameProfit('g1', 'graph') >= 1_000_000).unlocked,
-      String(Q.gameProfit('g1', 'graph')));
+        () => Q.seasonGameProfit('g1', 'graph') >= 1_000_000).unlocked,
+      String(Q.seasonGameProfit('g1', 'graph')));
     Q.bumpGameStats('g1', 'graph', 1_000, 2_000);          // 순수익 1,000,000
     ck('정확히 100만이면 준다',
       A.awardIfBet('g1', 'crash-profit-1m', 1_000,
-        () => Q.gameProfit('g1', 'graph') >= 1_000_000).unlocked,
-      String(Q.gameProfit('g1', 'graph')));
+        () => Q.seasonGameProfit('g1', 'graph') >= 1_000_000).unlocked,
+      String(Q.seasonGameProfit('g1', 'graph')));
     /* 다른 게임의 수익은 안 센다 — "그래프의 신"이다 */
     wipe();
     seed();
@@ -520,7 +520,30 @@ function main(): void {
     Q.bumpGameStats('g2', 'mines', 1_000, 3_000_000);
     ck('다른 게임 수익은 안 센다',
       !A.awardIfBet('g2', 'crash-profit-1m', 1_000,
-        () => Q.gameProfit('g2', 'graph') >= 1_000_000).unlocked);
+        () => Q.seasonGameProfit('g2', 'graph') >= 1_000_000).unlocked);
+
+    /* 시즌이 바뀌면 0에서 다시 시작한다.
+       통산(game_stats)을 보면 지난 시즌에 벌어 둔 것이 합쳐져서, 새 시즌 첫 판에
+       바로 열린다 — 화면의 랭킹은 0인데 과제만 열리는 셈이다. 설명이 "한 시즌 동안"이라
+       적혀 있으므로 재는 값도 시즌이어야 한다. */
+    wipe();
+    mkUser('g3');
+    Q.bumpGameStats('g3', 'graph', 1_000, 1_002_000);      // 이번 시즌 순수익 1,001,000
+    ck('검사 전제: 시즌 순수익이 100만을 넘었다',
+      Q.seasonGameProfit('g3', 'graph') >= 1_000_000, String(Q.seasonGameProfit('g3', 'graph')));
+    const allTime = (db.prepare(
+      `SELECT profit AS n FROM game_stats WHERE user_id = 'g3' AND game = 'graph'`)
+      .get() as { n: number }).n;
+    S.closeSeason({ seed: 10_000 });
+    ck('시즌이 바뀌면 시즌 순수익은 0', Q.seasonGameProfit('g3', 'graph') === 0,
+      String(Q.seasonGameProfit('g3', 'graph')));
+    ck('통산은 그대로 남아 있다 (그래서 통산을 보면 안 된다)',
+      (db.prepare(`SELECT profit AS n FROM game_stats WHERE user_id = 'g3' AND game = 'graph'`)
+        .get() as { n: number }).n === allTime, String(allTime));
+    seed();
+    ck('새 시즌 첫 판에서는 안 준다',
+      !A.awardIfBet('g3', 'crash-profit-1m', 1_000,
+        () => Q.seasonGameProfit('g3', 'graph') >= 1_000_000).unlocked);
 
     /* ── 건실한 파산러 — 하루 경계 ──────────────────────────── */
     wipe();
@@ -614,9 +637,28 @@ function main(): void {
       num(cr, 'CRASH_PROFIT_GOAL') === 1_000_000
       && !!byId2.get('crash-profit-1m')?.description.includes('100만'),
       String(num(cr, 'CRASH_PROFIT_GOAL')));
+    /* 설명이 "한 시즌 동안"이라고 약속했으면 재는 값도 시즌이어야 한다. 통산을 보면
+       지난 시즌 것이 합쳐져 랭킹은 0인데 과제만 열린다. */
+    /* 호출부를 본다. 그냥 이름이 파일에 있는지만 보면 import 줄 하나로 통과한다 —
+       실제로 그렇게 만들었다가, 통산으로 되돌려 놓고도 검사가 초록으로 남는 것을 봤다.
+       판정 줄에서 그 함수를 부르는지, 통산 함수를 부르지는 않는지 둘 다 확인한다. */
+    ck('순수익을 시즌 기준으로 잰다',
+      /crash-profit-1m'[\s\S]{0,120}seasonGameProfit\(/.test(cr)
+      && !!byId2.get('crash-profit-1m')?.description.includes('한 시즌'),
+      byId2.get('crash-profit-1m')?.description);
+    ck('통산 순수익을 쓰지 않는다', !/crash-profit-1m'[\s\S]{0,120}\bgameProfit\(/.test(cr));
     ck('지원금 횟수가 설명과 같다',
       /reliefCountToday\([^)]*\) >= 10/.test(dc)
       && !!byId2.get('relief-10-day')?.description.includes('10번'));
+    /* 규칙이 화면 어딘가에 적혀 있는가. 코드에만 있으면 사람은 "왜 안 깨지지"만
+       겪는다 — 막는 규칙일수록 보이는 곳에 있어야 한다. */
+    const page = read('src/web/achievements.ts');
+    ck('최소 베팅 규칙이 화면에 적혀 있다', page.includes('베팅이 기준 금액 이상일 때만'));
+    ck('카드마다 기준 금액을 적는다', /ac-need[\s\S]{0,120}minBet/.test(page));
+    ck('기준이 0이면 안 적는다 (0P 이상은 뜻이 없다)', /v\.minBet > 0/.test(page));
+    /* 감춘 과제에는 안 적는다 — 베팅으로 깨는 것인지 아닌지도 알려 주면 안 된다 */
+    ck('감춘 과제에는 기준을 안 적는다', /hiddenYet[\s\S]{0,60}v\.minBet > 0/.test(page));
+
     ck('블랙잭 판정이 20 → 21 이다',
       /before\.total === 20[\s\S]{0,80}=== 21/.test(bj)
       && !!byId2.get('bj-hit-21')?.description.includes('21'));

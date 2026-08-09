@@ -28,16 +28,16 @@ export type GameType = typeof GAME_TYPES[number];
    묶어서 감추는 것보다 낫다. */
 export const ACH_TABS: { key: string; label: string; types: GameType[] }[] = [
   { key: 'all', label: '전체', types: [] },   // 빈 배열 = 거르지 않는다
-  { key: 'holdem', label: '♠️ 홀덤 프리롤', types: ['HOLDEM'] },
-  { key: 'baccarat', label: '🀄 바카라', types: ['BACCARAT'] },
-  { key: 'blackjack', label: '🃏 블랙잭', types: ['BLACKJACK'] },
-  { key: 'poker', label: '🎴 포커 플립', types: ['POKER'] },
-  { key: 'mines', label: '💣 지뢰찾기', types: ['MINES'] },
-  { key: 'crash', label: '📈 그래프게임', types: ['CRASH'] },
-  { key: 'ladder', label: '🪜 사다리게임', types: ['LADDER'] },
+  { key: 'holdem', label: '홀덤 프리롤', types: ['HOLDEM'] },
+  { key: 'baccarat', label: '바카라', types: ['BACCARAT'] },
+  { key: 'blackjack', label: '블랙잭', types: ['BLACKJACK'] },
+  { key: 'poker', label: '포커 플립', types: ['POKER'] },
+  { key: 'mines', label: '지뢰찾기', types: ['MINES'] },
+  { key: 'crash', label: '그래프게임', types: ['CRASH'] },
+  { key: 'ladder', label: '사다리게임', types: ['LADDER'] },
   /* 게임을 가리지 않는 과제(출석·누적 등)가 갈 곳. [전체]는 "전부 보기"라 필터가
      아니므로 여기가 따로 있어야 한다 — 이름을 "전체"로 두면 첫 탭과 헷갈린다. */
-  { key: 'common', label: '🎰 공통', types: ['ALL'] },
+  { key: 'common', label: '공통', types: ['ALL'] },
 ];
 
 /**
