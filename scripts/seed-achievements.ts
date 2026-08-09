@@ -96,6 +96,30 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     // 판정: src/web/games/crash.ts — season_stats 의 이번 시즌 graph 순수익(returned - staked)
   },
   {
+    id: 'crash-x1-01',
+    gameType: 'CRASH',
+    title: '0.01초의 광기',
+    description: '그래프가 1.01배일 때 손으로 캐시아웃합니다.',
+    /* 1.01x 는 시작하자마자 지나가는 배율이라 기다릴 것이 없다 — 이건 담력이 아니라
+       손이 얼마나 빠른가의 문제이고, 금액과는 아무 상관이 없다. */
+    minBet: 0,
+    /* 히든. 조건을 미리 알려 주면 자동 캐시아웃을 1.01x 로 걸어 두고 한 판 만에 끝내는
+       사람이 나온다(그 경로는 판정에서 막아 두었다 — crash.ts). 우연히 손이 미끄러진
+       사람이 "이런 것도 있었나" 하고 발견하는 편이 이 과제답다. */
+    isHidden: true,
+    sortAt: 22,
+    // 판정: src/web/games/crash.ts — 캐시아웃 배율이 정확히 1.01 이고 예약 정산이 아닐 때
+  },
+  {
+    id: 'mi-1-of-25',
+    gameType: 'MINES',
+    title: '1/25의 사나이',
+    description: '지뢰 24개 판에서 단 하나뿐인 안전 칸을 딱 열어 캐시아웃합니다.',
+    minBet: MIN_BET,
+    sortAt: 41,
+    // 판정: src/web/games/mines.ts handleReveal — 안전 칸이 하나뿐인 판을 다 열었을 때(자동 정산)
+  },
+  {
     id: 'la-right-7',
     gameType: 'LADDER',
     title: '극우 이대남',

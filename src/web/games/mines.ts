@@ -116,7 +116,18 @@ export async function handleReveal(req: IncomingMessage, res: ServerResponse, us
     const payout = Math.floor(round.bet_amount * multiplier);
     const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`);
     const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
-    return sendJson(res, 200, { ok: true, autoCashedOut: true, balance, round: publicRound(settled, newState, true) });
+    /* ── 도전과제: 1/25의 사나이 ──────────────────────────────────────
+       안전한 칸이 단 하나뿐인 판(지뢰 24개)에서 그 한 칸을 짚었다. 마지막 칸을 열면
+       자동으로 정산되므로 이 판정은 캐시아웃 자리가 아니라 여기 있어야 한다 —
+       handleCashout 에 붙이면 영영 도달하지 않는다.
+
+       조건을 지뢰 개수가 아니라 maxSafe 로 쓴다. "안전 칸이 하나뿐인 판"이 이 과제의
+       뜻이고, 판 크기나 지뢰 선택지를 바꾸는 날에도 그 뜻이 그대로 따라온다. */
+    const got = award(userId, round.bet_amount, [['mi-1-of-25', () => maxSafe === 1]]);
+    return sendJson(res, 200, {
+      ok: true, autoCashedOut: true, balance,
+      round: publicRound(settled, newState, true), ...withUnlocked(got),
+    });
   }
 
   return sendJson(res, 200, { ok: true, round: publicRound(round, newState, false) });

@@ -445,33 +445,38 @@ async function main(): Promise<void> {
     wipe();
     seed();
     const byId = new Map(A.listAchievements().map(a => [a.id, a]));
-    ck('열 과제가 등록된다', byId.size === 10, String(byId.size));
+    const SEEDED = 12;
+    ck('열두 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
-    for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m', 'la-right-7']) {
+    for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m', 'la-right-7', 'mi-1-of-25']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
-    /* 베팅이 없는 과제는 기준도 0 이어야 한다. 그대로 두면 영영 판정되지 않는다 —
-       지원금에는 베팅이 없고, 홀덤 프리롤은 참가비가 0 이다. */
-    for (const id of ['relief-10-day', 'ho-straight-flush']) {
+    /* 베팅이 없거나, 금액이 뜻을 갖지 않는 과제는 기준도 0 이어야 한다. 그대로 두면
+       영영 판정되지 않거나(지원금·프리롤) 상관없는 문지기가 하나 서 있게 된다.
+       0.01초의 광기는 손 속도를 재는 과제라 얼마를 걸었는지가 아무 상관이 없다. */
+    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-x1-01']) {
       ck(`${id} 은 최소 베팅 0`, byId.get(id)?.min_bet === 0, String(byId.get(id)?.min_bet));
     }
-    /* 지금은 넷 다 공개다. 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는
-       "씨앗이 실제로 무엇을 감췄나"만 본다 — 실수로 감춘 채 올리면 조건을 모르는
-       사람에게는 그냥 잠긴 칸 하나가 는 것과 같다. */
-    ck('열 개 다 공개다', [...byId.keys()]
-      .every(id => byId.get(id)?.is_hidden === 0),
-      A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id).join(',') || '(감춘 것 없음)');
+    /* 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는 "씨앗이 실제로 무엇을
+       감췄나"만 본다 — 실수로 감춘 채 올리면 조건을 모르는 사람에게는 그냥 잠긴 칸
+       하나가 는 것과 같고, 반대로 히든이 풀리면 자동 캐시아웃 1.01x 예약이 정답으로
+       돌아다닌다. */
+    const hidden = A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id);
+    ck('감춘 과제는 0.01초의 광기 하나뿐', hidden.join(',') === 'crash-x1-01',
+      hidden.join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
       byId.get('bj-hit-21')?.game_type === 'BLACKJACK'
       && byId.get('crash-x100')?.game_type === 'CRASH'
       && byId.get('crash-profit-1m')?.game_type === 'CRASH'
+      && byId.get('crash-x1-01')?.game_type === 'CRASH'
       && byId.get('relief-10-day')?.game_type === 'ALL'
       && byId.get('ho-straight-flush')?.game_type === 'HOLDEM'
+      && byId.get('mi-1-of-25')?.game_type === 'MINES'
       && byId.get('la-right-7')?.game_type === 'LADDER');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
-    ck('두 번 돌려도 열 개', A.listAchievements().length === 10,
+    ck('두 번 돌려도 열두 개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
     /* 1,000P 문지기가 실제로 막는가. 여기가 뚫리면 위의 기준이 글자로만 남는다. */
@@ -765,6 +770,33 @@ async function main(): Promise<void> {
     ck('블랙잭 판정이 20 → 21 이다',
       /before\.total === 20[\s\S]{0,80}=== 21/.test(bj)
       && !!byId2.get('bj-hit-21')?.description.includes('21'));
+
+    /* ── 0.01초의 광기 ────────────────────────────────────────────
+       1.01x 는 "이상"이 아니라 "정확히"다. >= 로 적으면 모든 캐시아웃이 여기 걸린다. */
+    ck('1.01배 기준이 설명과 같다',
+      /CRASH_MIN_X = 1\.01/.test(cr) && !!byId2.get('crash-x1-01')?.description.includes('1.01배'),
+      byId2.get('crash-x1-01')?.description);
+    ck('1.01배를 정확히 본다 (이상이 아니다)',
+      /cashout_multiplier === CRASH_MIN_X/.test(cr));
+    /* 자동 캐시아웃 하한이 1.01x 라(handleBet), 예약으로 얻는 길을 막지 않으면
+       이 과제는 "예약 걸 줄 아는가"를 재는 것이 된다. */
+    ck('자동 하한이 1.01배와 같다', /a < 1\.01/.test(cr));
+    ck('예약으로 나간 판은 안 센다',
+      /byHand[\s\S]{0,160}cashout_multiplier === CRASH_MIN_X/.test(cr)
+      && /auto_cashout == null \|\| [^\n]*!== [^\n]*auto_cashout/.test(cr));
+
+    /* ── 1/25의 사나이 ────────────────────────────────────────────
+       마지막 칸은 자동으로 정산된다 — 판정이 캐시아웃 자리에 있으면 영영 안 열린다. */
+    const iAuto = mn.indexOf('revealed.length === maxSafe');
+    const iMi1 = mn.indexOf("'mi-1-of-25'");
+    const iCash = mn.indexOf('export async function handleCashout');
+    ck('지뢰 판정이 자동 정산 자리에 있다', iAuto > 0 && iMi1 > iAuto && iMi1 < iCash,
+      `auto=${iAuto} award=${iMi1} cashout=${iCash}`);
+    ck('안전 칸이 하나뿐인 판만 본다', /'mi-1-of-25',[\s\S]{0,40}maxSafe === 1/.test(mn));
+    /* 지뢰 24개가 실제로 고를 수 있는 값이어야 안전 칸 1개짜리 판이 존재한다 */
+    ck('지뢰 24개 판이 실제로 있다',
+      /ALLOWED_MINE_COUNTS = \[[^\]]*\b24\b/.test(mn)
+      && !!byId2.get('mi-1-of-25')?.description.includes('24개'));
   }
 
   /* ── 8-4. 진짜 핸들러 ───────────────────────────────────────── */
@@ -847,6 +879,34 @@ async function main(): Promise<void> {
                 VALUES (?, 'h4', 'h4', ?, 0)`).run(round.id, 5_000);
     const bust = await callJson(CR.handleState, 'h4');
     ck('터진 판에서도 조용하다', bust.unlocked === undefined);
+
+    /* ── 0.01초의 광기 ────────────────────────────────────────────
+       배율은 소수점 둘째 자리 내림이라 1.01 은 값이 하나로 딱 떨어진다. */
+    const crashBet = (uid: string, amount: number, mult: number, auto: number | null): void => {
+      db.exec(`DELETE FROM crash_bets;`);
+      db.prepare(`INSERT INTO crash_bets (round_id, user_id, username, amount, auto_cashout, cashout_multiplier, payout)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(round.id, uid, uid, amount, auto, mult, Math.floor(amount * mult));
+    };
+    const madness = async (uid: string, amount: number, mult: number, auto: number | null):
+      Promise<boolean> => {
+      wipe(); seedForWiring(); mkUser(uid);
+      crashBet(uid, amount, mult, auto);
+      const d = await callJson(CR.handleState, uid);
+      return ((d.unlocked ?? []) as { id: string }[]).some(u => u.id === 'crash-x1-01');
+    };
+
+    ck('1.01배에서 손으로 나가면 열린다', await madness('m1', 1_000, 1.01, null));
+    ck('1.02배는 안 열린다 (정확히 1.01이어야 한다)', !await madness('m2', 1_000, 1.02, null));
+    ck('1.00배도 안 열린다', !await madness('m3', 1_000, 1.00, null));
+    ck('100배는 이 과제와 무관하다', !await madness('m4', 1_000, 100, null));
+    /* 예약을 1.01x 로 걸어 두면 손을 안 대도 그 배율로 정산된다 — 그 길은 막혀 있다. */
+    ck('1.01배 예약으로 나간 판은 안 열린다', !await madness('m5', 1_000, 1.01, 1.01));
+    /* 예약은 걸어 뒀지만 그 전에 손으로 눌렀다 — 이건 손이 끝낸 판이다. */
+    ck('다른 배율을 예약해 뒀어도 손으로 눌렀으면 열린다',
+      await madness('m6', 1_000, 1.01, 5));
+    /* 금액과 상관없는 과제라 기준이 0 이다. 1P 로도 열려야 그 말이 참이 된다. */
+    ck('1P 로도 열린다 (금액을 안 본다)', await madness('m7', 1, 1.01, null));
 
     /* 그래프의 신 — 시즌 순수익이 100만을 넘은 상태로 캐시아웃하면 열린다. */
     wipe();
@@ -1126,6 +1186,48 @@ async function main(): Promise<void> {
     wipe(); seedForWiring(); mkUser('M4', 1_000_000);
     minesRound(1, 23, 999, 'M4');
     ck('999P 베팅이면 안 열린다', !ids(await grab(MN.handleCashout, 'M4')).includes('mi-23-of-24'));
+
+    /* ── 1/25의 사나이 ─────────────────────────────────────────
+       안전 칸이 하나뿐인 판(지뢰 24개). 그 한 칸을 열면 더 열 칸이 없어 곧바로 정산되므로,
+       판정도 캐시아웃이 아니라 칸을 여는 요청에서 나와야 한다. 그래서 여기서는 본문이 있는
+       요청을 흉내 내 진짜 handleReveal 을 태운다. */
+    const { Readable } = require('node:stream') as typeof import('node:stream');
+    const reveal = (uid: string, tile: number): Promise<Record<string, unknown>> => {
+      let body = '';
+      const res = {
+        writeHead() { }, end(c?: unknown) { if (c != null) body += String(c); },
+        getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+      };
+      return MN.handleReveal(Readable.from([JSON.stringify({ tile })]) as never, res as never, uid)
+        .then(() => { try { return JSON.parse(body) as Record<string, unknown>; } catch { return {}; } });
+    };
+
+    // minesRound 는 지뢰를 뒤쪽부터 놓는다 — 지뢰 24개면 안전한 칸은 0번 하나뿐이다.
+    wipe(); seedForWiring(); mkUser('M5', 1_000_000);
+    minesRound(24, 0, 1_000, 'M5');
+    const only = await reveal('M5', 0);
+    ck('안전 칸 하나를 열면 그 자리에서 정산된다', only.autoCashedOut === true,
+      JSON.stringify(only.autoCashedOut ?? null));
+    ck('1/25의 사나이가 열린다', ids(only).includes('mi-1-of-25'), ids(only).join(','));
+
+    wipe(); seedForWiring(); mkUser('M6', 1_000_000);
+    minesRound(24, 0, 1_000, 'M6');
+    const boom = await reveal('M6', 1);
+    ck('지뢰를 밟으면 안 열린다',
+      boom.busted === true && !ids(boom).includes('mi-1-of-25'));
+
+    wipe(); seedForWiring(); mkUser('M7', 1_000_000);
+    minesRound(24, 0, 999, 'M7');
+    ck('999P 로 맞혀도 안 열린다', !ids(await reveal('M7', 0)).includes('mi-1-of-25'));
+
+    /* 지뢰 1개 판에서 24칸을 다 열어도 같은 자동 정산 자리를 지난다 — 그때 안전 칸은
+       24개였으므로 이 과제가 아니다. 연 칸 수만 세면 여기서 잘못 열린다. */
+    wipe(); seedForWiring(); mkUser('M8', 1_000_000);
+    minesRound(1, 23, 1_000, 'M8');
+    const all24 = await reveal('M8', 23);
+    ck('지뢰 1개 판을 다 열어도 안 열린다',
+      all24.autoCashedOut === true && !ids(all24).includes('mi-1-of-25'),
+      JSON.stringify(all24.autoCashedOut ?? null));
 
     /* ── 한탕주의자 ─────────────────────────────────────────────
        마지막 등급 칸(포카드 이상)에 걸어 맞힌다. */

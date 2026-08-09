@@ -124,12 +124,24 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
    실제로 아래 조회가 도는 일은 거의 없다. */
 const CRASH_X100 = 100;
 const CRASH_PROFIT_GOAL = 1_000_000;
+/* 0.01초의 광기 — 올라가자마자, 곧 가장 낮은 배당에서 손을 뗀다.
+   1.01x 는 자동 캐시아웃의 하한이기도 해서(handleBet), 예약을 걸어 두면 누구나 얻는다.
+   그래서 "자동으로 나간 판"은 세지 않는다 — 자동 정산은 배율을 예약값 그대로 적으므로
+   (settleAutoCashouts) 두 값이 정확히 같으면 손이 아니라 예약이 판을 끝낸 것이다.
+   1.01x 예약을 걸어 둔 사람이 그 순간 손으로 눌러도 안 열리지만, 그 판은 애초에
+   "예약이 잡아 줄 판"이라 손으로 해냈다고 하기 어렵다. */
+const CRASH_MIN_X = 1.01;
 
-function crashAwards(userId: string, myBet: { amount: number; cashout_multiplier: number | null } | null) {
+function crashAwards(
+  userId: string,
+  myBet: { amount: number; cashout_multiplier: number | null; auto_cashout: number | null } | null,
+) {
   // 이번 라운드에 캐시아웃한 판만 본다. 안 걸었거나 터진 판은 볼 것이 없다.
   if (!myBet || myBet.cashout_multiplier == null) return {};
+  const byHand = myBet.auto_cashout == null || myBet.cashout_multiplier !== myBet.auto_cashout;
   const checks: [string, () => boolean][] = [];
   if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);
+  if (byHand && myBet.cashout_multiplier === CRASH_MIN_X) checks.push(['crash-x1-01', () => true]);
   /* 순수익은 캐시아웃한 판에만 오를 수 있다 — 잃어서 100만을 넘길 수는 없으므로
      여기서만 재면 된다.
      통산이 아니라 이번 시즌 값을 본다. 화면의 랭킹이 시즌 장부를 쓰기 때문이다 —
