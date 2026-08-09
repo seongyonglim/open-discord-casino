@@ -32,9 +32,7 @@ export interface SeasonSchedule {
   /** 이 시각(unix초)이 지나면 지금 시즌을 닫는다. 없으면 예약 없음. */
   closeAt: number | null;
   /** 다음 시즌 이름. 비우면 이름 없이 열린다. */
-  nextName: string;
-  nextReward: string;
-  /** 다음 시즌 시작 잔액. 지금까지 0 이었고 그 값이 기본이다. */
+  nextName: string;  /** 다음 시즌 시작 잔액. 지금까지 0 이었고 그 값이 기본이다. */
   seed: number;
 }
 
@@ -43,9 +41,7 @@ export function getSeasonSchedule(): SeasonSchedule {
   const at = Number(v.seasonCloseAt);
   return {
     closeAt: v.seasonCloseAt != null && Number.isFinite(at) && at > 0 ? Math.floor(at) : null,
-    nextName: v.seasonNextName ?? '',
-    nextReward: v.seasonNextReward ?? '',
-    seed: Number.isFinite(Number(v.seasonNextSeed)) ? Math.floor(Number(v.seasonNextSeed)) : 0,
+    nextName: v.seasonNextName ?? '',    seed: Number.isFinite(Number(v.seasonNextSeed)) ? Math.floor(Number(v.seasonNextSeed)) : 0,
   };
 }
 
@@ -58,9 +54,7 @@ export function saveSeasonSchedule(s: SeasonSchedule): { ok: true } | { ok: fals
   }
   return tx(() => {
     put('seasonCloseAt', s.closeAt == null ? '' : String(s.closeAt));
-    put('seasonNextName', s.nextName.trim().slice(0, 40));
-    put('seasonNextReward', s.nextReward.trim().slice(0, 200));
-    put('seasonNextSeed', String(s.seed));
+    put('seasonNextName', s.nextName.trim().slice(0, 40));    put('seasonNextSeed', String(s.seed));
     return { ok: true as const };
   });
 }
@@ -86,7 +80,7 @@ export function ensureSeasonClosed(now = Math.floor(Date.now() / 1000)): void {
   const open = one<{ id: number }>(
     `SELECT id FROM seasons WHERE closed_at IS NULL ORDER BY number DESC LIMIT 1`);
   if (!open) { clearSeasonSchedule(); return; }
-  const r = closeSeason({ seed: s.seed, nextName: s.nextName, nextReward: s.nextReward });
+  const r = closeSeason({ seed: s.seed, nextName: s.nextName });
   /* 성공했을 때만 예약을 지운다. 실패(열린 시즌 없음)는 위에서 걸렀으므로 여기 오면
      성공이지만, 결과를 보지 않고 지우면 나중에 조건이 늘었을 때 조용히 건너뛴다. */
   if (r.ok) clearSeasonSchedule();

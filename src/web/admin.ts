@@ -158,7 +158,6 @@ export function adminPage(user: WebUser): string {
       <td>${kst(s.started_at)}</td>
       <td>${s.closed_at != null ? kst(s.closed_at) : s.ends_at != null ? kst(s.ends_at) + ' 예정' : '미정'}</td>
       <td class="r">${num(seasonPlayers(s.id))}</td>
-      <td>${esc(s.reward || '—')}</td>
     </tr>`).join('');
 
   /* 왼쪽 메뉴와 화면을 짝지어 둔다. 카드 일곱 개가 세로로 이어져 있어서 아래쪽 것은
@@ -376,12 +375,11 @@ export function adminPage(user: WebUser): string {
         새 시즌은 저절로 비어 있고 지난 시즌 기록은 그대로 남습니다.
         지원금 쿨다운도 함께 풀립니다(0에서 시작하므로 바로 받을 수 있어야 합니다).</p>
       <div class="ad-scroll"><table class="ad-tbl">
-        <thead><tr><th>시즌</th><th>이름</th><th>시작</th><th>종료</th><th class="r">참여</th><th>보상</th></tr></thead>
+        <thead><tr><th>시즌</th><th>이름</th><th>시작</th><th>종료</th><th class="r">참여</th></tr></thead>
         <tbody>${seasonRows}</tbody>
       </table></div>
       <div class="ad-row" style="margin-top:12px">
         <input type="text" id="adSName" placeholder="현재 시즌 이름 (예: 오픈베타)" autocomplete="off">
-        <input type="text" id="adSReward" placeholder="보상 안내" autocomplete="off">
         <input type="date" id="adSEnd">
         <button type="button" id="adSSave">안내 저장</button>
       </div>
@@ -408,7 +406,6 @@ export function adminPage(user: WebUser): string {
       <div class="ad-grid">
         <label>종료 시각<input type="datetime-local" id="adSchAt" value="${sched.closeAt != null ? localInput(sched.closeAt) : ''}"><i>KST</i></label>
         <label>다음 시즌 이름<input type="text" id="adSchName" value="${esc(sched.nextName)}" placeholder="시즌 1"><i>비우면 이름 없이 열립니다</i></label>
-        <label>다음 시즌 보상 안내<input type="text" id="adSchReward" value="${esc(sched.nextReward)}" placeholder="기본 보상 5배"><i></i></label>
         <label>시작 잔액<span class="ad-inx"><input type="number" id="adSchSeed" min="0" step="1000" value="${sched.seed}"><b>P</b></span><i>전원이 이 값에서 시작합니다</i></label>
       </div>
       <div class="ad-row">
@@ -740,7 +737,7 @@ export function adminPage(user: WebUser): string {
         function(){
           post('/api/admin/season/schedule', {
             closeAt: at, nextName: name,
-            nextReward: document.getElementById('adSchReward').value, seed: seed,
+            seed: seed,
           }).then(function(r){ if (shout(r)) location.reload(); });
         });
     });
@@ -752,7 +749,6 @@ export function adminPage(user: WebUser): string {
       var d = document.getElementById('adSEnd').value;
       post('/api/admin/season/update', {
         name: document.getElementById('adSName').value,
-        reward: document.getElementById('adSReward').value,
         // 날짜만 받고 그날 끝으로 본다 — 시각까지 고르게 하면 KST 환산 실수가 늘어난다
         endsAt: d ? Math.floor(new Date(d + 'T23:59:59+09:00').getTime() / 1000) : null,
       }).then(function(r){ if (shout(r)) location.reload(); });
@@ -1084,13 +1080,12 @@ export async function handleAdminTestTournament(
 }
 
 export async function handleAdminSeasonUpdate(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const b = await readJson(req) as { name?: unknown; reward?: unknown; endsAt?: unknown } | null;
+  const b = await readJson(req) as { name?: unknown; endsAt?: unknown } | null;
   const cur = listSeasons().find(s => s.closed_at == null);
   if (!cur) return sendJson(res, 400, { error: '진행 중인 시즌이 없습니다' });
   const endsAt = b?.endsAt == null ? null : Math.floor(Number(b.endsAt));
   const ok = updateSeason(cur.id, {
     name: String(b?.name ?? '').slice(0, 40),
-    reward: String(b?.reward ?? '').slice(0, 200),
     endsAt: endsAt != null && Number.isFinite(endsAt) ? endsAt : null,
   });
   return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 400, { error: '고칠 수 없습니다' });
@@ -1293,9 +1288,7 @@ export async function handleAdminSeasonSchedule(
   }
   const r = saveSeasonSchedule({
     closeAt: Math.floor(Number(b.closeAt)),
-    nextName: String(b.nextName ?? ''),
-    nextReward: String(b.nextReward ?? ''),
-    seed: Math.floor(Number(b.seed ?? 0)),
+    nextName: String(b.nextName ?? ''),    seed: Math.floor(Number(b.seed ?? 0)),
   });
   if (!r.ok) return sendJson(res, 400, { error: r.error });
   return sendJson(res, 200, { ok: true });

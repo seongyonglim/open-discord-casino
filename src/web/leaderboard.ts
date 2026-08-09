@@ -28,7 +28,7 @@ const label = (g: string) => GAME_LABEL[g] ?? g;
 
 export interface RankPayload {
   seasons: { id: number; number: number; name: string; closed: boolean }[];
-  season: { id: number; number: number; name: string; reward: string;
+  season: { id: number; number: number; name: string;
     startedAt: number; endsAt: number | null; closedAt: number | null };
   games: { key: string; label: string; rounds: number; players: number }[];
   tab: string;                       // 'overall' 또는 게임 키
@@ -81,7 +81,7 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
     : mySeasonRank(s.id, me.id, active === 'overall' ? null : active);
   return {
     seasons: seasons.map(x => ({ id: x.id, number: x.number, name: x.name, closed: x.closed_at != null })),
-    season: { id: s.id, number: s.number, name: s.name, reward: s.reward,
+    season: { id: s.id, number: s.number, name: s.name,
       startedAt: s.started_at, endsAt: s.ends_at, closedAt: s.closed_at },
     games, tab: active,
     kind: active === 'overall' ? 'overall' : active === 'holdem' ? 'holdem' : 'game',
@@ -189,11 +189,6 @@ export function leaderboardPage(me: WebUser | null): string {
         + '<div class="lb-brow">'
         + '<div class="lb-bi"><span class="k">시작<\\/span><span class="v">' + ymd(s.startedAt) + '<\\/span><\\/div>'
         + right
-        /* 보상은 적어 넣은 문구를 그대로 보여 주는 자리다 — 지급 로직이 있는 게 아니다.
-           그래서 비어 있으면 줄을 아예 없앤다. '준비 중'이라고 적으면 없는 것을
-           곧 준다고 약속하는 셈이 된다. */
-        + (s.reward ? '<div class="lb-bi"><span class="k">보상<\\/span><span class="v">'
-            + esc(s.reward) + '<\\/span><\\/div>' : '')
         + '<\\/div>';
     }
 

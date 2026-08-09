@@ -34,6 +34,9 @@ scripts/
 !scripts/seed-notices-2026-08.ts
 # 도전과제도 DB 에 있다. 화면은 이 표를 읽어 그릴 뿐이라 배포만으로는 안 생긴다.
 !scripts/seed-achievements.ts
+# 시즌 종료 예약. 운영자 화면에서도 걸 수 있지만, 머신 안에서 돌리면 운영 토큰을
+# 주고받지 않아도 된다.
+!scripts/schedule-season-close.ts
 
 *.log
 *.tmp.*

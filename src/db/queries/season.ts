@@ -14,9 +14,13 @@ import { one, all, run, tx, currentSeasonId, adjustBalance } from './core';
 import { rewardsForSeason } from '../../services/rewards';
 
 export interface SeasonRow {
-  id: number; number: number; name: string; reward: string;
+  id: number; number: number; name: string;
   started_at: number; ends_at: number | null; closed_at: number | null;
 }
+/* seasons.reward 열은 더 이상 읽지도 쓰지도 않는다. 랭킹 화면에 자유 문구 한 줄을
+   띄우는 자리였는데, 보상은 공지로 알리는 것이라 같은 말이 두 곳에 있으면 어긋난다.
+   열은 남겨 둔다 — 지우면 예전 코드로 되돌렸을 때 INSERT 가 깨진다. 기본값이 ''이라
+   빼고 넣어도 문제가 없다. */
 
 export function listSeasons(): SeasonRow[] {
   currentSeasonId();                      // 하나도 없으면 시즌 0 을 열고 시작한다
@@ -291,12 +295,11 @@ export function backfillFirstSeason():
 }
 
 /** 진행 중인 시즌의 안내 문구와 예정 종료 시각을 고친다. 점수·집계에는 손대지 않는다. */
-export function updateSeason(id: number, o: { name?: string; reward?: string; endsAt?: number | null }): boolean {
+export function updateSeason(id: number, o: { name?: string; endsAt?: number | null }): boolean {
   const s = getSeason(id);
   if (!s || s.closed_at != null) return false;      // 닫힌 시즌의 기록은 고치지 않는다
-  run(`UPDATE seasons SET name = ?, reward = ?, ends_at = ? WHERE id = ?`,
-    o.name ?? s.name, o.reward ?? s.reward,
-    o.endsAt === undefined ? s.ends_at : o.endsAt, id);
+  run(`UPDATE seasons SET name = ?, ends_at = ? WHERE id = ?`,
+    o.name ?? s.name, o.endsAt === undefined ? s.ends_at : o.endsAt, id);
   return true;
 }
 
@@ -310,7 +313,7 @@ export function updateSeason(id: number, o: { name?: string; reward?: string; en
  * 게임별 전적은 지우지 않는다. season_stats 의 열쇠에 시즌이 들어 있어서 다음 시즌은
  * 행이 없는 상태로 시작한다 — 지난 시즌 기록은 그대로 남아 언제든 다시 볼 수 있다.
  */
-export function closeSeason(opts: { seed: number; nextName?: string; nextReward?: string }):
+export function closeSeason(opts: { seed: number; nextName?: string }):
   { ok: true; closed: number; ranked: number; nextNumber: number } | { ok: false; error: 'no_open_season' } {
   return tx(() => {
     const s = one<SeasonRow>(
@@ -353,8 +356,8 @@ export function closeSeason(opts: { seed: number; nextName?: string; nextReward?
 
     run(`UPDATE seasons SET closed_at = ? WHERE id = ?`, now, s.id);
     const nextNumber = s.number + 1;
-    run(`INSERT INTO seasons (number, name, reward, started_at) VALUES (?, ?, ?, ?)`,
-      nextNumber, opts.nextName ?? '', opts.nextReward ?? '', now);
+    run(`INSERT INTO seasons (number, name, started_at) VALUES (?, ?, ?)`,
+      nextNumber, opts.nextName ?? '', now);
 
     /* 프리롤 상금을 새 시즌 기본값까지 끌어올린다.
        상금 배수는 운영자가 템플릿에 저장해 두면 그 값이 시즌 기본값을 이긴다(그게 옳다 —

@@ -57,7 +57,7 @@ function main(): void {
   {
     reset();
     mkUser('s2', 9_000);
-    SS.saveSeasonSchedule({ closeAt: now() + 3600, nextName: '시즌 1', nextReward: '', seed: 0 });
+    SS.saveSeasonSchedule({ closeAt: now() + 3600, nextName: '시즌 1', seed: 0 });
     for (let i = 0; i < 10; i++) SS.ensureSeasonClosed();
     ck('시즌 0 그대로', Q.currentSeasonNumber() === 0, String(Q.currentSeasonNumber()));
     ck('잔액 그대로', Q.getWebUser('s2')!.balance === 9_000);
@@ -74,13 +74,11 @@ function main(): void {
     reset();
     mkUser('a', 30_000); mkUser('b', 20_000); mkUser('c', 10_000);
     const at = now() + 60;
-    SS.saveSeasonSchedule({ closeAt: at, nextName: '시즌 1', nextReward: '보상 5배', seed: 0 });
+    SS.saveSeasonSchedule({ closeAt: at, nextName: '시즌 1', seed: 0 });
 
     SS.ensureSeasonClosed(at);           // 정확히 그 시각이면 넘어간다
     ck('시즌 1이 열렸다', Q.currentSeasonNumber() === 1, String(Q.currentSeasonNumber()));
-    ck('새 시즌 이름이 붙었다', S.currentSeason().name === '시즌 1', S.currentSeason().name);
-    ck('새 시즌 보상 문구도 붙었다', S.currentSeason().reward === '보상 5배');
-    ck('전원 잔액이 0', ['a', 'b', 'c'].every(u => Q.getWebUser(u)!.balance === 0),
+    ck('새 시즌 이름이 붙었다', S.currentSeason().name === '시즌 1', S.currentSeason().name);    ck('전원 잔액이 0', ['a', 'b', 'c'].every(u => Q.getWebUser(u)!.balance === 0),
       ['a', 'b', 'c'].map(u => Q.getWebUser(u)!.balance).join(','));
 
     /* 여기가 제일 중요하다. 이 함수는 요청마다 불리므로, 예약을 안 지우면 요청 몇 번에
@@ -120,7 +118,7 @@ function main(): void {
       .run(String(before.freerollPerHeadWeekend));
 
     const at = now();
-    SS.saveSeasonSchedule({ closeAt: at, nextName: '시즌 1', nextReward: '', seed: 0 });
+    SS.saveSeasonSchedule({ closeAt: at, nextName: '시즌 1', seed: 0 });
     SS.ensureSeasonClosed(at);
 
     ck('출석 보상이 시즌 1 값이다', Q.currentSeasonNumber() === 1
@@ -139,7 +137,7 @@ function main(): void {
     const high = after.freerollPerHead * 3;
     db.prepare(`INSERT INTO holdem_settings (key, value) VALUES ('weekdayMultiplier', ?)`)
       .run(String(high));
-    SS.saveSeasonSchedule({ closeAt: now(), nextName: '', nextReward: '', seed: 0 });
+    SS.saveSeasonSchedule({ closeAt: now(), nextName: '', seed: 0 });
     SS.ensureSeasonClosed(now());
     ck('더 높게 잡아 둔 값은 안 깎는다', val('weekdayMultiplier') === high,
       String(val('weekdayMultiplier')));
@@ -150,7 +148,7 @@ function main(): void {
   {
     reset();
     mkUser('z1', 7_777);
-    SS.saveSeasonSchedule({ closeAt: now(), nextName: '', nextReward: '', seed: 5_000 });
+    SS.saveSeasonSchedule({ closeAt: now(), nextName: '', seed: 5_000 });
     SS.ensureSeasonClosed(now());
     ck('시드만큼 들고 시작한다', Q.getWebUser('z1')!.balance === 5_000,
       String(Q.getWebUser('z1')!.balance));
@@ -167,14 +165,14 @@ function main(): void {
   {
     reset();
     ck('음수 시드 거절',
-      !SS.saveSeasonSchedule({ closeAt: now(), nextName: '', nextReward: '', seed: -1 }).ok);
+      !SS.saveSeasonSchedule({ closeAt: now(), nextName: '', seed: -1 }).ok);
     ck('소수 시드 거절',
-      !SS.saveSeasonSchedule({ closeAt: now(), nextName: '', nextReward: '', seed: 1.5 }).ok);
+      !SS.saveSeasonSchedule({ closeAt: now(), nextName: '', seed: 1.5 }).ok);
     ck('0 시각 거절',
-      !SS.saveSeasonSchedule({ closeAt: 0, nextName: '', nextReward: '', seed: 0 }).ok);
+      !SS.saveSeasonSchedule({ closeAt: 0, nextName: '', seed: 0 }).ok);
     ck('거절된 뒤에는 예약이 없다', SS.getSeasonSchedule().closeAt === null);
     ck('정상 저장은 통과',
-      SS.saveSeasonSchedule({ closeAt: now() + 10, nextName: '시즌 1', nextReward: '', seed: 0 }).ok);
+      SS.saveSeasonSchedule({ closeAt: now() + 10, nextName: '시즌 1', seed: 0 }).ok);
     ck('저장한 값이 그대로 읽힌다', SS.getSeasonSchedule().nextName === '시즌 1');
     SS.clearSeasonSchedule();
     ck('지우면 예약이 없다', SS.getSeasonSchedule().closeAt === null);
