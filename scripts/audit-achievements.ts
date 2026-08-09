@@ -445,7 +445,7 @@ async function main(): Promise<void> {
     wipe();
     seed();
     const byId = new Map(A.listAchievements().map(a => [a.id, a]));
-    ck('여섯 과제가 등록된다', byId.size === 6, String(byId.size));
+    ck('열 과제가 등록된다', byId.size === 10, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
     for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m']) {
@@ -459,7 +459,7 @@ async function main(): Promise<void> {
     /* 지금은 넷 다 공개다. 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는
        "씨앗이 실제로 무엇을 감췄나"만 본다 — 실수로 감춘 채 올리면 조건을 모르는
        사람에게는 그냥 잠긴 칸 하나가 는 것과 같다. */
-    ck('여섯 다 공개다', [...byId.keys()]
+    ck('열 개 다 공개다', [...byId.keys()]
       .every(id => byId.get(id)?.is_hidden === 0),
       A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id).join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
@@ -471,7 +471,7 @@ async function main(): Promise<void> {
       && byId.get('la-right-7')?.game_type === 'LADDER');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
-    ck('두 번 돌려도 여섯 개', A.listAchievements().length === 6,
+    ck('두 번 돌려도 열 개', A.listAchievements().length === 10,
       String(A.listAchievements().length));
 
     /* 1,000P 문지기가 실제로 막는가. 여기가 뚫리면 위의 기준이 글자로만 남는다. */
@@ -709,7 +709,9 @@ async function main(): Promise<void> {
     wipe();
     seedForWiring();
     const ld = read('src/web/games/ladder.ts');
-    const wired = bj + cr + dc + ht + ld;
+    const mn = read('src/web/games/mines.ts');
+    const pk = read('src/web/games/poker.ts');
+    const wired = bj + cr + dc + ht + ld + mn + pk;
     const unwired = A.listAchievements().filter(a => !wired.includes(`'${a.id}'`));
     ck('배선이 빠진 과제가 없다', unwired.length === 0, unwired.map(a => a.id).join(','));
 
@@ -1065,6 +1067,157 @@ async function main(): Promise<void> {
     ck('기록에도 없다', !A.hasAchievement('L6', 'la-right-7'));
 
     db.exec(`DELETE FROM ladder_bets; DELETE FROM ladder_rounds; DELETE FROM user_streaks;`);
+  }
+
+  /* ── 8-7. 신규 넷 — 진짜 응답으로 ──────────────────────────── */
+  section('[8-7] 지뢰찾기 · 포커 플립 · 블랙잭 — 실제 핸들러가 판정하는가');
+  {
+    const MN = require('../src/web/games/mines') as typeof import('../src/web/games/mines');
+    const PK = require('../src/web/games/poker') as typeof import('../src/web/games/poker');
+    const BJW = require('../src/web/games/blackjack') as typeof import('../src/web/games/blackjack');
+    const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
+
+    function grab(fn: (req: never, res: never, uid: string) => Promise<void>, uid: string):
+      Promise<Record<string, unknown>> {
+      let body = '';
+      const res = {
+        writeHead() { }, end(c?: unknown) { if (c != null) body += String(c); },
+        getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+      };
+      return fn({} as never, res as never, uid)
+        .then(() => { try { return JSON.parse(body) as Record<string, unknown>; } catch { return {}; } });
+    }
+    const ids = (d: Record<string, unknown>): string[] =>
+      ((d.unlocked ?? []) as { id: string }[]).map(u => u.id);
+
+    /* ── 안전불감증 ─────────────────────────────────────────────
+       지뢰 1개 판에서 23칸을 열고 마지막 한 칸을 남긴 채 나온다. */
+    function minesRound(mineCount: number, opened: number, bet: number, uid: string): void {
+      db.exec(`DELETE FROM game_rounds WHERE user_id = '${uid}'`);
+      /* 지뢰 위치를 열 칸과 겹치지 않게 놓는다 — 겹치면 그건 이미 터진 판이다. */
+      const mines = Array.from({ length: mineCount }, (_, i) => 24 - i);
+      const revealed = Array.from({ length: opened }, (_, i) => i).filter(t => !mines.includes(t));
+      Q.placeBet(uid, 'mines', bet, { mineCount, minePositions: mines, revealed });
+    }
+
+    wipe(); seedForWiring(); mkUser('M1', 1_000_000);
+    minesRound(1, 23, 1_000, 'M1');
+    ck('23칸 열고 캐시아웃하면 열린다',
+      ids(await grab(MN.handleCashout, 'M1')).includes('mi-23-of-24'));
+
+    wipe(); seedForWiring(); mkUser('M2', 1_000_000);
+    minesRound(1, 22, 1_000, 'M2');
+    ck('22칸에서는 안 열린다', !ids(await grab(MN.handleCashout, 'M2')).includes('mi-23-of-24'));
+
+    /* 지뢰가 셋이면 안전 칸이 22개뿐이라 23칸이라는 상태가 없다 — 판을 착각하지
+       않는지 본다(연 칸 수만 보면 다른 모드에서도 열릴 수 있다). */
+    wipe(); seedForWiring(); mkUser('M3', 1_000_000);
+    minesRound(3, 22, 1_000, 'M3');
+    ck('지뢰 3개 판에서는 안 열린다', !ids(await grab(MN.handleCashout, 'M3')).includes('mi-23-of-24'));
+
+    wipe(); seedForWiring(); mkUser('M4', 1_000_000);
+    minesRound(1, 23, 999, 'M4');
+    ck('999P 베팅이면 안 열린다', !ids(await grab(MN.handleCashout, 'M4')).includes('mi-23-of-24'));
+
+    /* ── 한탕주의자 ─────────────────────────────────────────────
+       마지막 등급 칸(포카드 이상)에 걸어 맞힌다. */
+    function flipRound(market: string, won: number, amount: number, uid: string): number {
+      db.exec(`DELETE FROM poker_bets; DELETE FROM poker_rounds;`);
+      db.prepare(`INSERT INTO poker_rounds (phase, betting_ends_at, hole_json, board_json, odds_json, result_json, resolved_at)
+                  VALUES ('done', 0, '[0,1,2,3]', '[4,5,6,7,8]', ?, ?, ?)`)
+        .run(JSON.stringify({ master: 2, shark: 2, buckets: [2, 2, 2, 2, 50], prob: {} }),
+          JSON.stringify({ winner: 'master', buckets: [4] }), Math.floor(Date.now() / 1000));
+      const rid = (db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id: number }).id;
+      db.prepare(`INSERT INTO poker_bets (round_id, user_id, username, market, amount, odds, won, payout)
+                  VALUES (?, ?, ?, ?, ?, 50, ?, ?)`)
+        .run(rid, uid, uid, market, amount, won, won ? amount * 50 : 0);
+      return rid;
+    }
+
+    wipe(); seedForWiring(); mkUser('P1', 1_000_000);
+    flipRound('b4', 1, 500, 'P1');
+    ck('포카드 이상에 걸어 맞히면 열린다',
+      ids(await grab(PK.handleState, 'P1')).includes('pk-quads-plus'));
+
+    wipe(); seedForWiring(); mkUser('P2', 1_000_000);
+    flipRound('b4', 0, 500, 'P2');
+    ck('걸었지만 빗나가면 안 열린다', !ids(await grab(PK.handleState, 'P2')).includes('pk-quads-plus'));
+
+    wipe(); seedForWiring(); mkUser('P3', 1_000_000);
+    flipRound('b3', 1, 500, 'P3');
+    ck('풀하우스 칸을 맞혀도 안 열린다', !ids(await grab(PK.handleState, 'P3')).includes('pk-quads-plus'));
+
+    wipe(); seedForWiring(); mkUser('P4', 1_000_000);
+    flipRound('b4', 1, 499, 'P4');
+    ck('499P 면 안 열린다', !ids(await grab(PK.handleState, 'P4')).includes('pk-quads-plus'));
+
+    /* ── 블랙잭 둘 ──────────────────────────────────────────────
+       카드 번호는 rank*4 + suit (랭크 0='2' … 12='A'). */
+    const card = (rank: number, suit = 0): number => rank * 4 + suit;
+    function bjRound(mine: number[], dealer: number[], status: string, bet: number, uid: string): void {
+      db.exec(`DELETE FROM blackjack_hands; DELETE FROM blackjack_rounds;`);
+      const settled = BJ.settleHand(mine, dealer);
+      db.prepare(`INSERT INTO blackjack_rounds (phase, betting_ends_at, shoe_json, shoe_pos, dealer_json, resolved_at)
+                  VALUES ('done', 0, '[]', 0, ?, ?)`)
+        .run(JSON.stringify(dealer), Math.floor(Date.now() / 1000));
+      const rid = (db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id: number }).id;
+      db.prepare(`INSERT INTO blackjack_hands (round_id, user_id, username, seat, bet, cards_json, status, outcome, payout)
+                  VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)`)
+        .run(rid, uid, uid, bet, JSON.stringify(mine), status, settled.outcome,
+          Math.floor(bet * settled.multiplier));
+    }
+
+    /* 2+4 = 6 에서 서고, 딜러는 22 로 터진다 */
+    const SIX = [card(0), card(2, 1)];                        // 2 + 4
+    const BUST = [card(8), card(8, 1), card(8, 2)];           // 10+10+10 = 30
+    wipe(); seedForWiring(); mkUser('B1', 1_000_000);
+    bjRound(SIX, BUST, 'stand', 1_000, 'B1');
+    ck('검사 전제: 내 손이 6점', BJ.handTotal(SIX).total === 6, String(BJ.handTotal(SIX).total));
+    ck('검사 전제: 딜러가 터졌다', BJ.handTotal(BUST).bust);
+    ck('6점에서 서서 딜러가 터지면 열린다',
+      ids(await grab(BJW.handleState, 'B1')).includes('bj-stand-6'));
+
+    /* 7점에서 서면 아니다 — 기준이 실제로 6인가 */
+    wipe(); seedForWiring(); mkUser('B2', 1_000_000);
+    const SEVEN = [card(1), card(2, 1)];                      // 3 + 4
+    bjRound(SEVEN, BUST, 'stand', 1_000, 'B2');
+    ck('검사 전제: 내 손이 7점', BJ.handTotal(SEVEN).total === 7);
+    ck('7점이면 안 열린다', !ids(await grab(BJW.handleState, 'B2')).includes('bj-stand-6'));
+
+    /* 딜러가 안 터지고 그냥 점수로 이긴 경우는 아니다 */
+    wipe(); seedForWiring(); mkUser('B3', 1_000_000);
+    const LOW = [card(0), card(0, 1)];                        // 2 + 2 = 4
+    const DEALER3 = [card(0, 2), card(0, 3)];                 // 4 — 내가 6이면 이긴다
+    bjRound(SIX, DEALER3, 'stand', 1_000, 'B3');
+    ck('딜러가 안 터졌으면 안 열린다',
+      !ids(await grab(BJW.handleState, 'B3')).includes('bj-stand-6'));
+    void LOW;
+
+    /* 카드 야르 — 일곱 장으로 21 이하 승리 */
+    wipe(); seedForWiring(); mkUser('B4', 1_000_000);
+    const SEVEN_CARDS = [card(0), card(0, 1), card(0, 2), card(0, 3),
+      card(1), card(1, 1), card(1, 2)];                       // 2×4 + 3×3 = 17
+    bjRound(SEVEN_CARDS, BUST, 'stand', 1_000, 'B4');
+    ck('검사 전제: 일곱 장에 17점',
+      SEVEN_CARDS.length === 7 && BJ.handTotal(SEVEN_CARDS).total === 17,
+      String(BJ.handTotal(SEVEN_CARDS).total));
+    ck('일곱 장으로 이기면 열린다',
+      ids(await grab(BJW.handleState, 'B4')).includes('bj-7-cards'));
+
+    wipe(); seedForWiring(); mkUser('B5', 1_000_000);
+    const SIX_CARDS = SEVEN_CARDS.slice(0, 6);                // 2×4 + 3×2 = 14
+    bjRound(SIX_CARDS, BUST, 'stand', 1_000, 'B5');
+    ck('여섯 장이면 안 열린다', !ids(await grab(BJW.handleState, 'B5')).includes('bj-7-cards'));
+
+    /* 졌으면 장수와 무관하게 아니다 */
+    wipe(); seedForWiring(); mkUser('B6', 1_000_000);
+    const DEALER_20 = [card(8), card(8, 1)];                  // 20
+    bjRound(SEVEN_CARDS, DEALER_20, 'stand', 1_000, 'B6');
+    ck('일곱 장이어도 지면 안 열린다',
+      !ids(await grab(BJW.handleState, 'B6')).includes('bj-7-cards'));
+
+    db.exec(`DELETE FROM blackjack_hands; DELETE FROM blackjack_rounds;
+             DELETE FROM poker_bets; DELETE FROM poker_rounds;`);
   }
 
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */

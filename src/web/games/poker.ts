@@ -20,6 +20,7 @@ import {
   evaluate7, scoreCategory, categoryBucket, cardToString, CAT_NAMES, BUCKET_NAMES,
 } from '../../services/poker';
 import { readJson, sendJson } from '../http';
+import { award, withUnlocked } from '../achieve-hook';
 import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
@@ -177,9 +178,31 @@ function statePayload(round: PokerRoundRow, userId: string) {
 }
 
 export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  sendJson(res, 200, statePayload(advance(), userId));
+  const round = advance();
+  sendJson(res, 200, { ...statePayload(round, userId), ...flipAwards(round.id, userId) });
   // 응답을 보낸 뒤에 다음 라운드를 미리 만들어 둔다 (논블로킹 · 이미 준비됐으면 즉시 반환)
   prepareNextRound();
+}
+
+/* ── 도전과제: 한탕주의자 ──────────────────────────────────────────
+   완성 족보 예측 중 가장 희귀한 칸(포카드 이상 — 포카드·스트레이트 플러시·로열
+   플러시)에 걸어 맞힌다.
+
+   정산 자리가 아니라 여기서 본다. 정산은 라운드를 전진시키는 쪽에서 도는데 그건
+   누구의 요청인지 정해져 있지 않고(먼저 폴링한 사람이 남의 판까지 정산한다),
+   토스트를 띄우려면 그 사람 자신의 응답에 실려야 한다.
+
+   시장 이름은 'b' + 칸 번호다. 마지막 칸이 '포카드 이상'이므로 번호를 박지 않고
+   BUCKET_NAMES 의 길이에서 구한다 — 칸이 하나 늘면 번호가 밀린다. */
+const HIGH_BUCKET = `b${BUCKET_NAMES.length - 1}`;
+
+function flipAwards(roundId: number, userId: string) {
+  const mine = getMyPokerBets(roundId, userId).filter(b => b.market === HIGH_BUCKET && b.won === 1);
+  if (!mine.length) return {};
+  /* 여러 번 걸 수 있으니 가장 크게 건 것을 기준으로 본다 — 문지기가 "그 판에 얼마를
+     걸었나"를 묻는 것이라, 같은 판의 작은 베팅 때문에 막히면 뜻이 어긋난다. */
+  const top = Math.max(...mine.map(b => b.amount));
+  return withUnlocked(award(userId, top, [['pk-quads-plus', () => true]]));
 }
 
 const VALID_MARKETS = new Set(['master', 'shark', 'b0', 'b1', 'b2', 'b3', 'b4']);

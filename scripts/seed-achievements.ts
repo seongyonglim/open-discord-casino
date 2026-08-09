@@ -37,6 +37,44 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     // 판정: src/db/holdem.ts endHand — 쇼다운에 공개된 손의 족보 이름으로 본다
   },
   {
+    id: 'bj-stand-6',
+    gameType: 'BLACKJACK',
+    title: '너 버스트할거 잖아',
+    description: '6점 이하에서 카드를 더 받지 않고 서서, 딜러가 버스트해 이깁니다.',
+    minBet: MIN_BET,
+    sortAt: 11,
+    // 판정: src/web/games/blackjack.ts — 선 점수 ≤ 6 · 딜러 버스트 · 승리
+  },
+  {
+    id: 'bj-7-cards',
+    gameType: 'BLACKJACK',
+    title: '카드 야르',
+    description: '한 판에 카드를 7장 이상 받고도 21을 넘기지 않고 이깁니다.',
+    minBet: MIN_BET,
+    sortAt: 12,
+    // 판정: src/web/games/blackjack.ts — 7장 이상 · 버스트 아님 · 승리
+  },
+  {
+    id: 'pk-quads-plus',
+    gameType: 'POKER',
+    title: '한탕주의자',
+    /* 설명에 "포카드 이상"을 그대로 쓴다 — 화면의 베팅 칸 이름과 같은 말이라야
+       어디에 걸어야 하는지 찾을 수 있다. */
+    description: '완성 족보 예측에서 «포카드 이상»에 걸어 맞힙니다.',
+    minBet: 500,
+    sortAt: 25,
+    // 판정: src/web/games/poker.ts — 마지막 등급 칸(b4) 베팅이 적중했을 때
+  },
+  {
+    id: 'mi-23-of-24',
+    gameType: 'MINES',
+    title: '안전불감증',
+    description: '지뢰 1개 판에서 23칸을 열고, 마지막 한 칸을 남긴 채 캐시아웃합니다.',
+    minBet: MIN_BET,
+    sortAt: 40,
+    // 판정: src/web/games/mines.ts — 지뢰 1개 · 연 칸 23 · 캐시아웃
+  },
+  {
     id: 'crash-x100',
     gameType: 'CRASH',
     title: '도파민 중독',

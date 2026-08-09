@@ -134,7 +134,33 @@ function statePayload(round: BjRoundRow, userId: string) {
 }
 
 export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  return sendJson(res, 200, statePayload(advance(), userId));
+  const round = advance();
+  return sendJson(res, 200, { ...statePayload(round, userId), ...bjAwards(round, userId) });
+}
+
+/* ── 도전과제 둘 ───────────────────────────────────────────────────
+   판정은 정산이 끝난 뒤에만 성립한다(딜러가 버스트했는지, 이겼는지). 정산은 라운드를
+   전진시키는 쪽에서 도는데 그건 누구의 요청인지 정해져 있지 않으므로, 결과를 읽어
+   판정하는 것은 각자의 상태 응답에서 한다 — 토스트가 그 사람에게 떠야 하기 때문이다.
+
+   · 너 버스트할거 잖아 — 6점 이하에서 더 안 받고 섰는데 딜러가 터진다.
+     "언제 섰나"가 아니라 "선 순간의 점수"로 본다. 2에서 한 번 받아 6이 된 뒤 선 것도
+     같은 배짱이고, 화면에 보이는 것도 그 점수다.
+   · 카드 야르 — 일곱 장 이상을 받고도 21을 안 넘기고 이긴다. */
+const BJ_LOW_STAND = 6;
+const BJ_MANY_CARDS = 7;
+
+function bjAwards(round: BjRoundRow, userId: string) {
+  const hand = getMyBlackjackHand(round.id, userId);
+  // 정산 전에는 outcome 이 없다 — 이길지 질지 모르는 상태에서 판정할 것이 없다
+  if (!hand || hand.outcome !== 'win') return {};
+  const cards = JSON.parse(hand.cards_json) as number[];
+  const total = handTotal(cards);
+  const dealer = handTotal(JSON.parse(round.dealer_json ?? '[]') as number[]);
+  return withUnlocked(award(userId, hand.bet, [
+    ['bj-stand-6', () => hand.status === 'stand' && total.total <= BJ_LOW_STAND && dealer.bust],
+    ['bj-7-cards', () => cards.length >= BJ_MANY_CARDS && !total.bust],
+  ]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {

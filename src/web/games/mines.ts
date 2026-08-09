@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import { placeBet, getActiveRound, updateRoundState, settleGameRound, type GameRound } from '../../db/queries';
 import { readJson, sendJson } from '../http';
+import { award, withUnlocked } from '../achieve-hook';
 import { layout, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 import { bombIcon, coinIcon, mysteryMark } from '../icons';
@@ -134,7 +135,18 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
   const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`,
     state.revealed.length > 0);
   const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
-  return sendJson(res, 200, { ok: true, balance, round: publicRound(settled, state, true) });
+  /* ── 도전과제: 안전불감증 ────────────────────────────────────────
+     지뢰 하나 모드에서 안전한 24칸 중 23칸을 열고, 마지막 한 칸을 남긴 채 나온다.
+     한 칸만 더 열면 25칸 중 남은 두 칸 가운데 하나가 지뢰라 반반이다 — 그 앞에서
+     멈춘 것이 이 과제의 요점이다.
+
+     칸 수는 코드에서 읽는다(TILE_COUNT). 25 를 적어 두면 판 크기를 바꾸는 날
+     이 과제만 조용히 안 열린다. */
+  const got = award(userId, round.bet_amount, [['mi-23-of-24', () =>
+    state.mineCount === 1 && state.revealed.length === TILE_COUNT - 1 - 1]]);
+  return sendJson(res, 200, {
+    ok: true, balance, round: publicRound(settled, state, true), ...withUnlocked(got),
+  });
 }
 
 
