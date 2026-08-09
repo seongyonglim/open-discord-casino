@@ -53,7 +53,9 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     /* 지원금에는 베팅이 없다. 기준을 그대로 두면 이 과제는 영영 판정되지 않는다 —
        문지기는 "게임을 해서 깨는 과제"를 위한 것이고 이건 그쪽이 아니다. */
     minBet: 0,
-    isHidden: true,
+    /* 공개로 연다. 감춰 두면 "하루에 열 번 파산한다"는 농담 자체가 전달되지 않고,
+       조건을 모르는 사람에게는 그냥 잠긴 칸 하나가 는 것과 같다. */
+    isHidden: false,
     sortAt: 90,
     // 판정: src/discord/interactions.ts — 지원금 지급 성공 직후, 오늘(KST) 받은 횟수
   },

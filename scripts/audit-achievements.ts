@@ -453,9 +453,12 @@ function main(): void {
     /* 지원금에는 베팅이 없다. 기준을 그대로 두면 이 과제는 영영 판정되지 않는다. */
     ck('relief-10-day 만 최소 베팅 0', byId.get('relief-10-day')?.min_bet === 0,
       String(byId.get('relief-10-day')?.min_bet));
-    ck('건실한 파산러는 히든', byId.get('relief-10-day')?.is_hidden === 1);
-    ck('나머지 셋은 공개', ['bj-hit-21', 'crash-x100', 'crash-profit-1m']
-      .every(id => byId.get(id)?.is_hidden === 0));
+    /* 지금은 넷 다 공개다. 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는
+       "씨앗이 실제로 무엇을 감췄나"만 본다 — 실수로 감춘 채 올리면 조건을 모르는
+       사람에게는 그냥 잠긴 칸 하나가 는 것과 같다. */
+    ck('넷 다 공개다', ['bj-hit-21', 'crash-x100', 'crash-profit-1m', 'relief-10-day']
+      .every(id => byId.get(id)?.is_hidden === 0),
+      A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id).join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
       byId.get('bj-hit-21')?.game_type === 'BLACKJACK'
       && byId.get('crash-x100')?.game_type === 'CRASH'
