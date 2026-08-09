@@ -449,7 +449,7 @@ async function main(): Promise<void> {
     ck('열두 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
-    for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m', 'la-right-7', 'mi-1-of-25']) {
+    for (const id of ['bj-double-21', 'crash-x100', 'crash-profit-1m', 'la-right-7', 'mi-1-of-25']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
     /* 베팅이 없거나, 금액이 뜻을 갖지 않는 과제는 기준도 0 이어야 한다. 그대로 두면
@@ -466,7 +466,7 @@ async function main(): Promise<void> {
     ck('감춘 과제는 0.01초의 광기 하나뿐', hidden.join(',') === 'crash-x1-01',
       hidden.join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
-      byId.get('bj-hit-21')?.game_type === 'BLACKJACK'
+      byId.get('bj-double-21')?.game_type === 'BLACKJACK'
       && byId.get('crash-x100')?.game_type === 'CRASH'
       && byId.get('crash-profit-1m')?.game_type === 'CRASH'
       && byId.get('crash-x1-01')?.game_type === 'CRASH'
@@ -479,6 +479,28 @@ async function main(): Promise<void> {
     ck('두 번 돌려도 열두 개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
+    /* ── 폐기한 과제 ────────────────────────────────────────────
+       판정이 바뀌어 id 째로 갈아엎으면 예전 줄이 표에 그대로 남는다(씨앗은 덮어쓸 뿐
+       지우지 않는다). 그러면 화면에 아무도 깰 수 없는 칸이 하나 늘어난 채로 남는다. */
+    const OLD = 'bj-hit-21';
+    A.upsertAchievement({ id: OLD, gameType: 'BLACKJACK', title: '옛 과제' });
+    ck('검사 전제: 예전 줄이 표에 있다', !!A.listAchievements().find(a => a.id === OLD));
+    seed();
+    ck('폐기한 과제는 씨앗이 지운다', !A.listAchievements().find(a => a.id === OLD));
+    ck('지운 뒤에도 열두 개', A.listAchievements().length === SEEDED,
+      String(A.listAchievements().length));
+
+    /* 이미 달성한 사람이 있으면 지우지 않는다 — 영구히 남는다고 적어 둔 기록이라,
+       조용히 지우면 그 사람의 카드가 사라진다. 그때는 id 를 두고 내용만 고쳐야 한다. */
+    A.upsertAchievement({ id: OLD, gameType: 'BLACKJACK', title: '옛 과제' });
+    mkUser('rt1');
+    A.unlockAchievement('rt1', OLD);
+    seed();
+    ck('달성자가 있으면 안 지운다', !!A.listAchievements().find(a => a.id === OLD));
+    ck('그 사람의 기록도 그대로다', A.hasAchievement('rt1', OLD));
+    wipe();
+    seed();
+
     /* 1,000P 문지기가 실제로 막는가. 여기가 뚫리면 위의 기준이 글자로만 남는다. */
     mkUser('r1');
     ck('999P 로는 안 준다', !A.awardIfBet('r1', 'crash-x100', 999, () => true).unlocked);
@@ -486,26 +508,26 @@ async function main(): Promise<void> {
 
     /* ── 김재원이 되어 보자 — 판정식 ────────────────────────────
        판정은 web 핸들러에 있지만 식 자체는 여기서 확인할 수 있다:
-       방금 받은 카드를 뺀 손이 20이고, 받은 뒤가 21. */
+       더블로 받은 한 장을 뺀 손이 20이고, 받은 뒤가 21. */
     const BJ = require('../src/services/blackjack') as typeof import('../src/services/blackjack');
-    const hit21 = (cards: number[]): boolean =>
+    const dbl21 = (cards: number[]): boolean =>
       BJ.handTotal(cards.slice(0, -1)).total === 20 && BJ.handTotal(cards).total === 21;
     /* 카드 번호는 0..51 이고 랭크는 card >> 2 다 — 0='2' … 7='9', 8='T', 11='K', 12='A'.
        같은 랭크가 넉 장이므로 무늬를 바꾸려면 1씩 더한다. */
     const card = (rank: number, suit = 0): number => rank * 4 + suit;
     const ACE = 12, TEN = 8, NINE = 7, TWO = 0;
     ck('10+10 에서 A 를 받아 21 → 달성',
-      hit21([card(TEN), card(TEN, 1), card(ACE)]));
+      dbl21([card(TEN), card(TEN, 1), card(ACE)]));
     ck('A+9(소프트 20)에서 A 를 받아 21 → 달성',
-      hit21([card(ACE), card(NINE), card(ACE, 1)]));
+      dbl21([card(ACE), card(NINE), card(ACE, 1)]));
     ck('19에서 2를 받아 21 → 아니다 (20이 아니었다)',
-      hit21([card(TEN), card(NINE), card(TWO)]) === false);
+      dbl21([card(TEN), card(NINE), card(TWO)]) === false);
     ck('20에서 2를 받아 버스트 → 아니다',
-      hit21([card(TEN), card(TEN, 1), card(TWO)]) === false);
-    ck('처음부터 21(블랙잭) → 아니다 (히트가 아니다)',
-      hit21([card(ACE), card(TEN)]) === false);
+      dbl21([card(TEN), card(TEN, 1), card(TWO)]) === false);
+    ck('처음부터 21(블랙잭) → 아니다 (한 장 받은 판이 아니다)',
+      dbl21([card(ACE), card(TEN)]) === false);
     ck('20에서 10을 받아 버스트 → 아니다',
-      hit21([card(TEN), card(TEN, 1), card(TEN, 2)]) === false);
+      dbl21([card(TEN), card(TEN, 1), card(TEN, 2)]) === false);
     /* 검사 전제 — 위 손들이 정말 그 합인지 확인한다. 카드 번호 규칙을 잘못 알면
        위의 검사들이 전부 "우연히 통과"가 된다. */
     ck('검사 전제: 10+10 은 20', BJ.handTotal([card(TEN), card(TEN, 1)]).total === 20);
@@ -681,10 +703,12 @@ async function main(): Promise<void> {
        일어나는 사고이고, 그건 이 방법으로 잡힌다. */
     const read = (p: string): string => require('node:fs').readFileSync(p, 'utf8') as string;
     const bj = read('src/web/games/blackjack.ts');
-    ck('블랙잭이 판정을 부른다', bj.includes("'bj-hit-21'"));
+    ck('블랙잭이 판정을 부른다', bj.includes("'bj-double-21'"));
     ck('블랙잭이 결과를 응답에 싣는다', bj.includes('withUnlocked'));
-    /* 히트일 때만 본다 — 더블도 카드를 한 장 받지만 20에서 하는 선택이 아니다 */
-    ck('히트일 때만 판정한다', /action === 'hit'[\s\S]{0,120}bj-hit-21/.test(bj));
+    /* 더블일 때만 본다. 히트로 21을 만든 판은 이 과제가 아니다 — 더블은 처음 두 장에서만
+       되고 판돈이 두 배가 되므로, 같은 21이어도 건 것이 다르다. */
+    ck('더블다운일 때만 판정한다', /action === 'double'[\s\S]{0,140}bj-double-21/.test(bj));
+    ck('히트로는 안 준다', !/action === 'hit'[\s\S]{0,140}bj-double-21/.test(bj));
 
     const cr = read('src/web/games/crash.ts');
     ck('그래프가 100배를 판정한다', cr.includes("'crash-x100'"));
@@ -769,7 +793,7 @@ async function main(): Promise<void> {
 
     ck('블랙잭 판정이 20 → 21 이다',
       /before\.total === 20[\s\S]{0,80}=== 21/.test(bj)
-      && !!byId2.get('bj-hit-21')?.description.includes('21'));
+      && !!byId2.get('bj-double-21')?.description.includes('21'));
 
     /* ── 0.01초의 광기 ────────────────────────────────────────────
        1.01x 는 "이상"이 아니라 "정확히"다. >= 로 적으면 모든 캐시아웃이 여기 걸린다. */
@@ -1326,6 +1350,74 @@ async function main(): Promise<void> {
     ck('일곱 장이어도 지면 안 열린다',
       !ids(await grab(BJW.handleState, 'B6')).includes('bj-7-cards'));
 
+    /* ── 김재원이 되어 보자 — 진짜 handleAction 을 태운다 ─────────
+       이 과제만 다른 자리에서 판정된다(상태가 아니라 동작). 더블은 카드를 한 장 받는데
+       그 한 장이 무엇인지가 곧 판정이라, 슈를 손으로 놓고 실제로 눌러 봐야 확인된다.
+
+       action 국면에 머무르게 하려면 시간을 맞춰야 한다: betting_ends_at 을 BJ_DEAL_SEC
+       만큼 과거로 놓으면 배분이 방금 끝난 시점이 되고, 결정 창은 아직 열려 있다.
+       (과거로 더 밀면 창이 닫혀 'closed' 가 돌아온다 — 홀덤에서 같은 함정을 밟은 적이 있다.) */
+    const BQ = require('../src/db/queries/bj') as typeof import('../src/db/queries/bj');
+    function bjAction(uid: string, mine: number[], next: number, bet: number, act: string):
+      Promise<Record<string, unknown>> {
+      db.exec(`DELETE FROM blackjack_hands; DELETE FROM blackjack_rounds;`);
+      const now = Math.floor(Date.now() / 1000);
+      db.prepare(`INSERT INTO blackjack_rounds (phase, betting_ends_at, shoe_json, shoe_pos, dealer_json)
+                  VALUES ('action', ?, ?, 0, ?)`)
+        .run(now - BQ.BJ_DEAL_SEC, JSON.stringify([next]), JSON.stringify([card(8, 2), card(6, 2)]));
+      const rid = (db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id: number }).id;
+      db.prepare(`INSERT INTO blackjack_hands (round_id, user_id, username, seat, bet, cards_json, status)
+                  VALUES (?, ?, ?, 0, ?, ?, 'playing')`)
+        .run(rid, uid, uid, bet, JSON.stringify(mine));
+      let body = '';
+      const res = {
+        writeHead() { }, end(c?: unknown) { if (c != null) body += String(c); },
+        getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+      };
+      return BJW.handleAction(
+        Readable.from([JSON.stringify({ action: act })]) as never, res as never, uid)
+        .then(() => { try { return JSON.parse(body) as Record<string, unknown>; } catch { return {}; } });
+    }
+    const TWENTY = [card(8), card(8, 1)];                     // 10 + 10
+    const NINETEEN = [card(8), card(7, 1)];                   // 10 + 9
+
+    wipe(); seedForWiring(); mkUser('B7', 1_000_000);
+    const dbl = await bjAction('B7', TWENTY, card(12), 1_000, 'double');
+    ck('검사 전제: 더블이 받아들여졌다', dbl.ok === true, JSON.stringify(dbl.error ?? null));
+    ck('검사 전제: 21이 됐다', dbl.status === 'stand' && (dbl.cards as string[]).length === 3,
+      JSON.stringify(dbl.cards ?? null));
+    ck('20에서 더블다운해 21이면 열린다',
+      ((dbl.unlocked ?? []) as { id: string }[]).some(u => u.id === 'bj-double-21'),
+      JSON.stringify(dbl.unlocked ?? null));
+
+    /* 같은 20에서 히트로 21을 만든 판. 예전 조건이라 여기서 열리면 바뀐 게 아니다. */
+    wipe(); seedForWiring(); mkUser('B8', 1_000_000);
+    const hit = await bjAction('B8', TWENTY, card(12), 1_000, 'hit');
+    ck('검사 전제: 히트도 21이 됐다', hit.ok === true && hit.status === 'stand');
+    ck('히트로 21을 만들면 안 열린다',
+      !((hit.unlocked ?? []) as { id: string }[]).some(u => u.id === 'bj-double-21'));
+
+    /* 19에서 더블해 21이 된 판 — 20이 아니었으므로 아니다 */
+    wipe(); seedForWiring(); mkUser('B9', 1_000_000);
+    const from19 = await bjAction('B9', NINETEEN, card(0), 1_000, 'double');
+    ck('검사 전제: 19 + 2 = 21', from19.ok === true);
+    ck('19에서 더블하면 안 열린다',
+      !((from19.unlocked ?? []) as { id: string }[]).some(u => u.id === 'bj-double-21'));
+
+    /* 400P 로 시작해 더블하면 걸린 돈은 800P — 기준에 못 미친다.
+       (500P 였다면 더블로 1,000P 가 되어 통과한다. 그 판에 실제로 걸린 돈이 기준이다.) */
+    wipe(); seedForWiring(); mkUser('B10', 1_000_000);
+    const small = await bjAction('B10', TWENTY, card(12), 400, 'double');
+    ck('검사 전제: 작은 판도 더블은 됐다', small.ok === true);
+    ck('더블해도 800P 면 안 열린다',
+      !((small.unlocked ?? []) as { id: string }[]).some(u => u.id === 'bj-double-21'));
+
+    wipe(); seedForWiring(); mkUser('B11', 1_000_000);
+    const half = await bjAction('B11', TWENTY, card(12), 500, 'double');
+    ck('500P 로 더블하면 1,000P 라 열린다',
+      ((half.unlocked ?? []) as { id: string }[]).some(u => u.id === 'bj-double-21'),
+      JSON.stringify(half.unlocked ?? null));
+
     db.exec(`DELETE FROM blackjack_hands; DELETE FROM blackjack_rounds;
              DELETE FROM poker_bets; DELETE FROM poker_rounds;`);
   }
@@ -1372,17 +1464,27 @@ async function main(): Promise<void> {
     const counts = A.unlockCounts();
     ck('한 번에 세는 값도 같다', counts.get('open-1') === 2, String(counts.get('open-1')));
 
-    /* 감춘 과제는 인원도 숨긴다. "3명 달성"이 붙어 있으면 그것만으로 가능한 조건이라는
-       사실이 새어 나가고, 0명이면 아무도 못 했다는 것까지 알려 준다. */
+    /* 감춘 과제도 "누가 해냈나"는 보여준다. 감추는 것은 조건이지 사람이 아니다 —
+       해낸 사람이 보이지 않으면 그 과제는 아무도 이야기하지 않는 칸으로 남는다.
+       대신 이름과 설명은 여전히 지워져 있어야 한다. 그 둘이 감춤의 전부다. */
     A.unlockAchievement('w1', 'hid-1');
     const seenByOther = A.achievementsFor('w3').find(v => v.id === 'hid-1')!;
-    ck('감춘 과제는 남에게 인원을 안 알려준다', seenByOther.unlockedBy === -1,
+    ck('감춘 과제도 달성 인원은 보인다', seenByOther.unlockedBy === 1,
       String(seenByOther.unlockedBy));
-    ck('로그인 안 한 화면에서도 안 알려준다',
-      A.achievementsFor(null).find(v => v.id === 'hid-1')!.unlockedBy === -1);
-    /* 본인이 달성했으면 이미 내용을 아는 사람이다 — 그때는 보여 준다. */
+    ck('로그인 안 한 화면에서도 보인다',
+      A.achievementsFor(null).find(v => v.id === 'hid-1')!.unlockedBy === 1);
+    ck('그래도 이름은 여전히 가려져 있다', seenByOther.title === '???', seenByOther.title);
+    ck('설명도 여전히 가려져 있다',
+      seenByOther.description.includes('해금됩니다'), seenByOther.description);
+    /* 명단도 내준다 — 화면의 버튼이 부르는 그 길이다. 예전에는 여기서 403 을 돌려줘서
+       카드에 인원만 뜨고 눌러도 아무것도 안 나오는 상태가 됐을 것이다. */
+    ck('감춘 과제의 달성자 명단도 내준다',
+      A.unlockersOf('hid-1', 5).some(u => u.userId === 'w1'),
+      A.unlockersOf('hid-1', 5).map(u => u.userId).join(','));
+    /* 본인이 달성했으면 이미 내용을 아는 사람이다 — 그때는 이름까지 보여 준다. */
     const seenByOwner = A.achievementsFor('w1').find(v => v.id === 'hid-1')!;
     ck('달성한 본인에게는 인원이 보인다', seenByOwner.unlockedBy === 1, String(seenByOwner.unlockedBy));
+    ck('달성한 본인에게는 이름도 보인다', seenByOwner.title !== '???', seenByOwner.title);
     ck('공개 과제는 누구에게나 인원이 보인다',
       A.achievementsFor('w3').find(v => v.id === 'open-1')!.unlockedBy === 2);
 

@@ -90,9 +90,11 @@ export function achievementsFor(userId: string | null): AchievementView[] {
     const unlocked = at != null;
     const secret = a.is_hidden === 1 && !unlocked;
     return {
-      /* 감춘 과제는 인원도 숨긴다. "3명 달성"이 붙어 있으면 그것만으로 가능한
-         조건이라는 사실이 새어 나가고, 0명이면 아무도 못 했다는 것까지 알려 준다. */
-      unlockedBy: secret ? -1 : (counts.get(a.id) ?? 0),
+      /* 감춘 과제도 달성자는 보여준다. 감추는 것은 "무엇을 해야 하는가"이지 "누가 해냈는가"가
+         아니다 — 해낸 사람이 자랑할 수 없으면 감춘 과제는 아무도 이야기하지 않는 칸이 된다.
+         (인원까지 숨기던 때가 있었다. 그러면 남이 해낸 것을 보고 "저게 뭐지" 하고 찾아
+          나서는 일 자체가 안 일어난다.) */
+      unlockedBy: counts.get(a.id) ?? 0,
       id: a.id,
       gameType: a.game_type,
       title: secret ? '???' : a.title,
@@ -237,4 +239,21 @@ export function upsertAchievement(a: {
     a.iconUrl?.trim() || null, a.isHidden ? 1 : 0, minBet,
     Math.floor(Number(a.sortAt ?? 0)) || 0, a.active === false ? 0 : 1);
   return { ok: true };
+}
+
+/**
+ * 뜻이 바뀌어 폐기한 과제를 표에서 지운다.
+ *
+ * 씨앗을 다시 돌려도 예전 줄은 덮이지 않고 그대로 남는다 — 화면에는 아무도 깰 수 없는
+ * 칸이 하나 늘어난 채로 남는 것이다. 판정을 바꾸면서 id 도 바꿀 때 그 뒤처리를 여기서 한다.
+ *
+ * 달성한 사람이 하나라도 있으면 지우지 않는다. 영구히 남는다고 적어 둔 기록이고,
+ * 지우면 그 사람의 카드가 소리 없이 사라진다 — 그럴 때는 id 를 그대로 두고 내용만 고쳐야 한다.
+ */
+export function retireAchievement(id: string): { removed: boolean; keptFor: number } {
+  const held = one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM user_achievements WHERE achievement_id = ?`, id)!.n;
+  if (held > 0) return { removed: false, keptFor: held };
+  run(`DELETE FROM achievements WHERE id = ?`, id);
+  return { removed: one<{ n: number }>(`SELECT changes() AS n`)!.n > 0, keptFor: 0 };
 }

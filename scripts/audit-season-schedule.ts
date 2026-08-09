@@ -178,6 +178,60 @@ function main(): void {
     ck('지우면 예약이 없다', SS.getSeasonSchedule().closeAt === null);
   }
 
+  /* ── 7. 랭킹 배너의 종료일 ──────────────────────────────────── */
+  section('[7] 랭킹 배너 — 예약이 걸리면 종료일이 뜬다');
+  {
+    const LB = require('../src/web/leaderboard') as typeof import('../src/web/leaderboard');
+    reset();
+    mkUser('s7', 1_000);
+
+    ck('예약이 없으면 종료일도 없다',
+      LB.buildRankPayload(null, 'overall', null).season.closeAt === null);
+
+    /* 8월 10일 00:00 KST 에 닫는 예약. 시즌이 마지막으로 살아 있는 날은 9일이다. */
+    const closeAt = Math.floor(Date.UTC(2026, 7, 9, 15, 0, 0) / 1000);   // = KST 8/10 00:00
+    SS.saveSeasonSchedule({ closeAt, nextName: '시즌 1', seed: 0 });
+    const p = LB.buildRankPayload(null, 'overall', null);
+    ck('예약 시각이 화면 자료에 실린다', p.season.closeAt === closeAt, String(p.season.closeAt));
+    /* 화면이 쓰는 계산(endYmd)을 그대로 옮겨 와 날짜를 재 본다. 자정에 예약을 걸면
+       하루 뒤 날짜가 뜨는 실수가 여기서 걸린다.
+
+       종료 시각은 예약된 순간이 아니라 "그 뒤 첫 요청이 들어온 순간"으로 찍힌다(서버에
+       타이머가 없다). 시즌 0 은 6초 늦게 찍혔고, 그래서 1초만 빼는 방식은 통하지 않는다 —
+       자정 직후에 닫힌 시즌은 그 자정을 진짜 종료로 봐야 한다. */
+    const LAZY_SLACK = 300;
+    const endYmd = (sec: number): string => {
+      const into = ((sec + 9 * 3600) % 86400 + 86400) % 86400;
+      const d = new Date(((into < LAZY_SLACK ? sec - into - 1 : sec - 1) + 9 * 3600) * 1000);
+      return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일`;
+    };
+    ck('예약 화면에 적히는 날짜는 8월 9일', endYmd(p.season.closeAt!) === '8월 9일',
+      endYmd(p.season.closeAt!));
+    /* 실제로 찍히는 값은 예약보다 몇 초 늦다. 그래도 같은 날짜가 나와야 한다. */
+    ck('6초 늦게 찍혀도 8월 9일', endYmd(closeAt + 6) === '8월 9일', endYmd(closeAt + 6));
+    ck('4분 59초까지는 8월 9일', endYmd(closeAt + 299) === '8월 9일', endYmd(closeAt + 299));
+    /* 자정과 무관한 시각에 끝난 시즌은 늦게 찍힐 이유가 없다 — 그날로 적는다. */
+    ck('낮에 끝난 시즌은 그날로 적는다',
+      endYmd(closeAt + 14 * 3600) === '8월 10일', endYmd(closeAt + 14 * 3600));
+
+    /* 예약은 "지금 열려 있는 시즌"을 닫는 것이다. 이미 닫힌 시즌 화면에 붙이면
+       다음 시즌 예약을 그 시즌의 종료일인 양 적게 된다. */
+    const seasonId = LB.buildRankPayload(null, 'overall', null).season.id;
+    S.closeSeason({ seed: 0, nextName: '시즌 1' });
+    ck('닫힌 시즌 화면에는 안 붙는다',
+      LB.buildRankPayload(seasonId, 'overall', null).season.closeAt === null);
+
+    /* 화면 코드도 그 자리에 있는가 — 자료만 실려 오고 그리는 쪽이 없으면 여전히 "미정"이다.
+       끝난 시즌도 같은 계산을 지나야 한다: 시즌 0 은 이미 닫혔고, closedAt 을 그대로
+       적으면 8월 10일이 된다. */
+    const src = require('node:fs').readFileSync('src/web/leaderboard.ts', 'utf8') as string;
+    ck('배너가 예약된 종료일을 그린다', /s\.closeAt != null[\s\S]{0,200}endYmd\(s\.closeAt\)/.test(src));
+    ck('끝난 시즌도 같은 계산을 쓴다', /s\.closedAt != null[\s\S]{0,160}endYmd\(s\.closedAt\)/.test(src));
+    ck('화면의 여유 시간도 5분이다', /LAZY_SLACK = 300/.test(src));
+    ck('예약이 없을 때만 미정이다', src.includes('미정'));
+    SS.clearSeasonSchedule();
+  }
+
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   process.exit(fail ? 1 : 0);
 }

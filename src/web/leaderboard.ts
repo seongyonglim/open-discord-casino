@@ -17,6 +17,7 @@ import {
   type SeasonRow,
 } from '../db/queries';
 import type { WebUser } from '../db/queries';
+import { getSeasonSchedule } from '../db/season-schedule';
 
 const GAME_LABEL: Record<string, string> = {
   mines: '지뢰찾기', ladder: '사다리게임', graph: '그래프게임',
@@ -29,7 +30,10 @@ const label = (g: string) => GAME_LABEL[g] ?? g;
 export interface RankPayload {
   seasons: { id: number; number: number; name: string; closed: boolean }[];
   season: { id: number; number: number; name: string;
-    startedAt: number; endsAt: number | null; closedAt: number | null };
+    startedAt: number; endsAt: number | null; closedAt: number | null;
+    /* 종료 예약이 걸려 있으면 그 시각. 시즌 행의 ends_at 과 달리 "실제로 시즌을 닫을 시각"이라,
+       둘이 어긋나면 이쪽이 참이다 — 배너도 이쪽을 먼저 본다. */
+    closeAt: number | null };
   games: { key: string; label: string; rounds: number; players: number }[];
   tab: string;                       // 'overall' 또는 게임 키
   kind: 'overall' | 'game' | 'holdem';
@@ -82,7 +86,10 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
   return {
     seasons: seasons.map(x => ({ id: x.id, number: x.number, name: x.name, closed: x.closed_at != null })),
     season: { id: s.id, number: s.number, name: s.name,
-      startedAt: s.started_at, endsAt: s.ends_at, closedAt: s.closed_at },
+      startedAt: s.started_at, endsAt: s.ends_at, closedAt: s.closed_at,
+      /* 이미 닫힌 시즌에는 붙이지 않는다 — 예약은 "지금 열려 있는 시즌"을 닫는 것이라,
+         지난 시즌 화면에 붙이면 다음 시즌 예약을 그 시즌의 종료일인 양 적게 된다. */
+      closeAt: s.closed_at == null ? getSeasonSchedule().closeAt : null },
     games, tab: active,
     kind: active === 'overall' ? 'overall' : active === 'holdem' ? 'holdem' : 'game',
     rows,
@@ -145,6 +152,20 @@ export function leaderboardPage(me: WebUser | null): string {
       var d = new Date((sec + 9 * 3600) * 1000);
       return (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일';
     }
+    /* 종료일은 "그 시즌이 마지막으로 살아 있던 날"이다. 종료 시각을 그대로 적으면
+       자정에 끝난 시즌이 하루 더 살아 있었던 것처럼 보인다(8/10 00:00 종료 → 8월 10일).
+
+       게다가 실제로 찍히는 종료 시각은 예약된 순간이 아니라 "그 뒤 첫 요청이 들어온
+       순간"이다 — 서버에 타이머가 없어서(fly 는 아무도 안 쓰면 잠든다) 요청이 올 때
+       처리한다. 시즌 0 은 00:00:06 으로 찍혔다. 그래서 1초만 빼서는 여전히 10일이다.
+
+       그래서 자정 직후(5분 안)에 닫힌 시즌은 그 자정을 진짜 종료 시각으로 본다.
+       그 밖의 시각에 끝난 시즌은 늦게 찍힐 이유가 없으므로 1초만 뺀다. */
+    var LAZY_SLACK = 300;
+    function endYmd(sec){
+      var into = ((sec + 9 * 3600) % 86400 + 86400) % 86400;   // KST 그날 몇 초째인가
+      return ymd(into < LAZY_SLACK ? sec - into - 1 : sec - 1);
+    }
     /* 남은 시간은 "며칠 몇 시간"까지만 적는다. 초 단위로 흐르면 시선을 뺏는데
        시즌은 몇 주 단위라 그 정밀도가 아무 의미가 없다. */
     function left(sec){
@@ -177,12 +198,17 @@ export function leaderboardPage(me: WebUser | null): string {
 
     function paintBanner(){
       var s = data.season;
+      /* 끝난 시즌은 끝난 날을, 종료 예약이 걸린 시즌은 끝날 날을 적는다.
+         둘 다 endYmd 를 지난다 — "언제까지인가"가 사람이 읽는 종료일이다. */
       var right = s.closedAt != null
-        ? '<div class="lb-bi"><span class="k">종료<\\/span><span class="v">' + ymd(s.closedAt) + '<\\/span><\\/div>'
-        : s.endsAt != null
-          ? '<div class="lb-bi"><span class="k">종료까지<\\/span><span class="v gold">'
-            + esc(left(s.endsAt - data.serverNow)) + '<\\/span><\\/div>'
-          : '<div class="lb-bi"><span class="k">종료<\\/span><span class="v">미정<\\/span><\\/div>';
+        ? '<div class="lb-bi"><span class="k">종료<\\/span><span class="v">' + endYmd(s.closedAt) + '<\\/span><\\/div>'
+        : s.closeAt != null
+          ? '<div class="lb-bi"><span class="k">종료<\\/span><span class="v gold">'
+            + endYmd(s.closeAt) + '<\\/span><\\/div>'
+          : s.endsAt != null
+            ? '<div class="lb-bi"><span class="k">종료까지<\\/span><span class="v gold">'
+              + esc(left(s.endsAt - data.serverNow)) + '<\\/span><\\/div>'
+            : '<div class="lb-bi"><span class="k">종료<\\/span><span class="v">미정<\\/span><\\/div>';
       document.getElementById('lbBanner').innerHTML =
         '<div class="lb-bname">' + esc(seasonName(s))
         + (s.closedAt == null ? '<span class="lb-live">진행 중<\\/span>' : '') + '<\\/div>'

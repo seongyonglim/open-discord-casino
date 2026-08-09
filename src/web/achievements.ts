@@ -15,7 +15,7 @@ import {
 import { sendJson } from './http';
 import {
   ACH_TABS, achievementsFor, achievementProgress, unlockersOf, activePlayerCount,
-  listAchievements, unlockCount, hasAchievement,
+  listAchievements, unlockCount,
   type AchievementView,
 } from '../db/achievements';
 import type { WebUser } from '../db/queries';
@@ -69,7 +69,6 @@ function face(userId: string, avatar: string | null, username: string, cls: stri
    한 장만 키가 커지면 그 줄 전체가 어긋난다. 나머지는 "+N"으로 접고, 누르면 전체 명단이 뜬다.
    먼저 해낸 순서로 세운다: 이 목록의 의미는 "누가 먼저 했나"다. */
 function unlockerRow(v: AchievementView, total: number): string {
-  if (v.unlockedBy < 0) return '';                       // 감춘 과제 — 인원도 알려주지 않는다
   if (v.unlockedBy === 0) {
     return `<div class="ac-who none"><span class="ac-who-n">아직 아무도 달성하지 못했습니다</span></div>`;
   }
@@ -250,20 +249,17 @@ export async function handleAchievements(
 /**
  * 한 과제의 달성자 명단.
  *
- * 감춘 과제는 내주지 않는다 — 본인이 달성했으면 이미 내용을 아는 사람이라 보여 준다.
- * 화면에서 버튼을 안 그리는 것만으로는 부족하다: 주소를 직접 치면 그대로 나온다.
+ * 감춘 과제도 명단은 내준다 — 감춘 것은 조건이지 사람이 아니다. 이름과 설명은 목록을
+ * 만드는 자리(achievementsFor)에서 이미 지워지므로, 여기로 나가는 것은 "누가 해냈나"뿐이다.
  */
 const WHO_LIMIT = 50;
 
 export async function handleUnlockers(
-  _req: IncomingMessage, res: ServerResponse, url: URL, userId: string | null
+  _req: IncomingMessage, res: ServerResponse, url: URL, _userId: string | null
 ): Promise<void> {
   const id = (url.searchParams.get('id') ?? '').trim();
   const a = listAchievements().find(x => x.id === id);
   if (!a) return sendJson(res, 404, { error: '없는 도전과제입니다' });
-  if (a.is_hidden === 1 && !(userId && hasAchievement(userId, id))) {
-    return sendJson(res, 403, { error: '아직 공개되지 않은 도전과제입니다' });
-  }
   const total = unlockCount(id);
   const items = unlockersOf(id, WHO_LIMIT);
   return sendJson(res, 200, {

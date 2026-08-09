@@ -9,20 +9,26 @@
  * 로컬:  npx tsx scripts/seed-achievements.ts
  * 운영:  flyctl ssh console -C "env DB_PATH=/data npx tsx scripts/seed-achievements.ts"
  */
-import { upsertAchievement, listAchievements } from '../src/db/achievements';
+import { upsertAchievement, listAchievements, retireAchievement } from '../src/db/achievements';
 
 /** 게임을 해서 깨는 과제의 공통 기준. 단판 베팅이 이 금액 이상일 때만 판정한다. */
 const MIN_BET = 1_000;
 
+/* 뜻이 바뀌어 id 째로 갈아엎은 과제. 여기 적어 두면 표에서 지운다 — 안 지우면 예전 줄이
+   그대로 남아 아무도 깰 수 없는 칸이 하나 늘어난다(씨앗은 덮어쓸 뿐 지우지는 않는다).
+   달성한 사람이 있으면 지우지 않는다. 그때는 id 를 두고 내용만 고쳐야 한다.
+     bj-hit-21 → bj-double-21 : 히트가 아니라 더블다운으로 조건을 바꿨다. */
+const RETIRED = ['bj-hit-21'];
+
 const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
   {
-    id: 'bj-hit-21',
+    id: 'bj-double-21',
     gameType: 'BLACKJACK',
     title: '김재원이 되어 보자',
-    description: '20에 만족하지 않고 히트해서 21을 만듭니다.',
+    description: '20에 만족하지 않고 더블다운해서 21을 만듭니다.',
     minBet: MIN_BET,
     sortAt: 10,
-    // 판정: src/web/games/blackjack.ts — 히트 직후, 직전 합이 20이고 결과가 21일 때
+    // 판정: src/web/games/blackjack.ts — 더블다운 직후, 직전 합이 20이고 결과가 21일 때
   },
   {
     id: 'ho-straight-flush',
@@ -153,11 +159,19 @@ for (const a of ITEMS) {
   if (!r.ok) { console.error(`거절: ${a.id} — ${r.error}`); process.exitCode = 1; continue; }
   made++;
 }
+const gone: string[] = [], kept: string[] = [];
+for (const id of RETIRED) {
+  const r = retireAchievement(id);
+  if (r.removed) gone.push(id);
+  else if (r.keptFor > 0) kept.push(`${id}(달성 ${r.keptFor}명 — 안 지움)`);
+}
 /* 감사가 이 파일을 여러 번 불러 표를 다시 채운다(그때마다 출력이 쏟아지면 정작 검사
    결과가 안 보인다). 조용히 돌리려면 QUIET=1 을 준다 — 운영에서 손으로 돌릴 때는
    무엇이 들어갔는지 눈으로 봐야 하므로 기본은 출력하는 쪽이다. */
 if (process.env.QUIET !== '1') {
   console.log(`등록/갱신 ${made}건 · 표에 있는 과제 ${listAchievements().length}개`);
+  if (gone.length) console.log(`  폐기: ${gone.join(', ')}`);
+  if (kept.length) console.log(`  ${kept.join(', ')}`);
   for (const a of listAchievements()) {
     console.log(`  [${a.game_type}] ${a.id} · ${a.title}`
       + (a.is_hidden ? ' (히든)' : '') + ` · 최소 ${a.min_bet.toLocaleString('ko-KR')}P`);

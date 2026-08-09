@@ -221,16 +221,20 @@ export async function handleAction(req: IncomingMessage, res: ServerResponse, us
     return sendJson(res, 400, { error: msg });
   }
   /* ── 도전과제: 김재원이 되어 보자 ──────────────────────────────────
-     20에 만족하지 않고 히트해서 21을 만든다.
+     20에 만족하지 않고, 그것도 히트가 아니라 더블다운으로 21을 만든다.
+     더블은 처음 두 장에서만 되고 카드도 딱 한 장만 받는다 — 20에서 그걸 누른다는 건
+     이길 판에 판돈을 두 배로 걸고 한 장에 모든 걸 맡긴다는 뜻이다.
 
      "직전 합"을 다시 재는 대신 방금 받은 카드를 빼고 계산한다 — r.cards 의 마지막 장이
      이번에 뽑은 카드라, 그것만 덜어 내면 누르기 직전의 손이 그대로 나온다.
-     더블도 카드를 한 장 받지만 그건 20에서 하는 선택이 아니므로 히트만 본다.
 
      소프트 20(A+9)에서 A 를 받아 21이 되는 경우도 포함된다 — 화면에 21로 보이는 것이
-     이 과제가 말하는 21이다. */
-  const got = action === 'hit'
-    ? award(userId, r.bet, [['bj-hit-21', () => {
+     이 과제가 말하는 21이다.
+
+     r.bet 은 더블로 두 배가 된 값이다. 문지기(1,000P)가 재는 것도 그 값이라, 500P 로
+     시작해 더블한 판도 통과한다 — 실제로 그 판에 걸린 돈이 1,000P 이므로 맞는 셈이다. */
+  const got = action === 'double'
+    ? award(userId, r.bet, [['bj-double-21', () => {
       const before = handTotal(r.cards.slice(0, -1));
       return before.total === 20 && handTotal(r.cards).total === 21;
     }]])

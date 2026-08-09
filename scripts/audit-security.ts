@@ -289,10 +289,12 @@ async function main(): Promise<void> {
     ck('감춘 과제의 조건도 HTML 에 없다', !page.text.includes('비밀 조건'));
     ck('공개 과제는 보인다', page.text.includes('공개'));
 
-    /* 달성자 명단. 화면에서 버튼을 안 그리는 것만으로는 부족하다 — 주소를 직접 치면 나온다. */
+    /* 달성자 명단은 감춘 과제도 내준다 — 감추는 것은 조건이지 사람이 아니다.
+       그래도 이 응답에 이름·조건이 섞여 나가면 안 된다. 명단은 사람 목록일 뿐이다. */
     const hid = await req('GET', '/api/achievements/unlockers?id=sec-hid', { cookie: c });
-    ck('감춘 과제의 달성자는 403', hid.status === 403, String(hid.status));
-    ck('403 응답에 과제 이름이 없다', !hid.text.includes('비밀 이름'));
+    ck('감춘 과제의 달성자도 200', hid.status === 200, String(hid.status));
+    ck('그 응답에 과제 이름이 없다', !hid.text.includes('비밀 이름'));
+    ck('그 응답에 조건도 없다', !hid.text.includes('비밀 조건'));
     const open = await req('GET', '/api/achievements/unlockers?id=sec-open', { cookie: c });
     ck('공개 과제의 달성자는 200', open.status === 200, String(open.status));
     const none = await req('GET', '/api/achievements/unlockers?id=no-such-thing', { cookie: c });
