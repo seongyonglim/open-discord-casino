@@ -410,6 +410,57 @@ async function main(): Promise<void> {
     ck('대시보드가 매일 22:00 을 주장하지 않는다', !home.includes('매일 22:00'));
   }
 
+  /* ── 음량 ──────────────────────────────────────────────────────────
+     소리를 내는 길이 여럿이라(샘플 재생 · 합성음 · 노이즈) 새 소리를 넣는 날 한 곳만
+     빠뜨리면 그 소리만 슬라이더를 무시한다. 그런 실수는 귀로만 드러나므로 검사로 못 박는다:
+     destination 에 직접 꽂는 곳은 마스터 노드 하나뿐이어야 한다. */
+  console.log('\n[4] 음량 — 모든 소리가 마스터를 지나는가');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const app = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.js'), 'utf8');
+
+    const toDest = [...app.matchAll(/\.connect\(\s*c\.destination\s*\)/g)].length;
+    const masterToDest = [...app.matchAll(/masterGain\.connect\(\s*c\.destination\s*\)/g)].length;
+    ck('destination 으로 바로 나가는 소리가 없다', toDest === masterToDest && masterToDest === 1,
+      `직결 ${toDest} · 마스터 ${masterToDest}`);
+    ck('소리들은 master(c) 로 모인다',
+      [...app.matchAll(/\.connect\(\s*master\(c\)\s*\)/g)].length >= 4);
+    ck('마스터 크기가 저장된 값에서 온다', /masterGain\.gain\.value = masterLevel\(\)/.test(app));
+    // 슬라이더를 움직이는 동안 이미 울리는 소리도 따라와야 한다
+    ck('움직이는 중에도 반영된다', /setTargetAtTime\(masterLevel\(\)/.test(app));
+
+    /* 음소거와 크기를 따로 기억해야 껐다 켤 때 원래 크기로 돌아온다.
+       하나로 합치면 "끄기 = 0" 이 되어 직전 값을 잃는다. */
+    ck('음소거와 크기를 따로 저장한다',
+      /VOL_KEY = 'od_vol'/.test(app) && /SFX_KEY = 'od_sfx'/.test(app)
+      && /localStorage\.setItem\(VOL_KEY/.test(app));
+    ck('저장값이 0~1 밖이면 버린다', /stored >= 0 && stored <= 1/.test(app));
+    ck('0 으로 내리면 음소거로 본다', /sfxOn = v > 0/.test(app));
+    ck('0% 에서 켜면 들리는 크기로 올린다', /sfxOn && vol <= 0\) vol = VOL_HALF/.test(app));
+    // 0이면 오디오 컨텍스트를 아예 열지 않는다(음원도 안 받는다)
+    ck('꺼져 있으면 컨텍스트를 안 연다', /masterLevel\(\) <= 0\) return null/.test(app));
+
+    const head = (await get('/', cookie)).text;
+    ck('머리에 슬라이더가 있다', head.includes('id="sfxRange"') && head.includes('type="range"'));
+    ck('0~100 범위다', /id="sfxRange"[^>]*min="0"[^>]*max="100"/.test(head));
+    ck('퍼센트를 적는다', head.includes('id="sfxPct"'));
+    /* 사람마다 다른 값을 서버가 내려보내면 모든 페이지가 같은 머리를 쓰는 구조에서
+       산출물이 사람마다 달라진다(golden). 저장값은 app.js 가 채운다. */
+    ck('서버는 늘 같은 값을 내려보낸다', /id="sfxRange"[^>]*value="100"/.test(head));
+    ck('아이콘 셋을 다 그려 둔다',
+      head.includes('class="i-hi"') && head.includes('class="i-lo"') && head.includes('class="i-off"'));
+
+    const css = (await get('/app.css', cookie)).text;
+    ck('큰 소리·작은 소리·음소거가 각각 다른 아이콘이다',
+      /html\.sfx-low \.sfxbtn \.i-lo\{display:block\}/.test(css)
+      && /html\.sfx-off \.sfxbtn \.i-off\{display:block\}/.test(css));
+    /* opacity 만 0 으로 두면 안 보이는 채로 클릭을 먹는다 — 헤더 위에 투명한 판이 덮인다 */
+    ck('접힌 슬라이더는 클릭도 안 먹는다', /\.volpop\{[^}]*visibility:hidden/.test(css));
+    ck('마우스와 손가락 둘 다 펼 수 있다',
+      /\.volwrap:hover \.volpop[^{]*\.volwrap\.open \.volpop/.test(css.replace(/\s+/g, ' ')));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

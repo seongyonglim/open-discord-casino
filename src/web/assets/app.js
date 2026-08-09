@@ -9,25 +9,46 @@
   // 디코딩은 suspended 상태에서도 되므로, resume은 첫 조작이 있었을 때만 시도한다.
   var gestureSeen = false;
 
-  /* ── 효과음 켜기/끄기 ────────────────────────────────────────────────
-     설정은 브라우저에 남겨 새로고침·페이지 이동에도 유지한다(서버에 저장할 이유가 없다 —
-     같은 사람이라도 회사 PC에서는 끄고 집에서는 켜고 싶을 수 있다).
+  /* ── 음량 ────────────────────────────────────────────────────────────
+     예전에는 켜기/끄기 둘뿐이었다. 스피커 환경이 제각각이라 "켜면 너무 크고 끄면
+     아무것도 안 들리는" 사이가 없었다 — 그래서 0~100%를 따로 둔다.
+
+     값을 둘로 나눠 기억한다.
+       od_sfx : 음소거인가        od_vol : 음량 0~1
+     하나로 합쳐 "0이면 음소거"로 두면 껐다 켤 때 원래 크기를 잃는다. 끄기 직전 값으로
+     돌아오게 하는 것이 값을 둘로 두는 이유다.
+
+     설정은 브라우저에만 남긴다(서버에 저장할 이유가 없다 — 같은 사람이라도 회사 PC에서는
+     끄고 집에서는 켜고 싶을 수 있다).
      이 파일은 <head>에서 동기 실행되므로 <html>에 상태 클래스를 미리 박아 둔다.
      그래야 헤더가 그려지는 첫 순간부터 아이콘이 올바른 모양으로 나온다(깜빡임 방지). */
   var SFX_KEY = 'od_sfx';
+  var VOL_KEY = 'od_vol';
+  var VOL_HALF = 0.5;          // 여기까지가 "작은 소리" 아이콘
   var sfxOn = true;
+  var vol = 1;
   try { sfxOn = localStorage.getItem(SFX_KEY) !== 'off'; } catch(e){}
+  try {
+    // NaN이면 아래 두 비교가 모두 거짓이라 기본값 1이 그대로 남는다
+    var stored = parseFloat(localStorage.getItem(VOL_KEY));
+    if (stored >= 0 && stored <= 1) vol = stored;
+  } catch(e){}
+  // 실제로 소리에 곱해지는 값. 음소거면 0이다 — 이 값만 보면 되도록 한 곳에 모은다.
+  function masterLevel(){ return sfxOn ? vol : 0; }
   function markSfxState(){
     var r = document.documentElement;
-    if (r) r.classList.toggle('sfx-off', !sfxOn);
+    if (!r) return;
+    var v = masterLevel();
+    r.classList.toggle('sfx-off', v <= 0);
+    r.classList.toggle('sfx-low', v > 0 && v <= VOL_HALF);
   }
   markSfxState();
 
   function ac(){
-    // 꺼져 있으면 아예 컨텍스트를 열지 않는다.
+    // 소리가 0이면 아예 컨텍스트를 열지 않는다.
     // 소리를 내는 모든 경로가 ac()의 null을 확인하고 빠져나가므로, 여기 한 곳만 막으면 된다
     // (합성음 대체 경로까지 포함해서).
-    if (!sfxOn) return null;
+    if (masterLevel() <= 0) return null;
     if (!ctx) {
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -36,13 +57,36 @@
     if (gestureSeen && ctx.state === 'suspended') { try { ctx.resume(); } catch(e){} }
     return ctx;
   }
+
+  /* ── 마스터 볼륨 ─────────────────────────────────────────────────────
+     모든 소리는 이 한 마디를 지나 밖으로 나간다. 소리를 낼 때마다 음량을 곱하는 식으로
+     두면 새 소리를 넣는 날 곱하기를 빠뜨릴 수 있고, 빠뜨린 그 소리만 슬라이더를 무시한다.
+     출구를 하나로 두면 그 실수가 애초에 불가능하다 — 새 소리는 destination이 아니라
+     master(c)에 연결하면 된다. */
+  var masterGain = null;
+  function master(c){
+    // 컨텍스트가 바뀌면(닫혔다 다시 열리면) 예전 노드는 그 컨텍스트에 묶여 쓸 수 없다
+    if (!masterGain || masterGain.context !== c) {
+      masterGain = c.createGain();
+      masterGain.gain.value = masterLevel();
+      masterGain.connect(c.destination);
+    }
+    return masterGain;
+  }
+  // 슬라이더를 움직이는 동안에도 이미 울리고 있는 소리가 같이 따라와야 한다.
+  // 값을 그대로 꽂으면 파형이 끊겨 "톡" 소리가 나므로 아주 짧게 미끄러뜨린다.
+  function applyLevel(){
+    if (!masterGain) return;
+    try { masterGain.gain.setTargetAtTime(masterLevel(), masterGain.context.currentTime, 0.015); }
+    catch(e) { masterGain.gain.value = masterLevel(); }
+  }
   function tone(c, freq, at, dur, peak, type){
     var o = c.createOscillator(), g = c.createGain();
     o.type = type || 'sine'; o.frequency.value = freq;
     g.gain.setValueAtTime(0.0001, at);
     g.gain.exponentialRampToValueAtTime(peak, at + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    o.connect(g); g.connect(c.destination);
+    o.connect(g); g.connect(master(c));
     o.start(at); o.stop(at + dur + 0.02);
   }
   // 짧은 노이즈 버스트를 저역 필터로 눌러 "퍽" 하는 가벼운 폭발음을 만든다 (시끄럽지 않게 짧게 감쇠)
@@ -60,7 +104,7 @@
     var g = c.createGain();
     g.gain.setValueAtTime(Math.max(0.005, level), at);
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    src.connect(lp); lp.connect(g); g.connect(c.destination);
+    src.connect(lp); lp.connect(g); g.connect(master(c));
     src.start(at); src.stop(at + dur);
   }
   // 실제 녹음 샘플 (Kenney Casino Audio, CC0). 합성음보다 훨씬 자연스러워서 이쪽을 우선 쓰고,
@@ -241,7 +285,7 @@
   function preloadSfx(){
     // 꺼둔 사람에게 음원 600KB를 내려받게 할 이유가 없다.
     // 나중에 켜면 playSample이 없는 버퍼를 그 자리에서 받아오므로 저절로 복구된다.
-    if (!sfxOn) return;
+    if (masterLevel() <= 0) return;
     var need = window.__SFX_NEED__;
     if (!need || !need.length) return;
     need.forEach(function(k){ (SFX_SETS[k] || []).forEach(loadSfx); });
@@ -334,7 +378,7 @@
     var pick = ready[Math.floor(Math.random() * ready.length)];
     var src = c.createBufferSource(); src.buffer = sfxBuf[pick];
     var g = c.createGain(); g.gain.value = gain * (SFX_NORM[pick] || 1);
-    src.connect(g); g.connect(c.destination);
+    src.connect(g); g.connect(master(c));
     src.onended = function(){ src.__done = true; };
     src.start();
     live.push(src);
@@ -354,7 +398,7 @@
     var g = c.createGain();
     g.gain.setValueAtTime(level, at);
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    src.connect(hp); hp.connect(g); g.connect(c.destination);
+    src.connect(hp); hp.connect(g); g.connect(master(c));
     src.start(at); src.stop(at + dur);
   }
   window.casinoSfx = {
@@ -504,26 +548,83 @@
       .then(function(v){ clearTimeout(t); return v; });
   };
 
-  // 헤더 스피커 버튼 — 켜고 끄기. 이 파일은 헤더 DOM이 생기기 전에 실행되므로 위임으로 받는다.
+  /* ── 헤더 스피커 · 슬라이더 ──────────────────────────────────────────
+     이 파일은 헤더 DOM이 생기기 전에 실행되므로 요소를 붙잡아 두지 않고 전부 위임으로 받는다.
+     (예전에 종 버튼을 여기서 붙잡았다가, 파싱 시점에 아직 없어서 통째로 죽은 적이 있다.) */
+  function saveSfx(){
+    try {
+      localStorage.setItem(SFX_KEY, sfxOn ? 'on' : 'off');
+      localStorage.setItem(VOL_KEY, String(vol));
+    } catch(e){}
+  }
+  /* 슬라이더와 퍼센트는 "실제로 나가는 크기"를 보여준다 — 음소거인데 손잡이가 70%에
+     있으면 화면이 거짓말을 하는 것이다. 대신 vol 은 그대로 두므로, 다시 켜면 70%로 돌아온다. */
+  function syncSfxUi(){
+    var pct = Math.round(masterLevel() * 100);
+    var r = document.getElementById('sfxRange');
+    if (r) {
+      if (Number(r.value) !== pct) r.value = String(pct);
+      // 지나온 만큼 금색으로 채운다 — 손잡이 위치만으로는 한눈에 안 읽힌다.
+      // 채움 길이는 값에 따라 달라지므로 CSS가 알 수 없다. 변수로만 넘기고 그리는 건 CSS가 한다.
+      r.style.setProperty('--fill', pct + '%');
+    }
+    var p = document.getElementById('sfxPct');
+    if (p) p.textContent = pct + '%';
+    var b = document.getElementById('sfxBtn');
+    if (b) {
+      b.setAttribute('aria-pressed', pct > 0 ? 'false' : 'true');
+      b.setAttribute('title', pct > 0 ? '음소거' : '소리 켜기');
+    }
+  }
+  function afterSfxChange(quiet){
+    saveSfx(); markSfxState(); applyLevel(); syncSfxUi();
+    if (masterLevel() <= 0) return;
+    preloadSfx();
+    // 바뀐 크기를 귀로 확인할 수 있어야 한다. 슬라이더를 끄는 동안에는 소리를 겹쳐 내지 않는다.
+    if (!quiet && window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+  }
+
   window.casinoSfxToggle = function(){
     sfxOn = !sfxOn;
-    try { localStorage.setItem(SFX_KEY, sfxOn ? 'on' : 'off'); } catch(e){}
-    markSfxState();
-    if (sfxOn) {
-      preloadSfx();
-      // 켠 직후 아무 소리도 안 나면 정말 켜진 건지 알 수 없다. 짧게 한 번 들려준다.
-      if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
-    }
+    /* 0%인 채로 음소거를 풀면 여전히 아무 소리도 안 난다 — 누른 사람에게는 버튼이 고장 난
+       것으로 보인다. 그럴 때만 절반까지 올려 준다. */
+    if (sfxOn && vol <= 0) vol = VOL_HALF;
+    afterSfxChange(false);
     return sfxOn;
   };
+  // 0~1. 인자 없이 부르면 지금 크기를 돌려준다.
+  window.casinoVolume = function(v){
+    if (v == null) return masterLevel();
+    v = Math.min(1, Math.max(0, Number(v) || 0));
+    /* 0까지 내리면 음소거로 본다. 반대로 0보다 위로 올리면 음소거가 저절로 풀린다 —
+       소리를 키우려고 끝까지 올렸는데 아이콘을 한 번 더 눌러야 한다면 그건 고장으로 읽힌다. */
+    sfxOn = v > 0;
+    if (v > 0) vol = v;
+    afterSfxChange(true);
+    return masterLevel();
+  };
+
   document.addEventListener('click', function(e){
     var t = e.target;
-    var btn = t && t.closest ? t.closest('#sfxBtn') : null;
-    if (!btn) return;
-    var on = window.casinoSfxToggle();
-    btn.setAttribute('aria-pressed', on ? 'false' : 'true');
-    btn.setAttribute('title', on ? '효과음 끄기' : '효과음 켜기');
+    if (!t || !t.closest || !t.closest('#sfxBtn')) return;
+    window.casinoSfxToggle();
   });
+  document.addEventListener('input', function(e){
+    var r = e.target;
+    if (!r || r.id !== 'sfxRange') return;
+    window.casinoVolume(Number(r.value) / 100);
+  });
+  /* 슬라이더는 접어 둔다 — 헤더는 자리가 좁고, 음량은 한 번 맞추면 오래 안 건드리는 값이다.
+     마우스는 올리면 열린다(CSS). 손가락에는 hover가 없으므로 아이콘을 누른 그 순간에 같이
+     연다 — 음소거와 크기 조절을 한 번의 조작 안에서 끝낼 수 있다. */
+  document.addEventListener('pointerdown', function(e){
+    var w = document.getElementById('sfxWrap');
+    if (!w) return;
+    w.classList.toggle('open', !!(e.target && e.target.closest && e.target.closest('#sfxWrap')));
+  }, true);
+  // 서버는 모두에게 같은 머리를 내려보내므로(golden) 저장해 둔 값은 여기서 채운다.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncSfxUi);
+  else syncSfxUi();
 
   // 오디오 컨텍스트는 사용자 조작이 있어야 재생이 풀리므로 첫 클릭에서 깨운다.
   document.addEventListener('pointerdown', function(){ gestureSeen = true; ac(); preloadSfx(); }, { once: true });

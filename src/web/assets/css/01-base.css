@@ -44,8 +44,9 @@
 
   /* 프로필 — 디스코드 아바타 + 닉네임 + 보유 포인트, 눌러서 펼치는 메뉴 */
   .profwrap{margin-left:auto;position:relative;display:flex;align-items:center;gap:8px}
-  /* 효과음 스위치 — 프로필 옆에 그대로 둔다. 아이콘 모양이 곧 현재 상태다.
+  /* 음량 — 프로필 옆에 그대로 둔다. 아이콘 모양이 곧 현재 크기다.
      꺼져 있을 때만 색이 죽어서, 멀리서 봐도 소리가 나가는 중인지 알 수 있다. */
+  .volwrap{position:relative;display:flex;align-items:center;flex:none}
   .sfxbtn{display:inline-flex;align-items:center;justify-content:center;flex:none;
     width:34px;height:34px;padding:0;cursor:pointer;
     background:var(--panel2);border:1px solid var(--line);border-radius:10px;
@@ -53,11 +54,40 @@
        즉시 바뀌어야 하고, 페이드가 끼면 눌렀는데 안 바뀐 것처럼 보이는 순간이 생긴다 */
     color:var(--gold);transition:border-color .12s}
   .sfxbtn:hover{border-color:var(--gold)}
-  .sfxbtn .off{display:none}
+  /* 아이콘 셋 중 하나만 보인다 — 기본은 큰 소리(호 두 개) */
+  .sfxbtn .i-lo,.sfxbtn .i-off{display:none}
+  html.sfx-low .sfxbtn .i-hi{display:none}
+  html.sfx-low .sfxbtn .i-lo{display:block}
   html.sfx-off .sfxbtn{color:var(--muted)}
-  html.sfx-off .sfxbtn .on{display:none}
-  html.sfx-off .sfxbtn .off{display:block}
-  @media(max-width:400px){.sfxbtn{display:none}}
+  html.sfx-off .sfxbtn .i-hi,html.sfx-off .sfxbtn .i-lo{display:none}
+  html.sfx-off .sfxbtn .i-off{display:block}
+
+  /* 슬라이더는 접어 둔다. 헤더 폭을 밀어내면 안 되므로 띄워서 얹는다.
+     visibility까지 함께 끄는 이유는 opacity:0만으로는 안 보이는 채로 클릭을 먹기 때문이다. */
+  .volpop{position:absolute;top:calc(100% + 8px);right:0;z-index:60;
+    display:flex;align-items:center;gap:9px;padding:8px 11px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);
+    opacity:0;visibility:hidden;transform:translateY(-4px);
+    transition:opacity .12s,transform .12s,visibility .12s}
+  /* 버튼과 팝업 사이의 8px 틈. 이게 없으면 마우스가 내려오는 도중에 hover가 끊겨 닫힌다. */
+  .volpop::before{content:'';position:absolute;left:0;right:0;top:-9px;height:9px}
+  .volwrap:hover .volpop,.volwrap:focus-within .volpop,.volwrap.open .volpop{
+    opacity:1;visibility:visible;transform:none}
+  .volrange{-webkit-appearance:none;appearance:none;flex:none;
+    width:96px;height:4px;margin:0;border-radius:999px;outline:none;cursor:pointer;
+    /* --fill 은 app.js가 넣는다. 없을 때(스크립트가 죽었을 때) 가득 찬 것으로 보이면
+       거짓말이 되므로 기본값은 0%로 둔다. */
+    background:linear-gradient(to right,var(--gold) 0 var(--fill,0%),var(--line) var(--fill,0%) 100%)}
+  .volrange::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:13px;height:13px;border:none;border-radius:50%;background:var(--gold);cursor:pointer}
+  .volrange::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;
+    background:var(--gold);cursor:pointer}
+  .volrange:focus-visible{box-shadow:0 0 0 2px var(--gold)}
+  /* 숫자가 바뀔 때 폭이 흔들리지 않게 고정폭 숫자를 쓴다 */
+  .volpct{font-size:12px;font-weight:600;color:var(--muted);
+    width:34px;text-align:right;font-variant-numeric:tabular-nums}
+  @media(max-width:400px){.volwrap{display:none}}
   .prof{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);
     border:1px solid var(--line);border-radius:10px;padding:6px 10px 6px 7px;
     cursor:pointer;font-family:inherit;color:var(--txt);white-space:nowrap;transition:border-color .12s}
