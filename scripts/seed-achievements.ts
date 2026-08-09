@@ -48,7 +48,7 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
   {
     id: 'relief-10-day',
     gameType: 'ALL',
-    title: '건실한 파산러',
+    title: '부지런한 파산러',
     description: '하루에 파산 지원금을 10번 이상 받습니다.',
     /* 지원금에는 베팅이 없다. 기준을 그대로 두면 이 과제는 영영 판정되지 않는다 —
        문지기는 "게임을 해서 깨는 과제"를 위한 것이고 이건 그쪽이 아니다. */
@@ -67,8 +67,13 @@ for (const a of ITEMS) {
   if (!r.ok) { console.error(`거절: ${a.id} — ${r.error}`); process.exitCode = 1; continue; }
   made++;
 }
-console.log(`등록/갱신 ${made}건 · 표에 있는 과제 ${listAchievements().length}개`);
-for (const a of listAchievements()) {
-  console.log(`  [${a.game_type}] ${a.id} · ${a.title}`
-    + (a.is_hidden ? ' (히든)' : '') + ` · 최소 ${a.min_bet.toLocaleString('ko-KR')}P`);
+/* 감사가 이 파일을 여러 번 불러 표를 다시 채운다(그때마다 출력이 쏟아지면 정작 검사
+   결과가 안 보인다). 조용히 돌리려면 QUIET=1 을 준다 — 운영에서 손으로 돌릴 때는
+   무엇이 들어갔는지 눈으로 봐야 하므로 기본은 출력하는 쪽이다. */
+if (process.env.QUIET !== '1') {
+  console.log(`등록/갱신 ${made}건 · 표에 있는 과제 ${listAchievements().length}개`);
+  for (const a of listAchievements()) {
+    console.log(`  [${a.game_type}] ${a.id} · ${a.title}`
+      + (a.is_hidden ? ' (히든)' : '') + ` · 최소 ${a.min_bet.toLocaleString('ko-KR')}P`);
+  }
 }

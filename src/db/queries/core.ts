@@ -286,10 +286,14 @@ export function reliefCountToday(userId: string, now = Date.now()): number {
     new Date(new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date(now)) + 'T00:00:00+09:00').getTime() / 1000);
+  /* 위쪽 경계도 둔다. 아래만 두면 "오늘 이후 전부"가 되어 하루가 아니라 열린 구간이다.
+     지금은 원장에 미래 시각이 안 들어오므로 결과가 같지만, 그건 이 함수가 맞아서가
+     아니라 그런 줄이 없어서일 뿐이다 — 시각을 넣어 세는 검사에서 실제로 어긋났다. */
   return one<{ n: number }>(
     `SELECT COUNT(*) AS n FROM points_ledger
-      WHERE user_id = ? AND reason = 'disaster_relief' AND created_at >= ?`,
-    userId, kstMidnight)!.n;
+      WHERE user_id = ? AND reason = 'disaster_relief'
+        AND created_at >= ? AND created_at < ?`,
+    userId, kstMidnight, kstMidnight + 86_400)!.n;
 }
 
 export interface LeaderboardRow {

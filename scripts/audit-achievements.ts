@@ -30,6 +30,7 @@ function section(s: string): void { console.log('\n' + s); }
    다시 부르려면 캐시를 지워야 한다 — 처음에 그걸 안 해서 두 번째부터는 빈 표에 대고
    검사하고 있었고, 그 검사들이 전부 조용히 실패했다. */
 function seedForWiring(): void {
+  process.env.QUIET = '1';              // 씨앗의 출력이 검사 결과를 덮지 않게 한다
   delete require.cache[require.resolve('./seed-achievements')];
   require('./seed-achievements');
 }
@@ -44,7 +45,7 @@ function mkUser(id: string, bal = 10_000): void {
   if (cur !== bal) Q.adjustBalance(id, bal - cur, 'audit:seed');
 }
 
-function main(): void {
+async function main(): Promise<void> {
   /* ── 1. 목록과 진행률 ────────────────────────────────────────── */
   section('[1] 도전과제 — 목록 · 진행률');
   {
@@ -548,7 +549,7 @@ function main(): void {
       !A.awardIfBet('g3', 'crash-profit-1m', 1_000,
         () => Q.seasonGameProfit('g3', 'graph') >= 1_000_000).unlocked);
 
-    /* ── 건실한 파산러 — 하루 경계 ──────────────────────────── */
+    /* ── 부지런한 파산러 — 하루 경계 ──────────────────────────── */
     wipe();
     seed();
     mkUser('rr');
@@ -580,6 +581,78 @@ function main(): void {
     }
     ck('어제 12번은 오늘 0번', Q.reliefCountToday('rr2', nowMs) === 0,
       String(Q.reliefCountToday('rr2', nowMs)));
+
+    /* ── KST 자정 경계를 초 단위로 ────────────────────────────────
+       "하루"를 UTC 로 재면 KST 로는 오전 9시에 날짜가 바뀐다. 그러면 밤 11시에 아홉 번
+       받고 자정 넘어 한 번 더 받은 사람이 달성해야 하는데 안 되고, 반대로 오전 8시에
+       받은 것이 전날로 잡힌다. 실제 시각을 만들어 그 경계를 직접 확인한다. */
+    {
+      wipe();
+      seed();
+      mkUser('kst');
+      // 2026-08-09 00:00 KST = 2026-08-08 15:00 UTC
+      const midnight = Math.floor(new Date('2026-08-09T00:00:00+09:00').getTime() / 1000);
+      const at = (sec: number): number => midnight + sec;
+      const put = (t: number): void => {
+        db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
+                    VALUES ('kst', 1, 'disaster_relief', 0, ?)`).run(t);
+      };
+      const noonMs = (midnight + 12 * 3600) * 1000;   // 그날 낮 12시에서 세어 본다
+
+      put(at(-1));                       // 전날 23:59:59 KST
+      ck('자정 1초 전은 어제', Q.reliefCountToday('kst', noonMs) === 0,
+        String(Q.reliefCountToday('kst', noonMs)));
+      put(at(0));                        // 정각 00:00:00
+      ck('자정 정각은 오늘', Q.reliefCountToday('kst', noonMs) === 1,
+        String(Q.reliefCountToday('kst', noonMs)));
+      put(at(86_399));                   // 23:59:59
+      ck('그날 마지막 초도 오늘', Q.reliefCountToday('kst', noonMs) === 2,
+        String(Q.reliefCountToday('kst', noonMs)));
+      put(at(86_400));                   // 다음 날 00:00:00
+      ck('다음 날 정각은 내일', Q.reliefCountToday('kst', noonMs) === 2,
+        String(Q.reliefCountToday('kst', noonMs)));
+
+      /* UTC 로 쟀다면 오전 9시 이전 것이 전날로 밀린다. 그 시각의 것이 오늘로 잡히는지
+         확인하면 기준이 KST 라는 것이 드러난다. */
+      put(at(3 * 3600));                 // 그날 오전 3시 KST (= 전날 18시 UTC)
+      ck('KST 오전 3시는 오늘 (UTC 기준이면 어제가 된다)',
+        Q.reliefCountToday('kst', noonMs) === 3, String(Q.reliefCountToday('kst', noonMs)));
+
+      /* 밤에 몰아서 받은 경우. 23시에 아홉 번 + 23:59 에 한 번 = 열 번이면 그날 달성이다. */
+      wipe();
+      seed();
+      mkUser('kst2');
+      const put2 = (t: number): void => {
+        db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
+                    VALUES ('kst2', 1, 'disaster_relief', 0, ?)`).run(t);
+      };
+      for (let i = 0; i < 9; i++) put2(at(23 * 3600));
+      const lateMs = (midnight + 86_399) * 1000;
+      ck('밤 11시에 아홉 번은 아직', Q.reliefCountToday('kst2', lateMs) === 9);
+      ck('아홉 번에서는 안 준다',
+        !A.awardIfBet('kst2', 'relief-10-day', 0,
+          () => Q.reliefCountToday('kst2', lateMs) >= 10).unlocked);
+      put2(at(86_399));                  // 23:59:59 에 열 번째
+      ck('자정 직전 열 번째면 달성',
+        A.awardIfBet('kst2', 'relief-10-day', 0,
+          () => Q.reliefCountToday('kst2', lateMs) >= 10).unlocked);
+
+      /* 어제 다섯 + 오늘 다섯은 달성이 아니다. 이어서 세면 "하루에"가 아니게 된다. */
+      wipe();
+      seed();
+      mkUser('kst3');
+      const put3 = (t: number): void => {
+        db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
+                    VALUES ('kst3', 1, 'disaster_relief', 0, ?)`).run(t);
+      };
+      for (let i = 0; i < 5; i++) put3(at(-3600));      // 전날 23시
+      for (let i = 0; i < 5; i++) put3(at(3600));       // 그날 01시
+      ck('걸쳐서 열 번은 오늘 다섯 번', Q.reliefCountToday('kst3', noonMs) === 5,
+        String(Q.reliefCountToday('kst3', noonMs)));
+      ck('걸쳐서 열 번이면 안 준다',
+        !A.awardIfBet('kst3', 'relief-10-day', 0,
+          () => Q.reliefCountToday('kst3', noonMs) >= 10).unlocked);
+    }
     /* 지원금 말고 다른 사유는 안 센다 */
     for (let i = 0; i < 12; i++) {
       db.prepare(`INSERT INTO points_ledger (user_id, delta, reason, balance_after, created_at)
@@ -667,6 +740,102 @@ function main(): void {
       && !!byId2.get('bj-hit-21')?.description.includes('21'));
   }
 
+  /* ── 8-4. 진짜 핸들러 ───────────────────────────────────────── */
+  section('[8-4] 실제 응답 — 게임 핸들러가 달성을 실어 보내는가');
+  {
+    /* 조건식이 맞고 배선이 있어도, 응답에 실리지 않으면 화면에는 아무 일도 안 일어난다.
+       그 마지막 한 칸을 확인하려면 진짜 핸들러를 태워 봐야 한다.
+       가짜 응답 객체를 만들어 sendJson 이 준 본문을 받아 본다. */
+    const CR = require('../src/web/games/crash') as typeof import('../src/web/games/crash');
+    const CQ = require('../src/db/queries/crash') as typeof import('../src/db/queries/crash');
+
+    function callJson(fn: (req: never, res: never, uid: string) => Promise<void>, uid: string):
+      Promise<Record<string, unknown>> {
+      let body = '';
+      const res = {
+        writeHead() { /* 헤더는 안 본다 */ },
+        end(chunk?: unknown) { if (chunk != null) body += String(chunk); },
+        getHeader() { return undefined; },
+        setHeader() { /* noop */ },
+        headersSent: false,
+      };
+      return fn({} as never, res as never, uid).then(() => {
+        try { return JSON.parse(body) as Record<string, unknown>; } catch { return {}; }
+      });
+    }
+
+    wipe();
+    seedForWiring();
+    mkUser('h1');
+    db.exec(`DELETE FROM crash_rounds; DELETE FROM crash_bets;`);
+
+    /* 100배에서 캐시아웃한 상태를 만든다. 실제로 100배가 나올 때까지 라운드를 돌릴 수는
+       없다(확률 1% 미만에 77초짜리다) — 결과 행을 그 모양으로 놓고 핸들러를 태운다. */
+    const round = CQ.advanceCrashRound({
+      makeCrashPoint: () => 500, crashDurationMs: () => 1, multiplierAt: () => 1,
+    });
+    db.prepare(`INSERT INTO crash_bets (round_id, user_id, username, amount, cashout_multiplier, payout)
+                VALUES (?, 'h1', 'h1', ?, ?, ?)`).run(round.id, 1_000, 100, 100_000);
+
+    const st = await callJson(CR.handleState, 'h1');
+    const un = (st.unlocked ?? []) as { id: string }[];
+    ck('상태 응답에 달성이 실려 온다', un.length > 0, JSON.stringify(st.unlocked ?? null));
+    ck('도파민 중독이 열렸다', un.some(u => u.id === 'crash-x100'), un.map(u => u.id).join(','));
+    ck('실제로 기록에도 남았다', A.hasAchievement('h1', 'crash-x100'));
+    /* 두 번째 폴링에도 또 실려 오면 토스트가 매초 뜬다 — 이미 달성한 것은 안 실린다. */
+    const again = await callJson(CR.handleState, 'h1');
+    ck('다음 폴링에는 안 실린다', again.unlocked === undefined,
+      JSON.stringify(again.unlocked ?? null));
+
+    /* 99배는 안 준다. 기준이 실제로 그 자리에 있는지 확인한다. */
+    wipe();
+    seedForWiring();
+    mkUser('h2');
+    db.exec(`DELETE FROM crash_bets;`);
+    db.prepare(`INSERT INTO crash_bets (round_id, user_id, username, amount, cashout_multiplier, payout)
+                VALUES (?, 'h2', 'h2', ?, ?, ?)`).run(round.id, 1_000, 99, 99_000);
+    const low = await callJson(CR.handleState, 'h2');
+    ck('99배에서는 안 실린다', low.unlocked === undefined, JSON.stringify(low.unlocked ?? null));
+
+    /* 999P 로 100배를 먹어도 안 준다 — 1,000P 문지기가 이 길에서도 서 있는가. */
+    wipe();
+    seedForWiring();
+    mkUser('h3');
+    db.exec(`DELETE FROM crash_bets;`);
+    db.prepare(`INSERT INTO crash_bets (round_id, user_id, username, amount, cashout_multiplier, payout)
+                VALUES (?, 'h3', 'h3', ?, ?, ?)`).run(round.id, 999, 150, 149_850);
+    const small = await callJson(CR.handleState, 'h3');
+    ck('999P 베팅이면 100배여도 안 준다', small.unlocked === undefined,
+      JSON.stringify(small.unlocked ?? null));
+    ck('기록에도 안 남는다', !A.hasAchievement('h3', 'crash-x100'));
+
+    /* 안 걸었거나 터진 판에서는 아무것도 안 본다 — 매 폴링마다 도는 자리라 중요하다. */
+    wipe();
+    seedForWiring();
+    mkUser('h4');
+    db.exec(`DELETE FROM crash_bets;`);
+    const none = await callJson(CR.handleState, 'h4');
+    ck('베팅이 없으면 조용하다', none.unlocked === undefined);
+    db.prepare(`INSERT INTO crash_bets (round_id, user_id, username, amount, payout)
+                VALUES (?, 'h4', 'h4', ?, 0)`).run(round.id, 5_000);
+    const bust = await callJson(CR.handleState, 'h4');
+    ck('터진 판에서도 조용하다', bust.unlocked === undefined);
+
+    /* 그래프의 신 — 시즌 순수익이 100만을 넘은 상태로 캐시아웃하면 열린다. */
+    wipe();
+    seedForWiring();
+    mkUser('h5');
+    db.exec(`DELETE FROM crash_bets;`);
+    Q.bumpGameStats('h5', 'graph', 1_000, 1_002_000);
+    db.prepare(`INSERT INTO crash_bets (round_id, user_id, username, amount, cashout_multiplier, payout)
+                VALUES (?, 'h5', 'h5', ?, ?, ?)`).run(round.id, 1_000, 2, 2_000);
+    const god = await callJson(CR.handleState, 'h5');
+    const gu = (god.unlocked ?? []) as { id: string }[];
+    ck('순수익 100만이면 그래프의 신이 열린다', gu.some(u => u.id === 'crash-profit-1m'),
+      JSON.stringify(god.unlocked ?? null));
+    ck('100배가 아니면 도파민 중독은 안 열린다', !gu.some(u => u.id === 'crash-x100'));
+  }
+
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */
   section('[9] 과제 등록 — 잘못된 값 거절');
   {
@@ -745,4 +914,4 @@ function main(): void {
   process.exit(fail ? 1 : 0);
 }
 
-main();
+main().catch(e => { console.error(e); process.exit(1); });
