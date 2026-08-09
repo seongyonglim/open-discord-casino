@@ -28,6 +28,17 @@ const TYPE_ICON: Record<string, string> = {
   HOLDEM: trophyIcon, BACCARAT: baccaratIcon, BLACKJACK: blackjackIcon, POKER: flipIcon,
   MINES: bombIcon, CRASH: chartIcon, LADDER: ladderIcon, ALL: coinIcon,
 };
+/* 아이콘 아래 적는 게임 이름.
+   선 아이콘 여덟 개는 서로 닮아서(카드 셋은 특히) 그림만으로는 어느 게임인지 한눈에
+   안 들어온다 — 탭을 [전체]로 두면 여덟 게임이 섞이므로 더 그렇다.
+
+   탭 이름과 다른 짧은 말을 쓴다. 아이콘 칸이 좁아 "홀덤 프리롤"은 잘리는데, 잘린 이름은
+   없느니만 못하다. 어차피 옆에 과제 설명이 붙어 있어 짧아도 헷갈리지 않는다. */
+const TYPE_LABEL: Record<string, string> = {
+  HOLDEM: '홀덤', BACCARAT: '바카라', BLACKJACK: '블랙잭', POKER: '포커',
+  MINES: '지뢰찾기', CRASH: '그래프', LADDER: '사다리', ALL: '공통',
+};
+
 /** 자물쇠(감춘 과제). 나머지와 같은 선 굵기·크기로 그려야 한 줄에 섞여도 튀지 않는다. */
 const LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
   + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
@@ -93,7 +104,9 @@ function card(v: AchievementView, total: number): string {
     ? `<span class="ac-date num">${kstDate(v.unlockedAt ?? 0)} 달성</span>`
     : `<span class="ac-lock">잠김</span>`) + need;
   return `<div class="${cls}" data-type="${esc(v.gameType)}">
-      <div class="ac-ic">${icon}</div>
+      <div class="ac-ic">${icon}
+        <span class="ac-ic-name">${esc(TYPE_LABEL[v.gameType] ?? v.gameType)}</span>
+      </div>
       <div class="ac-body">
         <div class="ac-title">${esc(v.title)}</div>
         <div class="ac-desc">${esc(v.description)}</div>
