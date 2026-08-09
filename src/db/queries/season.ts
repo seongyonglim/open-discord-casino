@@ -110,6 +110,22 @@ export function seasonHoldemCount(seasonId: number): number {
     s.started_at, s.closed_at, s.closed_at)!.n;
 }
 
+/**
+ * 그 시즌 대회에 한 번이라도 나온 사람 수.
+ *
+ * 탭 옆의 작은 숫자가 이 값이다 — 다른 게임은 "몇 명이 했나"를 띄우는데 홀덤만 0을
+ * 넣어 두어 배지가 아예 안 붙었다. 대회 수가 아니라 사람 수여야 다른 탭과 뜻이 같다.
+ */
+export function seasonHoldemPlayers(seasonId: number): number {
+  const s = getSeason(seasonId);
+  if (!s) return 0;
+  return one<{ n: number }>(
+    `SELECT COUNT(DISTINCT e.user_id) AS n
+       FROM holdem_entries e JOIN holdem_tournaments t ON t.id = e.tournament_id
+      WHERE ${holdemWindow(s)}`,
+    s.started_at, s.closed_at, s.closed_at)!.n;
+}
+
 /** 홀덤에서의 내 자리. 상금 순이라 나보다 상금이 많은 사람 수로 등수를 센다. */
 export function myHoldemRank(seasonId: number, userId: string):
   { rank: number; total: number; score: number; entries: number; wins: number; itm: number } | null {
@@ -326,9 +342,13 @@ export function closeSeason(opts: { seed: number; nextName?: string; nextReward?
        새 시즌은 0 에서 시작하는데, claimRelief 는 잔액이 정확히 0 일 때만 나가고
        쿨다운이 2시간이다. 시즌 종료 직전에 지원금을 받은 사람은 새 시즌이 열려도
        최대 2시간 동안 0 원에 묶여 아무것도 못 한다 — 시작선이 사람마다 달라진다.
-       (출석 연속일수는 건드리지 않는다. 그건 시즌 점수가 아니라 개인 습관 기록이고,
-       초기화하면 랭킹 리셋이 아니라 벌칙처럼 느껴진다.) */
-    run(`UPDATE users SET last_relief_at = NULL`);
+
+       출석 연속일수도 함께 되돌린다. 시즌이 바뀌면 도전과제를 뺀 모든 기록이 0 에서
+       다시 시작한다는 것이 이 서비스의 규칙이고, 연속일수만 남으면 그 규칙에 예외가
+       하나 생긴다 — 어느 것이 남고 어느 것이 지워지는지를 사람이 외워야 한다.
+       마지막 출석 날짜도 함께 지운다: 연속일수만 0 으로 두면 그날 이미 출석한 사람이
+       새 시즌 첫날을 건너뛰게 되어, 시작선이 또 사람마다 달라진다. */
+    run(`UPDATE users SET last_relief_at = NULL, current_streak = 0, last_checkin_date = NULL`);
 
     run(`UPDATE seasons SET closed_at = ? WHERE id = ?`, now, s.id);
     const nextNumber = s.number + 1;

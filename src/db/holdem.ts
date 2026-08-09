@@ -250,7 +250,28 @@ export interface HoldemRecordRow {
   userId: string; username: string;
   played: number; wins: number; itm: number; prize: number;
 }
+/* 범위는 이번 시즌이다.
+   랭킹 페이지의 홀덤 탭이 시즌 창으로 세는데(queries/season 의 holdemWindow) 이 표만
+   대회 전체를 세면, 같은 사람의 누적 상금이 화면 두 곳에서 다르게 나온다.
+
+   첫 시즌에는 아래 경계가 없다. 시즌이 열리기 전에 이미 대회가 돌고 있었으므로
+   시작 시각으로 자르면 그 전에 끝난 대회가 통째로 빠진다 — 랭킹 쪽에서 실제로 그래서
+   홀덤 탭이 아예 안 뜬 적이 있다. 앞선 시즌이 없으면 그 기록을 가져갈 다른 주인도 없다.
+
+   행은 지우지 않는다. 지난 시즌 대회는 holdem_entries 에 그대로 남아 있고,
+   범위만 좁혀서 보여 준다. */
 export function holdemRecords(limit = 20): HoldemRecordRow[] {
+  const s = one<{ id: number; number: number; started_at: number; closed_at: number | null }>(
+    `SELECT id, number, started_at, closed_at FROM seasons
+      WHERE closed_at IS NULL ORDER BY number DESC LIMIT 1`);
+  // 시즌이 아직 없으면(초기 상태) 예전처럼 전부 센다 — 빈 표를 보여줄 이유가 없다
+  if (!s) return holdemRecordsIn(null, null, limit);
+  const first = one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM seasons WHERE number < ?`, s.number)!.n === 0;
+  return holdemRecordsIn(first ? null : s.started_at, s.closed_at, limit);
+}
+
+function holdemRecordsIn(from: number | null, to: number | null, limit: number): HoldemRecordRow[] {
   return all<HoldemRecordRow>(
     `SELECT e.user_id AS userId,
             MAX(e.username) AS username,
@@ -261,9 +282,11 @@ export function holdemRecords(limit = 20): HoldemRecordRow[] {
        FROM holdem_entries e
        JOIN holdem_tournaments t ON t.id = e.tournament_id
       WHERE t.finished_at IS NOT NULL AND e.finish_place IS NOT NULL
+        AND (? IS NULL OR t.finished_at >= ?)
+        AND (? IS NULL OR t.finished_at < ?)
       GROUP BY e.user_id
       ORDER BY prize DESC, wins DESC, played DESC
-      LIMIT ?`, limit);
+      LIMIT ?`, from, from, to, to, limit);
 }
 
 export function getEntries(tournamentId: number): HtEntryRow[] {

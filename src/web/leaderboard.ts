@@ -13,7 +13,7 @@ import { layout, esc, jsonForScript } from './views';
 import { sendJson } from './http';
 import {
   listSeasons, getSeason, seasonGames, seasonOverall, seasonGameRanking, mySeasonRank,
-  seasonHoldemRanking, seasonHoldemCount, myHoldemRank,
+  seasonHoldemRanking, seasonHoldemCount, seasonHoldemPlayers, myHoldemRank,
   type SeasonRow,
 } from '../db/queries';
 import type { WebUser } from '../db/queries';
@@ -55,7 +55,11 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
      그 시즌에 끝난 대회가 있을 때만 붙으므로, 다른 게임과 마찬가지로 데이터가 정한다. */
   const htCount = seasonHoldemCount(s.id);
   if (htCount > 0) {
-    games.unshift({ key: 'holdem', label: '홀덤 토너먼트', rounds: htCount, players: 0 });
+    /* 탭 옆 숫자는 "몇 명이 했나"다(다른 게임도 그렇다). 예전에는 0을 넣어 두어
+       홀덤에만 배지가 안 붙었고, 그래서 이 탭만 다른 규칙인 것처럼 보였다. */
+    games.unshift({
+      key: 'holdem', label: '홀덤 토너먼트', rounds: htCount, players: seasonHoldemPlayers(s.id),
+    });
   }
   // 요청한 탭이 그 시즌에 없으면 통합으로 되돌린다 — 시즌을 바꿨을 때 빈 화면이 나오지 않게
   const active = tab !== 'overall' && games.some(g => g.key === tab) ? tab : 'overall';
@@ -223,9 +227,13 @@ export function leaderboardPage(me: WebUser | null): string {
             + avatar(r, 'lb-pav')
             + '<div class="lb-pname">' + esc(r.username) + '<\\/div>'
             + '<div class="lb-pscore">' + num(r.score) + (overall ? 'P' : 'P') + '<\\/div>'
+            /* 포디움에 적는 것과 아래 표의 열을 같게 둔다. 예전에는 포디움만
+               "5회 · 우승 3"이라 1~3위와 4위 아래를 나란히 볼 수가 없었다 —
+               같은 화면의 같은 사람인데 보여 주는 값이 달랐다. 순서도 표와 맞춘다. */
             + (overall ? ''
-                : ht ? '<div class="lb-psub">' + r.entries + '회 · 우승 ' + r.wins + '<\\/div>'
-                : '<div class="lb-psub">' + r.rounds + '판 · ' + winRate(r) + '<\\/div>')
+                : ht ? '<div class="lb-psub">우승 ' + num(r.wins) + ' · 입상 ' + num(r.itm)
+                       + ' · 참가 ' + num(r.entries) + '<\\/div>'
+                : '<div class="lb-psub">' + num(r.rounds) + '판 · 승률 ' + winRate(r) + '<\\/div>')
             + '<\\/div>';
         }).join('');
 
@@ -234,8 +242,11 @@ export function leaderboardPage(me: WebUser | null): string {
         : ht
           ? '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">총 상금<\\/th>'
             + '<th class="r">우승<\\/th><th class="r">입상<\\/th><th class="r">참가<\\/th><\\/tr>'
+          /* 홀덤과 열 순서를 맞춘다: 돈 → 횟수 → 비율.
+             예전에는 홀덤만 상금·우승·입상·참가였고 나머지는 순수익·승률·판수여서,
+             탭을 옮길 때마다 어느 열이 무엇인지 다시 읽어야 했다. */
           : '<tr><th class="c">#<\\/th><th>유저<\\/th><th class="r">순수익<\\/th>'
-            + '<th class="r">승률<\\/th><th class="r">판수<\\/th><\\/tr>';
+            + '<th class="r">판수<\\/th><th class="r">승률<\\/th><\\/tr>';
 
       var from = top.length < 3 ? 0 : 3;
       document.getElementById('lbBody').innerHTML = rows.slice(from).map(function(r){
@@ -250,7 +261,7 @@ export function leaderboardPage(me: WebUser | null): string {
           + (overall ? ''
               : ht ? '<td class="r n">' + num(r.wins) + '<\\/td><td class="r n">' + num(r.itm)
                      + '<\\/td><td class="r n">' + num(r.entries) + '<\\/td>'
-              : '<td class="r n">' + winRate(r) + '<\\/td><td class="r n">' + num(r.rounds) + '<\\/td>')
+              : '<td class="r n">' + num(r.rounds) + '<\\/td><td class="r n">' + winRate(r) + '<\\/td>')
           + '<\\/tr>';
       }).join('');
     }
@@ -279,10 +290,14 @@ export function leaderboardPage(me: WebUser | null): string {
         + '<span class="lb-mewho">' + avatar(data.me, 'lb-av')
         + '<span class="lb-mename">' + esc(data.me.username) + '<\\/span>'
         + '<span class="lb-youtag">(나)<\\/span><\\/span>'
+        /* 포디움·표와 같은 말로 적는다. 세 자리가 서로 다른 요약을 쓰면 같은 내 기록인데
+           보는 자리마다 다른 숫자가 나온다. */
         + (overall ? ''
-            : ht ? '<span class="lb-mesub">' + num(data.me.entries || 0) + '회 · 우승 '
-                   + num(data.me.wins || 0) + '<\\/span>'
-            : '<span class="lb-mesub">' + num(data.me.rounds || 0) + '판<\\/span>')
+            : ht ? '<span class="lb-mesub">우승 ' + num(data.me.wins || 0)
+                   + ' · 입상 ' + num(data.me.itm || 0)
+                   + ' · 참가 ' + num(data.me.entries || 0) + '<\\/span>'
+            : '<span class="lb-mesub">' + num(data.me.rounds || 0) + '판 · 승률 '
+                   + winRate(data.me) + '<\\/span>')
         + '<span class="lb-mescore">' + (data.me.score > 0 && !overall && !ht ? '+' : '')
         + num(data.me.score) + 'P<\\/span>'
         + '<\\/div>';

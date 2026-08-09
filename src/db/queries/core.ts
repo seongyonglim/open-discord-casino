@@ -449,11 +449,24 @@ export interface GameRankRow {
    동점 정렬을 결정론적으로 고정한다 — 신규 유저가 다 0P라 tiebreak가 없으면
    재조회마다 줄이 뒤바뀐다(getLeaderboard의 balance DESC, id ASC와 같은 이유).
    닉네임은 users에서 조인해 현재 이름을 쓴다. 베팅 테이블의 username 스냅샷을
-   쓰면 이름을 바꾼 사람이 옛 이름으로 남는다. */
+   쓰면 이름을 바꾼 사람이 옛 이름으로 남는다.
+
+   ── 범위: 이번 시즌 ──────────────────────────────────────────────
+   예전에는 통산(game_stats)을 봤다. 그런데 랭킹 페이지(/leaderboard)는 시즌 장부를
+   쓰기 때문에, 같은 게임의 랭킹이 화면 두 곳에서 서로 다른 값을 보여 주고 있었다.
+   시즌이 바뀌면 한쪽만 0이 되어 그 차이가 그대로 드러난다.
+
+   통산 표는 지우지 않는다 — 지난 시즌 기록이 사라지면 되돌릴 방법이 없다.
+   보여 주는 범위만 이번 시즌으로 좁힌다. */
+const SEASON_STATS_FROM =
+  `season_stats s
+     JOIN seasons se ON se.id = s.season_id AND se.closed_at IS NULL
+     JOIN users u ON u.id = s.user_id`;
+
 export function getGameRanking(game: string, limit = 100): GameRankRow[] {
   return all<GameRankRow>(
     `SELECT s.user_id, u.username, s.rounds, s.rated, s.wins, s.pushes, s.profit
-       FROM game_stats s JOIN users u ON u.id = s.user_id
+       FROM ${SEASON_STATS_FROM}
       WHERE s.game = ? AND s.rounds > 0
       ORDER BY s.profit DESC, s.rounds DESC, s.user_id ASC
       LIMIT ?`, game, limit
@@ -467,11 +480,11 @@ export function getMyGameRank(
 ): (GameRankRow & { rank: number }) | undefined {
   const mine = one<GameRankRow>(
     `SELECT s.user_id, u.username, s.rounds, s.rated, s.wins, s.pushes, s.profit
-       FROM game_stats s JOIN users u ON u.id = s.user_id
+       FROM ${SEASON_STATS_FROM}
       WHERE s.game = ? AND s.user_id = ? AND s.rounds > 0`, game, userId);
   if (!mine) return undefined;
   const ahead = one<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM game_stats s JOIN users u ON u.id = s.user_id
+    `SELECT COUNT(*) AS n FROM ${SEASON_STATS_FROM}
       WHERE s.game = ? AND s.rounds > 0
         AND (s.profit > ?
           OR (s.profit = ? AND s.rounds > ?)

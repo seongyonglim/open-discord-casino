@@ -1498,6 +1498,53 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
   }
 
   ck('끝난 뒤에도 잔액 = 원장 누적합', ledgerOk(users));
+
+  /* ── 시즌 범위 ────────────────────────────────────────────────
+     화면에 랭킹이 두 곳 있다(랭킹 페이지 / 게임 안 [역대 전적]). 둘의 범위가 다르면
+     같은 사람의 누적 상금이 자리마다 다르게 나온다 — 둘 다 이번 시즌이어야 한다. */
+  {
+    const SE = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+    db.exec(`DELETE FROM seasons`);
+    db.prepare(`INSERT INTO seasons (number, name, reward, started_at) VALUES (0, 's0', '', 0)`).run();
+    const sid = SE.currentSeason().id;
+
+    /* 탭 옆 숫자는 "몇 명이 했나"다. 예전에는 홀덤만 0을 넣어 두어 배지가 안 붙었고,
+       그래서 이 탭만 다른 규칙인 것처럼 보였다. */
+    ck('홀덤 탭의 인원이 참가자 수다', SE.seasonHoldemPlayers(sid) === users.length,
+      `${SE.seasonHoldemPlayers(sid)} (기대 ${users.length})`);
+    ck('대회 수와는 다른 값이다 (인원이지 판수가 아니다)',
+      SE.seasonHoldemCount(sid) === 1 && SE.seasonHoldemPlayers(sid) === users.length);
+
+    const rank = SE.seasonHoldemRanking(sid, 100);
+    const rec = HD.holdemRecords(100);
+    const byUser = new Map(rec.map(r => [r.userId, r]));
+    ck('두 랭킹의 사람 수가 같다', rank.length === rec.length, `${rank.length} vs ${rec.length}`);
+    ck('두 랭킹의 누적 상금이 같다',
+      rank.every(r => byUser.get(r.userId)?.prize === r.prize),
+      rank.map(r => `${r.userId}:${r.prize}/${byUser.get(r.userId)?.prize}`).join(' '));
+    ck('우승·입상·참가도 같다',
+      rank.every(r => {
+        const m = byUser.get(r.userId);
+        return m && m.wins === r.wins && m.itm === r.itm && m.played === r.entries;
+      }));
+
+    /* 시즌이 바뀌면 지난 시즌 대회는 이번 시즌 기록에서 빠진다.
+       행은 그대로 남는다 — 지우면 되돌릴 방법이 없고, 나중에 지난 시즌을 보여줄 수도 없다. */
+    const before = HD.holdemRecords(100).length;
+    ck('검사 전제: 지금은 기록이 있다', before > 0, String(before));
+    /* 대회 종료 시각을 한 시간 앞으로 민다. 시즌 창은 [시작, 마감) 이라 마감과 같은 초에
+       끝난 대회는 다음 시즌 몫이 된다 — 실제로는 대회가 22시대에 끝나고 시즌은 사람이
+       닫으므로 겹칠 일이 없지만, 이 감사는 모든 일이 같은 초에 일어나서 그 경계에 걸린다. */
+    db.prepare(`UPDATE holdem_tournaments SET finished_at = finished_at - 3600`).run();
+    SE.closeSeason({ seed: 10_000 });
+    ck('시즌이 바뀌면 역대 전적이 비워진다', HD.holdemRecords(100).length === 0,
+      String(HD.holdemRecords(100).length));
+    ck('대회 참가 행은 그대로 남아 있다', (db.prepare(
+      `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ?`).get(t4id) as { n: number }).n
+      === users.length);
+    ck('새 시즌의 홀덤 탭 인원은 0',
+      SE.seasonHoldemPlayers(SE.currentSeason().id) === 0);
+  }
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
