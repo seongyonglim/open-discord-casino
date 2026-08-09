@@ -25,6 +25,18 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     // 판정: src/web/games/blackjack.ts — 히트 직후, 직전 합이 20이고 결과가 21일 때
   },
   {
+    id: 'ho-straight-flush',
+    gameType: 'HOLDEM',
+    title: '스트레이트 플러시',
+    description: '홀덤 쇼다운에서 스트레이트 플러시를 공개합니다.',
+    /* 프리롤은 참가비가 0 이라 기준을 두면 영영 판정되지 않는다. 그래도 되는 이유는
+       홀덤이 하루 한 번 열리는 대회라서다 — 소액으로 여러 번 돌릴 수가 없다.
+       참가비가 있는 대회가 열리면 그 금액이 그대로 이 문을 지난다. */
+    minBet: 0,
+    sortAt: 5,
+    // 판정: src/db/holdem.ts endHand — 쇼다운에 공개된 손의 족보 이름으로 본다
+  },
+  {
     id: 'crash-x100',
     gameType: 'CRASH',
     title: '도파민 중독',

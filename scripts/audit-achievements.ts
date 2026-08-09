@@ -445,29 +445,32 @@ async function main(): Promise<void> {
     wipe();
     seed();
     const byId = new Map(A.listAchievements().map(a => [a.id, a]));
-    ck('네 과제가 등록된다', byId.size === 4, String(byId.size));
+    ck('다섯 과제가 등록된다', byId.size === 5, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
     for (const id of ['bj-hit-21', 'crash-x100', 'crash-profit-1m']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
-    /* 지원금에는 베팅이 없다. 기준을 그대로 두면 이 과제는 영영 판정되지 않는다. */
-    ck('relief-10-day 만 최소 베팅 0', byId.get('relief-10-day')?.min_bet === 0,
-      String(byId.get('relief-10-day')?.min_bet));
+    /* 베팅이 없는 과제는 기준도 0 이어야 한다. 그대로 두면 영영 판정되지 않는다 —
+       지원금에는 베팅이 없고, 홀덤 프리롤은 참가비가 0 이다. */
+    for (const id of ['relief-10-day', 'ho-straight-flush']) {
+      ck(`${id} 은 최소 베팅 0`, byId.get(id)?.min_bet === 0, String(byId.get(id)?.min_bet));
+    }
     /* 지금은 넷 다 공개다. 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는
        "씨앗이 실제로 무엇을 감췄나"만 본다 — 실수로 감춘 채 올리면 조건을 모르는
        사람에게는 그냥 잠긴 칸 하나가 는 것과 같다. */
-    ck('넷 다 공개다', ['bj-hit-21', 'crash-x100', 'crash-profit-1m', 'relief-10-day']
+    ck('다섯 다 공개다', [...byId.keys()]
       .every(id => byId.get(id)?.is_hidden === 0),
       A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id).join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
       byId.get('bj-hit-21')?.game_type === 'BLACKJACK'
       && byId.get('crash-x100')?.game_type === 'CRASH'
       && byId.get('crash-profit-1m')?.game_type === 'CRASH'
-      && byId.get('relief-10-day')?.game_type === 'ALL');
+      && byId.get('relief-10-day')?.game_type === 'ALL'
+      && byId.get('ho-straight-flush')?.game_type === 'HOLDEM');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
-    ck('두 번 돌려도 네 개', A.listAchievements().length === 4,
+    ck('두 번 돌려도 다섯 개', A.listAchievements().length === 5,
       String(A.listAchievements().length));
 
     /* 1,000P 문지기가 실제로 막는가. 여기가 뚫리면 위의 기준이 글자로만 남는다. */
@@ -690,11 +693,21 @@ async function main(): Promise<void> {
     ck('지원금이 판정을 부른다', dc.includes("'relief-10-day'"));
     ck('지급에 성공한 뒤에만 판정한다', /if \(!r\.ok\)[\s\S]*relief-10-day/.test(dc));
 
+    /* 홀덤은 판정 자리가 web 이 아니라 db 계층이다 — 판이 끝나는 곳에서만 족보를 알 수
+       있고, 그 값은 이미 result.reveal 에 들어 있다. */
+    const ht = read('src/db/holdem.ts');
+    ck('홀덤이 판정을 부른다', ht.includes("'ho-straight-flush'"));
+    ck('쇼다운에 공개된 손만 본다', /reveal[\s\S]{0,400}SF_NAMES/.test(ht));
+    ck('로열 플러시도 함께 센다', /SF_NAMES = \[[^\]]*로열 플러시/.test(ht));
+    /* 판정이 던져도 판이 멈추면 안 된다 — 여기는 팟이 이미 나뉜 뒤라, 던지면 그 다음
+       처리(탈락·다음 판 예약)가 통째로 안 돈다. */
+    ck('판정 오류가 판을 멈추지 않는다', /awardStraightFlush[\s\S]*?try \{[\s\S]*?catch/.test(ht));
+
     /* 씨앗에 있는 과제는 전부 어딘가에서 판정되어야 한다. 표에만 넣고 배선을 잊으면
        화면에는 뜨는데 아무도 못 깨는 과제가 된다 — 그게 제일 알아채기 어렵다. */
     wipe();
     seedForWiring();
-    const wired = bj + cr + dc;
+    const wired = bj + cr + dc + ht;
     const unwired = A.listAchievements().filter(a => !wired.includes(`'${a.id}'`));
     ck('배선이 빠진 과제가 없다', unwired.length === 0, unwired.map(a => a.id).join(','));
 
@@ -834,6 +847,109 @@ async function main(): Promise<void> {
     ck('순수익 100만이면 그래프의 신이 열린다', gu.some(u => u.id === 'crash-profit-1m'),
       JSON.stringify(god.unlocked ?? null));
     ck('100배가 아니면 도파민 중독은 안 열린다', !gu.some(u => u.id === 'crash-x100'));
+  }
+
+  /* ── 8-5. 홀덤 스트레이트 플러시 ────────────────────────────── */
+  section('[8-5] 홀덤 — 실제 판을 끝까지 돌려 스트레이트 플러시를 본다');
+  {
+    /* 무작위로 스트레이트 플러시가 나올 때까지 돌릴 수는 없다(약 3만 판에 한 번이다).
+       그래서 판을 열고 홀 카드와 보드를 심은 뒤 끝까지 돌린다 — 판정이 도는 자리는
+       실제 endHand 라, 이 방법으로도 배선·족보·기록이 전부 진짜로 확인된다. */
+    const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
+    const AD = require('../src/db/admin') as typeof import('../src/db/admin');
+    const nowSec = (): number => Math.floor(Date.now() / 1000);
+    const players = ['sf1', 'sf2', 'sf3'];
+
+    function runHand(holes: Record<string, number[]>, board: number[]): void {
+      db.exec(`DELETE FROM holdem_hand_seats; DELETE FROM holdem_hands;
+               DELETE FROM holdem_seats; DELETE FROM holdem_tables;
+               DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
+      const made = AD.createTournament({
+        title: 'sf 검사', regOpenAt: nowSec() - 60, startAt: nowSec() + 3600,
+      });
+      if (!made.ok) throw new Error('대회를 못 열었다: ' + made.error);
+      for (const p of players) HD.registerHoldem(p, p);
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+      HD.advanceHoldem();
+      const table = HD.getTable(made.id)!;
+      const hand = HD.getCurrentHand(table.id)!;
+      /* 카드를 심는다. 보드는 리버까지 채우고, 스트리트도 리버로 맞춘다 —
+         쇼다운으로 끝나야 reveal 이 만들어진다. */
+      for (const s of HD.getSeats(table.id)) {
+        const hole = holes[s.user_id];
+        if (hole) {
+          db.prepare(`UPDATE holdem_hand_seats SET hole_json = ? WHERE hand_id = ? AND seat = ?`)
+            .run(JSON.stringify(hole), hand.id, s.seat);
+        }
+      }
+      db.prepare(`UPDATE holdem_hands SET board_json = ?, street = 'river' WHERE id = ?`)
+        .run(JSON.stringify(board), hand.id);
+      // 전원 체크로 리버를 닫으면 쇼다운이 된다
+      for (let i = 0; i < 40; i++) {
+        const h = HD.getCurrentHand(table.id);
+        if (!h || h.ended_at != null || h.to_act_seat == null) break;
+        const seat = HD.getSeats(table.id).find(x => x.seat === h.to_act_seat);
+        if (!seat) break;
+        /* 차례를 "지금 열렸고 제한 시간은 온전히 남았다"로 만든다.
+           마감을 과거로 밀면 자동 폴드가 먼저 돌아 쇼다운까지 못 간다 — 실제로 그랬다. */
+        db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+          .run(nowSec() + HD.ACTION_SEC, h.id);
+        if (!HD.holdemAction(seat.user_id, 'check', 0).ok) HD.holdemAction(seat.user_id, 'call', 0);
+      }
+    }
+
+    /* 카드 번호는 rank*4 + suit. 스페이드를 0 으로 두고 9-10-J-Q-K 스페이드를 만든다.
+       (랭크 0='2' … 7='9', 8='T', 9='J', 10='Q', 11='K', 12='A') */
+    const c = (rank: number, suit = 0): number => rank * 4 + suit;
+    const SPADE = 0, HEART = 1;
+
+    wipe();
+    seedForWiring();
+    for (const p of players) mkUser(p, 50_000);
+    /* sf1 이 9♠T♠ 를 들고 보드에 J♠Q♠K♠ — 9-K 스트레이트 플러시.
+       나머지 둘은 무늬가 다른 낮은 카드라 끼어들지 않는다. */
+    runHand(
+      { sf1: [c(7, SPADE), c(8, SPADE)], sf2: [c(0, HEART), c(1, HEART)], sf3: [c(2, HEART), c(3, HEART)] },
+      [c(9, SPADE), c(10, SPADE), c(11, SPADE), c(0, HEART + 1), c(1, HEART + 1)],
+    );
+    ck('스트레이트 플러시를 띄운 사람이 달성했다', A.hasAchievement('sf1', 'ho-straight-flush'));
+    ck('같은 판의 남은 안 받는다',
+      !A.hasAchievement('sf2', 'ho-straight-flush') && !A.hasAchievement('sf3', 'ho-straight-flush'));
+    /* 판이 실제로 끝났는지도 본다 — 안 끝났으면 위 검사는 우연히 통과한 것이다 */
+    ck('검사 전제: 판이 쇼다운으로 끝났다', (db.prepare(
+      `SELECT COUNT(*) AS n FROM holdem_hands WHERE ended_at IS NOT NULL`)
+      .get() as { n: number }).n > 0);
+
+    // 두 번째 판을 또 이겨도 기록은 하나
+    runHand(
+      { sf1: [c(7, SPADE), c(8, SPADE)], sf2: [c(0, HEART), c(1, HEART)], sf3: [c(2, HEART), c(3, HEART)] },
+      [c(9, SPADE), c(10, SPADE), c(11, SPADE), c(0, HEART + 1), c(1, HEART + 1)],
+    );
+    ck('두 번 띄워도 기록은 하나', (db.prepare(
+      `SELECT COUNT(*) AS n FROM user_achievements WHERE user_id = 'sf1'
+        AND achievement_id = 'ho-straight-flush'`).get() as { n: number }).n === 1);
+
+    /* 로열 플러시도 스트레이트 플러시의 일종이다 — 이름이 달라서 놓치기 쉽다. */
+    wipe();
+    seedForWiring();
+    runHand(
+      { sf1: [c(12, SPADE), c(11, SPADE)], sf2: [c(0, HEART), c(1, HEART)], sf3: [c(2, HEART), c(3, HEART)] },
+      [c(10, SPADE), c(9, SPADE), c(8, SPADE), c(0, HEART + 1), c(1, HEART + 1)],
+    );
+    ck('로열 플러시도 달성으로 센다', A.hasAchievement('sf1', 'ho-straight-flush'));
+
+    /* 그냥 플러시는 아니다. 기준이 실제로 그 자리에 있는지 확인한다. */
+    wipe();
+    seedForWiring();
+    runHand(
+      { sf1: [c(12, SPADE), c(5, SPADE)], sf2: [c(0, HEART), c(1, HEART)], sf3: [c(2, HEART), c(3, HEART)] },
+      [c(9, SPADE), c(7, SPADE), c(3, SPADE), c(0, HEART + 1), c(1, HEART + 1)],
+    );
+    ck('그냥 플러시는 안 준다', !A.hasAchievement('sf1', 'ho-straight-flush'));
+
+    db.exec(`DELETE FROM holdem_hand_seats; DELETE FROM holdem_hands;
+             DELETE FROM holdem_seats; DELETE FROM holdem_tables;
+             DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
   }
 
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */

@@ -927,6 +927,31 @@ function nextStreet(hand: HtHandRow, views: G.SeatView[], now: number): void {
   setToAct(fresh, views, prevSeat(first ?? hand.button_seat, occupied), now, STREET_OPEN_SEC);
 }
 
+/* 쇼다운에서 스트레이트 플러시를 띄운 사람에게 과제를 준다.
+   족보 이름은 이미 result.reveal 에 들어 있다 — 다시 계산하면 그때 본 결과와 어긋날 수
+   있고(판정이 바뀌면 옛 판이 다르게 읽힌다), 무엇보다 화면에 뜬 것과 같은 값이어야 한다.
+   로열 플러시는 이름이 따로지만 스트레이트 플러시의 일종이라 함께 센다. */
+const SF_NAMES = ['스트레이트 플러시', '로열 플러시'];
+
+function awardStraightFlush(
+  t: HtRow, rows: HtHandSeatRow[], reveal: { seat: number; hand: string }[], now: number
+): void {
+  void now;
+  for (const r of reveal) {
+    if (!SF_NAMES.includes(r.hand)) continue;
+    const seat = rows.find(x => x.seat === r.seat);
+    if (!seat) continue;
+    /* 과제 판정이 판을 멈추면 안 된다 — 여기는 팟이 이미 나뉜 뒤라, 던지면 그 다음
+       처리(탈락·다음 판 예약)가 통째로 안 돈다. */
+    try {
+      const { awardIfBet } = require('./achievements') as typeof import('./achievements');
+      awardIfBet(seat.user_id, 'ho-straight-flush', t.buy_in, () => true);
+    } catch (e) {
+      console.error('스트레이트 플러시 판정 오류:', e);
+    }
+  }
+}
+
 /** 핸드 종료 — 팟을 나누고 스택에 반영한다.
  *  lockedBoardLen: 베팅이 완전히 끝난 순간의 보드 장수(advanceTable이 기억해 둔 값).
  *  여기서 board.length를 쓰면 안 된다 — 전원 올인이면 그 전에 nextStreet가 리버까지
@@ -1042,6 +1067,17 @@ function endHand(
   };
   run(`UPDATE holdem_hands SET ended_at = ?, result_json = ?, to_act_seat = NULL, action_deadline = NULL
        WHERE id = ? AND ended_at IS NULL`, now, JSON.stringify(result), hand.id);
+
+  /* ── 도전과제: 스트레이트 플러시 ────────────────────────────────
+     쇼다운에서 공개된 손만 본다. 아무도 안 보고 접힌 손은 "띄웠다"고 하기 어렵고,
+     무엇보다 그 손은 화면에도 안 나와서 본인조차 모르고 지나간다.
+     result.reveal 이 이미 족보 이름을 담고 있으므로 다시 계산하지 않는다 —
+     로열 플러시도 스트레이트 플러시의 일종이라 함께 센다.
+
+     최소 베팅은 이 대회의 참가비를 쓴다. 프리롤은 0 이라 문지기가 서지 않는데,
+     그건 맞다: 홀덤은 하루 한 번 열리는 대회라 소액으로 여러 번 돌릴 수가 없다.
+     (과제 쪽 min_bet 도 0 으로 넣어 둔다.) */
+  awardStraightFlush(t, rows, result.reveal, now);
 
   // 스택이 0이 된 사람을 탈락 처리한다 (같은 핸드에서 여러 명이 나가면 투입액이 많은 쪽이 상위)
   eliminateBusted(t, table, hand, views, now);
