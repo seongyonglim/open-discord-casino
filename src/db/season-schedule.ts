@@ -36,6 +36,42 @@ export interface SeasonSchedule {
   seed: number;
 }
 
+/* 마감 몇 초 전부터 '정산 중'으로 볼지.
+   5분을 두는 이유: 이 서비스의 판은 전부 몇 초에서 몇십 초 안에 끝난다(가장 긴 그래프
+   라운드도 1분 남짓). 5분이면 락다운 순간에 열려 있던 판이 전부 제 힘으로 끝날 시간이고,
+   그래도 남은 것은 강제 정산한다. 더 짧게 두면 강제 정산에 걸리는 판이 늘고, 더 길게
+   두면 아무 일도 없는 시간이 길어진다. */
+export const LOCKDOWN_SEC = 5 * 60;
+
+export interface SeasonLockdown {
+  /** 지금이 마감 정산 구간인가 */
+  active: boolean;
+  /** 마감 예정 시각 (예약이 없으면 null) */
+  closeAt: number | null;
+  /** 마감까지 남은 초 */
+  secondsLeft: number;
+}
+
+/**
+ * 시즌 마감 직전 락다운 상태.
+ *
+ * 타이머를 두지 않는다 — fly 는 아무도 안 쓰면 프로세스를 재우므로 "5분 전에 무언가를
+ * 실행"하는 방식은 이 서비스에서 성립하지 않는다. 대신 요청이 들어올 때마다 예약 시각과
+ * 지금을 비교해 상태를 계산한다(반복 개최·시즌 마감도 같은 방식이다).
+ *
+ * 마감이 지나면 ensureSeasonClosed 가 시즌을 넘기고 예약을 지운다 → closeAt 이 null 이 되어
+ * 락다운도 저절로 풀린다. 풀어 주는 코드를 따로 두지 않는 이유가 그것이다.
+ */
+export function seasonLockdown(now = Math.floor(Date.now() / 1000)): SeasonLockdown {
+  const closeAt = getSeasonSchedule().closeAt;
+  if (closeAt == null) return { active: false, closeAt: null, secondsLeft: 0 };
+  return {
+    active: now >= closeAt - LOCKDOWN_SEC,
+    closeAt,
+    secondsLeft: Math.max(0, closeAt - now),
+  };
+}
+
 export function getSeasonSchedule(): SeasonSchedule {
   const v = settings();
   const at = Number(v.seasonCloseAt);

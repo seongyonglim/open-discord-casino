@@ -12,7 +12,8 @@ import {
   upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard, reliefCountToday,
   getBoard, setBoard, clearBoard, type BoardKind,
 } from '../db/queries';
-import { ensureSeasonClosed } from '../db/season-schedule';
+import { ensureSeasonClosed, seasonLockdown } from '../db/season-schedule';
+import { LOCKDOWN_MSG } from '../web/lockdown';
 import { award } from '../web/achieve-hook';
 import { pts, signedPts, reasonLabel, esc } from '../web/views';
 import { env } from '../env';
@@ -235,6 +236,16 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
   ensureSeasonClosed();
 
   const customId = interaction.data?.custom_id;
+  /* 시즌 마감 5분 전부터는 보상도 막는다. 지금 받은 포인트는 몇 분 뒤 초기화로 사라지므로,
+     받게 두면 "받았는데 없어졌다"가 된다 — 막고 이유를 말하는 편이 낫다.
+     (웹의 베팅 차단과 같은 판정을 쓴다. 문구도 같은 상수에서 온다.) */
+  const lock = seasonLockdown();
+  if (lock.active) {
+    const m = Math.floor(lock.secondsLeft / 60), s = lock.secondsLeft % 60;
+    return ephemeral(res, `${LOCKDOWN_MSG}\n`
+      + `시즌 마감까지 **${m}분 ${s}초** 남았습니다. 새 시즌이 열리면 다시 받을 수 있어요.`);
+  }
+
   if (customId === 'relief_claim') return await handleReliefClaim(interaction, res);
   if (customId !== 'attendance_checkin') return ephemeral(res, '알 수 없는 버튼입니다.');
 

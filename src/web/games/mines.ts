@@ -21,7 +21,9 @@ interface MinesState {
   revealed: number[];
 }
 
-function calcMultiplier(mineCount: number, revealedCount: number): number {
+/* 시즌 마감 강제 정산(web/lockdown)이 이 식을 그대로 써야 한다 — 그때 나가는 금액은
+   "지금 캐시아웃을 눌렀다면 받았을 금액"이고, 그 계산이 두 곳에 있으면 언젠가 갈라진다. */
+export function calcMultiplier(mineCount: number, revealedCount: number): number {
   if (revealedCount <= 0) return 1;
   let m = 1;
   for (let i = 0; i < revealedCount; i++) {

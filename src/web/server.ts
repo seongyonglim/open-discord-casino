@@ -51,6 +51,7 @@ import {
 // 로비의 프리롤 카드가 대회 상태를 비추는 데 쓴다 (상태 판정은 이 함수에만 있다)
 import { advanceHoldem } from '../db/holdem';
 import { ensureSeasonClosed } from '../db/season-schedule';
+import { ensureLockdown, lockedPath, LOCKDOWN_MSG } from './lockdown';
 import { rankingGameOf, handleRanking } from './ranking';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
@@ -218,6 +219,10 @@ export function startWebServer(): void {
          같은 방식이다. 예약이 없으면 설정 한 번 읽고 끝난다.
          /health 뒤에 두는 이유: 헬스 체크가 시즌을 넘기게 하지는 않는다. */
       ensureSeasonClosed();
+      /* 마감 직전이면 열려 있는 판을 정산한다. 예약이 없으면 상태 계산 한 번으로 끝난다.
+         ensureSeasonClosed 바로 뒤에 두는 이유: 방금 시즌이 넘어갔으면 예약이 지워져
+         락다운도 함께 풀려야 하고, 그 순서로만 그렇게 된다. */
+      const lock = ensureLockdown();
       if (APP_FILES[path]) return serveAppFile(path, res);
       if (path.startsWith('/sfx/')) return serveAsset('sfx', path.slice(5), res);
       if (path.startsWith('/cards/')) return serveAsset('cards', path.slice(7), res);
@@ -341,6 +346,21 @@ export function startWebServer(): void {
           if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
           return handleRanking(req, res, rankGame, me.id);
         }
+      }
+
+      /* 시즌 마감 5분 전부터 새 베팅을 막는다.
+         게임마다 막으면 여덟 곳에 같은 검사를 넣어야 하고, 새 게임이 붙는 날 빠진다.
+         주소 목록 하나로 여기서 한 번에 거른다 — 무엇을 막고 무엇을 여는지도 그 목록에
+         적혀 있다(web/lockdown 의 LOCKED_PATHS).
+
+         응답에 lockdown 을 함께 실어 보낸다. 화면은 그것을 보고 안내 배너를 띄운다 —
+         이미 화면을 열어 둔 사람은 새로 그려지지 않으므로, 막힌 그 순간이 알려 줄
+         유일한 기회다. */
+      if (lock.active && lockedPath(path)) {
+        return sendJson(res, 403, {
+          error: LOCKDOWN_MSG,
+          lockdown: { active: true, secondsLeft: lock.secondsLeft },
+        });
       }
 
       if (path === '/games/mines') {

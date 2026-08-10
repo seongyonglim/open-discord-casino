@@ -24,10 +24,11 @@
     "audit:discord": "node --experimental-sqlite --require tsx/cjs scripts/audit-discord.ts",
     "audit:holdem": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem.ts",
     "audit:season": "node --experimental-sqlite --require tsx/cjs scripts/audit-season-schedule.ts",
+    "audit:lockdown": "node --experimental-sqlite --require tsx/cjs scripts/audit-lockdown.ts",
     "audit:achievements": "node --experimental-sqlite --require tsx/cjs scripts/audit-achievements.ts",
     "audit:holdem-db": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem-db.ts",
     "audit:quick": "npm run smoke && npm run audit:pages && npm run audit:economy && npm run audit:security && npm run audit:discord && npm run audit:holdem",
-    "audit": "npm run audit:quick && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:holdem-db && npm run audit:achievements && npm run audit:season"
+    "audit": "npm run audit:quick && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:holdem-db && npm run audit:achievements && npm run audit:season && npm run audit:lockdown"
   },
   "dependencies": {
     "discord.js": "^14.14.1",

@@ -185,8 +185,15 @@ a.bel-row:hover { background: rgba(255,255,255,.04); }
 .bel-empty { padding: 26px 13px; text-align: center; color: var(--dim); font-size: 13px; }
 
 /* ── 토스트 ───────────────────────────────────────────────────────── */
-/* 오른쪽 위. 게임 화면 위에 뜨므로 어떤 패널보다도 앞이어야 한다. */
-.toast-stack { position: fixed; top: 14px; right: 14px; z-index: 200;
+/* 오른쪽 위. 게임 화면 위에 뜨므로 어떤 패널보다도 앞이어야 한다.
+
+   z-index 가 200 이던 때는 헤더(300)가 토스트를 덮었다. top:14px 이 헤더 안쪽 높이라,
+   스크롤을 내려 헤더가 붙어 있는 동안에는 토스트가 헤더 뒤로 반쯤 잘려 보였다 —
+   제보를 받고 고쳤다. 헤더(300)·프로필 메뉴(400)보다 앞에 두고, 시작 위치는 app.js 가
+   헤더 높이를 재서 --toast-top 으로 넣는다(헤더 높이는 배너 유무로 달라진다).
+
+   락다운 배너는 헤더 안에 있으므로 따로 셀 것이 없다. */
+.toast-stack { position: fixed; top: var(--toast-top, 90px); right: 14px; z-index: 450;
   display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { display: grid; grid-template-columns: auto 1fr; gap: 2px 11px;
   align-items: center; padding: 12px 16px 12px 13px; border-radius: 12px;

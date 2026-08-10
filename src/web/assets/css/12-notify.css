@@ -1,0 +1,5 @@
+
+/* 시즌 마감 락다운 토스트 — 붉은 테두리. 금색·초록은 이 사이트에서 "좋은 것"의 색이라
+   기능이 멈췄다는 신호에 쓰면 뜻이 어긋난다. */
+.toast.warn { border-color: rgba(229,72,77,.55); }
+.toast.warn .toast-t { color: var(--lose); }

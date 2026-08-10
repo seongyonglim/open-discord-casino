@@ -124,4 +124,20 @@
 
   .loginbtn{margin-left:auto;display:inline-flex;align-items:center;gap:7px;background:#5865f2;color:#fff;
     font-size:13px;font-weight:700;line-height:1;padding:8px 13px;border-radius:10px;white-space:nowrap}
-  .loginbtn:hover{background:#4752e0}
+  .loginbtn:hover{background:#4752e0}
+  /* ── 시즌 마감 정산 배너 ──────────────────────────────────────────────
+     화면 맨 위, 헤더보다도 위에 붙인다 — "지금 왜 베팅이 안 되는가"는 무엇보다 먼저
+     읽혀야 한다. 금색이 아니라 붉은 계열을 쓴다: 금색은 이 사이트에서 "좋은 것"의
+     색이고, 이건 기능이 멈췄다는 신호다. */
+  /* 헤더 안에 있으므로 스스로 sticky 가 아니다 — 헤더와 함께 붙어 다닌다.
+     좌우 패딩만 두고 폭은 헤더를 그대로 채운다(안쪽 .wrap 과 달리 가운데 정렬하지 않는다:
+     이 줄은 화면을 가로지르는 경고여야 한다). */
+  .lockbar{display:flex;align-items:center;
+    justify-content:center;flex-wrap:wrap;gap:4px 12px;padding:9px 16px;
+    background:linear-gradient(180deg,#3a1416,#2a0f11);
+    border-bottom:1px solid rgba(229,72,77,.55);
+    font-size:13px;color:#f3c9cb;text-align:center}
+  .lockbar b{color:var(--lose);font-weight:800}
+  /* 남은 시간만 고정폭으로 — 초가 바뀔 때마다 문장 전체가 흔들리면 눈이 따라간다 */
+  .lockbar-t{font-family:var(--mono);font-weight:700;color:#fff}
+  @media(max-width:520px){.lockbar{font-size:12px;padding:8px 12px}}

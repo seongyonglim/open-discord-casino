@@ -903,6 +903,54 @@
      반드시 clone() 으로 읽어야 한다. 원본 본문을 읽으면 게임 쪽에서 다시 못 읽어
      화면이 통째로 죽는다. 실패는 전부 삼킨다 — 이건 곁다리 기능이라, 여기서 나는
      오류가 게임을 멈추게 해서는 안 된다. */
+  /* ── 시즌 마감 배너 ──────────────────────────────────────────────────
+     남은 시간은 서버가 심어 준 초에서 화면이 세어 내려간다. 1초마다 서버에 물으면
+     모두가 마감 직전에 초당 한 번씩 요청을 보내는데, 그 시각은 하필 시즌을 넘기는
+     순간이다 — 그 요청들이 겹치는 것을 피한다.
+
+     0 이 되면 한 번만 새로 고친다. 그때는 이미 새 시즌이고, 화면의 잔액·랭킹이
+     전부 옛 값이라 그대로 두면 사람이 사라진 포인트를 보고 놀란다. */
+  var lockTimer = null;
+  function lockTick(){
+    var bar = document.getElementById('lockBar');
+    if (!bar) { if (lockTimer) { clearInterval(lockTimer); lockTimer = null; } return; }
+    var left = Math.max(0, Number(bar.getAttribute('data-left')) || 0);
+    var el = document.getElementById('lockLeft');
+    if (el) {
+      var m = Math.floor(left / 60), s = left % 60;
+      el.textContent = '남은 시간 ' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+    if (left <= 0) {
+      clearInterval(lockTimer); lockTimer = null;
+      // 넘어간 직후에는 아직 예약이 안 지워졌을 수 있다 — 조금 여유를 두고 새로 고친다
+      setTimeout(function(){ location.reload(); }, 2500);
+      return;
+    }
+    bar.setAttribute('data-left', String(left - 1));
+  }
+  function startLockTick(){
+    if (!document.getElementById('lockBar') || lockTimer) return;
+    lockTick();
+    lockTimer = setInterval(lockTick, 1000);
+  }
+  /** 서버가 막았을 때 배너가 아직 없으면 그 자리에서 만든다. */
+  function showLockBar(secondsLeft){
+    if (!document.getElementById('lockBar')) {
+      var bar = document.createElement('div');
+      bar.className = 'lockbar';
+      bar.id = 'lockBar';
+      bar.setAttribute('data-left', String(Math.max(0, Number(secondsLeft) || 0)));
+      bar.innerHTML = '<b>시즌 마감 정산 중<\/b>'
+        + '<span>새 베팅과 보상 수령이 일시 중단되었습니다.<\/span>'
+        + '<span class="lockbar-t num" id="lockLeft">남은 시간 --:--<\/span>';
+      document.body.insertBefore(bar, document.body.firstChild);
+    }
+    startLockTick();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startLockTick);
+  } else startLockTick();
+
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
     window.fetch = function(input, init){
@@ -915,6 +963,18 @@
         return out.then(function(r){
           try {
             var ct = r.headers && r.headers.get && r.headers.get('content-type');
+            /* 시즌 마감 락다운 — 서버가 403 으로 막았다.
+               게임마다 오류를 어떻게 보여주는지가 달라서(어떤 화면은 조용히 무시한다)
+               여기서 한 번에 토스트로 올린다. 그리고 배너를 그 자리에서 붙인다:
+               이미 열어 둔 화면은 다시 그려지지 않으므로, 막힌 이 순간이 알려 줄
+               유일한 기회다. */
+            if (r.status === 403 && ct && ct.indexOf('json') >= 0) {
+              r.clone().json().then(function(d){
+                if (!d || !d.lockdown) return;
+                window.casinoNotify.toast({ type: 'LOCKDOWN', message: d.error || '' });
+                showLockBar(d.lockdown.secondsLeft);
+              }).catch(function(){ });
+            }
             if (r.ok && ct && ct.indexOf('json') >= 0) {
               r.clone().json().then(function(d){
                 var list = d && d.unlocked;
@@ -937,10 +997,17 @@
 
   var stack = null;
   function ensureStack(){
-    if (stack) return stack;
-    stack = document.createElement('div');
-    stack.className = 'toast-stack';
-    document.body.appendChild(stack);
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'toast-stack';
+      document.body.appendChild(stack);
+    }
+    /* 머리 바로 아래에서 시작하게 맞춘다. 고정값으로 두면 헤더에 가려진다 — 헤더는
+       sticky 라 스크롤 중에도 화면 위에 있고, 높이도 상황마다 다르다(시즌 마감 배너가
+       붙으면 그만큼 높아진다). 토스트를 띄울 때마다 재는 것이 가장 확실하다. */
+    var h = document.querySelector('header');
+    var top = h ? Math.round(h.getBoundingClientRect().bottom) + 12 : 14;
+    stack.style.setProperty('--toast-top', top + 'px');
     return stack;
   }
   /* 종류마다 모양이 다르다. 달성은 금색 트로피에 소리가 나고, 공지는 조용히 뜬다 —
@@ -953,7 +1020,10 @@
     /* 등록 시작은 "지금 오라"는 신호라 눈에 띄어야 한다 — 초록 테두리로 공지와 가른다.
        소리는 안 낸다: 다른 게임을 하는 중에 울리면 그 게임의 소리를 덮는다. */
     TOURNAMENT_OPEN: { cls: 'tour', ic: '♠️', head: '홀덤 프리롤 등록 시작', sfx: false },
-    TOURNAMENT_WIN: { cls: 'noti', ic: '👑', head: '홀덤 프리롤 우승', sfx: false }
+    TOURNAMENT_WIN: { cls: 'noti', ic: '👑', head: '홀덤 프리롤 우승', sfx: false },
+    /* 시즌 마감 락다운 — 기능이 멈췄다는 신호다. 기본값(트로피)으로 두면 막혔다는 말에
+       상 받는 그림이 붙어 뜻이 어긋난다. 소리도 안 낸다: 이건 축하가 아니다. */
+    LOCKDOWN: { cls: 'warn', ic: '⏳', head: '시즌 마감 정산 중', sfx: false }
   };
   function toast(o){
     o = o || {};

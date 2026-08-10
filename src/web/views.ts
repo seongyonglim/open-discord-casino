@@ -1,6 +1,7 @@
 // SSR HTML 렌더링 (레이아웃 + 공통 헬퍼). 프레임워크 없이 템플릿 문자열만 사용.
 // 톤앤매너: 블랙 + 골드 베이스의 절제된 카지노 UI. 초록/빨강은 승패 등 기능적 신호에만 사용.
 import { ASSET_V } from './assets';
+import { seasonLockdown } from '../db/season-schedule';
 import { discordIcon } from './icons';
 
 export const LOGO_SVG =
@@ -278,6 +279,28 @@ export function reasonLabel(reason: string): string {
   return reason;
 }
 
+/* 시즌 마감 정산 배너.
+   헤더 안, 로고 줄보다 위에 붙는다 — 어느 화면에 있든 "지금 왜 베팅이 안 되는가"를
+   먼저 알려야 한다. 락다운이 아니면 빈 문자열이라 산출물이 한 글자도 달라지지 않는다
+   (화면을 바이트로 비교하는 검사가 평소에는 그대로 통과한다).
+
+   헤더 밖에 두면 안 된다. 헤더가 sticky top:0 이라, 배너도 sticky 로 두면 둘이 같은
+   자리를 다투고 스크롤한 순간 배너가 헤더를 덮는다(실제로 그랬다). 헤더 안에 두면
+   하나의 sticky 덩어리로 함께 붙어 있어 그 다툼이 아예 생기지 않는다.
+
+   남은 시간은 서버가 준 초를 심어 두고 화면이 세어 내려간다. 1초마다 물으면 모든
+   사람이 마감 직전에 초당 한 번씩 요청을 보내게 되는데, 그 시각은 하필 시즌을 넘기는
+   순간이다. 0 이 되면 한 번 새로 고친다 — 그때는 이미 새 시즌이다. */
+function lockBanner(): string {
+  const lock = seasonLockdown();
+  if (!lock.active) return '';
+  return `<div class="lockbar" id="lockBar" data-left="${lock.secondsLeft}">
+    <b>시즌 마감 정산 중</b>
+    <span>새 베팅과 보상 수령이 일시 중단되었습니다.</span>
+    <span class="lockbar-t num" id="lockLeft">남은 시간 --:--</span>
+  </div>`;
+}
+
 export function layout(title: string, active: Tab, body: string, bodyClass = ""): string {
   const nav = TABS.map(t =>
     `<a class="tab${t.key === active ? ' active' : ''}" href="${t.href}">${t.label}</a>`
@@ -389,6 +412,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 </head>
 <body>
 <header>
+  ${lockBanner()}
   <div class="wrap">
     <div class="brand"><img class="logo" src="/favicon.svg" alt="" width="30" height="30">
       <b>OD CASINO</b>${authBox}</div>
