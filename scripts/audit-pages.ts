@@ -551,6 +551,28 @@ async function main(): Promise<void> {
       && readFileSync('.env.example', 'utf8').includes('DISCORD_ANNOUNCEMENT_WEBHOOK_URL'));
   }
 
+  /* ── 머신에서 돌리는 스크립트 ──────────────────────────────────────
+     .dockerignore 로 이미지에 넣은 스크립트는 운영 머신에서 tsx 로 돌린다. tsx 는 이것을
+     cjs 로 바꿔 실행하므로 최상위 await 가 있으면 그 자리에서 죽는다:
+       "Top-level await is currently not supported with the cjs output format"
+     로컬에서는 안 보이고 운영에서 처음 드러난다(실제로 그렇게 죽었다). 그래서 검사로 만든다.
+     async main() 으로 감싸면 된다. */
+  console.log('\n[6] 머신에서 돌리는 스크립트 — 최상위 await 금지');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const ignore = readFileSync('.dockerignore', 'utf8') as string;
+    const shipped = [...ignore.matchAll(/^!(scripts\/[\w.-]+\.ts)$/gm)].map(m => m[1]);
+    ck('이미지에 들어가는 스크립트를 찾았다', shipped.length >= 5, shipped.join(' '));
+    for (const f of shipped) {
+      /* 주석과 문자열을 걷어내고 본다 — 설명문에 "await" 가 들어 있으면 거짓 경보가 난다.
+         함수 안의 await 는 앞에 들여쓰기가 붙으므로, 줄 맨 앞에서 시작하는 것만 본다. */
+      const body = (readFileSync(f, 'utf8') as string)
+        .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      ck(`${f} 에 최상위 await 가 없다`,
+        !/^await\s/m.test(body) && !/^(?:const|let|var)\s[^=\n]*=\s*await\s/m.test(body));
+    }
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

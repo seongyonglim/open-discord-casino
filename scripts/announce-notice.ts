@@ -35,14 +35,21 @@ if (!n) {
   process.exit(1);
 }
 
-console.log(`보낸다: [${n.kind}] ${n.title}`);
-const r = await sendAnnounce({ id: n.id, kind: n.kind, title: n.title, summary: n.summary });
-if (r.ok) {
-  console.log('완료. 채널을 확인해 보라.');
-} else if (r.skipped) {
-  console.error('웹훅 URL 이 설정되지 않았다 — DISCORD_ANNOUNCEMENT_WEBHOOK_URL 을 먼저 넣어라.');
-  process.exit(1);
-} else {
-  console.error('실패:', r.error);
+/* 최상위 await 는 쓰지 않는다 — tsx 가 이 스크립트를 cjs 로 바꿔 돌리므로 그 자리에서
+   "Top-level await is currently not supported" 로 죽는다(운영 머신에서 실제로 죽었다). */
+async function main(): Promise<void> {
+  console.log(`보낸다: [${n!.kind}] ${n!.title}`);
+  const r = await sendAnnounce({ id: n!.id, kind: n!.kind, title: n!.title, summary: n!.summary });
+  if (r.ok) {
+    console.log('완료. 채널을 확인해 보라.');
+    return;
+  }
+  if (r.skipped) {
+    console.error('웹훅 URL 이 설정되지 않았다 — DISCORD_ANNOUNCEMENT_WEBHOOK_URL 을 먼저 넣어라.');
+  } else {
+    console.error('실패:', r.error);
+  }
   process.exit(1);
 }
+
+main().catch((e: unknown) => { console.error(e); process.exit(1); });
