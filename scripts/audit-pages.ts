@@ -680,6 +680,38 @@ async function main(): Promise<void> {
     }
   }
 
+  /* ── 홀덤 팟 배분 연출 ─────────────────────────────────────────────
+     멀티웨이 올인에서 층마다 승자가 다르면 팟을 순서대로 하나씩 보낸다. 그때 이미 보낸
+     상자가 다시 집혀, 승자에게 도착한 메인 팟 칩과 금액 배지가 중앙에 되살아나 다음 층과
+     붙어 이동했다(제보). .paid 는 opacity:0 일 뿐 DOM 에 남아 있고, 마지막 층이
+     "남은 것 전부"를 집을 때 그것까지 가져갔기 때문이다. */
+  console.log('\n[8] 홀덤 팟 배분 — 보낸 팟은 다시 집지 않는다');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const se = readFileSync('src/web/games/holdem-client/settle.ts', 'utf8') as string;
+    const tb = readFileSync('src/web/games/holdem-client/table.ts', 'utf8') as string;
+
+    ck('보낸 상자를 선택에서 뺀다', se.includes(`querySelectorAll('.ht-pg:not(.paid)')`));
+    ck('옛 선택자가 남아 있지 않다', !/querySelectorAll\('\.ht-pg'\)/.test(se));
+    /* 한 겹 더: 접히는 연출이 끝나면 DOM 에서 지운다 — 남아 있지 않으면 다시 집는 일이
+       원리적으로 불가능해진다. */
+    ck('접힌 뒤 DOM 에서 지운다',
+      /classList\.add\('paid'\)[\s\S]{0,320}removeChild\(b\)/.test(se));
+    ck('지우는 시점이 연출 길이와 같다',
+      /PILE_FADE_MS = 500/.test(se)
+      && /\.ht-pg\.paid\{/.test(readFileSync('src/web/assets/css/09-holdem.css', 'utf8') as string));
+    // 마지막 층은 여전히 "아직 안 보낸 것 전부"를 집어야 한다(층 번호가 안 맞는 잔여 더미 정리)
+    ck('마지막 층은 남은 것 전부를 집는다', /if \(last\) return true;/.test(se));
+
+    /* Total Pot 은 층마다 줄고 마지막에 정확히 0 이 된다. 서버가 주는 tb.pot 은 판이 끝난
+       뒤에도 총액 그대로라, 폴링이 이 값을 덮어쓰면 줄어든 숫자가 곧 총액으로 되살아난다. */
+    ck('층마다 팟 표시를 깎는다', /potShown = last \? 0 : Math\.max\(0, potShown - \(pa\.amount \|\| 0\)\)/.test(se));
+    ck('마지막 층에서 정확히 0 이 된다', /last \? 0 :/.test(se));
+    ck('폴링이 그 값을 덮지 않는다',
+      /potShownHand === tb\.handNo \? potShown : tb\.pot/.test(tb));
+    ck('판이 바뀌면 서버 값으로 돌아간다', /potShown = 0, potShownHand = null/.test(se));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

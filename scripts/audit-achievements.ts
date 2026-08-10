@@ -1639,6 +1639,56 @@ async function main(): Promise<void> {
     ck('사이드 팟 승자(C)가 KO 를 받는다', ko(sp.id, 'sp_c') === 1, String(ko(sp.id, 'sp_c')));
     ck('메인 팟 승자(A)는 KO 를 안 받는다', ko(sp.id, 'sp_a') === 0, String(ko(sp.id, 'sp_a')));
 
+    /* ── 공동 우승(스플릿) — 둘이 같이 떨어뜨린 것으로 본다 ─────
+       숏스택이 꼴찌로 터지고 위의 둘이 그 팟을 나눠 가지는 경우. 둘 다 그를 이겼고
+       둘 다 그보다 칩이 많으니 둘 다 KO 다 — KO 를 반으로 쪼갤 방법도 없다.
+       그래서 탈락자 한 명에 KO 가 둘 붙는다(합계가 탈락자 수보다 클 수 있다).
+
+       동점을 만들려면 같은 랭크의 페어를 무늬만 달리 준다: K♠K♥ 와 K♦K♣ 는
+       보드가 도와주지 않으면 정확히 같은 손이다. */
+    wipe(); seedForWiring();
+    for (const p of ['sq_a', 'sq_b', 'sq_c']) mkUser(p, 50_000);
+    const sq = openTourney(['sq_a', 'sq_b', 'sq_c']);
+    const sqHand = HD.getCurrentHand(sq.tableId)!;
+    const sqHole: Record<string, number[]> = {
+      sq_a: [c(0, 0), c(0, 1)],     // 2♠2♥ — 꼴찌
+      sq_b: [c(11, 0), c(11, 1)],   // K♠K♥
+      sq_c: [c(11, 2), c(11, 3)],   // K♦K♣ — sq_b 와 동점
+    };
+    for (const s of HD.getSeats(sq.tableId)) {
+      db.prepare(`UPDATE holdem_hand_seats SET hole_json = ? WHERE hand_id = ? AND seat = ?`)
+        .run(JSON.stringify(sqHole[s.user_id]), sqHand.id, s.seat);
+    }
+    db.prepare(`UPDATE holdem_hands SET board_json = ? WHERE id = ?`)
+      .run(JSON.stringify([c(1, 2), c(2, 3), c(4, 2), c(7, 3), c(8, 2)]), sqHand.id);
+    for (const [uid, v] of [['sq_a', 1_000], ['sq_b', 2_000], ['sq_c', 3_000]] as [string, number][]) {
+      db.prepare(`UPDATE holdem_hand_seats SET stack = ? WHERE hand_id = ? AND user_id = ?`)
+        .run(v, sqHand.id, uid);
+      db.prepare(`UPDATE holdem_seats SET stack = ? WHERE table_id = ? AND user_id = ?`)
+        .run(v, sq.tableId, uid);
+    }
+    drive(sq.tableId, uid => {
+      if (!HD.holdemAction(uid, 'allin', 0).ok) {
+        if (!HD.holdemAction(uid, 'call', 0).ok) HD.holdemAction(uid, 'check', 0);
+      }
+    });
+    const sqStacks = new Map((db.prepare(
+      `SELECT user_id, stack FROM holdem_seats WHERE table_id = ?`).all(sq.tableId) as
+      { user_id: string; stack: number }[]).map(r => [r.user_id, r.stack]));
+    ck('검사 전제: 숏스택만 털렸다',
+      sqStacks.get('sq_a') === 0
+      && (sqStacks.get('sq_b') ?? 0) > 0 && (sqStacks.get('sq_c') ?? 0) > 0,
+      JSON.stringify([...sqStacks]));
+    ck('공동 우승 둘 다 KO 를 받는다',
+      ko(sq.id, 'sq_b') === 1 && ko(sq.id, 'sq_c') === 1,
+      `b=${ko(sq.id, 'sq_b')} c=${ko(sq.id, 'sq_c')}`);
+    ck('탈락한 숏스택은 0', ko(sq.id, 'sq_a') === 0);
+    /* 이긴 사람이라도 자기가 털렸으면 세지 않는다 — 규칙이 "떨어진 사람보다 최종 칩이
+       많은 승자"라서다. 소스에서 그 문이 있는지 본다(그 상황을 판으로 만들기는 어렵다). */
+    const hd2 = require('node:fs').readFileSync('src/db/holdem.ts', 'utf8') as string;
+    ck('자기도 털린 승자는 세지 않는다',
+      /seatStack\.get\(w\.seat\) \?\? 0\) <= s\.stack\) continue/.test(hd2));
+
     /* ── 우승 + KO 4 이상이면 열린다 ────────────────────────────
        KO 를 넷까지 실제로 쌓으려면 다섯 명이 차례로 나가는 대회를 돌려야 한다. 여기서
        보려는 것은 "대회가 끝날 때 우승자의 KO 를 보고 주는가"이므로, 그 값을 넣고

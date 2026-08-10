@@ -143,6 +143,15 @@ export const SETTLE = `    var fxLayer = null;
        판 번호를 함께 두는 것이 중요하다. 시각만 보면 직전 판에서 남은 값(이미 지난
        시각)이 다음 판에서도 "끝났다"로 읽힌다. */
     var potDoneAt = 0, potDoneHand = null;
+    /* 중앙 Total Pot 에 지금 적혀 있어야 할 금액. 층을 하나씩 보내면서 그만큼 줄인다.
+       서버가 주는 tb.pot 은 판이 끝난 뒤에도 총액 그대로라, 이 값이 없으면 마지막 층이
+       날아간 뒤에도 위쪽 숫자는 총액에 멈춰 있다.
+       renderTable(TABLE 조각)이 이 값을 보고 그린다 — 조각 순서가 SETTLE → TABLE 이라
+       거기서 이 변수가 보인다. potShownHand 로 그 판의 값인지 확인한다: 판이 넘어가면
+       서버 값으로 돌아가야 한다. */
+    var potShown = 0, potShownHand = null;
+    /* .ht-pg 가 접히는 연출 길이(CSS .5s). 이 시간이 지난 뒤 상자를 DOM 에서 지운다. */
+    var PILE_FADE_MS = 500;
     function flyPotToWinners(tb){
       if (!tb.ended || !tb.result || potPaidHand === tb.handNo) return;
       potPaidHand = tb.handNo;
@@ -219,6 +228,8 @@ export const SETTLE = `    var fxLayer = null;
       }
       /* WIN 배지를 먼저 띄우고 한 박자 쉰 뒤에 칩을 옮긴다.
          칩이 곧바로 날아가면 "누가 이겼나"를 읽기 전에 정산이 끝나 버린다. */
+      /* 이 판의 Total Pot 표시를 총액에서 시작해 층마다 깎아 내려간다. */
+      potShown = tb.pot || 0; potShownHand = tb.handNo;
       var idx = 0;
       function step(){
         if (!st || !st.table || st.table.handNo !== forHand) return;   // 새 판이면 중단
@@ -352,10 +363,16 @@ export const SETTLE = `    var fxLayer = null;
        last면 남은 더미까지 전부 털어 중앙을 비운다. */
     function payLayer(tb, pa, last){
       var payHand = tb.handNo;
-      var boxes = Array.prototype.slice.call(pileEl.querySelectorAll('.ht-pg'));
+      /* 이미 보낸 더미(.paid)는 절대 다시 집지 않는다.
+         .paid 는 opacity:0 일 뿐 DOM 에 남아 있어서, 마지막 층이 "남은 것 전부"를 집을 때
+         앞 층의 상자까지 함께 복제해 날렸다 — 이미 승자에게 도착한 메인 팟 칩과 금액
+         배지가 중앙에 되살아나 다음 층의 칩과 붙어 이동하는 것으로 보였다(제보).
+         그래서 목록을 만드는 이 자리에서 걸러 낸다. */
+      var boxes = Array.prototype.slice.call(pileEl.querySelectorAll('.ht-pg:not(.paid)'));
       var first = pa.index || 0, span = pa.__span || 1;
       var mine = boxes.filter(function(b, i){
-        if (last) return true;                       // 마지막 층은 남은 것 전부
+        // 마지막 층은 아직 안 보낸 것 전부 — 층 번호가 안 맞는 잔여 더미까지 정리한다
+        if (last) return true;
         var li = Number(b.getAttribute('data-layer'));
         void i;
         return li >= first && li < first + span;
@@ -402,8 +419,26 @@ export const SETTLE = `    var fxLayer = null;
         });
       }
       /* 보낸 더미는 그 자리에서 접는다 — 마지막 층에서만 전부 접으면 앞 층의 빈 상자가
-         이름표만 남아 계속 서 있다. 층이 비워지는 것이 보여야 "이 팟은 끝났다"가 읽힌다. */
-      mine.forEach(function(b){ b.classList.add('paid'); });
+         이름표만 남아 계속 서 있다. 층이 비워지는 것이 보여야 "이 팟은 끝났다"가 읽힌다.
+
+         접은 뒤에는 DOM 에서 실제로 지운다. .paid 는 투명해질 뿐이라 상자가 남고, 남아
+         있는 동안에는 언제든 다시 집힐 수 있다 — 위에서 :not(.paid) 로 막았지만 그건
+         한 겹이고, 지워 버리면 다시 집는 일이 원리적으로 불가능해진다.
+         지우는 시점은 접히는 연출(.5s)이 끝난 뒤다. 바로 지우면 상자가 접히는 것이
+         안 보이고 툭 사라진다. */
+      mine.forEach(function(b){
+        b.classList.add('paid');
+        setTimeout(function(){
+          if (!st || !st.table || st.table.handNo !== payHand) return;
+          if (b.parentNode) b.parentNode.removeChild(b);
+        }, PILE_FADE_MS);
+      });
+      /* 중앙의 Total Pot 도 이 층만큼 줄인다. 서버가 준 tb.pot 은 판이 끝난 뒤에도
+         그대로라, 층을 하나씩 보내는 동안 위쪽 숫자는 총액에 멈춰 있었다 —
+         마지막 층이 날아간 뒤에도 "Total Pot 3,000" 이 떠 있는 셈이다.
+         마지막 층에서는 남은 금액을 다 털어 정확히 0 으로 맞춘다(반올림 잔여 방지). */
+      potShown = last ? 0 : Math.max(0, potShown - (pa.amount || 0));
+      potEl.textContent = stackText(potShown);
       /* 칩이 도착한 다음에야 스택 숫자를 올린다.
          서버는 판이 끝나는 순간 이미 상금이 반영된 스택을 보낸다. 그걸 그대로 그리면
          쇼다운 카드가 열리기도 전에 숫자가 먼저 올라 누가 이겼는지 알려 버린다 —

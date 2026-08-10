@@ -1124,7 +1124,11 @@ function eliminateBusted(
   });
   let seq = (one<{ n: number }>(
     `SELECT COALESCE(MAX(elim_seq), 0) AS n FROM holdem_entries WHERE tournament_id = ?`, t.id)!).n;
-  const seatUser = new Map(getSeats(table.id).map(s => [s.seat, s.user_id]));
+  /* 최종 스택은 이 함수가 불리기 전에 이미 좌석 표에 써 있다(endHand 가 딴 금액을 더해
+     갱신한다). 그래서 "누가 이 판 끝에 칩이 더 많은가"를 여기서 그대로 읽을 수 있다. */
+  const seatRows = getSeats(table.id);
+  const seatUser = new Map(seatRows.map(s => [s.seat, s.user_id]));
+  const seatStack = new Map(seatRows.map(s => [s.seat, s.stack]));
   for (const s of ranked) {
     seq++;
     run(`UPDATE holdem_seats SET presence = 'OUT' WHERE table_id = ? AND seat = ?`, table.id, s.seat);
@@ -1149,7 +1153,12 @@ function eliminateBusted(
        eligible 에 안 들어간다) 메인 팟 승자로 본다. 그 칩을 실제로 가져간 사람이다.
 
        한 층을 나눠 가진 경우(스플릿)에는 그 승자 전부에게 준다 — 둘 다 그를 이겼고,
-       KO 를 반으로 쪼갤 방법이 없다.
+       KO 를 반으로 쪼갤 방법이 없다. 그래서 탈락자 한 명에 KO 가 둘 붙을 수 있다:
+       숏스택이 꼴찌로 터지고 위의 둘이 팟을 나눠 가지면 둘 다 그를 떨어뜨린 것이다.
+
+       단, 이긴 사람이라도 그 판 끝에 칩이 탈락자보다 많지 않으면 세지 않는다. 규칙을
+       "떨어진 사람보다 최종 칩이 많은 승자"로 두면, 같은 핸드에서 사이드 팟을 조금
+       가져갔지만 자기도 털린 사람이 남을 떨어뜨린 것으로 세지는 일이 없다.
 
        실패해도 판을 멈추지 않는다: 여기는 팟이 이미 나뉜 뒤라, 던지면 그 다음 처리
        (다음 판 예약)가 통째로 안 돈다. */
@@ -1164,6 +1173,8 @@ function eliminateBusted(
         const uid = seatUser.get(w.seat);
         // 자기 자신을 떨어뜨린 것으로 세지 않는다(같은 핸드에 스택이 0이 된 승자가 있을 수 있다)
         if (!uid || uid === s.user_id) continue;
+        // 떨어진 사람보다 최종 칩이 많아야 한다 — 자기도 털린 승자는 남을 떨어뜨린 것이 아니다
+        if ((seatStack.get(w.seat) ?? 0) <= s.stack) continue;
         run(`UPDATE holdem_entries SET ko_count = ko_count + 1
               WHERE tournament_id = ? AND user_id = ?`, t.id, uid);
       }
