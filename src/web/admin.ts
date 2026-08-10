@@ -82,7 +82,10 @@ export function adminPage(user: WebUser): string {
       <td>${esc(t.title)}</td>
       <td>${t.buy_in > 0
         ? `<span class="ad-tag buy">바이인 ${num(t.buy_in)}P</span>`
-        : `<span class="ad-tag free">프리롤</span>`}</td>
+        : `<span class="ad-tag free">프리롤</span>`}${
+        /* 바운티 판은 목록에서 바로 구분돼야 한다. 상금 팟이 참가비의 절반으로만 잡히므로,
+           모르고 보면 "상금이 왜 반이지"가 된다 — 그 답을 같은 줄에 둔다. */
+        isPko(t) ? ` <span class="ad-tag pko">PKO</span>` : ''}</td>
       <td><span class="ad-st s-${st === '진행 중' ? 'run' : st === '종료' ? 'done' : st === '취소' ? 'cancel' : 'wait'}">${st}</span></td>
       <td class="r">${num(t.entries)}</td>
       <td class="r">${num(pool)}P</td>
@@ -235,6 +238,12 @@ export function adminPage(user: WebUser): string {
           <option value="free" ${cfg.buyIn > 0 ? '' : 'selected'}>프리롤 (참가비 없음)</option>
           <option value="buyin" ${cfg.buyIn > 0 ? 'selected' : ''}>바이인 (참가비 있음)</option>
         </select><i>템플릿의 방식이 기본으로 잡힙니다</i></label>
+        <!-- 대회 종류. 바운티는 참가비를 반으로 갈라 한쪽을 머리 값으로 쓰므로
+             참가비가 있어야 뜻이 있다 — 프리롤을 고르면 아래 스크립트가 잠근다. -->
+        <label>대회 종류<select id="ncMode" ${canMake ? '' : 'disabled'}>
+          <option value="CLASSIC" selected>일반 (상금만)</option>
+          <option value="PKO_BOUNTY">PKO 바운티 (상금 + 현상금)</option>
+        </select><i>바운티는 참가비의 절반이 현상금 · 참가비 대회에서만</i></label>
         <label>등록 시작<input type="datetime-local" id="ncRegAt" value="${localInput(defaultRegAt)}" ${canMake ? '' : 'disabled'}><i>KST · 이때부터 신청을 받습니다</i></label>
         <label>대회 시작<input type="datetime-local" id="ncStartAt" value="${localInput(defaultStartAt)}" ${canMake ? '' : 'disabled'}><i>KST · 3명 이상이면 이때 시작</i></label>
       </div>
@@ -573,12 +582,19 @@ export function adminPage(user: WebUser): string {
     /* 새 대회 폼도 참가 방식에 따라 한 줄만 보여준다 — 템플릿 카드와 같은 규칙이다.
        버튼이 잠긴 상태(canMake=false)에서도 폼은 그려지므로 요소는 항상 있다. */
     var ncKind = document.getElementById('ncKind');
+    var ncMode = document.getElementById('ncMode');
     function ncSyncRows(){
       var buyin = ncKind.value === 'buyin';
       document.getElementById('ncFreeRow').hidden = buyin;
       document.getElementById('ncBuyRow').hidden = !buyin;
+      /* 프리롤에는 바운티를 걸 수 없다 — 걷은 참가비가 없으면 머리에 얹을 값도 없다.
+         잠그면서 CLASSIC 으로 되돌린다. 화면이 "바운티 대회"라고 적어 놓고 아무
+         바운티도 없는 판이 열리는 것이 문제라, 고를 수 없게 만드는 편이 낫다. */
+      ncMode.disabled = !buyin;
+      if (!buyin) ncMode.value = 'CLASSIC';
     }
     ncKind.addEventListener('change', ncSyncRows);
+    ncMode.addEventListener('change', ncSyncRows);
     ncSyncRows();
 
     /* 자동 개최 전용 템플릿의 지금 값. 서버가 그린 페이지에 박아 둔다 —
@@ -630,6 +646,8 @@ export function adminPage(user: WebUser): string {
         /* 참가 방식이 정한 쪽만 보낸다. 두 값을 다 보내면 서버가 어느 쪽을 믿어야 할지
            모호해지고, 화면에서 프리롤을 골라 놓고 참가비가 붙는 일이 생긴다. */
         buyIn: buyin ? Math.floor(Number(document.getElementById('ncBuyIn').value)) : 0,
+        // 프리롤이면 무조건 CLASSIC — 화면이 잠가 두지만 보내는 값도 여기서 못 박는다
+        mode: buyin ? ncMode.value : 'CLASSIC',
         prizeMultiplier: buyin ? 0 : Math.floor(Number(document.getElementById('ncMult').value)),
         prizeFixed: buyin ? Math.floor(Number(document.getElementById('ncGtd').value)) : 0,
         /* 판의 모양은 늘 보낸다. 안 보내면 서버가 템플릿 값을 쓰는데, 그러면 화면에
@@ -1256,6 +1274,9 @@ export async function handleAdminTournamentCreate(
        그대로 원장에 남으므로 여기서 정수 0 이상으로 못 박는다. */
     buyIn: clampMoney(b?.buyIn),
     prizeFixed: clampMoney(b?.prizeFixed),
+    /* 대회 종류. 정확히 'PKO_BOUNTY' 일 때만 바운티 판이고 나머지는 전부 일반 판이다 —
+       모르는 값이 바운티로 읽히면 걷은 돈이 갈 곳을 잃는다(db 쪽도 같은 판단을 한다). */
+    mode: b?.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY' : 'CLASSIC',
     /* 판의 모양은 안 보내면 템플릿을 쓴다(반복 개최가 그 길이다). 화면은 늘 채워 보내므로
        손으로 여는 판은 화면에 적힌 그대로 열린다 — 템플릿을 나중에 고쳐도 안 흔들린다. */
     ...ruleFields(b),

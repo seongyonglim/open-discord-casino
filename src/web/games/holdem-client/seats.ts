@@ -9,6 +9,41 @@
    조각들은 하나의 클로저를 공유한다 — 여기 있는 var·function 은 다른 조각에서도 보인다.
    그래서 파일이 나뉘어 있어도 스코프는 하나다. import 로 주고받는 것이 아니다. */
 export const SEATS = `    var seatXY = {};
+    /* ── PKO 연출용 기억 ────────────────────────────────────────────
+       좌석 번호를 키로 둔다.
+         bountyShown  마지막으로 그린 머리 값 — 오를 때만 번쩍이기 위해서다.
+         koFired      그 자리의 KO 연출을 이미 터뜨렸나 — 폴링마다 다시 터지지 않게.
+         koSeen       한 번이라도 그려 본 적이 있나 — 첫 프레임에는 터뜨리지 않는다.
+                      이미 탈락자가 있는 판에 뒤늦게 들어오면 그 몫이 한꺼번에 터진다. */
+    var bountyShown = {}, koFired = {}, koSeen = false;
+    /* KO 한 방. 총성 + 화면 흔들림 + 총자국이 한 박자에 같이 온다 —
+       셋을 따로 예약하면 소리와 그림이 미세하게 엇나가고, 그러면 "맞았다"로 안 읽힌다. */
+    function koBang(seatEl){
+      if (casinoSfx && casinoSfx.gunshot) casinoSfx.gunshot();
+      var shot = seatEl.querySelector('.ht-hole-shot');
+      if (shot) {
+        shot.hidden = false;
+        shot.classList.remove('hit');
+        void shot.offsetWidth;          // 같은 프레임으로 묶이면 애니메이션이 다시 안 돈다
+        shot.classList.add('hit');
+      }
+      /* 흔들림은 펠트에 준다. 좌석만 흔들면 "그 사람이 떨었다"로 보이고, 판이 흔들려야
+         "총이 발사됐다"가 된다.
+
+         왜 #htTable 이 아니라 .ht-felt 인가: 날아가는 칩 층(.chip-fly-layer)이
+         #htTable 에 붙는데(settle.ts), 그 층의 칩은 position:fixed 다. 조상에 transform 이
+         걸리면 fixed 가 화면이 아니라 그 조상을 기준으로 움직여 칩이 통째로 어긋난다.
+         하필 KO 와 팟 정산은 같은 순간에 일어나므로 반드시 겹친다. 펠트는 칩 층의
+         형제라 여기서 끊긴다.
+
+         이미 흔들리는 중이면 다시 걸지 않는다 — 한 판에 셋이 털리면 세 번 겹쳐
+         화면이 계속 떨린다. */
+      var felt = tableEl ? tableEl.querySelector('.ht-felt') : null;
+      if (felt && !felt.classList.contains('koshake')) {
+        felt.classList.add('koshake');
+        setTimeout(function(){ felt.classList.remove('koshake'); }, 420);
+      }
+    }
     /* ── 스타디움(알약) 둘레 위의 자리 ──────────────────────────────
        테이블은 위아래가 직선이고 좌우 끝만 반원인 알약 모양이다. 타원이었을 때는
        위아래도 곡선이라 12시 근처 자리들이 안쪽으로 휘어 들어와 펠트를 파고들었다.
@@ -143,6 +178,9 @@ export const SEATS = `    var seatXY = {};
       // 판이 바뀌면 "아직 안 받은 상금" 장부를 비운다
       if (paidSeatHand !== tb.handNo) { paidSeatHand = tb.handNo; paidSeat = {}; }
       var blindSeats = blindSeatsOf(tb);
+      /* 바운티 대회인가. 좌석 골격에 바운티·KO 요소를 넣을지 여부를 이 값 하나가 정한다.
+         서버가 PKO 가 아니면 mode 를 CLASSIC 으로 주고 좌석에 bounty 칸 자체를 안 싣는다. */
+      var pko = (st.tournament || {}).mode === 'PKO_BOUNTY';
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
@@ -200,6 +238,14 @@ export const SEATS = `    var seatXY = {};
               /* 방금 한 행동 — 프로필 사진 위에 잠깐 떴다 사라진다.
                  "누가"와 "무엇을"이 한 점에서 읽힌다. */
               '<span class="ht-abadge" hidden></span>' +
+              /* 머리 위 바운티 — PKO 대회에서만 그린다. 일반 대회에서는 이 요소가
+                 아예 만들어지지 않는다: 숨기는 것으로 두면 언젠가 조건이 빠지면서
+                 일반 판에 바운티가 뜨고, 그건 "같은 베이스지만 다른 게임"이라는 약속을
+                 깨는 종류의 실수다. 없으면 실수로 보일 수가 없다. */
+              (pko ? '<span class="ht-bounty" hidden></span>' : '') +
+              /* KO 총자국 — 탈락하는 순간 아바타 가운데에 박힌다. 역시 PKO 전용이다. */
+              (pko ? '<span class="ht-hole-shot" hidden></span>' : '') +
+              (pko ? '<span class="ht-ko-ov" hidden>KO</span>' : '') +
               /* 폴드 F 배지는 없앴다. 접은 사람은 좌석이 통째로 흐려지고 아바타가
                  흑백이 되며 카드도 어두워진다 — 세 겹으로 이미 말하고 있는 것을
                  네 번째로 말하는 표시였고, 태그 오른쪽 위에 동그라미가 하나 더
@@ -248,7 +294,7 @@ export const SEATS = `    var seatXY = {};
         /* 화면 위치는 (순번, 인원)에서 나온다. 둘 다 넣어야 한다 —
            누가 탈락해 인원이 줄면 순번이 그대로여도 모든 자리의 각도가 달라진다.
            인원을 빼먹으면 좌석이 옛 각도에 그대로 남는다. */
-        sigParts.push(s.seat + ':' + s.userId + ':' + rot + '/' + seatCount);
+        sigParts.push(s.seat + ':' + s.userId + ':' + rot + '/' + seatCount + (pko ? ':pko' : ''));
 
         // 베팅 칩과 행동 표시는 카드와 무관한 별도 레이어에 그린다 (여기가 바뀌어도 카드는 그대로)
         var act = s.act, amt = s.actAmount;
@@ -306,6 +352,34 @@ export const SEATS = `    var seatXY = {};
         }
         var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
         if (!seatEl) return;
+        /* ── 머리 위 바운티 (PKO 전용) ────────────────────────────────
+           서버가 PKO 일 때만 좌석에 bounty 를 싣고, 골격에도 그때만 뱃지가 있다.
+           그래서 여기서 조건을 한 번 더 걸지 않는다 — 요소가 없으면 아무 일도 없다.
+
+           값이 오를 때만 번쩍인다. 매 폴링마다 반짝이면 연출이 아니라 노이즈가 되고,
+           내려가는 일은 KO 당해 0 이 되는 순간뿐인데 그때는 총자국이 이미 말하고 있다. */
+        var bEl = seatEl.querySelector('.ht-bounty');
+        if (bEl) {
+          var bv = s.bounty || 0;
+          var prev = bountyShown[s.seat];
+          if (bv > 0) {
+            bEl.textContent = stackText(bv) + 'P';
+            bEl.hidden = false;
+            /* 처음 본 값(prev 가 undefined)에는 번쩍이지 않는다 — 화면에 들어온 것을
+               "올랐다"로 읽으면 새로고침마다 전 좌석이 한꺼번에 반짝인다. */
+            if (prev != null && bv > prev) {
+              bEl.classList.remove('up');
+              /* 클래스를 떼고 바로 붙이면 브라우저가 같은 프레임으로 묶어 애니메이션이
+                 다시 시작되지 않는다. 레이아웃을 한 번 읽어 강제로 끊는다. */
+              void bEl.offsetWidth;
+              bEl.classList.add('up');
+              if (casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
+            }
+          } else {
+            bEl.hidden = true;
+          }
+          bountyShown[s.seat] = bv;
+        }
         /* 좌표는 골격이 아니라 여기서 넣는다. 등간격 계산이 실측한 가로세로 비율에
            의존하므로, 창 폭이 바뀌면 값도 바뀐다 — 골격에 구워 두면 좌석 구성이
            바뀔 때까지 옛 자리에 남는다. */
@@ -318,6 +392,27 @@ export const SEATS = `    var seatXY = {};
         seatEl.classList.toggle('turn', s.seat === tb.toActSeat);
         seatEl.classList.toggle('folded', s.state === 'folded');
         seatEl.classList.toggle('allin', s.state === 'allin');
+        /* ── KO 연출 (PKO 전용) ──────────────────────────────────────
+           칩이 0 이 되어 자리가 OUT 으로 바뀌는 그 순간에 한 번만 터진다.
+           presence 를 매 폴링마다 보고 "이번에 바뀌었나"를 좌석별로 기억한다 —
+           상태만 보고 그리면 탈락자가 화면에 남아 있는 동안 총성이 계속 울린다.
+
+           koFired 에 남기는 이유가 하나 더 있다: 폴링은 창을 다시 열 때도 돌아서,
+           기억이 없으면 새로고침한 사람에게 남의 탈락이 방금 일어난 것처럼 터진다. */
+        var wasOut = koFired[s.seat];
+        if (pko && s.presence === 'OUT' && !wasOut) {
+          koFired[s.seat] = 1;
+          /* 처음 그리는 프레임에는 터뜨리지 않는다. 이미 탈락한 사람이 있는 판에
+             뒤늦게 들어오면 그 사람들 몫이 한꺼번에 터진다. */
+          if (koSeen) koBang(seatEl);
+        } else if (s.presence !== 'OUT') {
+          koFired[s.seat] = 0;
+        }
+        var shotEl = seatEl.querySelector('.ht-hole-shot');
+        var koEl = seatEl.querySelector('.ht-ko-ov');
+        if (shotEl) shotEl.hidden = s.presence !== 'OUT';
+        if (koEl) koEl.hidden = s.presence !== 'OUT';
+        seatEl.classList.toggle('koed', pko && s.presence === 'OUT');
         seatEl.classList.toggle('sitout', s.presence === 'SIT_OUT');
         seatEl.classList.toggle('disc', s.presence === 'DISCONNECTED');
         // 딜러 버튼·배지는 만들어 두고 감췄다 켠다 (요소를 새로 만들면 카드까지 딸려 다시 생긴다)
@@ -344,6 +439,9 @@ export const SEATS = `    var seatXY = {};
       });
       syncActBadges(tb, actNow);
       syncEquity(tb);
+      /* 여기까지 한 번 돌았으면 다음부터는 "방금 바뀐 것"을 믿을 수 있다.
+         맨 끝에 세우는 것이 요점이다 — 위에서 세우면 첫 프레임의 탈락자들이 그대로 터진다. */
+      koSeen = true;
     }
 
     /* ── 쇼다운 승률 · 역전 카드 ───────────────────────────────────────

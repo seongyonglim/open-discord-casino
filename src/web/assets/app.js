@@ -89,6 +89,28 @@
     o.connect(g); g.connect(master(c));
     o.start(at); o.stop(at + dur + 0.02);
   }
+  /* 노이즈 한 겹. 총성처럼 "여러 겹을 겹쳐 만드는 소리"를 위한 재료다.
+     boomAt 과 나누는 이유는 boomAt 이 폭발 하나에 맞춰 굳은 값을 들고 있어서다
+     (저역 고정, 0.32초, 감쇠 지수 2.2). 총성은 겹마다 필터 종류와 길이가 달라야 한다.
+     from → to 로 필터를 훑는 것이 핵심이다 — 고정 필터로는 "때리는 느낌"이 안 난다. */
+  function noiseBurst(c, at, dur, level, filterType, from, to){
+    var buf = c.createBuffer(1, Math.max(1, Math.floor(c.sampleRate * dur)), c.sampleRate);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.6);
+    }
+    var src = c.createBufferSource(); src.buffer = buf;
+    var f = c.createBiquadFilter(); f.type = filterType;
+    f.frequency.setValueAtTime(from, at);
+    /* exponentialRamp 는 0 을 못 받는다(0 이면 소리가 통째로 사라진다).
+       같은 값이면 램프를 걸지 않는다 — 격발 겹은 훑지 않고 고정이다. */
+    if (to !== from) f.frequency.exponentialRampToValueAtTime(Math.max(1, to), at + dur);
+    var g = c.createGain();
+    g.gain.setValueAtTime(Math.max(0.0005, level), at);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    src.connect(f); f.connect(g); g.connect(master(c));
+    src.start(at); src.stop(at + dur);
+  }
   // 짧은 노이즈 버스트를 저역 필터로 눌러 "퍽" 하는 가벼운 폭발음을 만든다 (시끄럽지 않게 짧게 감쇠)
   function boomAt(c, at, level, pitch){
     var dur = 0.32;
@@ -514,6 +536,34 @@
     allinBgm: function(){ playSample('allinbgm', 1); },
     // 퍼펙트 클리어. 합성음 대체를 두지 않는다 — 이 순간에 삐 소리가 나면 없는 편이 낫다
     minePerfect: function(){ playSample('mineperfect', 1); },
+    /* ── PKO 총성 ────────────────────────────────────────────────────
+       음원 파일을 두지 않고 합성한다. 총성은 "짧고 크다"가 전부라 파형으로 충분히
+       만들어지고, 무엇보다 다운로드가 없어야 한다 — 탈락은 판이 끝나는 순간에 터지는데
+       그때 파일을 받으러 가면 소리가 연출보다 늦게 도착한다(총자국은 이미 박혀 있다).
+
+       세 겹이다. 실제 총성이 그렇게 들린다:
+         1) 격발  — 아주 짧은 고역 노이즈. "탁" 하고 때리는 부분이다.
+         2) 폭발  — 저역으로 급히 내려가는 노이즈. 몸통이고 가장 크다.
+         3) 잔향  — 길게 깔리는 저역. 이게 없으면 장난감 소리가 된다.
+       한 겹만 쓰면 전부 "픽" 소리다(노이즈 버스트 하나로 먼저 만들어 봤다). */
+    gunshot: function(){
+      var c = ac(); if (!c) return;
+      var t = c.currentTime;
+      // 1) 격발 — 2ms 짜리 고역 딱
+      noiseBurst(c, t, 0.02, 0.20, 'highpass', 3200, 3200);
+      // 2) 폭발 — 몸통. 900Hz 에서 90Hz 로 떨어지며 0.18초에 사그라든다
+      noiseBurst(c, t, 0.18, 0.34, 'lowpass', 900, 90);
+      // 3) 잔향 — 길고 낮게. 크기는 몸통의 1/4 이하여야 뭉개지지 않는다
+      noiseBurst(c, t + 0.02, 0.42, 0.07, 'lowpass', 320, 60);
+    },
+    /* 바운티가 올랐을 때. 아주 짧은 2음 상승 — 금색 반짝임과 같은 박자다.
+       총성과 반대 방향(올라가는 음)이라 "받았다"로 읽힌다. */
+    bountyUp: function(){
+      var c = ac(); if (!c) return;
+      var t = c.currentTime;
+      tone(c, 1174.7, t, 0.07, 0.030, 'triangle');         // D6
+      tone(c, 1567.9, t + 0.055, 0.10, 0.026, 'triangle'); // G6
+    },
     /* 홀덤 액션 음성 — 서버가 쓰는 행동 이름(fold/check/call/bet/raise/allin)을 그대로 받는다.
        칩 소리와 별개로 호출하는 것이 중요하다: 칩 소리를 이걸로 갈아치우면 안 된다.
 

@@ -24,6 +24,8 @@ export interface AdminTournamentRow {
   /** 목록이 "이 판이 얼마짜리인가"를 다시 재는 데 쓴다 — 지급액만으로는 안 끝난 판을 못 읽는다 */
   prize_fixed: number;
   buy_in: number;
+  /** 판의 종류. 'CLASSIC' | 'PKO_BOUNTY' — 목록이 PKO 태그를 붙이는 데 쓴다 */
+  mode: string;
   entries: number;
   /** 실제로 지급된 상금 합계. 0이면 이 대회는 경제에 아무 흔적도 남기지 않았다. */
   paid: number;

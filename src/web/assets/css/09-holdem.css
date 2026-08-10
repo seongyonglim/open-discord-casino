@@ -1508,3 +1508,87 @@
   /* 최소 인원까지 남은 자리 — 그만큼은 반드시 차야 열린다 */
   .ht-reg.empty.need{border-color:rgba(212,175,55,.32)}
   .ht-reg.empty.need .ht-reg-nm{color:rgba(212,175,55,.75)}
+
+  /* ── PKO 바운티 ────────────────────────────────────────────────────
+     일반 대회에서는 이 요소들이 아예 만들어지지 않는다(seats.ts 가 PKO 일 때만 그린다).
+     그래서 여기 규칙은 "있으면 이렇게 보인다"만 적는다 — 숨기는 규칙을 두지 않는다.
+
+     뱃지는 아바타 위쪽 바깥에 걸친다. 아바타 안에 두면 행동 배지(.ht-abadge, z7)와
+     같은 자리를 놓고 다투고, 아래는 이름 태그(.ht-plate)가 이미 쓰고 있다.
+     "머리 위"라는 요구 그대로가 마침 유일하게 빈 자리다. */
+  .ht-bounty{position:absolute;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);
+    z-index:8;pointer-events:none;white-space:nowrap;
+    padding:1.5px 6px;border-radius:999px;
+    font-size:10px;font-weight:800;letter-spacing:.2px;
+    font-variant-numeric:tabular-nums;
+    color:#f4dc8a;background:rgba(24,18,4,.9);
+    border:1px solid rgba(212,175,55,.55);
+    box-shadow:0 2px 7px rgba(0,0,0,.5)}
+  /* 값이 오르는 순간의 황금색 반짝임. 글자만 밝히지 않고 테두리·그림자까지 같이 밀어야
+     "숫자가 커졌다"가 아니라 "받았다"로 읽힌다. 0.62초 — 다음 폴링(1초)보다 짧아야
+     연출이 겹치지 않는다. */
+  .ht-bounty.up{animation:htBountyUp .62s ease-out}
+  @keyframes htBountyUp{
+    0%{transform:translateX(-50%) scale(1)}
+    18%{transform:translateX(-50%) scale(1.28);
+      color:#fff8dc;background:rgba(212,175,55,.92);
+      border-color:#ffe9a3;box-shadow:0 0 16px rgba(255,215,80,.85)}
+    55%{transform:translateX(-50%) scale(1.06);
+      color:#ffe9a3;border-color:rgba(255,215,80,.8);
+      box-shadow:0 0 10px rgba(255,215,80,.45)}
+    100%{transform:translateX(-50%) scale(1)}
+  }
+  /* 총자국 — 아바타 가운데. 방사형 그라디언트 둘을 겹쳐 그린다: 안쪽의 검은 구멍과
+     그 주변에 번지는 갈라진 자리다. 이미지 파일을 쓰지 않는 이유는 아바타 크기가
+     화면 폭에 따라 달라져서(--htAv) 어떤 크기에서도 선명해야 하기 때문이다. */
+  .ht-hole-shot{position:absolute;left:50%;top:50%;
+    width:calc(var(--htAv) * .42);height:calc(var(--htAv) * .42);
+    transform:translate(-50%,-50%);
+    z-index:6;pointer-events:none;border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 50%,
+        #000 0 32%, rgba(20,10,6,.92) 33% 46%, rgba(60,30,16,.55) 47% 64%,
+        rgba(90,50,25,.28) 65% 82%, transparent 83%),
+      radial-gradient(circle at 42% 40%, rgba(255,255,255,.16) 0 12%, transparent 13%);
+    box-shadow:0 0 0 1px rgba(0,0,0,.6), inset 0 0 6px rgba(0,0,0,.9)}
+  /* 박히는 순간 — 크게 들어와 제 크기로 내려앉는다. 커졌다 작아지는 것이 "박혔다"다.
+     0.28초. 총성(0.42초)보다 짧게 끝나야 소리가 그림보다 오래 남는다. */
+  .ht-hole-shot.hit{animation:htShot .28s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes htShot{
+    0%{transform:translate(-50%,-50%) scale(2.4);opacity:0}
+    35%{opacity:1}
+    100%{transform:translate(-50%,-50%) scale(1);opacity:1}
+  }
+  /* KO 반투명 오버레이. 아바타를 덮는 원이고, 글자는 그 위에 얹는다. */
+  .ht-ko-ov{position:absolute;inset:0;z-index:7;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:50%;pointer-events:none;
+    font-size:calc(var(--htAv) * .3);font-weight:900;letter-spacing:1px;
+    color:rgba(255,90,90,.92);
+    background:rgba(8,8,8,.52);
+    text-shadow:0 2px 6px rgba(0,0,0,.9)}
+  /* 탈락한 자리 — 폴드와 같은 흑백 처리를 쓰지만 더 깊게 누른다.
+     폴드는 "이 판에서 빠졌다"이고 KO 는 "대회가 끝났다"라서 같은 세기면 구분이 안 된다. */
+  .ht-seat.koed{opacity:.72}
+  .ht-seat.koed .ht-av{filter:grayscale(1) brightness(.42)}
+  .ht-seat.koed .ht-nm,.ht-seat.koed .ht-stk{color:#7a7a7a}
+  /* 총성이 울릴 때 테이블이 한 번 흔들린다. 좌석이 아니라 테이블에 걸어야
+     "총이 발사됐다"로 읽힌다(좌석만 흔들면 그 사람이 떤 것처럼 보인다).
+     420ms — koBang 의 setTimeout 과 같은 값이다. 흔들림 폭은 작게 둔다:
+     크게 흔들면 카드와 칩을 읽는 중인 사람의 눈이 따라가지 못한다. */
+  .ht-felt.koshake{animation:htKoShake .42s ease-out}
+  @keyframes htKoShake{
+    0%,100%{transform:translate(0,0)}
+    12%{transform:translate(-4px,2px)}
+    28%{transform:translate(4px,-2px)}
+    45%{transform:translate(-3px,-1px)}
+    62%{transform:translate(2px,2px)}
+    80%{transform:translate(-1px,0)}
+  }
+  /* 흔들림과 반짝임을 원치 않는 사람에게는 위치 변화만 뺀다.
+     소리와 총자국은 남는다 — 그게 "무슨 일이 일어났는가" 자체다. */
+  @media (prefers-reduced-motion:reduce){
+    .ht-felt.koshake{animation:none}
+    .ht-hole-shot.hit{animation:none}
+    .ht-bounty.up{animation:none}
+  }

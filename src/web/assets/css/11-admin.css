@@ -95,6 +95,8 @@
     padding:2px 8px;white-space:nowrap}
   .ad-tag.free{background:rgba(255,255,255,.07);color:#a8a8b0}
   .ad-tag.buy{background:rgba(255,179,92,.13);color:#ffb35c}
+  /* PKO(바운티) 판. 바이인 태그 옆에 붙으므로 색이 겹치면 안 된다 — 금색 계열로 둔다 */
+  .ad-tag.pko{background:rgba(212,175,55,.16);color:#e8c86a}
   .ad-st{display:inline-block;font-size:11.5px;font-weight:700;white-space:nowrap}
   .ad-st.s-wait{color:var(--muted)}
   .ad-st.s-run{color:var(--win)}

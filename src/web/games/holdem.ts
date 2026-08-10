@@ -123,6 +123,13 @@ function statePayload(st: HoldemStatus, userId: string) {
       startingStack: tune.startingStack,
       // 참가비. 0 이면 프리롤이고, 화면은 그때 참가비 줄을 아예 그리지 않는다
       buyIn: t.buy_in,
+      /* 판의 종류. 화면은 이 값 하나로 바운티 UI 를 켜고 끈다 — 일반 대회에서는
+         머리 위 뱃지도 KO 연출도 아예 그려지지 않아야 한다(같은 베이스지만 다른 게임이다). */
+      mode: t.mode,
+      /* 바운티 관련 값은 PKO 에서만 싣는다. 일반 대회에 0 을 실어 보내면 화면 쪽에서
+         "0 이면 숨긴다" 같은 조건이 하나 더 생기고, 그 조건이 언젠가 빠진다.
+         아예 없으면 실수로 그릴 수가 없다. */
+      bountyPool: isPko(t) ? t.bounty_pool : undefined,
       prizePool: pool,
       prizes: T.prizeAmounts(pool, entries.length),
       itm: T.itmCount(entries.length),
@@ -166,6 +173,10 @@ function statePayload(st: HoldemStatus, userId: string) {
 
   const seats = getSeats(table.id);
   const living = seats.filter(s => s.presence !== 'OUT');
+  /* 바운티는 대회 단위 값이라 참가 행(holdem_entries)에 있고 좌석 행에는 없다.
+     좌석마다 조회하지 않고 한 번에 읽어 맵으로 둔다 — 9인 테이블이면 폴링마다 9번이다. */
+  const pkoOn = isPko(t);
+  const bountyBySeat = new Map(entries.map(e => [e.user_id, e.bounty]));
   const hand = getCurrentHand(table.id);
   const profiles = getSeatAvatars(table.id);
   const avatarOf = (id: string) => profiles.get(id) ?? null;
@@ -316,6 +327,9 @@ function statePayload(st: HoldemStatus, userId: string) {
              올인 음악이 "이건 레이즈 올인인가, 남의 올인에 대한 콜인가"를 가르는 데 쓴다 —
              스트리트 베팅액(bet)만으로는 스트리트가 넘어가면 비교가 어긋난다. */
           committed: h?.committed ?? 0,
+          /* 머리에 걸린 바운티. PKO 가 아니면 아예 넣지 않는다 — 일반 대회의 좌석에는
+             이 칸이 없어서 화면이 그리려 해도 그릴 것이 없다. */
+          bounty: pkoOn ? (bountyBySeat.get(s.user_id) ?? 0) : undefined,
           state: h?.state ?? 'out',
           won: h?.won ?? 0,
           // 마지막으로 한 행동 ("콜 300"처럼 자리 옆에 띄운다)

@@ -403,6 +403,63 @@ async function main(): Promise<void> {
       !/bounty[\s\S]{0,400}?UPDATE users SET balance/.test(srcH));
   }
 
+  /* ── 8. UI 차별화 ───────────────────────────────────────────── */
+  section('[8] 화면 — 일반 대회에는 바운티가 그려질 수 없다');
+  {
+    /* 요구가 명확했다: "같은 베이스지만 서로 UI 는 철저히 차별화". 그래서 검사도
+       "숨겨져 있나"가 아니라 "그릴 수단 자체가 없나"를 본다 — 숨기는 방식이면 조건이
+       언젠가 빠지면서 일반 판에 바운티가 뜨고, 그때는 아무도 못 알아챈다. */
+    const seatsSrc = fsx.readFileSync('src/web/games/holdem-client/seats.ts', 'utf8');
+    const stateSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
+
+    // (1) 좌석 골격: 세 요소가 모두 pko 조건 뒤에 있어야 한다
+    for (const cls of ['ht-bounty', 'ht-hole-shot', 'ht-ko-ov']) {
+      const line = seatsSrc.split(/\r?\n/).find(l => l.includes(`"${cls}"`) && l.includes('span'));
+      ck(`${cls} 는 pko 일 때만 만들어진다`, line != null && /\(pko \?/.test(line),
+        line?.trim().slice(0, 70) ?? '(줄을 못 찾았다)');
+    }
+    // (2) 골격 서명에 pko 가 들어가야 한다 — 안 들어가면 모드가 바뀌어도 DOM 이 재사용된다
+    ck('좌석 골격 서명이 모드를 포함한다', /sigParts\.push\([^)]*pko/.test(seatsSrc));
+    // (3) KO 연출은 pko 조건 뒤에서만 터진다
+    ck('KO 연출이 pko 조건 뒤에 있다', /if \(pko && s\.presence === 'OUT'/.test(seatsSrc));
+    ck('koed 클래스도 pko 조건이 붙는다', /toggle\('koed', pko &&/.test(seatsSrc));
+
+    // (4) payload: 일반 판에는 칸 자체가 없어야 한다
+    ck('bountyPool 은 PKO 에서만 실린다', /bountyPool: isPko\(t\) \?/.test(stateSrc));
+    ck('좌석 bounty 는 PKO 에서만 실린다', /bounty: pkoOn \?/.test(stateSrc));
+    ck('mode 를 화면에 내려보낸다', /\bmode: t\.mode\b/.test(stateSrc));
+
+    // (5) 소리와 CSS 가 실제로 있는지
+    const appSrc = fsx.readFileSync('src/web/assets/app.js', 'utf8');
+    ck('총성이 합성음으로 있다 (음원 다운로드가 없다)',
+      /gunshot: function\(\)\{/.test(appSrc) && /noiseBurst\(c,/.test(appSrc));
+    ck('바운티 상향 소리가 있다', /bountyUp: function\(\)\{/.test(appSrc));
+    const cssSrc = fsx.readFileSync('src/web/assets/css/09-holdem.css', 'utf8');
+    for (const need of ['.ht-bounty', 'htBountyUp', '.ht-hole-shot', 'htShot',
+      '.ht-ko-ov', '.ht-seat.koed', 'htKoShake']) {
+      ck(`CSS 에 ${need} 가 있다`, cssSrc.includes(need));
+    }
+    /* 흔들림을 펠트에 걸어야 한다. #htTable 에 걸면 그 안의 .chip-fly-layer 가
+       position:fixed 라 조상 transform 에 끌려가 날아가는 칩이 통째로 어긋난다 —
+       KO 와 팟 정산은 같은 순간이라 반드시 겹친다. */
+    ck('흔들림은 펠트에 걸린다 (칩 비행이 어긋나지 않게)',
+      cssSrc.includes('.ht-felt.koshake') && !cssSrc.includes('.ht-shell.koshake'));
+    ck('흔들림 대상이 코드에서도 펠트다',
+      /querySelector\('\.ht-felt'\)/.test(seatsSrc));
+    // 움직임을 줄이는 설정을 존중한다 (소리와 총자국은 남는다 — 그게 사건 자체다)
+    ck('prefers-reduced-motion 에서 애니메이션을 끈다',
+      /prefers-reduced-motion[\s\S]{0,300}htKoShake|prefers-reduced-motion[\s\S]{0,300}koshake/
+        .test(cssSrc));
+
+    // (6) 어드민에서 PKO 를 열 수 있고, 프리롤에는 걸 수 없다
+    const admSrc = fsx.readFileSync('src/web/admin.ts', 'utf8');
+    ck('어드민에 대회 종류 선택이 있다', /id="ncMode"/.test(admSrc));
+    ck('프리롤이면 종류를 잠근다', /ncMode\.disabled = !buyin/.test(admSrc));
+    ck('프리롤이면 CLASSIC 으로 보낸다', /mode: buyin \? ncMode\.value : 'CLASSIC'/.test(admSrc));
+    ck('서버가 모르는 값을 CLASSIC 으로 떨어뜨린다',
+      /b\?\.mode === 'PKO_BOUNTY' \? 'PKO_BOUNTY' : 'CLASSIC'/.test(admSrc));
+  }
+
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   process.exit(fail ? 1 : 0);
 }
