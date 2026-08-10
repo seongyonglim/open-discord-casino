@@ -168,6 +168,19 @@ export interface NoticeInput {
 
 export type NoticeError = 'bad_id' | 'bad_date' | 'bad_kind' | 'no_title' | 'no_body' | 'duplicate' | 'not_found';
 
+/**
+ * 알림·임베드에 쓸 "[태그] 제목".
+ *
+ * 이 서비스의 제목은 관례상 이미 태그를 달고 있다("[업데이트] …"). 그런데 관례일 뿐이라
+ * 운영자가 태그 없이 쓸 수도 있다. 그래서 앞에 무조건 붙이면 어떤 글은 두 번 붙고
+ * (실제로 `[업데이트] [업데이트] …` 가 알림과 디스코드에 나갔다) 어떤 글은 안 붙는다.
+ * 이미 그 태그로 시작하면 그대로 쓰고, 아니면 붙인다.
+ */
+export function taggedTitle(kind: string, title: string): string {
+  const t = title.trim();
+  return t.startsWith(`[${kind}]`) ? t : `[${kind}] ${t}`;
+}
+
 /* 검증은 여기서 한다. 화면에서만 막으면 API 를 직접 부르는 순간 뚫린다.
    id 는 URL 에 그대로 들어가므로 주소에 쓸 수 있는 글자만 받는다. */
 export function validateNotice(n: NoticeInput): NoticeError | null {
@@ -199,7 +212,7 @@ export function createNotice(n: NoticeInput): { ok: true } | { ok: false; error:
        숨김으로 올린 글은 알리지 않는다(아직 보여줄 준비가 안 된 글이다).
        한 줄만 넣는다 — 사람 수만큼 복사하면 사람이 늘 때마다 비용이 는다. */
     if (n.active) {
-      notifyAll('ANNOUNCEMENT', '새 공지사항', `[${n.kind}] ${n.title.trim()}`, '/notices/' + n.id);
+      notifyAll('ANNOUNCEMENT', '새 공지사항', taggedTitle(n.kind, n.title), '/notices/' + n.id);
       /* 디스코드 채널에도 알린다. 트랜잭션 안에서 부르지만 이 함수는 아무것도 기다리지
          않고 던지지도 않는다(discord/announce) — 웹훅이 죽어도 이 저장은 그대로 끝난다.
          숨김으로 올린 글은 알리지 않는다: 위의 전체 알림과 같은 기준이라야,

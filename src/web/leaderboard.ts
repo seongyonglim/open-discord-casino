@@ -147,7 +147,16 @@ export function leaderboardPage(me: WebUser | null): string {
     function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
     function num(n){ return Number(n || 0).toLocaleString('ko-KR'); }
-    function seasonName(s){ return '시즌 ' + s.number + (s.name ? ' (' + s.name + ')' : ''); }
+    /* 이름은 괄호로 덧붙인다 — "시즌 0 (오픈베타)" 처럼 번호만으로는 알 수 없는 것을
+       알려 주는 자리다. 그런데 시즌을 넘길 때 이름을 "시즌 1" 로 넣으면 "시즌 1 (시즌 1)"
+       이 된다. 같은 말을 두 번 하는 괄호는 아무것도 알려 주지 않으므로 뗀다.
+       (이름을 지우는 대신 화면에서 판단한다 — 다음 시즌에 또 그렇게 넣어도 그대로 맞는다.) */
+    function seasonName(s){
+      var label = '시즌 ' + s.number;
+      var name = (s.name || '').trim();
+      if (!name || name === label || name === String(s.number)) return label;
+      return label + ' (' + name + ')';
+    }
     function ymd(sec){
       var d = new Date((sec + 9 * 3600) * 1000);
       return (d.getUTCMonth() + 1) + '월 ' + d.getUTCDate() + '일';

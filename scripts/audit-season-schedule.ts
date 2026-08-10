@@ -238,6 +238,29 @@ function main(): void {
     SS.clearSeasonSchedule();
   }
 
+  /* ── 7-1. 시즌 이름표 ──────────────────────────────────────── */
+  section('[7-1] 시즌 이름 — 같은 말을 두 번 하지 않는다');
+  {
+    /* 화면의 seasonName 은 클라이언트 스크립트 안에 있어 여기서 부를 수 없다. 같은 규칙을
+       옮겨 와 재 본다 — 아래 소스 검사가 두 곳이 갈라지는 것을 막는다.
+       "시즌 0 (오픈베타)"는 번호만으로 알 수 없는 것을 알려 주므로 괄호가 뜻을 갖는다.
+       "시즌 1 (시즌 1)"은 아무것도 알려 주지 않는다 — 그 괄호는 떼야 한다. */
+    const label = (number: number, name: string): string => {
+      const base = `시즌 ${number}`;
+      const n = (name || '').trim();
+      return (!n || n === base || n === String(number)) ? base : `${base} (${n})`;
+    };
+    ck('이름이 있으면 괄호로 붙인다', label(0, '오픈베타') === '시즌 0 (오픈베타)');
+    ck('이름이 없으면 번호만', label(2, '') === '시즌 2');
+    ck('이름이 같은 말이면 괄호를 뗀다', label(1, '시즌 1') === '시즌 1', label(1, '시즌 1'));
+    ck('앞뒤 공백도 같은 말로 본다', label(1, '  시즌 1 ') === '시즌 1');
+    ck('숫자만 넣은 이름도 뗀다', label(3, '3') === '시즌 3');
+
+    const src = require('node:fs').readFileSync('src/web/leaderboard.ts', 'utf8') as string;
+    ck('화면도 같은 규칙을 쓴다', /name === label \|\| name === String\(s\.number\)/.test(src));
+    ck('무조건 괄호를 붙이지 않는다', !/'시즌 ' \+ s\.number \+ \(s\.name \?/.test(src));
+  }
+
   /* ── 8. 시즌 0 시작일 정정 ──────────────────────────────────── */
   section('[8] 시즌 0 시작일 — 한 번만, 그 줄만');
   {

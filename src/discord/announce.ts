@@ -19,7 +19,10 @@
  *     그때마다 오류가 나면 진짜 오류가 묻힌다. 대신 한 번은 로그를 남겨,
  *     "설정했는데 안 온다"와 "설정을 안 했다"를 구별할 수 있게 한다.
  */
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { env } from '../env';
+import { taggedTitle } from '../db/notices';
 
 /** OD CASINO 시그니처 골드. 웹 화면의 --gold 와 같은 값이다. */
 const GOLD = 0xd4af37;
@@ -27,10 +30,20 @@ const GOLD = 0xd4af37;
 const WEBHOOK = (): string => env('DISCORD_ANNOUNCEMENT_WEBHOOK_URL');
 const SITE = (): string => (env('CASINO_URL') || 'https://odcasino.kro.kr').replace(/\/+$/, '');
 
-/* 푸터 아이콘. 사이트가 실제로 내보내는 파일을 쓴다 — 헤더의 로고가 /favicon.svg 다.
-   public/img/logo.png 처럼 없는 경로를 적으면 푸터에 깨진 이미지가 남는다. */
-function logoUrl(): string {
-  return `${SITE()}/favicon.svg`;
+/* 푸터 아이콘.
+   /favicon.svg 를 쓰다가 채널에 깨진 그림이 남았다 — 디스코드 임베드는 SVG 를 그리지 않는다
+   (png · jpg · gif · webp 만 된다). 우리 로고는 SVG 하나뿐이라 지금은 쓸 raster 가 없다.
+
+   그래서 파일이 있을 때만 붙인다. public/img/logo.png 를 넣으면 그때부터 저절로 뜨고,
+   없으면 아이콘 없이 글자만 나간다 — 깨진 그림보다 없는 편이 낫다. 지원금판 이미지도
+   같은 방식으로 판단한다(reliefImageUrl).
+
+   웹훅 자체의 프로필 사진이 이미 로고 역할을 하므로, 아이콘이 없어도 브랜딩은 남는다. */
+function logoUrl(): string | null {
+  try {
+    if (!existsSync(join(process.cwd(), 'public', 'img', 'logo.png'))) return null;
+  } catch { return null; }
+  return `${SITE()}/img/logo.png`;
 }
 
 // 작성일시는 KST 로 적는다 — 이 서비스의 모든 시각 기준이다.
@@ -48,16 +61,21 @@ export interface AnnouncePayload {
 /** 임베드 본문. 보내는 것과 모양을 만드는 것을 나눠 두면 감사가 모양만 따로 볼 수 있다. */
 export function announceEmbed(n: AnnouncePayload, nowMs: number): Record<string, unknown> {
   const url = `${SITE()}/notices/${n.id}`;
+  const logo = logoUrl();
   return {
     embeds: [{
-      title: `[${n.kind}] ${n.title}`,
+      /* 제목은 이미 "[태그] …" 로 시작하는 경우가 많다(이 서비스의 관례다). 무조건
+         앞에 붙이면 `[업데이트] [업데이트] …` 가 된다 — 실제로 채널에 그렇게 나갔다. */
+      title: taggedTitle(n.kind, n.title),
       /* 요약이 비어 있을 수 있다(필수 항목이 아니다). 그때는 description 을 아예 빼야
          한다 — 빈 문자열을 넣으면 디스코드가 400 을 준다. */
       ...(n.summary ? { description: n.summary } : {}),
       url,
       color: GOLD,
       fields: [{ name: '작성일시', value: kstStamp(nowMs), inline: true }],
-      footer: { text: 'OD CASINO Official Announcement', icon_url: logoUrl() },
+      /* 아이콘은 있을 때만 넣는다. icon_url 에 null 이나 빈 문자열을 넣으면
+         디스코드가 400 을 주거나 깨진 그림을 그린다 — 키를 아예 빼는 것이 맞다. */
+      footer: { text: 'OD CASINO Official Announcement', ...(logo ? { icon_url: logo } : {}) },
     }],
     /* 본문에도 링크를 남긴다. 임베드 제목의 링크는 눌러야 알 수 있어서, 모바일에서는
        공지가 왔다는 것만 보이고 어디로 가야 하는지가 안 보인다. */

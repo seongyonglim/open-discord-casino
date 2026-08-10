@@ -475,9 +475,15 @@ async function main(): Promise<void> {
     // 2026-08-10 09:05 KST
     const at = Date.UTC(2026, 7, 10, 0, 5, 0);
     const e = AN.announceEmbed(
-      { id: 'x-1', kind: '패치노트', title: '제목', summary: '한 줄 요약' }, at) as any;
+      { id: 'x-1', kind: '업데이트', title: '제목', summary: '한 줄 요약' }, at) as any;
     const em = e.embeds[0];
-    ck('제목이 [태그] 제목 이다', em.title === '[패치노트] 제목', String(em.title));
+    ck('제목이 [태그] 제목 이다', em.title === '[업데이트] 제목', String(em.title));
+    /* 이 서비스의 제목은 관례상 이미 태그를 달고 있다. 앞에 무조건 붙이면 두 번 붙는다 —
+       실제로 `[업데이트] [업데이트] …` 가 채널과 알림함에 나갔다. */
+    const dup = AN.announceEmbed(
+      { id: 'x-3', kind: '업데이트', title: '[업데이트] 제목', summary: 's' }, at) as any;
+    ck('태그가 두 번 붙지 않는다', dup.embeds[0].title === '[업데이트] 제목',
+      String(dup.embeds[0].title));
     ck('설명이 요약이다', em.description === '한 줄 요약', String(em.description));
     ck('색이 시그니처 골드다', em.color === 0xd4af37, String(em.color));
     ck('작성일시가 KST 다', em.fields[0].value === '2026-08-10 09:05',
@@ -485,10 +491,14 @@ async function main(): Promise<void> {
     ck('공지 상세로 가는 링크가 있다', String(em.url).endsWith('/notices/x-1'), String(em.url));
     ck('본문에도 같은 링크가 있다', String(e.content).includes('/notices/x-1'));
     ck('푸터가 규격대로다', em.footer.text === 'OD CASINO Official Announcement', em.footer.text);
-    /* 푸터 아이콘은 실제로 서비스가 내보내는 파일이어야 한다 — 없는 경로를 적으면
-       디스코드에 깨진 이미지가 남는다. public/img/logo.png 는 없다. */
-    ck('푸터 아이콘이 실제 파일을 가리킨다', String(em.footer.icon_url).endsWith('/favicon.svg'),
-      String(em.footer.icon_url));
+    /* 푸터 아이콘. 디스코드 임베드는 SVG 를 그리지 않는다 — /favicon.svg 를 넣었다가
+       채널에 깨진 그림이 남았다. 그래서 raster 파일이 있을 때만 붙인다. */
+    const { existsSync } = require('node:fs') as typeof import('node:fs');
+    const hasLogo = existsSync('public/img/logo.png');
+    ck('푸터 아이콘은 파일이 있을 때만 붙는다',
+      hasLogo ? String(em.footer.icon_url).endsWith('/img/logo.png') : !('icon_url' in em.footer),
+      `logo.png ${hasLogo ? '있음' : '없음'} · icon_url=${String(em.footer.icon_url)}`);
+    ck('SVG 를 아이콘으로 쓰지 않는다', !String(em.footer.icon_url ?? '').endsWith('.svg'));
     /* 공지 제목에 @everyone 이 들어가면 그대로 전체 멘션이 나간다 — 글 쓴 사람이
        의도한 것이 아니다. 웹훅이 멘션을 만들지 못하게 막아 둔다. */
     ck('멘션을 만들지 않는다', Array.isArray(e.allowed_mentions?.parse)
@@ -549,6 +559,21 @@ async function main(): Promise<void> {
     ck('환경변수 이름이 문서와 같다',
       src.includes('DISCORD_ANNOUNCEMENT_WEBHOOK_URL')
       && readFileSync('.env.example', 'utf8').includes('DISCORD_ANNOUNCEMENT_WEBHOOK_URL'));
+
+    /* 앱 안 알림도 같은 함수를 지나야 한다 — 디스코드만 고치면 알림함에는 여전히
+       태그가 두 번 붙는다(그게 실제로 일어난 일이다). */
+    ck('태그를 붙이는 곳이 하나다', /taggedTitle\(n\.kind, n\.title\)/.test(nsrc));
+    ck('알림 문구를 손으로 잇지 않는다', !/`\[\$\{n\.kind\}\] \$\{n\.title/.test(nsrc));
+    ck('이미 태그가 있으면 그대로 쓴다', N.taggedTitle('시즌', '[시즌] 가') === '[시즌] 가');
+    ck('없으면 붙인다', N.taggedTitle('시즌', '가') === '[시즌] 가');
+    ck('다른 태그로 시작하면 붙인다', N.taggedTitle('시즌', '[신규] 가') === '[시즌] [신규] 가');
+
+    /* 알림함에 이미 들어간 두 번 붙은 줄도 고친다. 만드는 쪽만 고치면 사람들 화면에는
+       그대로 남는다 — 스키마를 세우는 자리에서 접두사만 바꾼다. */
+    const sch = readFileSync('src/db/schema.ts', 'utf8') as string;
+    ck('지난 알림의 중복 태그를 고친다',
+      /REPLACE\(message, \?, \?\)[\s\S]{0,120}type = 'ANNOUNCEMENT'/.test(sch));
+    ck('그 모양인 줄에만 손댄다', /message LIKE \?/.test(sch));
   }
 
   /* ── 머신에서 돌리는 스크립트 ──────────────────────────────────────

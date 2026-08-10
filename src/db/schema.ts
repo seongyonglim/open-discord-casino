@@ -615,4 +615,20 @@ function initSchema(): void {
     d.prepare(`UPDATE seasons SET started_at = ? WHERE number = 0 AND started_at = ?`)
       .run(1_785_596_400, 1_786_079_376);       // 2026-08-02 00:00 KST ← 잘못 찍힌 값
   } catch { /* 시즌 표가 아직 없으면 고칠 것도 없다 */ }
+
+  /* 알림에 태그가 두 번 붙은 줄을 고친다.
+     제목이 이미 "[업데이트] …" 인데 알림을 만들 때 태그를 한 번 더 붙여서
+     "[업데이트] [업데이트] …" 가 나갔다. 만드는 쪽은 고쳤지만(db/notices taggedTitle)
+     이미 사람들 알림함에 들어간 줄은 그대로 남아 있다.
+
+     정규식이 없는 SQLite 라 태그 목록을 돌며 정확한 접두사만 바꾼다 — LIKE 로 좁혀서
+     그 모양인 줄에만 손대므로, 본문에 대괄호가 있는 다른 알림은 건드리지 않는다. */
+  try {
+    for (const kind of ['업데이트', '신규', '시즌', '점검']) {
+      const dup = `[${kind}] [${kind}] `;
+      d.prepare(`UPDATE notifications SET message = REPLACE(message, ?, ?)
+                  WHERE type = 'ANNOUNCEMENT' AND message LIKE ?`)
+        .run(dup, `[${kind}] `, dup + '%');
+    }
+  } catch { /* 알림 표가 아직 없으면 고칠 것도 없다 */ }
 }
