@@ -17,6 +17,13 @@
 .ac-sum-n { font-size: 22px; color: var(--dim); letter-spacing: .02em; }
 .ac-sum-n b { color: var(--gold); font-size: 27px; }
 .ac-sum-l { font-size: 11px; color: var(--dim); letter-spacing: .12em; }
+/* 지금 걸린 보상 버프. 0% 일 때도 적는다 — 여기는 규칙을 알려 주는 자리라, 없을 때
+   사라지면 규칙 자체가 안 보인다. 대신 켜져 있을 때만 금색으로 살아난다. */
+.ac-sum-buff { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--dim); white-space: nowrap; }
+.ac-sum-buff b { font-size: 14px; color: var(--dim); }
+.ac-sum-buff.on { color: var(--gold); }
+.ac-sum-buff.on b { color: var(--gold); }
 
 /* 진행률 바. 채워진 부분만 금색이라 한눈에 어디까지 왔는지 읽힌다. */
 .ac-bar { height: 9px; border-radius: 99px; background: rgba(255,255,255,.06);

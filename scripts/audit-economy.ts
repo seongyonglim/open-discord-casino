@@ -1637,5 +1637,62 @@ section('[13] 버그 제보 보상 10,000P');
   ck('어드민이 숫자를 직접 적지 않는다', !/prompt\([^)]*'2000'/.test(ad));
 }
 
+/* ── 14. 바뀐 규칙이 화면에 실제로 적혀 있는가 ──────────────────
+   판정을 고치고 안내를 안 고치면 아무 오류도 없이 화면이 거짓말을 한다. 이 서비스에서
+   실제로 그 사고를 여러 번 겪었다("그래프의 신"이 통산 기준으로 남아 있던 것, 개근상이
+   30일로 적혀 있던 것). 규칙을 바꿀 때 같이 고쳐야 하는 자리를 여기에 모아 둔다. */
+section('[14] 안내 문구가 지금 규칙과 같은가');
+{
+  const { readFileSync } = require('node:fs') as typeof import('node:fs');
+  const E = require('../src/services/economy') as typeof import('../src/services/economy');
+  const read = (p: string): string => readFileSync(p, 'utf8') as string;
+
+  /* 출석판·지원금판은 디스코드에 붙는 유일한 안내다. 여기에 30일이 남아 있으면
+     사람들은 그 숫자를 보고 기다린다. */
+  const sum = E.rewardSummary();
+  ck('출석판 안내에 28일이 있다', sum.includes('28일 연속'), sum);
+  ck('출석판 안내에 30일이 없다', !sum.includes('30일'), sum);
+
+  const dc = read('src/discord/interactions.ts');
+  ck('출석판이 버프를 알려 준다', /buffHint/.test(dc) && /도전과제 하나당/.test(dc));
+  ck('지원금판에도 같은 안내가 붙는다',
+    (dc.match(/\+ buffHint/g) ?? []).length >= 1 && /buffHint,/.test(dc));
+  ck('출석 응답이 버프율을 말한다', /result\.buffPercent > 0/.test(dc));
+  ck('지원금 로그가 실지급액을 적는다', /reliefAmountFor\(caller\.id\)/.test(dc));
+  ck('내점수도 버프를 알려 준다', /내점수[\s\S]{0,320}보상 버프/.test(dc));
+
+  /* 도전과제 화면은 "무엇을 해야 하나"만 적고 "그래서 뭐가 좋아지나"는 없었다.
+     버프를 만든 화면에 버프 설명이 없으면 아무도 그 규칙을 모른다. */
+  const ac = read('src/web/achievements.ts');
+  ck('도전과제 화면이 버프를 설명한다', /도전과제 하나당 보상이 \$\{buffPct\}%/.test(ac));
+  ck('가산율을 코드에서 읽는다', /BUFF_PER_ACHIEVEMENT/.test(ac));
+  ck('내 버프를 숫자로 보여준다', /ac-sum-buff/.test(ac) && /buff\.percent/.test(ac));
+  const css = read('src/web/assets/css/13-achieve.css');
+  ck('버프 칸에 스타일이 있다', css.includes('.ac-sum-buff'));
+
+  // 로비 뱃지는 켜져 있을 때만 뜬다 — 0% 뱃지는 알려주는 것이 없다
+  const pg = read('src/web/pages.ts');
+  ck('로비 뱃지는 0% 면 감춘다', /buff\.percent > 0[\s\S]{0,120}디스코드에서 출석/.test(pg));
+
+  /* 원장 이름표. 새 사유가 이름표에 없으면 원장에 영문 키가 그대로 보인다. */
+  const vw = read('src/web/views.ts');
+  ck('새 개근 사유에 이름표가 있다', /full_streak_bonus: '/.test(vw));
+  ck('예전 사유의 이름표도 남겨 둔다', /monthly_streak_bonus: '/.test(vw));
+
+  /* 지난 공지의 예고를 정정했는가. 8월 8일 글은 "30일 연속 출석"을 시즌 1의 약속으로
+     적었는데 그 기준이 바뀌었다. 표를 조용히 고치는 대신 정정 한 줄을 붙였다. */
+  const old = read('scripts/seed-notices-2026-08.ts');
+  ck('지난 예고 공지에 정정이 붙었다',
+    old.includes('[정정]') && old.includes('30일에서 28일로 완화'));
+
+  /* 새 패치노트가 세 항목을 다 담고 있는가 */
+  const nt = read('scripts/seed-notices-2026-08-10.ts');
+  ck('패치노트에 버프가 있다', nt.includes('도전과제 보상 버프'));
+  ck('패치노트에 개근 기준이 있다', /개근상 달성 기준을 <b>30일에서/.test(nt));
+  ck('패치노트에 제보 보상이 있다', nt.includes('BUG_REPORT_BOUNTY'));
+  ck('패치노트가 숫자를 손으로 적지 않는다',
+    !/10,000P<\/b> 로 다섯 배/.test(nt) && nt.includes('${p(BUG_REPORT_BOUNTY)}'));
+}
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);

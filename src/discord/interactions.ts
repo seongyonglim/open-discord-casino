@@ -7,7 +7,7 @@ import { verifyKey, InteractionType, InteractionResponseType } from 'discord-int
 import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
 import { checkIn, rewardSummary } from '../services/economy';
 import { claim as claimRelief, reliefAmount, reliefAmountFor, RELIEF_COOLDOWN_SEC } from '../services/relief';
-import { rewardBuff } from '../services/buff';
+import { rewardBuff, BUFF_PER_ACHIEVEMENT } from '../services/buff';
 import {
   upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard, reliefCountToday,
   getBoard, setBoard, clearBoard, type BoardKind,
@@ -90,9 +90,14 @@ function reliefImageUrl(): string | null {
 }
 
 function boardSpec(kind: BoardKind): BoardSpec {
+  /* 판에는 기본액만 적는다 — 모두가 보는 한 장이라 사람마다 다른 금액을 적을 수 없다.
+     대신 버프가 있다는 사실은 알려 준다. 규칙을 모르면 과제를 깰 이유가 하나 줄고,
+     받은 금액이 판에 적힌 금액보다 많은 이유도 알 수 없다. */
+  const buffHint = `\n(도전과제 하나당 +${Math.round(BUFF_PER_ACHIEVEMENT * 100)}% — 실제 지급액은 더 많을 수 있습니다)`;
   if (kind === 'attendance') {
     return {
-      content: '**오늘도 출석하고 포인트 받아가세요!**\n' + rewardSummary() + '\n(KST 자정에 초기화됩니다)',
+      content: '**오늘도 출석하고 포인트 받아가세요!**\n' + rewardSummary()
+        + '\n(KST 자정에 초기화됩니다)' + buffHint,
       label: '출석체크', customId: 'attendance_checkin', style: ButtonStyle.Success,
     };
   }
@@ -103,7 +108,8 @@ function boardSpec(kind: BoardKind): BoardSpec {
       + '포인트를 전부 잃었을 때 다시 시작할 수 있도록 드리는 지원금입니다.\n\n'
       + `· 지급액 **${reliefAmount().toLocaleString('ko-KR')}P**\n`
       + '· 보유 포인트가 **정확히 0P**일 때만 신청할 수 있습니다\n'
-      + `· 한 번 받으면 **${hours}시간** 뒤에 다시 신청할 수 있습니다`,
+      + `· 한 번 받으면 **${hours}시간** 뒤에 다시 신청할 수 있습니다`
+      + buffHint,
     label: '지원금 신청', customId: 'relief_claim', style: ButtonStyle.Primary,
     image: reliefImageUrl(),
   };
@@ -170,7 +176,10 @@ async function handleCommand(interaction: any, res: ServerResponse): Promise<voi
 
   if (name === '내점수') {
     const u = getWebUser(caller.id)!;
-    return ephemeral(res, `잔액 **${pts(u.balance)}** · 연속 출석 **${u.current_streak}일**`);
+    // 내 상태를 묻는 자리라 지금 걸린 버프도 함께 알려 준다 (없으면 안 붙인다)
+    const b = rewardBuff(caller.id);
+    return ephemeral(res, `잔액 **${pts(u.balance)}** · 연속 출석 **${u.current_streak}일**`
+      + (b.percent > 0 ? `\n🏆 도전과제 **${b.count}개** 달성 · 보상 버프 **+${b.percent}%**` : ''));
   }
 
   if (name === '랭킹') {

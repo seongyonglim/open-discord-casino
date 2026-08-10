@@ -13,6 +13,7 @@ import {
   baccaratIcon, blackjackIcon, trophyIcon,
 } from './icons';
 import { sendJson } from './http';
+import { rewardBuff, BUFF_PER_ACHIEVEMENT } from '../services/buff';
 import {
   ACH_TABS, achievementsFor, achievementProgress, unlockersOf, activePlayerCount,
   listAchievements, unlockCount,
@@ -128,6 +129,12 @@ export function achievementsPage(me: WebUser | null): string {
   }).join('');
   const players = activePlayerCount();
   const cards = views.map(v => card(v, players)).join('');
+  /* 달성 개수 옆에 지금 걸린 보상 버프를 함께 적는다. 개수만 보이면 "그래서 뭐가 좋아지나"가
+     이 화면 어디에도 없어서, 과제를 깨는 이유가 목록을 채우는 것뿐이 된다.
+     0% 도 적는다 — 여기는 규칙을 알려 주는 자리라, 없을 때 사라지면 규칙 자체가 안 보인다
+     (로비의 뱃지는 반대로 0% 면 감춘다. 그쪽은 "지금 켜져 있는 것"만 말하는 자리다). */
+  const buff = rewardBuff(me?.id ?? '');
+  const buffPct = Math.round(BUFF_PER_ACHIEVEMENT * 100);
 
   /* 과제가 하나도 없을 때. 틀만 먼저 만들어 두고 과제는 나중에 넣는 구조라,
      이 화면이 비어 있는 것은 고장이 아니라 정상이다 — 그렇게 읽히도록 적는다. */
@@ -145,10 +152,15 @@ export function achievementsPage(me: WebUser | null): string {
           <p class="ac-lead">한 번 달성하면 계정에 영구히 남습니다 — 시즌이 바뀌어도 사라지지 않습니다.</p>
           <p class="ac-rule"><b>게임 도전과제는 그 판의 베팅이 기준 금액 이상일 때만 판정됩니다.</b>
             소액으로 여러 번 돌려 얻는 것을 막기 위한 규칙이며, 기준은 카드마다 적혀 있습니다.</p>
+          <p class="ac-rule"><b>도전과제 하나당 보상이 ${buffPct}%씩 늘어납니다.</b>
+            출석 체크와 파산 지원금에 적용되며, 달성할수록 매일 받는 보상이 커집니다.
+            게임 배당에는 적용되지 않습니다.</p>
         </div>
         <div class="ac-sum">
           <div class="ac-sum-n num"><b id="acDone">${p.unlocked}</b> / <span id="acTotal">${p.total}</span></div>
           <div class="ac-sum-l">달성</div>
+          <div class="ac-sum-buff${buff.percent > 0 ? ' on' : ''}">보상 버프
+            <b class="num">+${buff.percent}%</b></div>
         </div>
       </div>
       <div class="ac-bar" role="progressbar" aria-valuenow="${p.percent}" aria-valuemin="0" aria-valuemax="100">
