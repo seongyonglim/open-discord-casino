@@ -445,12 +445,12 @@ async function main(): Promise<void> {
     wipe();
     seed();
     const byId = new Map(A.listAchievements().map(a => [a.id, a]));
-    const SEEDED = 12;
-    ck('열두 과제가 등록된다', byId.size === SEEDED, String(byId.size));
+    const SEEDED = 15;
+    ck('열다섯 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
     for (const id of ['bj-double-21', 'crash-x100', 'la-right-7',
-      'mi-1-of-25', 'mi-24-of-24']) {
+      'mi-1-of-25', 'mi-24-of-24', 'bc-player-7']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
     /* 베팅이 없거나, 금액이 뜻을 갖지 않는 과제는 기준도 0 이어야 한다. 그대로 두면
@@ -458,7 +458,8 @@ async function main(): Promise<void> {
        0.01초의 광기는 손 속도를 재는 과제라 얼마를 걸었는지가 아무 상관이 없고,
        그래프의 신은 한 판이 아니라 한 시즌의 합계를 재는 과제라 마지막 판의 금액이
        아무 뜻이 없다 — 문구를 읽은 사람이 실제로 "이게 왜 붙어 있냐"고 물었다. */
-    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-x1-01', 'crash-profit-1m']) {
+    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-x1-01', 'crash-profit-1m',
+      'all-first-1', 'roller-coaster']) {
       ck(`${id} 은 최소 베팅 0`, byId.get(id)?.min_bet === 0, String(byId.get(id)?.min_bet));
     }
     /* 감춤 기능 자체는 [2] 에서 따로 검사하므로, 여기서는 "씨앗이 실제로 무엇을
@@ -466,7 +467,8 @@ async function main(): Promise<void> {
        하나가 는 것과 같고, 반대로 히든이 풀리면 자동 캐시아웃 1.01x 예약이 정답으로
        돌아다닌다. */
     const hidden = A.listAchievements().filter(a => a.is_hidden === 1).map(a => a.id);
-    ck('감춘 과제는 0.01초의 광기 하나뿐', hidden.join(',') === 'crash-x1-01',
+    ck('감춘 과제는 둘 (0.01초의 광기 · 롤러코스터)',
+      hidden.slice().sort().join(',') === 'crash-x1-01,roller-coaster',
       hidden.join(',') || '(감춘 것 없음)');
     ck('분류가 맞다',
       byId.get('bj-double-21')?.game_type === 'BLACKJACK'
@@ -476,11 +478,14 @@ async function main(): Promise<void> {
       && byId.get('relief-10-day')?.game_type === 'ALL'
       && byId.get('ho-straight-flush')?.game_type === 'HOLDEM'
       && byId.get('mi-1-of-25')?.game_type === 'MINES'
+      && byId.get('bc-player-7')?.game_type === 'BACCARAT'
+      && byId.get('all-first-1')?.game_type === 'ALL'
+      && byId.get('roller-coaster')?.game_type === 'ALL'
       && byId.get('mi-24-of-24')?.game_type === 'MINES'
       && byId.get('la-right-7')?.game_type === 'LADDER');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
-    ck('두 번 돌려도 열두 개', A.listAchievements().length === SEEDED,
+    ck('두 번 돌려도 열다섯 개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
     /* ── 폐기한 과제 ────────────────────────────────────────────
@@ -495,7 +500,7 @@ async function main(): Promise<void> {
     for (const id of [OLD, 'mi-23-of-24']) {
       ck(`폐기한 ${id} 을 씨앗이 지운다`, !A.listAchievements().find(a => a.id === id));
     }
-    ck('지운 뒤에도 열두 개', A.listAchievements().length === SEEDED,
+    ck('지운 뒤에도 열다섯 개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
     /* 이미 달성한 사람이 있으면 지우지 않는다 — 영구히 남는다고 적어 둔 기록이라,
@@ -763,7 +768,13 @@ async function main(): Promise<void> {
     const ld = read('src/web/games/ladder.ts');
     const mn = read('src/web/games/mines.ts');
     const pk = read('src/web/games/poker.ts');
-    const wired = bj + cr + dc + ht + ld + mn + pk;
+    const bc = read('src/web/games/baccarat.ts');
+    /* 판정이 게임 밖에 있는 과제도 있다 — 시즌이 닫히는 순간에만 볼 수 있는 것(전 종목 1위),
+       그리고 게임과 무관하게 그 사람의 하루를 보는 것(롤러코스터)이다. 그 자리들도 함께 훑는다:
+       빠뜨리면 "표에는 있는데 아무도 못 깨는 과제"가 조용히 생긴다. */
+    const sn = read('src/db/queries/season.ts');
+    const hook = read('src/web/achieve-hook.ts');
+    const wired = bj + cr + dc + ht + ld + mn + pk + bc + sn + hook;
     const unwired = A.listAchievements().filter(a => !wired.includes(`'${a.id}'`));
     ck('배선이 빠진 과제가 없다', unwired.length === 0, unwired.map(a => a.id).join(','));
 
@@ -1467,6 +1478,303 @@ async function main(): Promise<void> {
 
     db.exec(`DELETE FROM blackjack_hands; DELETE FROM blackjack_rounds;
              DELETE FROM poker_bets; DELETE FROM poker_rounds;`);
+  }
+
+  /* ── 8-8. 바카라 «플레이어» 7연승 ──────────────────────────── */
+  section('[8-8] 바카라 — 플레이어에만 걸어 7연승');
+  {
+    const BQ = require('../src/db/queries/bacc') as typeof import('../src/db/queries/bacc');
+    const BW = require('../src/web/games/baccarat') as typeof import('../src/web/games/baccarat');
+    const ST = require('../src/db/streaks') as typeof import('../src/db/streaks');
+
+    /* 라운드를 만들고 결과를 못 박아 실제 정산을 태운다 — 연승이 정말 그 자리에서
+       쌓이는지 확인하려면 settleBaccaratBets 를 지나야 한다. */
+    function playRound(bets: { user: string; market: string; amount: number }[],
+      winner: 'player' | 'banker' | 'tie'): void {
+      db.exec(`DELETE FROM baccarat_bets; DELETE FROM baccarat_rounds;`);
+      db.prepare(`INSERT INTO baccarat_rounds (phase, betting_ends_at, cards_json)
+                  VALUES ('betting', ?, '[]')`).run(0);
+      const rid = (db.prepare(`SELECT last_insert_rowid() AS id`).get() as { id: number }).id;
+      for (const b of bets) {
+        db.prepare(`INSERT INTO baccarat_bets (round_id, user_id, username, market, amount, odds)
+                    VALUES (?, ?, ?, ?, ?, 2)`).run(rid, b.user, b.user, b.market, b.amount);
+      }
+      const o = {
+        winner, playerTotal: winner === 'player' ? 9 : 5, bankerTotal: winner === 'banker' ? 9 : 5,
+        playerPair: false, bankerPair: false, natural: false, playerCards: [], bankerCards: [],
+      };
+      BQ.settleBaccaratBetsForAudit(rid, o);
+      /* 정산한 라운드는 done 으로 닫아 둔다. 안 닫으면 아래 handleState 의 advance 가
+         같은 라운드를 실제 카드로 다시 정산해 won 을 덮어쓴다 — 그러면 연승은 쌓였는데
+         "마지막 승리 판의 베팅액"이 0 이 되어 문지기에 막힌다(실제로 그렇게 실패했다). */
+      db.prepare(`UPDATE baccarat_rounds SET phase = 'done', result_json = ?, resolved_at = ?
+                   WHERE id = ?`).run(JSON.stringify(o), Math.floor(Date.now() / 1000), rid);
+    }
+
+    wipe(); seedForWiring(); mkUser('P7', 1_000_000);
+    const streak = (): number => ST.getStreak('P7', 'bacc_player_win');
+
+    for (let i = 1; i <= 6; i++) {
+      playRound([{ user: 'P7', market: 'player', amount: 1_000 }], 'player');
+      ck(`플레이어 승리 ${i}연승`, streak() === i, String(streak()));
+    }
+    /* 쉬어가는 판 — 안 건 사람은 정산 루프에 오지 않으므로 값이 그대로다. */
+    playRound([{ user: 'other', market: 'player', amount: 1_000 }], 'player');
+    ck('쉬어간 판은 연승이 유지된다', streak() === 6, String(streak()));
+    /* 타이는 원금이 돌아온다 — 이긴 것도 잃은 것도 아니라 쉬어간 판으로 본다. */
+    playRound([{ user: 'P7', market: 'player', amount: 1_000 }], 'tie');
+    ck('타이도 연승이 유지된다', streak() === 6, String(streak()));
+
+    playRound([{ user: 'P7', market: 'player', amount: 1_000 }], 'player');
+    ck('7연승이 됐다', streak() === 7, String(streak()));
+    ck('아직은 응답을 안 받아 미달성', !A.hasAchievement('P7', 'bc-player-7'));
+
+    let body = '';
+    const res = {
+      writeHead() { }, end(c?: unknown) { if (c != null) body += String(c); },
+      getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+    };
+    await BW.handleState({} as never, res as never, 'P7');
+    ck('상태 응답에 달성이 실려 온다',
+      ((JSON.parse(body) as { unlocked?: { id: string }[] }).unlocked ?? [])
+        .some(u => u.id === 'bc-player-7'), body.slice(0, 200));
+    ck('기록에도 남았다', A.hasAchievement('P7', 'bc-player-7'));
+
+    /* ── 끊기는 조건들 ──────────────────────────────────────── */
+    const fresh = (id: string): void => { wipe(); seedForWiring(); mkUser(id, 1_000_000); };
+    const runUp = (id: string, n: number): void => {
+      for (let i = 0; i < n; i++) playRound([{ user: id, market: 'player', amount: 1_000 }], 'player');
+    };
+
+    fresh('P1'); runUp('P1', 3);
+    playRound([{ user: 'P1', market: 'player', amount: 1_000 }], 'banker');
+    ck('지면 끊긴다', ST.getStreak('P1', 'bacc_player_win') === 0);
+
+    /* "오직" 플레이어에만 — 뱅커를 함께 걸면 양다리라 끊는다. 이걸 안 막으면
+       플레이어+뱅커를 동시에 걸어 사실상 확정 연승을 쌓을 수 있다. */
+    fresh('P2'); runUp('P2', 3);
+    playRound([
+      { user: 'P2', market: 'player', amount: 1_000 },
+      { user: 'P2', market: 'banker', amount: 1_000 },
+    ], 'player');
+    ck('뱅커를 함께 걸면 끊긴다', ST.getStreak('P2', 'bacc_player_win') === 0,
+      String(ST.getStreak('P2', 'bacc_player_win')));
+
+    fresh('P3'); runUp('P3', 3);
+    playRound([
+      { user: 'P3', market: 'player', amount: 1_000 },
+      { user: 'P3', market: 'ppair', amount: 1_000 },
+    ], 'player');
+    ck('페어를 함께 걸어도 끊긴다', ST.getStreak('P3', 'bacc_player_win') === 0);
+
+    fresh('P4'); runUp('P4', 3);
+    playRound([{ user: 'P4', market: 'banker', amount: 1_000 }], 'banker');
+    ck('뱅커로 이겨도 끊긴다', ST.getStreak('P4', 'bacc_player_win') === 0);
+
+    /* 소액은 연승에 넣지 않는다 — 1P 로 쌓아 놓고 마지막만 크게 거는 길을 막는다. */
+    fresh('P5'); runUp('P5', 3);
+    playRound([{ user: 'P5', market: 'player', amount: 999 }], 'player');
+    ck('999P 승리는 연승에 안 들어간다', ST.getStreak('P5', 'bacc_player_win') === 3,
+      String(ST.getStreak('P5', 'bacc_player_win')));
+    ck('그렇다고 끊지도 않는다 (쉬어간 판으로 본다)',
+      ST.getStreak('P5', 'bacc_player_win') === 3);
+
+    fresh('P6'); runUp('P6', 6);
+    let b6 = '';
+    const res6 = {
+      writeHead() { }, end(c?: unknown) { if (c != null) b6 += String(c); },
+      getHeader() { return undefined; }, setHeader() { }, headersSent: false,
+    };
+    await BW.handleState({} as never, res6 as never, 'P6');
+    ck('6연승에서는 안 열린다', !A.hasAchievement('P6', 'bc-player-7'));
+
+    db.exec(`DELETE FROM baccarat_bets; DELETE FROM baccarat_rounds;`);
+  }
+
+  /* ── 8-9. 나 혼자만 1등 ──────────────────────────────────────── */
+  section('[8-9] 전 종목 1위로 시즌 종료');
+  {
+    const S2 = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+    const { RANK_GAMES } = require('../src/services/ranking') as typeof import('../src/services/ranking');
+    const GAMES = [...new Set(Object.values(RANK_GAMES))];
+
+    /** 그 사람을 그 게임 1위로 만든다(순수익이 제일 크면 1위다). */
+    const top = (uid: string, game: string, profit: number): void => {
+      Q.bumpGameStats(uid, game, 1_000, 1_000 + profit);
+    };
+    function newSeason(): number {
+      db.exec(`DELETE FROM seasons; DELETE FROM season_stats; DELETE FROM season_results;
+               DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
+      return S2.currentSeason().id;
+    }
+    /** 그 시즌에 끝난 대회 하나를 만들어 우승자를 정한다(홀덤 1위). */
+    function holdemWin(uid: string): void {
+      const now = Math.floor(Date.now() / 1000);
+      db.prepare(`INSERT INTO holdem_tournaments
+                    (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at,
+                     prize_multiplier, started_at, finished_at)
+                  VALUES (901, '2026-08-10', '표본', ?, ?, ?, 1000, ?, ?)`)
+        .run(now - 60, now - 50, now - 40, now - 50, now - 10);
+      db.prepare(`INSERT INTO holdem_entries
+                    (tournament_id, user_id, username, registered_at, finish_place, prize)
+                  VALUES (901, ?, ?, ?, 1, 5000)`).run(uid, uid, now - 60);
+    }
+
+    /* 전 종목 1위 — 열린다. */
+    wipe(); seedForWiring();
+    newSeason();
+    mkUser('king', 10_000); mkUser('sub', 10_000);
+    for (const g of GAMES) { top('king', g, 10_000); top('sub', g, 1_000); }
+    holdemWin('king');
+    ck('검사 전제: 종목이 여섯 이상이다', GAMES.length >= 6, String(GAMES.length));
+    S2.closeSeason({ seed: 0, nextName: '다음' });
+    ck('전 종목 1위면 열린다', A.hasAchievement('king', 'all-first-1'));
+    ck('2위에게는 안 준다', !A.hasAchievement('sub', 'all-first-1'));
+
+    /* 한 종목만 남에게 내주면 안 열린다. */
+    wipe(); seedForWiring();
+    newSeason();
+    mkUser('k2', 10_000); mkUser('s2', 10_000);
+    for (const g of GAMES) { top('k2', g, 10_000); top('s2', g, 1_000); }
+    top('s2', GAMES[0], 99_000);                     // 이 종목만 s2 가 1위
+    holdemWin('k2');
+    S2.closeSeason({ seed: 0, nextName: '다음' });
+    ck('한 종목이라도 놓치면 안 열린다', !A.hasAchievement('k2', 'all-first-1'));
+
+    /* 홀덤 1위가 다른 사람이면 안 열린다 — 홀덤도 카테고리다. */
+    wipe(); seedForWiring();
+    newSeason();
+    mkUser('k3', 10_000); mkUser('s3', 10_000);
+    for (const g of GAMES) top('k3', g, 10_000);
+    holdemWin('s3');
+    S2.closeSeason({ seed: 0, nextName: '다음' });
+    ck('홀덤을 놓치면 안 열린다', !A.hasAchievement('k3', 'all-first-1'));
+
+    /* 아무도 안 한 종목이 있으면 "전 종목"이 성립하지 않는다. */
+    wipe(); seedForWiring();
+    newSeason();
+    mkUser('k4', 10_000);
+    for (const g of GAMES.slice(1)) top('k4', g, 10_000);   // 한 종목 비어 있음
+    holdemWin('k4');
+    S2.closeSeason({ seed: 0, nextName: '다음' });
+    ck('빈 종목이 있으면 안 열린다', !A.hasAchievement('k4', 'all-first-1'));
+
+    /* 홀덤 기록이 없는 시즌도 마찬가지다. */
+    wipe(); seedForWiring();
+    newSeason();
+    mkUser('k5', 10_000);
+    for (const g of GAMES) top('k5', g, 10_000);
+    S2.closeSeason({ seed: 0, nextName: '다음' });
+    ck('홀덤 기록이 없으면 안 열린다', !A.hasAchievement('k5', 'all-first-1'));
+
+    /* 판정이 던져도 시즌은 닫혀야 한다 — 여기서 롤백되면 성적표도 초기화도 안 된다. */
+    const sn = require('node:fs').readFileSync('src/db/queries/season.ts', 'utf8') as string;
+    ck('판정 오류가 시즌 마감을 막지 않는다',
+      /function awardSeasonSweep[\s\S]*?try \{[\s\S]*?catch/.test(sn));
+    /* 카테고리 목록을 여기 적지 않는다 — 게임이 늘면 RANK_GAMES 에 한 줄이 들어가고
+       이 과제의 조건도 함께 넓어져야 한다(요청 사항이다). */
+    ck('종목 목록을 RANK_GAMES 에서 읽는다', /RANK_GAMES/.test(sn));
+    ck('종목 이름을 손으로 적지 않는다', !/'baccarat'[\s\S]{0,80}'blackjack'/.test(sn));
+
+    db.exec(`DELETE FROM holdem_entries; DELETE FROM holdem_tournaments; DELETE FROM seasons;`);
+  }
+
+  /* ── 8-10. 롤러코스터 ────────────────────────────────────────── */
+  section('[8-10] 롤러코스터 — 오늘 출석 뒤 바닥을 찍고 되살아난다');
+  {
+    const HK = require('../src/web/achieve-hook') as typeof import('../src/web/achieve-hook');
+    const LOW = 1_000, HIGH = 100_000;
+    /** 원장에 한 줄 남긴다 — 잔액의 궤적은 이 표에만 있다. */
+    const ledger = (uid: string, delta: number, reason: string): void => {
+      Q.adjustBalance(uid, delta, reason);
+    };
+    /** 지금 잔액을 정확히 그 값으로 맞춘다(원장에 그 궤적이 남는다). */
+    const setTo = (uid: string, v: number, reason: string): void => {
+      ledger(uid, v - (Q.getWebUser(uid)?.balance ?? 0), reason);
+    };
+
+    wipe(); seedForWiring(); mkUser('rc1', 0);
+    setTo('rc1', 5_000, 'attendance');            // 오늘 출석
+    setTo('rc1', 800, 'game:mines');              // 바닥
+    setTo('rc1', 120_000, 'game:mines');          // 되살아남
+    ck('출석 → 바닥 → 회복이면 열린다',
+      HK.commonAwards('rc1').some(u => u.id === 'roller-coaster'),
+      String(Q.getWebUser('rc1')!.balance));
+    ck('기록에도 남았다', A.hasAchievement('rc1', 'roller-coaster'));
+
+    /* 여기가 요청서가 특히 짚은 지점이다: 출석 "전"에 찍은 바닥은 세지 않는다.
+       어제 밤에 0원으로 잠든 사람이 오늘 출석만으로 조건 절반을 채우면 안 된다. */
+    wipe(); seedForWiring(); mkUser('rc2', 0);
+    setTo('rc2', 500, 'game:mines');              // 출석 전 바닥
+    setTo('rc2', 5_000, 'attendance');
+    setTo('rc2', 150_000, 'game:mines');          // 그 뒤로는 떨어진 적이 없다
+    ck('출석 전 바닥은 안 센다',
+      !HK.commonAwards('rc2').some(u => u.id === 'roller-coaster'));
+    ck('그래서 기록에도 없다', !A.hasAchievement('rc2', 'roller-coaster'));
+
+    /* 순서도 조건이다 — 회복한 뒤에 떨어진 것은 "되살아났다"가 아니다. */
+    wipe(); seedForWiring(); mkUser('rc3', 0);
+    setTo('rc3', 5_000, 'attendance');
+    setTo('rc3', 150_000, 'game:mines');
+    setTo('rc3', 900, 'game:mines');
+    ck('회복 뒤에 떨어진 것은 아니다',
+      !HK.commonAwards('rc3').some(u => u.id === 'roller-coaster'));
+
+    /* 파산 지원금으로 올라온 것도 인정한다(요청 사항). 지원금은 원장의 한 줄이므로
+       따로 처리할 것이 없다 — 그게 원장만 보는 이유다. */
+    wipe(); seedForWiring(); mkUser('rc4', 0);
+    setTo('rc4', 5_000, 'attendance');
+    setTo('rc4', 0, 'game:mines');
+    ledger('rc4', 1_000, 'disaster_relief');      // 지원금으로 1,000P
+    setTo('rc4', 100_000, 'game:mines');
+    ck('지원금으로 올라온 뒤 회복도 인정한다',
+      HK.commonAwards('rc4').some(u => u.id === 'roller-coaster'));
+
+    /* 경계 — 정확히 1,000P 와 정확히 100,000P 는 들어간다("이하"·"이상"이다). */
+    wipe(); seedForWiring(); mkUser('rc5', 0);
+    setTo('rc5', 5_000, 'attendance');
+    setTo('rc5', LOW, 'game:mines');
+    setTo('rc5', HIGH, 'game:mines');
+    ck('경계값도 인정한다', HK.commonAwards('rc5').some(u => u.id === 'roller-coaster'));
+
+    wipe(); seedForWiring(); mkUser('rc6', 0);
+    setTo('rc6', 5_000, 'attendance');
+    setTo('rc6', LOW + 1, 'game:mines');
+    setTo('rc6', HIGH, 'game:mines');
+    ck('1,001P 는 바닥이 아니다', !HK.commonAwards('rc6').some(u => u.id === 'roller-coaster'));
+
+    wipe(); seedForWiring(); mkUser('rc7', 0);
+    setTo('rc7', 5_000, 'attendance');
+    setTo('rc7', LOW, 'game:mines');
+    setTo('rc7', HIGH - 1, 'game:mines');
+    ck('99,999P 는 회복이 아니다', !HK.commonAwards('rc7').some(u => u.id === 'roller-coaster'));
+
+    /* 출석을 안 한 날은 아예 성립하지 않는다. */
+    wipe(); seedForWiring(); mkUser('rc8', 0);
+    setTo('rc8', 500, 'game:mines');
+    setTo('rc8', 200_000, 'game:mines');
+    ck('출석이 없으면 안 열린다', !HK.commonAwards('rc8').some(u => u.id === 'roller-coaster'));
+
+    /* 어제의 궤적은 오늘과 섞이지 않는다 — 하루의 경계는 KST 다. */
+    wipe(); seedForWiring(); mkUser('rc9', 0);
+    setTo('rc9', 5_000, 'attendance');
+    setTo('rc9', 700, 'game:mines');
+    // 위 세 줄을 어제로 밀어 둔다
+    db.prepare(`UPDATE points_ledger SET created_at = created_at - 86400 WHERE user_id = 'rc9'`).run();
+    setTo('rc9', 300_000, 'game:mines');          // 오늘 회복
+    ck('어제 바닥 + 오늘 회복은 아니다',
+      !HK.commonAwards('rc9').some(u => u.id === 'roller-coaster'));
+
+    /* 값싸야 한다 — 잔액이 목표에 못 미치면 원장을 보지도 않는다. */
+    const hookSrc = require('node:fs').readFileSync('src/web/achieve-hook.ts', 'utf8') as string;
+    ck('잔액으로 먼저 거른다', /< ROLLER_HIGH\) return \[\];/.test(hookSrc));
+    ck('기준이 설명과 같다',
+      /ROLLER_LOW = 1_000/.test(hookSrc) && /ROLLER_HIGH = 100_000/.test(hookSrc));
+    const byId3 = new Map(A.listAchievements().map(a => [a.id, a]));
+    ck('설명이 같은 숫자를 말한다',
+      !!byId3.get('roller-coaster')?.description.includes('1,000P')
+      && !!byId3.get('roller-coaster')?.description.includes('100,000P'),
+      byId3.get('roller-coaster')?.description);
   }
 
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */

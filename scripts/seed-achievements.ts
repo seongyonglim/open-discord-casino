@@ -145,6 +145,42 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     // 판정: src/web/games/ladder.ts — user_streaks 의 ladder_right_win 이 7 이상일 때
   },
   {
+    id: 'bc-player-7',
+    gameType: 'BACCARAT',
+    title: '플레이어의 수호신',
+    /* "오직"과 "쉬어가는 판"을 둘 다 적는다. 앞의 말이 없으면 뱅커와 양다리를 걸어도
+       되는 것으로 읽고, 뒤의 말이 없으면 한 판이라도 빠지면 끊긴다고 읽는다.
+       타이도 적는다 — 무승부에서 연승이 깨진 것으로 오해할 수 있다. */
+    description: '바카라에서 «플레이어»에만 걸어 7연승합니다. '
+      + '쉬어가는 판과 타이(무승부)는 연승이 끊기지 않습니다.',
+    minBet: MIN_BET,
+    sortAt: 15,
+    // 판정: src/web/games/baccarat.ts — user_streaks 의 bacc_player_win 이 7 이상일 때
+  },
+  {
+    id: 'all-first-1',
+    gameType: 'ALL',
+    title: '나 혼자만 1등',
+    description: '한 시즌이 끝나는 시점에 모든 게임의 랭킹 1위를 동시에 차지합니다.',
+    /* 시즌 마감에 딱 한 번 판정된다. 그 판의 베팅액이라는 것이 없다. */
+    minBet: 0,
+    sortAt: 91,
+    // 판정: src/db/queries/season.ts closeSeason — 전 종목 1위가 같은 사람일 때
+  },
+  {
+    id: 'roller-coaster',
+    gameType: 'ALL',
+    title: '롤러코스터',
+    description: '하루 안에 보유 포인트가 1,000P 이하까지 떨어진 뒤 100,000P 이상으로 되돌립니다.',
+    /* 잔액의 궤적을 보는 과제라 한 판의 베팅액과 상관이 없다. */
+    minBet: 0,
+    /* 히든. 조건을 알려 주면 "일부러 1,000P 까지 잃는" 것이 최적의 행동이 된다 —
+       그건 이 과제가 기리려던 일(잃었다가 되살아났다)의 반대다. */
+    isHidden: true,
+    sortAt: 92,
+    // 판정: src/web/achieve-hook.ts commonAwards — 오늘 출석 뒤 바닥을 찍고 되살아났을 때
+  },
+  {
     id: 'relief-10-day',
     gameType: 'ALL',
     title: '부지런한 파산러',

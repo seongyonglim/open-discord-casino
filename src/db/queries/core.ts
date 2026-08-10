@@ -281,11 +281,49 @@ export function seasonGameProfit(userId: string, game: string): number {
  * 둘 표가 필요 없고, 세는 곳과 주는 곳이 갈리지도 않는다(따로 두면 한쪽만 늘어난다).
  * 하루의 경계는 KST 다. SQLite 에 시간대가 없어 경계 시각을 여기서 만들어 넘긴다.
  */
-export function reliefCountToday(userId: string, now = Date.now()): number {
-  const kstMidnight = Math.floor(
+/** 오늘(KST) 자정의 유닉스 초. SQLite 에 시간대가 없어 경계 시각을 여기서 만들어 넘긴다. */
+export function kstMidnightSec(now = Date.now()): number {
+  return Math.floor(
     new Date(new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date(now)) + 'T00:00:00+09:00').getTime() / 1000);
+}
+
+/**
+ * 롤러코스터 — 하루 안에 바닥을 찍고 되살아났는가.
+ *
+ * 순서가 조건이다: 오늘 출석을 받은 뒤에 잔액이 LOW 이하로 떨어지고, 그 뒤에 HIGH 이상이
+ * 되어야 한다. "출석 뒤"를 요구하는 이유는 어제 밤에 0원으로 잠든 사람이 오늘 출석만으로
+ * 조건 절반을 채우는 것을 막기 위해서다 — 그건 기행이 아니라 그냥 어제의 상태다.
+ *
+ * 원장만 본다. 잔액의 모든 변화는 balance_after 로 한 줄씩 남으므로, 따로 기록해 둘 표가
+ * 없어도 "그 순간 얼마였나"를 순서대로 되짚을 수 있다. 파산 지원금으로 올라온 것도
+ * 원장의 한 줄이라 자연히 인정된다(요청 사항이다).
+ */
+export function rollerCoasterToday(
+  userId: string, low: number, high: number, now = Date.now()
+): boolean {
+  const from = kstMidnightSec(now), to = from + 86_400;
+  const att = one<{ id: number }>(
+    `SELECT id FROM points_ledger
+      WHERE user_id = ? AND reason = 'attendance' AND created_at >= ? AND created_at < ?
+      ORDER BY id ASC LIMIT 1`, userId, from, to);
+  if (!att) return false;
+  // 출석 뒤에 처음으로 바닥을 찍은 줄
+  const bottom = one<{ id: number }>(
+    `SELECT id FROM points_ledger
+      WHERE user_id = ? AND id > ? AND created_at < ? AND balance_after <= ?
+      ORDER BY id ASC LIMIT 1`, userId, att.id, to, Math.floor(low));
+  if (!bottom) return false;
+  // 그 뒤에 되살아난 줄
+  return one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM points_ledger
+      WHERE user_id = ? AND id > ? AND created_at < ? AND balance_after >= ?`,
+    userId, bottom.id, to, Math.floor(high))!.n > 0;
+}
+
+export function reliefCountToday(userId: string, now = Date.now()): number {
+  const kstMidnight = kstMidnightSec(now);
   /* 위쪽 경계도 둔다. 아래만 두면 "오늘 이후 전부"가 되어 하루가 아니라 열린 구간이다.
      지금은 원장에 미래 시각이 안 들어오므로 결과가 같지만, 그건 이 함수가 맞아서가
      아니라 그런 줄이 없어서일 뿐이다 — 시각을 넣어 세는 검사에서 실제로 어긋났다. */

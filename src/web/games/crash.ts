@@ -15,7 +15,7 @@ import {
   type CrashRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { award, withUnlocked } from '../achieve-hook';
+import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
@@ -137,7 +137,8 @@ function crashAwards(
   myBet: { amount: number; cashout_multiplier: number | null; auto_cashout: number | null } | null,
 ) {
   // 이번 라운드에 캐시아웃한 판만 본다. 안 걸었거나 터진 판은 볼 것이 없다.
-  if (!myBet || myBet.cashout_multiplier == null) return {};
+  // 안 걸었거나 터진 판에도 공통 과제는 봐야 한다 — 되살아난 것은 그 판과 무관하다
+  if (!myBet || myBet.cashout_multiplier == null) return withUnlocked(commonAwards(userId));
   const byHand = myBet.auto_cashout == null || myBet.cashout_multiplier !== myBet.auto_cashout;
   const checks: [string, () => boolean][] = [];
   if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);
@@ -148,7 +149,7 @@ function crashAwards(
      사람이 보고 있는 순수익과 과제가 재는 순수익이 다르면, 랭킹에 100만이라고 적혀
      있는데 과제는 안 열리는 일이 생긴다. 달성 기록 자체는 시즌과 무관하게 영구히 남는다. */
   checks.push(['crash-profit-1m', () => seasonGameProfit(userId, 'graph') >= CRASH_PROFIT_GOAL]);
-  return withUnlocked(award(userId, myBet.amount, checks));
+  return withCommon(userId, award(userId, myBet.amount, checks));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {

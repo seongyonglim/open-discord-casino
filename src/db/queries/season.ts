@@ -214,6 +214,39 @@ export function seasonGameRanking(seasonId: number, game: string, limit = 100): 
   return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
+/* ── 나 혼자만 1등 ────────────────────────────────────────────────────
+   "전 종목 1위로 시즌을 끝낸다". 카테고리 목록을 여기 적지 않고 RANK_GAMES(services/ranking)
+   에서 읽는다 — 게임이 늘면 그 표에 한 줄이 들어가고, 이 과제의 조건도 함께 넓어진다.
+   요청 사항이 "향후 추가되는 게임도 나중에 포함"이었고, 목록을 두 곳에 두면 그때 한쪽만
+   늘어난다. 홀덤은 RANK_GAMES 에 없다(프리롤이라 순수익 지표를 쓸 수 없어서다) —
+   대신 대회 순위가 따로 있어 여기서 한 줄 더 붙인다.
+
+   판정은 엄격하다: 한 종목이라도 그 시즌에 아무도 안 했으면 1위가 없으므로 아무도 못 딴다.
+   "전 종목"이 조건이니 그것이 맞는 결과다 — 한 종목만 열린 시즌에 그 1위가 이 과제를
+   가져가면 이름이 거짓말이 된다. */
+function awardSeasonSweep(seasonId: number): void {
+  try {
+    const { RANK_GAMES } = require('../../services/ranking') as typeof import('../../services/ranking');
+    const { unlockAchievement } = require('../achievements') as typeof import('../achievements');
+    const tops = new Set<string>();
+    for (const game of new Set(Object.values(RANK_GAMES))) {
+      const top = seasonGameRanking(seasonId, game, 1)[0];
+      if (!top) return;                       // 아무도 안 한 종목이 있다 — 전 종목이 아니다
+      tops.add(top.userId);
+      if (tops.size > 1) return;              // 이미 갈렸다
+    }
+    const ht = seasonHoldemRanking(seasonId, 1)[0];
+    if (!ht) return;
+    tops.add(ht.userId);
+    if (tops.size !== 1) return;
+    unlockAchievement([...tops][0], 'all-first-1');
+  } catch (e) {
+    /* 판정이 던져도 시즌 마감은 끝나야 한다. 여기서 트랜잭션이 롤백되면 성적표도, 잔액
+       초기화도 안 되고, 예약은 남아 다음 요청에서 또 시도한다 — 훨씬 나쁜 실패다. */
+    console.error('나 혼자만 1등 판정 오류:', e);
+  }
+}
+
 /** 내 자리. 목록 밖으로 밀려나도 아래 고정바에 보여 주기 위한 것이다. */
 export function mySeasonRank(seasonId: number, userId: string, game: string | null):
   { rank: number; total: number; score: number; rounds?: number; rated?: number; wins?: number; pushes?: number } | null {
@@ -357,6 +390,14 @@ export function closeSeason(opts: { seed: number; nextName?: string }):
       `SELECT u.id, u.balance FROM users u
         WHERE ${ACTIVE_IN_SEASON}
         ORDER BY u.balance DESC, u.id ASC`, s.started_at, FAR_FUTURE);
+    /* ── 도전과제: 나 혼자만 1등 ─────────────────────────────────────
+       이 시즌의 모든 게임 카테고리에서 같은 사람이 1위인가. 시즌이 닫히는 이 순간에만
+       판정할 수 있다 — 그 뒤에는 전적이 0에서 다시 시작하므로 되짚을 방법이 없다.
+
+       성적표를 찍은 다음, 잔액을 초기화하기 전에 본다. 게임 순위는 잔액과 무관하지만
+       순서를 여기로 못 박아 두면 "정산 중간 상태에서 판정한다"는 애매함이 없다. */
+    awardSeasonSweep(s.id);
+
     players.forEach((p, i) => {
       run(`INSERT INTO season_results (season_id, user_id, balance, rank) VALUES (?, ?, ?, ?)
            ON CONFLICT(season_id, user_id) DO UPDATE SET balance = excluded.balance, rank = excluded.rank`,

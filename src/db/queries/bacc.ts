@@ -57,6 +57,12 @@ export interface BaccOutcome {
   bankerCards: number[];
 }
 
+/* 감사가 결과를 못 박고 이 함수를 직접 태운다 — 실제 라운드를 기다리면 카드가 무작위라
+   "플레이어 7연승"을 만들 수 없고, 판정을 흉내 내면 정작 이 자리를 검사하지 않게 된다.
+   운영 경로는 아래 advanceBaccaratRound 안에서만 부른다. */
+export const settleBaccaratBetsForAudit = (roundId: number, o: BaccOutcome): void =>
+  settleBaccaratBets(roundId, o);
+
 function settleBaccaratBets(roundId: number, o: BaccOutcome): void {
   const bets = all<{ id: number; user_id: string; market: string; amount: number; odds: number }>(
     `SELECT id, user_id, market, amount, odds FROM baccarat_bets WHERE round_id = ?`, roundId
@@ -92,6 +98,50 @@ function settleBaccaratBets(roundId: number, o: BaccOutcome): void {
     perUser.set(b.user_id, acc);
   }
   for (const [uid, a] of perUser) bumpGameStats(uid, 'baccarat', a.staked, a.returned);
+  trackPlayerStreak(bets, o);
+}
+
+/* ── 도전과제: 플레이어의 수호신 ────────────────────────────────────────
+   "오직 «플레이어»에만 걸어 7연승". 세 가지를 이 자리에서 정한다.
+
+   · 오직 — 그 판에 그 사람의 베팅이 플레이어 하나뿐이어야 한다. 뱅커·타이·페어를 함께
+     걸었으면 양다리라 끊는다. 바카라는 한 라운드에 여러 시장에 걸 수 있으므로
+     "플레이어에 걸었나"만 보면 사실상 아무 조건이 아니게 된다.
+   · 쉬어가기 — 안 건 판은 이 루프에 아예 오지 않으므로 저절로 유지된다.
+   · 타이 — 원금이 그대로 돌아온다(payout = amount · won = 0). 이긴 것도 아니고 잃은
+     것도 아니므로 쉬어간 판과 같이 본다. 여기서 끊으면 "무승부에 연승이 깨진다"가 되고,
+     올리면 안 이긴 판으로 연승이 오른다 — 둘 다 설명과 다른 말이 된다.
+
+   문지기(1,000P)는 여기 있다. 연승을 쌓는 자리에서 막지 않으면 1P 로 쌓아 놓고
+   마지막 한 판만 크게 걸어 열 수 있다(사다리와 같은 규칙이다). */
+const BACC_STREAK_MIN_BET = 1_000;
+
+function trackPlayerStreak(
+  bets: { user_id: string; market: string; amount: number }[], o: BaccOutcome
+): void {
+  const { bumpStreak, resetStreak } = require('../streaks') as typeof import('../streaks');
+  const byUser = new Map<string, { user_id: string; market: string; amount: number }[]>();
+  for (const b of bets) {
+    const list = byUser.get(b.user_id) ?? [];
+    list.push(b);
+    byUser.set(b.user_id, list);
+  }
+  for (const [uid, list] of byUser) {
+    const only = list.length === 1 && list[0].market === 'player' ? list[0] : null;
+    if (!only) { resetStreak(uid, 'bacc_player_win'); continue; }
+    if (o.winner === 'tie') continue;                       // 무승부 — 쉬어간 판으로 본다
+    if (o.winner !== 'player') { resetStreak(uid, 'bacc_player_win'); continue; }
+    if (only.amount < BACC_STREAK_MIN_BET) continue;        // 소액은 연승에 넣지 않는다
+    bumpStreak(uid, 'bacc_player_win');
+  }
+}
+
+/** 연승을 이어 온 마지막 «플레이어» 승리 판의 베팅액. 화면에 적힌 기준과 코드를 맞추는 데 쓴다. */
+export function lastPlayerWinBet(userId: string): number {
+  return one<{ amount: number }>(
+    `SELECT amount FROM baccarat_bets
+      WHERE user_id = ? AND market = 'player' AND won = 1
+      ORDER BY id DESC LIMIT 1`, userId)?.amount ?? 0;
 }
 
 function pruneBaccaratRounds(): void {

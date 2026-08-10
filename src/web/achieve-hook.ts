@@ -49,3 +49,32 @@ export function award(
 export function withUnlocked(got: UnlockedView[]): { unlocked?: UnlockedView[] } {
   return got.length ? { unlocked: got } : {};
 }
+
+/* ── 게임과 무관한 과제 ───────────────────────────────────────────────
+   특정 게임의 판이 아니라 "그 사람의 오늘"을 보는 과제가 있다(롤러코스터). 그런 것은
+   어느 게임에서 되살아났든 그 자리에서 알려야 하므로, 게임마다 따로 붙이지 않고
+   여기 한 곳에 모아 각 게임의 상태 응답에서 함께 부른다.
+
+   매 폴링마다 도는 자리라 값싸야 한다. 순서가 그 값싸기를 만든다:
+     1. 잔액이 목표에 못 미치면 원장을 아예 안 본다 (거의 모든 호출이 여기서 끝난다)
+     2. 이미 달성했으면 awardIfBet 이 db 한 번으로 걸러 낸다
+     3. 그 문을 지난 경우에만 오늘의 원장을 되짚는다
+
+   잔액은 인자로 받지 않고 직접 읽는다. 부르는 쪽마다 그 값을 어떻게 들고 있는지가 달라서
+   (어떤 게임은 payload 안에, 어떤 게임은 아예 안 읽는다) 인자로 두면 게임마다 다른 모양이
+   된다 — 색인 한 줄 조회라 폴링에 얹어도 무게가 없다. */
+const ROLLER_LOW = 1_000;
+const ROLLER_HIGH = 100_000;
+
+export function commonAwards(userId: string): UnlockedView[] {
+  const { getWebUser, rollerCoasterToday } = require('../db/queries') as typeof import('../db/queries');
+  if ((getWebUser(userId)?.balance ?? 0) < ROLLER_HIGH) return [];
+  return award(userId, 0, [
+    ['roller-coaster', () => rollerCoasterToday(userId, ROLLER_LOW, ROLLER_HIGH)],
+  ]);
+}
+
+/** 게임별 달성 + 공통 달성을 한 번에 응답 모양으로. 게임의 상태 응답이 이걸 쓴다. */
+export function withCommon(userId: string, got: UnlockedView[]): { unlocked?: UnlockedView[] } {
+  return withUnlocked([...got, ...commonAwards(userId)]);
+}

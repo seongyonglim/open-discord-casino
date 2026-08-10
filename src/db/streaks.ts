@@ -7,7 +7,11 @@
  */
 import { one, run } from './queries';
 
-export type StreakKind = 'ladder_right_win';
+export type StreakKind =
+  /** 사다리 — 출발 «우»에만 걸어 이긴 연속 판수 (queries/ladder) */
+  | 'ladder_right_win'
+  /** 바카라 — «플레이어»에만 걸어 이긴 연속 판수 (queries/bacc) */
+  | 'bacc_player_win';
 
 export function getStreak(userId: string, kind: StreakKind): number {
   return one<{ value: number }>(

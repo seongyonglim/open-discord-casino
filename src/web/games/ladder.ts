@@ -12,7 +12,7 @@ import {
   type LadderRoundRow, type WebUser,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { award, withUnlocked } from '../achieve-hook';
+import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { getStreak } from '../../db/streaks';
 import { lastRightWinBet } from '../../db/queries/ladder';
 import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
@@ -130,8 +130,8 @@ const RIGHT_STREAK_GOAL = 7;
 
 function ladderAwards(userId: string): { unlocked?: { id: string; title: string; description: string }[] } {
   const streak = getStreak(userId, 'ladder_right_win');
-  if (streak < RIGHT_STREAK_GOAL) return {};
-  return withUnlocked(award(userId, lastRightWinBet(userId), [['la-right-7', () => true]]));
+  if (streak < RIGHT_STREAK_GOAL) return withUnlocked(commonAwards(userId));
+  return withCommon(userId, award(userId, lastRightWinBet(userId), [['la-right-7', () => true]]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {

@@ -24,7 +24,7 @@ import {
   canSurrender, settleSurrender,
 } from '../../services/blackjack';
 import { readJson, sendJson } from '../http';
-import { award, withUnlocked } from '../achieve-hook';
+import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { layout, jsonForScript, helpDialog, sidePanel, rankPane, rankJs } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
@@ -153,11 +153,12 @@ const BJ_MANY_CARDS = 7;
 function bjAwards(round: BjRoundRow, userId: string) {
   const hand = getMyBlackjackHand(round.id, userId);
   // 정산 전에는 outcome 이 없다 — 이길지 질지 모르는 상태에서 판정할 것이 없다
-  if (!hand || hand.outcome !== 'win') return {};
+  // 이긴 판이 아니어도 공통 과제는 봐야 한다 — 되살아난 것은 이 판의 승패와 무관하다
+  if (!hand || hand.outcome !== 'win') return withUnlocked(commonAwards(userId));
   const cards = JSON.parse(hand.cards_json) as number[];
   const total = handTotal(cards);
   const dealer = handTotal(JSON.parse(round.dealer_json ?? '[]') as number[]);
-  return withUnlocked(award(userId, hand.bet, [
+  return withCommon(userId, award(userId, hand.bet, [
     ['bj-stand-6', () => hand.status === 'stand' && total.total <= BJ_LOW_STAND && dealer.bust],
     ['bj-7-cards', () => cards.length >= BJ_MANY_CARDS && !total.bust],
   ]));

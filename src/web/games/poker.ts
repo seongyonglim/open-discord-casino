@@ -20,7 +20,7 @@ import {
   evaluate7, scoreCategory, categoryBucket, cardToString, CAT_NAMES, BUCKET_NAMES,
 } from '../../services/poker';
 import { readJson, sendJson } from '../http';
-import { award, withUnlocked } from '../achieve-hook';
+import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
@@ -198,11 +198,12 @@ const HIGH_BUCKET = `b${BUCKET_NAMES.length - 1}`;
 
 function flipAwards(roundId: number, userId: string) {
   const mine = getMyPokerBets(roundId, userId).filter(b => b.market === HIGH_BUCKET && b.won === 1);
-  if (!mine.length) return {};
+  // 적중이 없어도 공통 과제는 봐야 한다 — 되살아난 것은 이 판의 결과와 무관하다
+  if (!mine.length) return withUnlocked(commonAwards(userId));
   /* 여러 번 걸 수 있으니 가장 크게 건 것을 기준으로 본다 — 문지기가 "그 판에 얼마를
      걸었나"를 묻는 것이라, 같은 판의 작은 베팅 때문에 막히면 뜻이 어긋난다. */
   const top = Math.max(...mine.map(b => b.amount));
-  return withUnlocked(award(userId, top, [['pk-quads-plus', () => true]]));
+  return withCommon(userId, award(userId, top, [['pk-quads-plus', () => true]]));
 }
 
 const VALID_MARKETS = new Set(['master', 'shark', 'b0', 'b1', 'b2', 'b3', 'b4']);

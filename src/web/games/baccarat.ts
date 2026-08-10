@@ -18,6 +18,9 @@ import {
 import { baccaratProbabilities, drawRound, playRound, cardsToStrings, handTotal } from '../../services/baccarat';
 import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
 import { readJson, sendJson } from '../http';
+import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
+import { getStreak } from '../../db/streaks';
+import { lastPlayerWinBet } from '../../db/queries/bacc';
 import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
@@ -151,7 +154,25 @@ function statePayload(round: BaccRoundRow, userId: string) {
 }
 
 export async function handleState(_req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
-  return sendJson(res, 200, statePayload(advance(), userId));
+  return sendJson(res, 200, { ...statePayload(advance(), userId), ...baccAwards(userId) });
+}
+
+/* ── 도전과제: 플레이어의 수호신 ──────────────────────────────────────
+   연승은 정산 자리에서 쌓인다(그 판의 승패와 "플레이어에만 걸었나"는 거기서만 안다).
+   여기서는 쌓인 값만 보고 과제를 연다 — 이 응답으로 나가야 화면이 토스트를 띄운다.
+
+   문지기(1,000P)는 두 곳에 선다. 진짜 문은 연승을 쌓는 자리(queries/bacc)이고, 여기서
+   한 번 더 재는 이유는 화면 때문이다: 과제의 min_bet 이 0 이면 카드에 «베팅 1,000P 이상»이
+   안 붙어서, 규칙이 있는데 어디에도 안 적힌 상태가 된다(사다리와 같은 이유다).
+
+   매 폴링마다 도는 자리지만 값싸다 — 연승이 7 미만이면 조회 한 번으로 끝난다. */
+const PLAYER_STREAK_GOAL = 7;
+
+function baccAwards(userId: string): { unlocked?: { id: string; title: string; description: string }[] } {
+  if (getStreak(userId, 'bacc_player_win') < PLAYER_STREAK_GOAL) {
+    return withUnlocked(commonAwards(userId));
+  }
+  return withCommon(userId, award(userId, lastPlayerWinBet(userId), [['bc-player-7', () => true]]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {
