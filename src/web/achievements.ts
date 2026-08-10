@@ -40,13 +40,6 @@ const TYPE_LABEL: Record<string, string> = {
   MINES: '지뢰찾기', CRASH: '그래프', LADDER: '사다리', ALL: '공통',
 };
 
-/** 자물쇠(감춘 과제). 나머지와 같은 선 굵기·크기로 그려야 한 줄에 섞여도 튀지 않는다. */
-const LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
-  + ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
-  + '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/>'
-  + '<path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>'
-  + '<circle cx="12" cy="15.5" r="1.4" fill="currentColor" stroke="none"/></svg>';
-
 function kstDate(sec: number): string {
   const d = new Date((sec + 9 * 3600) * 1000);
   return `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.`
@@ -85,10 +78,13 @@ function unlockerRow(v: AchievementView, total: number): string {
 }
 
 function card(v: AchievementView, total: number): string {
+  /* 감춘 과제도 자기 게임 아이콘을 쓴다. 전에는 자물쇠를 그렸는데, 설명 자리에 이미
+     "숨겨진 도전과제입니다"가 적혀 있어 자물쇠는 같은 말을 두 번 하는 것이고, 그러면서
+     아이콘 칸이 원래 하던 일(어느 게임인지 알려 주기)을 잃었다 — 아래 이름표만 [그래프]인데
+     그림은 자물쇠라 둘이 어긋나 보이기까지 했다. 감추는 것은 무엇을 해야 하나뿐이다. */
   const icon = v.iconUrl
     ? `<img class="ac-ic-img" src="${esc(v.iconUrl)}" alt="" width="46" height="46">`
-    : `<span class="ac-ic-svg">${v.unlocked || !v.hidden
-      ? (TYPE_ICON[v.gameType] ?? coinIcon) : LOCK_ICON}</span>`;
+    : `<span class="ac-ic-svg">${TYPE_ICON[v.gameType] ?? coinIcon}</span>`;
   /* 잠긴 카드는 흑백에 자물쇠다. 달성한 카드만 색이 살아 있어야 목록을 훑을 때
      "내가 한 것"이 먼저 눈에 들어온다. */
   const cls = 'ac-card' + (v.unlocked ? ' on' : ' off') + (v.hidden && !v.unlocked ? ' secret' : '');

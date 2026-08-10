@@ -165,20 +165,27 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
   /* 목표 라운드 수를 채울 때까지 돈다. 시도 횟수를 고정하면 라운드가 엉뚱한 단계에
      있어 건너뛴 만큼 완주 수가 들쭉날쭉해진다(실측 33~120회). */
   const WANT_ROUNDS = 60;
-  for (let r = 0; r < 600 && rounds < WANT_ROUNDS; r++) {
+  /* 건너뛴 이유를 센다. 표본이 안 차서 실패했을 때 "무엇이 굶겼는지"가 실패 메시지에
+     같이 나와야 한다 — 그게 없어서 npm run audit 이 한 번 22/60 으로 떨어졌을 때
+     원인을 좁히려고 이 감사만 따로 여섯 번 더 돌려야 했다. */
+  const skip = { 단계: 0, 착석: 0, 미완주: 0 };
+  /* 시도 예산은 넉넉해야 한다. 600 이었을 때 전체 체인을 함께 돌리면(부하가 걸리면)
+     이따금 표본이 22 라운드에서 멈췄다 — 판정한 22 라운드는 전부 옳았고 모자란 것은
+     표본뿐이었다. 목표를 채우면 곧바로 빠져나오므로 예산을 늘려도 평소 시간은 그대로다. */
+  for (let r = 0; r < 4_000 && rounds < WANT_ROUNDS; r++) {
     /* 끝난 라운드는 공개 시간(BJ_REVEAL_SEC)이 지나야 다음 판이 열린다.
        감사는 기다리지 않으므로 그 시각을 과거로 밀어 바로 다음 판을 받는다. */
     let round = advanceBlackjackRound(H);
-    for (let guard = 0; guard < 5 && round.phase === 'done'; guard++) {
-      db.prepare(`UPDATE blackjack_rounds SET resolved_at = ? WHERE id = ?`)
-        .run(nowSec() - 600, round.id);
+    for (let guard = 0; guard < 20 && round.phase === 'done'; guard++) {
+      db.prepare(`UPDATE blackjack_rounds SET resolved_at = ?, betting_ends_at = ? WHERE id = ?`)
+        .run(nowSec() - 600, nowSec() - 600, round.id);
       round = advanceBlackjackRound(H);
     }
-    if (round.phase !== 'waiting' && round.phase !== 'betting') continue;
+    if (round.phase !== 'waiting' && round.phase !== 'betting') { skip.단계++; continue; }
     // 3명이 함께 앉는다 — 사용자가 지적한 "여러 명이 참여한 판"을 그대로 재현한다
     let seated = 0;
     for (const p of PLAYERS) if (seatBlackjackBet(p.id, p.id, round.id, p.seat, 100).ok) seated++;
-    if (seated === 0) continue;
+    if (seated === 0) { skip.착석++; continue; }
     db.prepare(`UPDATE blackjack_rounds SET betting_ends_at = ? WHERE id = ?`).run(nowSec() - 1, round.id);
     round = advanceBlackjackRound(H);
 
@@ -194,11 +201,12 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
       }
     }
     // 딜러까지 마무리
-    for (let step = 0; step < 20; step++) {
+    let finished = false;
+    for (let step = 0; step < 40; step++) {
       const cur = db.prepare(`SELECT * FROM blackjack_rounds WHERE id = ?`).get(round.id) as
         { phase: string; dealer_json: string; shoe_json: string; shoe_pos: number };
       if (cur.phase === 'done') {
-        rounds++;
+        rounds++; finished = true;
         const dealer = JSON.parse(cur.dealer_json) as number[];
         const hands = getBlackjackHands(round.id);
         const all = [...dealer];
@@ -226,9 +234,11 @@ console.log('\n[4] 실제 블랙잭 라운드 — DB를 거쳐 배분된 카드�
         .run(nowSec() - 60, round.id);
       advanceBlackjackRound(H);
     }
+    if (!finished) skip.미완주++;
   }
   console.log(`    ${rounds}라운드 완주 · 3명 동시 참여 · 한 판 최다 동일 카드 ${maxSeen}장`);
-  ck(`라운드가 실제로 돌았다 (검증이 헛돌지 않았다)`, rounds >= WANT_ROUNDS, `${rounds}/${WANT_ROUNDS}라운드`);
+  ck(`라운드가 실제로 돌았다 (검증이 헛돌지 않았다)`, rounds >= WANT_ROUNDS,
+    `${rounds}/${WANT_ROUNDS}라운드 · 건너뜀 ${JSON.stringify(skip)}`);
   ck('배분 장수 = 슈 커서 위치 (같은 자리를 두 번 주지 않는다)', posReuse === 0, detail);
   ck('한 판에 같은 카드가 두 번 나오지 않는다', overDecks === 0, detail);
   /* 8덱이면 같은 카드가 3장 나오는 일은 드물지만 실재한다 — 신고가 버그가 아니었음을

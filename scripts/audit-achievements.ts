@@ -1545,16 +1545,37 @@ async function main(): Promise<void> {
        짧은 스택 둘을 서로 다른 금액으로 만들어 전원 올인시킨다. 그러면 사이드 팟이 생기고
        둘 다 그 판에서 나간다.
 
-       "누가 이길지"를 카드로 정하지 않는다. 홀덤에는 보드와 무관하게 이기는 손이 없어서
-       어떤 카드를 심어도 결과가 확률에 달린다 — 감사가 이따금 실패하게 만드는 종류의
-       설계다. 대신 판이 끝난 뒤 실제 승자를 읽어, 그 사람의 KO 가 탈락자 수와 같은지 본다.
-       확인하려는 것은 "누가 이겼나"가 아니라 "이긴 사람에게 탈락자만큼 쌓였나"다. */
+       승패를 카드로 못 박는다. 예전에는 카드를 심지 않고 "판이 끝난 뒤 실제 승자를 읽어"
+       검사했는데, 짧은 쪽(ko_c)이 사이드 팟을 이기면 살아남아 탈락자가 하나뿐이 되어
+       세 검사가 같이 무너졌다 — 세 번에 한 번쯤 나오는 실패였다. npm run audit 은 && 로
+       엮여 있어 그 한 번이 뒤의 감사를 전부 건너뛰게 만든다.
+
+       그래서 ko_a 에게 AA, 짧은 둘에게 22·33 을 주고 보드를 7·9·J·Q·K 로 깐다.
+       보드에 페어·같은 무늬 셋·10 이 없어 트립스·플러시·스트레이트가 나올 수 없고,
+       AA 가 확정으로 두 층을 다 가져간다 → 짧은 둘이 같은 판에 털린다. */
     wipe(); seedForWiring();
     for (const p of ['ko_a', 'ko_b', 'ko_c']) mkUser(p, 50_000);
     const t = openTourney(['ko_a', 'ko_b', 'ko_c']);
-    // 두 사람만 짧게 만든다 — 남는 한 사람이 이기든, 짧은 쪽이 이기든 검사는 성립한다
-    db.prepare(`UPDATE holdem_seats SET stack = 300 WHERE table_id = ? AND user_id = 'ko_b'`).run(t.tableId);
-    db.prepare(`UPDATE holdem_seats SET stack = 900 WHERE table_id = ? AND user_id = 'ko_c'`).run(t.tableId);
+    const koHand = HD.getCurrentHand(t.tableId)!;
+    const koHole: Record<string, number[]> = {
+      ko_a: [c(12, 0), c(12, 1)],   // A♠A♥ — 다 가져간다
+      ko_b: [c(0, 0), c(0, 1)],     // 2♠2♥
+      ko_c: [c(1, 0), c(1, 1)],     // 3♠3♥
+    };
+    for (const s of HD.getSeats(t.tableId)) {
+      db.prepare(`UPDATE holdem_hand_seats SET hole_json = ? WHERE hand_id = ? AND seat = ?`)
+        .run(JSON.stringify(koHole[s.user_id]), koHand.id, s.seat);
+    }
+    // 7♣ 9♦ J♠ Q♥ K♦ — 페어 없음, 같은 무늬 둘까지, 10 없음
+    db.prepare(`UPDATE holdem_hands SET board_json = ? WHERE id = ?`)
+      .run(JSON.stringify([c(5, 2), c(7, 3), c(9, 0), c(10, 1), c(11, 3)]), koHand.id);
+    /* 두 사람만 짧게 만든다. 스택은 핸드 스냅샷도 같이 바꿔야 팟 구조에 반영된다. */
+    for (const [uid, v] of [['ko_b', 300], ['ko_c', 900]] as [string, number][]) {
+      db.prepare(`UPDATE holdem_hand_seats SET stack = ? WHERE hand_id = ? AND user_id = ?`)
+        .run(v, koHand.id, uid);
+      db.prepare(`UPDATE holdem_seats SET stack = ? WHERE table_id = ? AND user_id = ?`)
+        .run(v, t.tableId, uid);
+    }
     drive(t.tableId, uid => {
       if (!HD.holdemAction(uid, 'allin', 0).ok) {
         if (!HD.holdemAction(uid, 'call', 0).ok) HD.holdemAction(uid, 'check', 0);
@@ -2197,6 +2218,48 @@ async function main(): Promise<void> {
     const missing = A.GAME_TYPES.filter(g => !covered.has(g));
     ck('빠진 분류가 없다', missing.length === 0, missing.join(','));
     ck('[전체] 탭은 거르지 않는다', A.ACH_TABS[0].types.length === 0);
+  }
+
+  /* ── 11. 감춘 카드 아이콘 ─────────────────────────────────────── */
+  section('[11] 감춘 카드 — 아이콘은 자물쇠가 아니라 그 게임의 것이다');
+  {
+    /* 자물쇠를 그리면 아이콘 칸이 "어느 게임인가"를 못 알려 준다. 아래 이름표는
+       [그래프]인데 그림은 자물쇠라 둘이 어긋나 보이기도 했다. 가리는 것은 설명뿐이다. */
+    const W = require('../src/web/achievements') as typeof import('../src/web/achievements');
+    const I = require('../src/web/icons') as typeof import('../src/web/icons');
+    db.exec(`DELETE FROM achievements; DELETE FROM user_achievements;`);
+    Q.upsertUser('ic1', 'ic1', null);
+    A.upsertAchievement({
+      id: 'ic-crash', gameType: 'CRASH', title: '감춘 그래프 과제',
+      description: '실제 조건', sortAt: 1, isHidden: true, minBet: 0,
+    });
+    A.upsertAchievement({
+      id: 'ic-open', gameType: 'CRASH', title: '공개 그래프 과제',
+      description: '실제 조건', sortAt: 2, isHidden: false, minBet: 0,
+    });
+    const html = W.achievementsPage({ id: 'ic1', username: 'ic1', avatar: null } as any);
+    /* 카드 단위로 잘라 본다. 페이지 전체에서 찾으면 옆 카드의 아이콘에 속는다. */
+    const cardOf = (title: string): string => {
+      const at = html.indexOf(title);
+      if (at < 0) return '';
+      const from = html.lastIndexOf('<div class="ac-card', at);
+      return html.slice(from, at);
+    };
+    const secret = cardOf('감춘 그래프 과제');
+    const open = cardOf('공개 그래프 과제');
+    ck('감춘 카드가 그려진다', secret.length > 0);
+    ck('감춘 카드에 그래프 아이콘이 있다', secret.includes(I.chartIcon));
+    ck('감춘 카드에 자물쇠가 없다', !/rect[^>]*y="10\.5"/.test(secret));
+    ck('공개 카드와 같은 아이콘이다', open.includes(I.chartIcon));
+    ck('이름표는 그래프다', secret.includes('>그래프<'));
+    // 아이콘을 열어도 설명은 계속 가려 둔다
+    ck('설명은 여전히 가려져 있다', html.includes(A.HIDDEN_DESC));
+    ck('감춘 카드에 실제 조건이 없다', !secret.includes('실제 조건'));
+    ck('감춘 카드 표시는 남는다', secret.includes('secret'));
+    ck('감춘 제목은 보인다', html.includes('감춘 그래프 과제'));
+    /* 소스에 자물쇠 그림이 남아 있으면 언젠가 되살아난다 */
+    const src = require('node:fs').readFileSync('src/web/achievements.ts', 'utf8');
+    ck('소스에 자물쇠 아이콘이 없다', !/LOCK_ICON/.test(src));
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
