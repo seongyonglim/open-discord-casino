@@ -20,6 +20,7 @@ import {
   listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
   cancelRunningTournament, searchUsers, grantPoints, userLedger,
 } from '../db/admin';
+import { prizePoolOf, isPko } from '../db/holdem';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason } from '../db/settings';
 import {
@@ -73,7 +74,7 @@ export function adminPage(user: WebUser): string {
   const rows = ts.map(t => {
     /* 상금 풀은 지금 기준으로 다시 잰다 — 아직 안 끝난 판은 지급액이 0이라
        "이 판이 얼마짜리인가"를 지급액만 봐서는 알 수 없다. */
-    const pool = T.prizePool(t.entries, t.prize_multiplier, t.prize_fixed, t.buy_in);
+    const pool = prizePoolOf(t, t.entries, t.prize_fixed);
     const st = tournamentState(t);
     return `<tr>
       <td>${t.id}</td>

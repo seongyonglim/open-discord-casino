@@ -116,8 +116,33 @@ export interface HtRow {
   prize_fixed: number;
   /** 참가비. 0 이면 프리롤 — 기본값이라 예전 행은 전부 프리롤로 읽힌다 */
   buy_in: number;
+  /** 판의 종류. 'CLASSIC'(지금까지의 대회) 또는 'PKO_BOUNTY' */
+  mode: string;
+  /** 걷은 바운티 펀드 총액. CLASSIC 은 늘 0 이다 */
+  bounty_pool: number;
   /** 등록 시작 알림을 보낸 시각. 서버 타이머가 없어서 "한 번만"을 이 열로 지킨다 */
   reg_notified_at: number | null;
+}
+
+/** 바운티 대회인가. 문자열 비교를 한 곳에만 둔다 — 오타가 조용히 CLASSIC 으로 읽힌다. */
+export function isPko(t: { mode?: string } | null | undefined): boolean {
+  return t?.mode === 'PKO_BOUNTY';
+}
+
+/**
+ * 이 판의 "순수 상금 팟" 총액.
+ *
+ * PKO 는 참가비의 절반이 바운티로 빠지므로 상금 팟은 그 나머지로만 세어야 한다.
+ * 이 계산을 부르는 곳이 네 군데(지급·상태 payload·어드민·로비 안내)라 함수를 하나 둔다 —
+ * 한 곳만 빠뜨리면 화면이 약속한 상금과 실제 지급액이 달라지고, 그건 운영자가 아니라
+ * 유저가 먼저 발견한다.
+ */
+export function prizePoolOf(
+  t: { prize_multiplier: number; prize_fixed?: number; buy_in: number; mode?: string },
+  entryCount: number, prizeFixed = t.prize_fixed ?? 0
+): number {
+  const per = isPko(t) ? T.prizeShare(t.buy_in) : t.buy_in;
+  return T.prizePool(entryCount, t.prize_multiplier, prizeFixed, per);
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -150,6 +175,12 @@ export interface HtEntryRow {
   eliminated_at: number | null; prize: number;
   /** 등록할 때 실제로 걷은 금액. 되돌릴 때 이 값을 쓴다 — 설정을 다시 읽으면 어긋난다 */
   paid_in: number;
+  /** 이 대회에서 내가 떨어뜨린 사람 수 */
+  ko_count: number;
+  /** 지금 내 머리에 걸린 바운티. KO 당하면 0 이 된다 (PKO 전용) */
+  bounty: number;
+  /** KO 로 받아 챙긴 바운티 현금 누계 — 이미 잔액에 들어간 돈이다 (PKO 전용) */
+  bounty_won: number;
 }
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
@@ -1169,20 +1200,75 @@ function eliminateBusted(
         if (pots[pa.index]?.eligible.includes(s.seat)) layer = pa;
       }
       if (!layer) layer = potAwards[0] ?? null;
+      /* 자격을 통과한 사람만 모은다. 예전에는 이 자리에서 바로 ko_count 를 올렸는데,
+         바운티는 "몇 명이 나눠 갖는가"를 먼저 알아야 몫을 정할 수 있다 — 한 명씩
+         올리면서 나누면 마지막 사람 몫에 1P 가 붙거나 빠진다. */
+      const killers: string[] = [];
       for (const w of layer?.winners ?? []) {
         const uid = seatUser.get(w.seat);
         // 자기 자신을 떨어뜨린 것으로 세지 않는다(같은 핸드에 스택이 0이 된 승자가 있을 수 있다)
         if (!uid || uid === s.user_id) continue;
         // 떨어진 사람보다 최종 칩이 많아야 한다 — 자기도 털린 승자는 남을 떨어뜨린 것이 아니다
         if ((seatStack.get(w.seat) ?? 0) <= s.stack) continue;
+        if (!killers.includes(uid)) killers.push(uid);
+      }
+      for (const uid of killers) {
         run(`UPDATE holdem_entries SET ko_count = ko_count + 1
               WHERE tournament_id = ? AND user_id = ?`, t.id, uid);
       }
+      if (isPko(t) && killers.length) settleBounty(t, s.user_id, killers, now);
     } catch (e) {
       console.error('KO 기록 실패:', e);
     }
   }
   void hand;
+}
+
+/**
+ * PKO 바운티 정산 — 떨어진 사람의 머리 값을 떨어뜨린 사람들에게 넘긴다.
+ *
+ * 한 사람의 머리 값 b 는 이 함수 안에서 정확히 b 만큼만 움직인다:
+ *   · 여럿이 나눠 가지면 splitBounty 가 1P 도 남기지 않고 쪼갠다(공동 KO — 팟을 나눠 이긴 경우).
+ *   · 각자의 몫은 다시 [머리에 얹을 몫 + 즉시 현금]으로 갈리고 그 둘의 합이 몫과 같다.
+ * 그래서 "펀드에 있던 b 가 사라지고, 같은 b 가 머리와 잔액에 다시 나타난다"가 된다.
+ * 펀드 총액(bounty_pool)은 건드리지 않는다 — 그건 걷은 금액의 기록이고, 검산의 기준이다.
+ *
+ * 현금은 즉시 잔액에 넣는다. 요구서의 "확정 상금으로 즉시 정산"이고, 실제로도 그래야
+ * 한다 — 나중에 몰아서 주면 대회가 중단됐을 때 이미 벌어진 KO 의 몫이 사라진다.
+ *
+ * 던지지 않는다. 부르는 자리가 팟이 이미 나뉜 뒤라 여기서 예외가 나가면 다음 판 예약이
+ * 통째로 안 돈다. 대신 실패를 로그로 남긴다.
+ */
+function settleBounty(t: HtRow, bustedUserId: string, killers: string[], now: number): void {
+  const victim = one<{ bounty: number }>(
+    `SELECT bounty FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+    t.id, bustedUserId);
+  const bounty = Math.max(0, Math.floor(victim?.bounty ?? 0));
+  if (bounty <= 0 || !killers.length) return;
+
+  /* 먼저 머리를 0 으로 만든다. 조건부 UPDATE 로 "그 값이 그대로 있을 때만" 내린다 —
+     같은 사람의 KO 가 두 경로에서 겹쳐 들어와도 두 번 나가지 않는다(상금 지급과 같은 방식).
+     changes() 로 실제로 줄이 바뀌었는지 확인하고, 아니면 아무것도 주지 않는다. */
+  run(`UPDATE holdem_entries SET bounty = 0
+        WHERE tournament_id = ? AND user_id = ? AND bounty = ?`, t.id, bustedUserId, bounty);
+  if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
+
+  const shares = T.splitBounty(bounty, killers.length);
+  killers.forEach((uid, i) => {
+    const { head, cash } = T.bountySplit(shares[i] ?? 0);
+    if (head > 0) {
+      run(`UPDATE holdem_entries SET bounty = bounty + ?
+            WHERE tournament_id = ? AND user_id = ?`, head, t.id, uid);
+    }
+    if (cash > 0) {
+      run(`UPDATE holdem_entries SET bounty_won = bounty_won + ?
+            WHERE tournament_id = ? AND user_id = ?`, cash, t.id, uid);
+      /* 반드시 adjustBalance 를 거친다 — 잔액을 직접 고치면 "잔액 = 원장 누적합"이 깨진다.
+         이 서비스의 유일한 불변식이고 감사가 매번 검사한다. */
+      adjustBalance(uid, cash, 'game:holdem:bounty:' + t.id);
+    }
+  });
+  void now;
 }
 
 /**
@@ -1276,9 +1362,11 @@ function announceWinner(t: HtRow): void {
  */
 function payPrizes(t: HtRow, now: number): void {
   const entries = getEntries(t.id);
-  const pool = T.prizePool(entries.length, t.prize_multiplier, tuning(t).prizeFixed, t.buy_in);
+  const pool = prizePoolOf(t, entries.length, tuning(t).prizeFixed);
   const amounts = T.prizeAmounts(pool, entries.length);
-  if (!amounts.length) return;
+  /* 바운티 정산은 상금표와 별개로 돌아야 한다 — 프리롤 PKO 처럼 상금표가 빈 판에서도
+     머리에 남은 값과 펀드 잔액은 우승자에게 나가야 하기 때문이다. */
+  if (!amounts.length) { payBounties(t, entries); return; }
   const ranked = entries
     .filter(e => e.finish_place != null)
     .sort((a, b) => (a.finish_place ?? 0) - (b.finish_place ?? 0));
@@ -1299,7 +1387,52 @@ function payPrizes(t: HtRow, now: number): void {
     run(`INSERT INTO points_ledger (user_id, delta, reason, balance_after) VALUES (?, ?, ?, ?)`,
       e.user_id, amount, 'game:holdem:prize', after?.balance ?? 0);
   });
+  payBounties(t, entries);
   void now;
+}
+
+/**
+ * PKO 마감 정산 — 우승자가 자기 머리에 남은 값과 펀드 잔액을 함께 가져간다.
+ *
+ * 왜 잔액까지 우승자에게 가는가: 걷은 바운티는 전부 유저에게 돌아가야 하고(요구서의
+ * "1P 의 오차도 없이"), 대회가 끝난 시점에 남은 사람은 우승자뿐이다. 남은 것을 두면
+ * 그 포인트는 아무에게도 가지 않은 채 DB 에만 남는다 — 걷을 때는 유저 잔액에서 실제로
+ * 빠져나갔으므로 그건 서비스가 삼킨 돈이 된다.
+ *
+ * 잔액은 구조상 0 이어야 한다(머리와 현금의 합이 늘 원래 값이라서). 그래도 계산해서
+ * 내보낸다: 등록 취소·중단·손으로 고친 값처럼 계산 밖의 일이 끼면 0 이 아닐 수 있고,
+ * 그때 조용히 남는 것보다 우승자에게 가는 편이 맞다. 음수면 아무것도 하지 않는다 —
+ * 없는 돈을 만들지 않는 쪽이 먼저다.
+ *
+ * 이중 지급은 조건부 UPDATE 로 막는다. 머리 값을 0 으로 내리는 것이 곧 "지급했다"는
+ * 표시이고, 두 번째 호출은 bounty = 0 이라 아무것도 주지 않는다.
+ */
+function payBounties(t: HtRow, entries: HtEntryRow[]): void {
+  if (!isPko(t)) return;
+  const champ = entries.find(e => e.finish_place === 1);
+  if (!champ) return;
+
+  /* 지금 살아 있는 머리 값의 합과, 지금까지 현금으로 나간 합. 행을 다시 읽는다 —
+     인자로 받은 entries 는 이 판의 KO 정산 이전 값일 수 있다. */
+  const cur = all<{ user_id: string; bounty: number; bounty_won: number }>(
+    `SELECT user_id, bounty, bounty_won FROM holdem_entries WHERE tournament_id = ?`, t.id);
+  const heads = cur.reduce((n, r) => n + Math.max(0, r.bounty), 0);
+  const cash = cur.reduce((n, r) => n + Math.max(0, r.bounty_won), 0);
+  const mine = Math.max(0, cur.find(r => r.user_id === champ.user_id)?.bounty ?? 0);
+  /* 아직 아무에게도 배정되지 않은 펀드 = 걷은 것 − 현금으로 나간 것 − 머리에 걸린 것.
+     heads 에는 우승자 머리(mine)도 이미 들어 있으므로 여기서 빼지 않는다 —
+     빼면 우승자 몫이 두 번 세어져 걷지 않은 포인트가 나간다(실측 15,000 펀드에 25,000 지급).
+     구조상 이 값은 0 이다. 그래도 계산해 내보낸다: 등록 취소·중단처럼 계산 밖의 일이
+     끼면 0 이 아닐 수 있고, 그때 DB 에 남기는 것보다 우승자에게 가는 편이 맞다. */
+  const left = Math.max(0, Math.floor(t.bounty_pool) - cash - heads);
+  const total = mine + left;
+  if (total <= 0) return;
+
+  run(`UPDATE holdem_entries SET bounty = 0, bounty_won = bounty_won + ?
+        WHERE tournament_id = ? AND user_id = ? AND bounty = ?`,
+    total, t.id, champ.user_id, mine);
+  if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
+  adjustBalance(champ.user_id, total, 'game:holdem:bounty:final:' + t.id);
 }
 
 /* ── 유저 동작 ───────────────────────────────────────────────────── */
@@ -1331,9 +1464,12 @@ export function unregisterHoldem(userId: string):
     /* 지우기 전에 얼마를 냈는지 읽어 둔다 — 지운 뒤에는 알 방법이 없다.
        설정의 참가비를 다시 읽지 않는 이유는, 그 사이에 값이 바뀌었으면 걷은 것과 다른
        액수를 돌려주게 되고 그 자리에서 "잔액 = 원장 누적합"이 깨지기 때문이다. */
-    const paid = one<{ paid_in: number }>(
-      `SELECT paid_in FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
-      t.id, userId)?.paid_in ?? 0;
+    const row = one<{ paid_in: number; bounty: number }>(
+      `SELECT paid_in, bounty FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+      t.id, userId);
+    const paid = row?.paid_in ?? 0;
+    // 머리 값도 같은 이유로 지우기 전에 읽는다 — 펀드에서 그만큼을 빼야 총액이 맞는다
+    const hadBounty = row?.bounty ?? 0;
 
     run(`DELETE FROM holdem_entries
           WHERE user_id = ? AND tournament_id = (
@@ -1351,6 +1487,12 @@ export function unregisterHoldem(userId: string):
     }
     // 신청을 물렸으니 낸 돈도 돌려준다 (프리롤이면 0이라 아무 일도 없다)
     if (paid > 0) adjustBalance(userId, paid, 'holdem:buyin:refund:' + t.id);
+    /* 펀드에서도 뺀다. 안 빼면 남은 사람들의 머리 값 합보다 펀드가 커진 채로 시작해
+       마지막에 우승자에게 없는 돈이 나간다(그 차액은 아무도 낸 적이 없는 포인트다). */
+    if (hadBounty > 0) {
+      run(`UPDATE holdem_tournaments SET bounty_pool = bounty_pool - ? WHERE id = ?`,
+        hadBounty, t.id);
+    }
     return { ok: true, registered: getEntries(t.id).length };
   });
 }
@@ -1375,11 +1517,23 @@ export function registerHoldem(userId: string, username: string):
     /* 마지막 자리를 두고 두 요청이 겹치는 것은 유니크 인덱스가 막는다.
        "빈자리 수를 세고 나서 INSERT" 사이에 다른 요청이 끼어들 수 있으므로
        코드 순서에 기대지 않고 DB 제약으로 막는 게 핵심이다. */
+    /* PKO 는 참가비를 두 통으로 나눈다 — 머리에 걸릴 바운티와 순수 상금이다.
+       나눈 값을 걷을 때 확정해 행에 적는다: 나중에 참가비 설정을 보고 다시 계산하면
+       그 사이에 값이 바뀌었을 때 걷은 것과 다른 액수를 나눠 주게 되고, 이 펀드는
+       마지막에 1P 까지 맞춰 내보내야 하는 돈이라 그 어긋남이 곧 없는 포인트가 된다. */
+    const myBounty = isPko(t) ? T.bountyShare(fee) : 0;
     try {
-      run(`INSERT INTO holdem_entries (tournament_id, user_id, username, registered_at, paid_in)
-           VALUES (?, ?, ?, ?, ?)`, t.id, userId, username, nowSec(), fee);
+      run(`INSERT INTO holdem_entries
+             (tournament_id, user_id, username, registered_at, paid_in, bounty)
+           VALUES (?, ?, ?, ?, ?, ?)`, t.id, userId, username, nowSec(), fee, myBounty);
     } catch {
       return { ok: false, error: 'already' };
+    }
+    /* 펀드 총액은 머리 값의 합이다. 인원으로 다시 계산하지 않고 걷은 만큼만 더한다 —
+       등록 취소가 섞이면 인원 × 참가비는 실제로 들고 있는 돈과 달라진다. */
+    if (myBounty > 0) {
+      run(`UPDATE holdem_tournaments SET bounty_pool = bounty_pool + ? WHERE id = ?`,
+        myBounty, t.id);
     }
 
     /* 등록이 성립했으니 걷는다. 반드시 adjustBalance 를 거친다 — 잔액을 직접 고치면

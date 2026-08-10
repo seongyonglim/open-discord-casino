@@ -13,7 +13,7 @@ import {
   advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords, type ShowWhich,
-  ACTION_SEC, actOpenAt, tuning, type HoldemStatus,
+  ACTION_SEC, actOpenAt, tuning, type HoldemStatus, isPko, prizePoolOf,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -98,7 +98,8 @@ function statePayload(st: HoldemStatus, userId: string) {
   const table = getTable(t.id);
   const entries = getEntries(t.id);
   const tune = tuning(t);
-  const pool = T.prizePool(entries.length, t.prize_multiplier, tune.prizeFixed, t.buy_in);
+  // PKO 는 참가비의 절반이 바운티로 빠진다 — 상금 팟은 그 나머지로만 센다
+  const pool = prizePoolOf(t, entries.length, tune.prizeFixed);
 
   const base = {
     ok: true,

@@ -316,3 +316,57 @@ export function prizePool(
   if (fixed > 0) return Math.floor(fixed);
   return Math.max(0, n * multiplier);
 }
+
+/* ── PKO(Progressive Knockout) 바운티 ──────────────────────────────
+   참가비가 두 통으로 갈린다: 순수 상금 팟과 바운티 펀드. 바운티 펀드는 참가자들의
+   "머리 값"이 되고, 떨어뜨린 사람이 그 자리에서 절반을 현금으로 받고 나머지 절반을
+   자기 머리에 얹는다. 그래서 오래 살아남아 많이 떨어뜨린 사람의 머리 값이 계속 커진다.
+
+   ── 왜 비율을 두 개 두지 않는가
+   요구서는 "현금 100% + 머리 50%"였다. 그건 KO 마다 펀드에 없는 50% 를 만들어 내는
+   규칙이라, 같은 요구서의 "1P 의 오차도 없이 분배"와 동시에 성립하지 않는다.
+   그래서 비율을 하나만 둔다 — 머리로 갈 몫만 정하고 현금은 "나머지 전부"다.
+   두 상수를 따로 두면 둘의 합이 100% 가 아닌 값으로 설정되는 순간 총액이 어긋나는데,
+   포인트는 잔액 = 원장 누적합이 유일한 불변식이라 그 어긋남이 곧 버그다.
+   지금 구조에서는 상수를 어떤 값으로 바꿔도 head + cash === bounty 가 유지된다. */
+
+/** 참가비 중 바운티 펀드로 갈 비율. 나머지가 순수 상금 팟이다(GG 와 같은 반반). */
+export const PKO_BOUNTY_RATIO = 0.5;
+/** KO 로 가져간 바운티 중 "떨어뜨린 사람 머리"에 얹을 비율. 나머지는 즉시 현금이다. */
+export const PKO_HEAD_RATIO = 0.5;
+
+/** 참가비 한 사람분 중 바운티 펀드로 가는 몫. 내림한다(포인트는 늘 내린다). */
+export function bountyShare(buyIn: number): number {
+  return Math.floor(Math.max(0, Math.floor(buyIn)) * PKO_BOUNTY_RATIO);
+}
+
+/** 참가비 한 사람분 중 순수 상금 팟으로 가는 몫. 나머지 전부라 둘의 합이 참가비다. */
+export function prizeShare(buyIn: number): number {
+  const b = Math.max(0, Math.floor(buyIn));
+  return b - bountyShare(b);
+}
+
+/**
+ * 바운티 하나를 "머리에 얹을 몫"과 "즉시 현금" 으로 쪼갠다.
+ * 머리 쪽만 내리고 현금은 나머지 전부다 — 그래서 head + cash 가 언제나 원래 값이고
+ * 1P 도 사라지지 않는다. (둘 다 내리면 홀수마다 1P 가 증발한다.)
+ */
+export function bountySplit(bounty: number): { head: number; cash: number } {
+  const b = Math.max(0, Math.floor(bounty));
+  const head = Math.floor(b * PKO_HEAD_RATIO);
+  return { head, cash: b - head };
+}
+
+/**
+ * 바운티 하나를 여러 명이 나눠 가질 때(팟을 나눠 이겨 KO 가 공동인 경우) 몫을 정한다.
+ * 내림으로 나눈 뒤 남는 1P 들을 앞사람부터 하나씩 얹는다 — 합이 정확히 원래 값이다.
+ * 버리면 그만큼이 펀드에 남아 "왜 총액이 안 맞나"가 되고, 올리면 없는 돈이 나간다.
+ */
+export function splitBounty(bounty: number, ways: number): number[] {
+  const b = Math.max(0, Math.floor(bounty));
+  const n = Math.max(0, Math.floor(ways));
+  if (n === 0) return [];
+  const base = Math.floor(b / n);
+  const rest = b - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < rest ? 1 : 0));
+}

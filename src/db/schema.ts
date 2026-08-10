@@ -608,6 +608,30 @@ function initSchema(): void {
     d.exec(`ALTER TABLE holdem_entries ADD COLUMN ko_count INTEGER NOT NULL DEFAULT 0`);
   } catch { /* 이미 있다 */ }
 
+  /* ── PKO(바운티) 대회 ────────────────────────────────────────────
+     mode 로 판의 종류를 가른다. 기본값이 CLASSIC 이라 예전 행은 전부 지금까지의 대회로
+     읽힌다 — 바운티 칸은 0 이고 화면도 바운티를 그리지 않는다.
+
+     bounty_pool 은 걷은 바운티 펀드 총액이다. 참가 인원으로 다시 계산하지 않고 걷을 때
+     적어 둔다: 참가비가 중간에 바뀌면 걷은 것과 다른 값이 되고, 이 펀드는 마지막에
+     1P 까지 맞춰 나가야 하는 돈이라 그 어긋남이 곧 없는 포인트를 발행하는 일이 된다.
+
+     bounty      = 지금 내 머리에 걸린 값. KO 당하면 0 이 된다.
+     bounty_won  = 지금까지 KO 로 받아 챙긴 현금 누계(이미 잔액에 들어간 돈이다).
+                   화면에 "번 바운티"를 적기 위한 값이고, 총액 검산의 근거도 된다. */
+  for (const col of [
+    `mode TEXT NOT NULL DEFAULT 'CLASSIC'`,
+    `bounty_pool INTEGER NOT NULL DEFAULT 0`,
+  ]) {
+    try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
+  }
+  for (const col of [
+    `bounty INTEGER NOT NULL DEFAULT 0`,
+    `bounty_won INTEGER NOT NULL DEFAULT 0`,
+  ]) {
+    try { d.exec(`ALTER TABLE holdem_entries ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
+  }
+
   /* 시즌 0 의 시작일 정정 — 표에 찍힌 값이 카지노를 처음 연 날이 아니라 시즌 행을 만든
      날이었다. 랭킹 배너의 "시작"이 그 값을 그대로 보여준다.
 

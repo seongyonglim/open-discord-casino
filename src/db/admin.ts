@@ -174,6 +174,9 @@ export function createTournament(o: {
   regMin?: number;
   /** 참가비. 0(기본)이면 프리롤 — 지금까지의 대회는 전부 이쪽이다 */
   buyIn?: number;
+  /* 판의 종류. 기본은 CLASSIC 이라 부르는 곳을 고치지 않으면 지금까지의 대회가 나온다.
+     PKO_BOUNTY 는 참가비를 상금 팟과 바운티 펀드로 나누고, 화면도 바운티를 그린다. */
+  mode?: 'CLASSIC' | 'PKO_BOUNTY';
   /** 보장 상금(GTD). 참가비 대회에서 걷은 돈이 이에 못 미치면 모자란 만큼 얹는다 */
   prizeFixed?: number;
   /* 판의 모양. 안 주면 자동 개최 전용 템플릿의 값을 쓴다 — 반복 개최가 그 길로 들어온다.
@@ -236,6 +239,10 @@ export function createTournament(o: {
        템플릿을 바이인으로 바꿔 두면 자동으로 열리는 판도 바이인이 된다.
        테스트 대회는 0 을 명시해서 언제나 프리롤로 남는다 — 지울 수 있어야 하기 때문이다. */
     const buyIn = Math.max(0, Math.floor(o.buyIn ?? cfg.buyIn));
+    /* 모르는 값이 오면 CLASSIC 으로 떨어뜨린다. 오타가 그대로 저장되면 mode 비교가
+       전부 빗나가 "바운티 대회인데 바운티가 없는 판"이 되고, 그건 걷은 돈이 갈 곳을
+       잃는다는 뜻이다. 알 수 없는 값은 지금까지의 대회로 보는 편이 안전하다. */
+    const mode = o.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY' : 'CLASSIC';
     const fixed = Math.max(0, Math.floor(o.prizeFixed ?? cfg.prizeFixed));
     /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이다. */
     const title = (o.title ?? '').trim() || (buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
@@ -243,11 +250,11 @@ export function createTournament(o: {
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
-            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       T.kstDateStr(startAt * 1000), title,
       regOpenAt, startAt, startAt + grace.n * 60, mult,
-      stack.n, level.n * 60, late.n * 60, fixed, buyIn);
+      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
 }
