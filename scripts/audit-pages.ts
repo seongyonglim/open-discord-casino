@@ -602,6 +602,67 @@ async function main(): Promise<void> {
     }
   }
 
+  /* ── 지뢰찾기 퍼펙트 클리어 ────────────────────────────────────────
+     안전 칸을 하나도 남기지 않고 다 열면 그 자리에서 자동 정산된다. 그런데 화면이
+     그 결과를 반영하지 않아, 배당·획득 칸이 직전 값(지뢰 24개 판이면 1.00x·0P)에
+     멈춰 있었다 — 이 게임에서 가장 큰 순간에 "아무 일도 없었다"고 적혀 있었다. */
+  console.log('\n[7] 지뢰찾기 — 퍼펙트 클리어');
+  {
+    const { readFileSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+    const mn = readFileSync('src/web/games/mines.ts', 'utf8') as string;
+    const auto = mn.slice(mn.indexOf('res.data.autoCashedOut'), mn.indexOf('} else {', mn.indexOf('res.data.autoCashedOut')));
+
+    ck('자동 정산 자리에서 배당·획득을 갱신한다', /updateStats\(round\)/.test(auto), auto.slice(0, 120));
+    ck('갱신에 쓰는 값이 서버가 준 최종값이다',
+      /multiEl\.textContent = round\.multiplier/.test(mn) && /potEl\.textContent = fmt\(round\.betAmount \* round\.multiplier\)/.test(mn));
+    ck('남은 칸의 지뢰를 공개한다', /revealAllMines\(round\)/.test(auto));
+    ck('터진 지뢰와 다른 모양이다 (.dud)', /classList\.add\('dud'\)/.test(mn));
+    const css4 = readFileSync('src/web/assets/css/04-board.css', 'utf8') as string;
+    ck('.dud 스타일이 붉지 않다',
+      /\.mines-tile\.dud\{[^}]*background:#17171a/.test(css4),
+      (css4.match(/\.mines-tile\.dud\{[^}]*\}/) ?? [''])[0].slice(0, 90));
+
+    ck('네온 카드를 띄운다', /perfectCard\(round\)/.test(auto) && css4.includes('.mn-perfect{'));
+    ck('카드에 지뢰 수·배당·획득이 다 있다',
+      /지뢰 ' \+ round\.mineCount \+ '개 완파/.test(mn)
+      && /최종 배당[\s\S]{0,80}round\.multiplier\.toFixed\(2\)/.test(mn)
+      && /획득[\s\S]{0,80}fmt\(round\.payout\)/.test(mn));
+    /* 이모지를 쓰지 않는다(요청 사항). OS 마다 모양과 크기가 달라 정렬이 무너지고,
+       이 화면의 다른 그림은 전부 선 아이콘이다. */
+    const cardMarkup = mn.slice(mn.indexOf("el.className = 'mn-perfect'"), mn.indexOf('stage.appendChild(el)'));
+    ck('카드에 이모지가 없다',
+      !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(cardMarkup), cardMarkup.slice(0, 80));
+
+    ck('폭죽이 캔버스로 그려진다',
+      /confetti\(\)/.test(auto) && /getContext\('2d'\)/.test(mn) && css4.includes('.mn-confetti{'));
+    ck('폭죽이 1.5초만 돈다', /var DUR = 1500/.test(mn));
+    ck('폭죽이 클릭을 막지 않는다', /\.mn-confetti\{[^}]*pointer-events:none/.test(css4));
+    ck('움직임을 줄인 사람에게는 안 띄운다', /prefers-reduced-motion: reduce/.test(mn));
+    ck('새 판을 시작하면 카드를 치운다', /querySelector\('\.mn-perfect'\)[\s\S]{0,80}removeChild/.test(mn));
+
+    ck('퍼펙트 전용 음원을 쓴다', /casinoSfx\.minePerfect\(\)/.test(auto));
+    const app2 = readFileSync('src/web/assets/app.js', 'utf8') as string;
+    ck('그 음원이 선언돼 있다',
+      /mineperfect: \['mine-perfect'\]/.test(app2) && /minePerfect: function/.test(app2));
+    ck('한 번에 하나만 울린다', /mineperfect: 1/.test(app2));
+    ck('지뢰찾기 화면이 그 음원을 받아 둔다', /__SFX_NEED__ = \['minecoin','explode','gain','mineperfect'\]/.test(mn));
+
+    /* ── 음량 표에 빠진 음원이 없는가 ────────────────────────────
+       SFX_NORM 은 파일마다 체감 음량을 맞추는 보정값이다. 표에 없으면 보정 없이(1.0)
+       나가는데, 그게 실제로 사고였다: clock-warn 이 다른 소리보다 19dB 낮아 게임 소리에
+       완전히 묻혀 있었다(남은 시간 5초 경고가 안 들렸다). 새 음원을 넣을 때 표에 적는
+       것을 잊지 않도록 파일 목록에서 직접 확인한다. */
+    const files = readdirSync('public/sfx').filter(f => /\.(mp3|wav)$/.test(f));
+    ck('음원 파일을 찾았다', files.length >= 20, String(files.length));
+    for (const f of files) {
+      const key = f.replace(/\.(mp3|wav)$/, '');
+      ck(`${key} 이 확장자 표에 있다`, new RegExp(`'${key}'\\s*:\\s*'(mp3|wav)'`).test(app2));
+      ck(`${key} 이 음량 표에 있다`, new RegExp(`'${key}'\\s*:\\s*[\\d.]+`).test(app2));
+      ck(`${key} 이 서버 화이트리스트에 있다`,
+        (readFileSync('src/web/server.ts', 'utf8') as string).includes(`'${f}'`));
+    }
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

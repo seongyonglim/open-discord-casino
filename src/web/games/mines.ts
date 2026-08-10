@@ -247,7 +247,7 @@ export function minesPage(user: WebUser): string {
       ${sidePanel('m', '', rankPane('m'))}
     </div>
     <script>window.__MINES_ACTIVE__ = ${active ? JSON.stringify(active) : 'null'};
-      window.__SFX_NEED__ = ['minecoin','explode','gain'];
+      window.__SFX_NEED__ = ['minecoin','explode','gain','mineperfect'];
       window.__MINES_ICONS__ = ${JSON.stringify({ bomb: bombIcon, coin: coinIcon, mark: mysteryMark })};</script>
     <script>
     (function(){
@@ -306,6 +306,9 @@ export function minesPage(user: WebUser): string {
 
       function buildGrid(revealed){
         clearPendingReveals();
+        // 지난 판의 퍼펙트 카드를 치운다 — 새 판 위에 남아 있으면 보드를 가린다
+        var pf = grid.parentNode && grid.parentNode.querySelector('.mn-perfect');
+        if (pf) pf.parentNode.removeChild(pf);
         grid.innerHTML=''; grid.classList.remove('shake'); tiles=[];
         var revealedSet={}; (revealed||[]).forEach(function(i){ revealedSet[i]=true; });
         for (var i=0;i<${TILE_COUNT};i++){
@@ -322,6 +325,92 @@ export function minesPage(user: WebUser): string {
             grid.appendChild(b);
           })(i);
         }
+      }
+
+      /* ── 퍼펙트 클리어 연출 ──────────────────────────────────────────
+         남은 칸은 전부 지뢰다(안전 칸을 하나도 남기지 않았으므로). 그걸 한꺼번에 열어
+         "내가 이 전부를 피했다"를 보이게 한다. 터진 지뢰(.mine)와는 다른 모양으로 둔다 —
+         같은 붉은색으로 칠하면 이긴 판이 진 판처럼 보인다. */
+      function revealAllMines(round){
+        var mines = round.minePositions || [];
+        mines.forEach(function(m, idx){
+          var b = tiles[m]; if (!b) return;
+          // 한 칸씩 짧은 간격으로 뒤집는다 — 스물넷이 동시에 뒤집히면 무슨 일인지 안 보인다
+          pendingTimers.push(setTimeout(function(){
+            b.disabled = true;
+            b.classList.remove('safe','mine');
+            b.innerHTML = ICONS.bomb;
+            void b.offsetWidth;
+            b.classList.add('dud');
+          }, 40 + idx * 45));
+        });
+      }
+
+      /* 보드 가운데 떠오르는 카드. 이모지는 쓰지 않는다 — OS 마다 모양이 달라 크기와
+         정렬이 제각각이고, 이 화면의 다른 그림은 전부 선 아이콘이다. */
+      function perfectCard(round){
+        var stage = grid.parentNode; if (!stage) return;
+        var old = stage.querySelector('.mn-perfect');
+        if (old) old.parentNode.removeChild(old);
+        var el = document.createElement('div');
+        el.className = 'mn-perfect';
+        el.innerHTML = '<div class="mn-pf-t">PERFECT CLEAR<\/div>'
+          + '<div class="mn-pf-s">지뢰 ' + round.mineCount + '개 완파<\/div>'
+          + '<div class="mn-pf-rows">'
+          +   '<div><span>최종 배당<\/span><b class="num">' + round.multiplier.toFixed(2) + 'x<\/b><\/div>'
+          +   '<div><span>획득<\/span><b class="num win">+' + fmt(round.payout) + '<\/b><\/div>'
+          + '<\/div>';
+        stage.appendChild(el);
+        requestAnimationFrame(function(){ el.classList.add('in'); });
+        /* 다음 판을 시작하면 치운다. 시간으로 지우지 않는 이유: 이 카드는 결과 표시라
+           읽는 동안 사라지면 안 되고, 남아 있어도 다음 판을 막지 않는다. */
+      }
+
+      /* 금빛 파티클. 캔버스로 그린다 — 글자나 이모지를 뿌리면 화면마다 다르게 보이고,
+         DOM 요소 수십 개를 움직이면 폰에서 눈에 띄게 버벅인다.
+         1.5초만 돌고 스스로 사라진다. 움직임을 줄이는 설정을 켠 사람에게는 아예 안 띄운다. */
+      function confetti(){
+        try {
+          if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        } catch (e) { }
+        var cv = document.createElement('canvas');
+        cv.className = 'mn-confetti';
+        document.body.appendChild(cv);
+        var dpr = Math.min(2, window.devicePixelRatio || 1);
+        var W = cv.width = Math.floor(innerWidth * dpr), H = cv.height = Math.floor(innerHeight * dpr);
+        var g = cv.getContext('2d');
+        if (!g) { document.body.removeChild(cv); return; }
+        var COLORS = ['#d4af37','#f0d67a','#f7e199','#c8a52f','#ffffff'];
+        var N = innerWidth < 520 ? 70 : 130;
+        var ps = [];
+        for (var i = 0; i < N; i++) {
+          ps.push({
+            // 화면 위쪽 가로 전체에서 아래로 흩뿌린다
+            x: Math.random() * W, y: -Math.random() * H * 0.3,
+            vx: (Math.random() - 0.5) * 2.2 * dpr, vy: (2 + Math.random() * 3.4) * dpr,
+            w: (4 + Math.random() * 5) * dpr, h: (7 + Math.random() * 9) * dpr,
+            rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.32,
+            c: COLORS[Math.floor(Math.random() * COLORS.length)]
+          });
+        }
+        var DUR = 1500, t0 = null, raf = 0;
+        function frame(t){
+          if (t0 === null) t0 = t;
+          var p = (t - t0) / DUR;
+          if (p >= 1) { cancelAnimationFrame(raf); if (cv.parentNode) cv.parentNode.removeChild(cv); return; }
+          g.clearRect(0, 0, W, H);
+          // 끝으로 갈수록 사라진다 — 툭 끊기면 지워진 것이 아니라 고장난 것처럼 보인다
+          g.globalAlpha = p < 0.75 ? 1 : (1 - p) / 0.25;
+          for (var k = 0; k < ps.length; k++) {
+            var q = ps[k];
+            q.x += q.vx; q.y += q.vy; q.vy += 0.06 * dpr; q.rot += q.vr;
+            g.save(); g.translate(q.x, q.y); g.rotate(q.rot);
+            g.fillStyle = q.c; g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
+            g.restore();
+          }
+          raf = requestAnimationFrame(frame);
+        }
+        raf = requestAnimationFrame(frame);
       }
 
       function markTile(i, kind){
@@ -384,10 +473,21 @@ export function minesPage(user: WebUser): string {
           setBalance(res.data.balance); setIdle();
         } else if (res.data.autoCashedOut) {
           markTile(i, 'safe');
+          /* 여기가 버그였다: updateStats 를 부르지 않아 배당·획득 칸이 직전 값에 멈춰 있었다.
+             안전 칸이 하나뿐인 판(지뢰 24개)에서는 그 값이 1.00x·0P 라, 이 게임에서 가장 큰
+             순간에 화면이 "아무 일도 없었다"고 적고 있었다. 정산된 라운드를 그대로 넣는다 —
+             round.multiplier 와 payout 은 서버가 계산한 최종값이다. */
+          updateStats(round);
+          replay(multiEl, 'bump'); replay(potEl, 'bump');
+          revealAllMines(round);
+          perfectCard(round);
+          confetti();
           msg.innerHTML = '<span style="color:var(--gold);font-weight:700">퍼펙트 클리어</span> — 자동 캐시아웃 +' + fmt(round.payout) + ' (잔액 ' + fmt(res.data.balance) + ')';
           setBalance(res.data.balance); setIdle(); if (card) replay(card, 'gold-flash');
           if (pbal) replay(pbal, 'bump');
-          if (window.casinoSfx) window.casinoSfx.win();
+          /* 승리음 대신 퍼펙트 전용 음악. 이 순간에만 쓰므로 다른 캐시아웃과 소리가 갈린다 —
+             같은 소리를 내면 "전부 열었다"가 그냥 한 번의 캐시아웃으로 들린다. */
+          if (window.casinoSfx) window.casinoSfx.minePerfect();
         } else {
           markTile(i, 'safe');
           updateStats(round);

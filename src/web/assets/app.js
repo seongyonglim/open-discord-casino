@@ -112,7 +112,7 @@
   var sfxBuf = {};
   var SFX_EXT = { 'coin-insert':'wav', 'card-shuffle':'wav', 'win-fanfare':'wav',
                   'card-flip':'mp3', 'card-deal':'mp3',
-                  'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3',
+                  'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3', 'mine-perfect':'mp3',
                   'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3',
                   'tournament-win':'mp3',
                   'act-allin':'mp3', 'act-bet':'mp3', 'act-call':'mp3',
@@ -135,7 +135,10 @@
   var SFX_NORM = {
     'coin-insert': 0.78, 'coin-gain': 0.71, 'card-flip': 0.71, 'card-shuffle': 0.94,
     'card-deal': 1.04, 'win-fanfare': 0.28, 'mine-coin': 2.6, 'explode': 0.16,
-    'chip-bet': 0.24, 'chip-bet2': 0.23, 'chips-to-winner': 0.87,
+    /* chip-bet2 는 0.23 이었다. 둘은 같은 동작(칩을 올린다)의 변형이라 무작위로 번갈아
+       나가는데, 보정 후 실효가 -31.6 대 -34.4dB 로 2.8dB 벌어져 있었다 — 같은 행동이
+       누를 때마다 다른 크기로 들렸다. 0.32 로 올려 둘을 같은 높이에 세운다(피크 -9.9dB). */
+    'chip-bet': 0.24, 'chip-bet2': 0.32, 'chips-to-winner': 0.87,
     /* 우승 음악. 실측 RMS -11.2dB · 피크 +0.3dB(원본이 클리핑돼 있다)로 전체 중 가장 크다.
        기존 평균(-29.8dB)에 맞추면 0.117인데, 4.14초짜리 "음악"이라 짧은 효과음과 같은
        RMS로 맞춰도 지속음이어서 훨씬 크게 느껴진다. 그래서 2dB 더 낮춰 0.09로 둔다
@@ -167,6 +170,21 @@
        더 올리면 남의 액션 소리를 누른다. 이건 놓치면 자동 폴드되는 알림이라
        묻히는 쪽이 더 나쁜 실패다. 보정 후 피크 -15.3dB. */
     'my-turn': 3.0,
+    /* 아래 넷은 이 표에 없어서 보정 없이(1.0) 나가고 있었다. 음량 슬라이더를 넣은 뒤
+       전체를 브라우저에서 다시 재 보니 그중 둘이 실제로 어긋나 있었다.
+
+       win-pot      RMS -34.2dB · 가장 큰 100ms -22.8dB · 4.61초.
+                    팟 획득 "음악"이라 전체 RMS 는 낮게 나오지만 실제로 들리는 구간은
+                    다른 효과음과 같은 높이다(-22.8 대 -23 안팎). 그대로 둔다.
+       allin-bgm    RMS -36.0dB · 100ms -30.7dB · 4.39초.
+                    올인 순간 아래로 깔리는 배경음이라 4dB 낮은 것이 맞다. 그대로 둔다.
+       clock-warn   RMS -48.6dB · 100ms -42.2dB. 다른 소리보다 19dB 낮아 게임 소리에
+                    완전히 묻혔다 — 남은 시간 5초를 알리는 경고가 안 들리면 없는 것과 같다.
+                    100ms 기준 -26dB 로 올린다(+16.2dB · 보정 후 피크 -6.3dB).
+       mine-perfect RMS -29.8dB · 피크 -7.6dB · 4.69초. 지뢰찾기 퍼펙트 클리어 음악이다.
+                    짧은 효과음 기준선(-32dB)에 맞춘다 — 우승 음악(tournament-win)과 같은
+                    높이다(보정 후 피크 -9.8dB). */
+    'win-pot': 1.0, 'allin-bgm': 1.0, 'clock-warn': 6.4, 'mine-perfect': 0.78,
     /* 팟 획득 음악. 실측 RMS -33.5dB · 4.61초.
        칩이 밀려가는 소리(chips-to-winner, 실효 -31.0dB) 위에 겹쳐 깔린다. 지속음이라
        같은 RMS로 맞추면 짧은 칩 소리보다 훨씬 크게 느껴져서 3dB 아래(-34dB)에 둔다 —
@@ -276,6 +294,9 @@
        한 번에 하나만 울려야 하므로 아래 VOICES 에서 상한 1 을 준다. */
     myturn: ['my-turn'],
     allinbgm: ['allin-bgm'],    // 올인(콜이 우연히 올인이 된 경우는 제외)
+    /* 지뢰찾기 퍼펙트 클리어 — 안전 칸을 하나도 남기지 않고 다 연 순간.
+       한 판에 한 번뿐이라 아래 VOICES 에서 상한 1 을 준다(겹치면 음악이 뭉개진다). */
+    mineperfect: ['mine-perfect'],
   };
   // 페이지가 쓰지도 않는 음원까지 받으면 WAV가 커서 낭비가 크다.
   // 각 페이지가 window.__SFX_NEED__ 로 필요한 종류만 선언한다.
@@ -300,7 +321,8 @@
   /* 상한 1인 것들은 "겹치지 않는 음악"이다. 두 번째 호출이 오면 playSample이
      가장 오래된(= 유일한) 재생을 끊고 새로 시작한다. 올인 리레이즈에서 앞 음악을
      끊고 다시 트는 동작이 이 한 줄에서 나온다. */
-  var VOICES = { explode: 5, deal: 8, potwin: 1, clockwarn: 1, allinbgm: 1, myturn: 1 };
+  var VOICES = { explode: 5, deal: 8, potwin: 1, clockwarn: 1, allinbgm: 1, myturn: 1,
+    mineperfect: 1 };
   var DEFAULT_VOICES = 3;
   var playing = {};
 
@@ -490,6 +512,8 @@
        우연히 내 스택 전부였던 경우는 부르지 않는다(그건 콜이다).
        더 큰 금액으로 다시 올인하면 다시 부르면 되고, 상한이 1이라 앞 음악이 끊긴다. */
     allinBgm: function(){ playSample('allinbgm', 1); },
+    // 퍼펙트 클리어. 합성음 대체를 두지 않는다 — 이 순간에 삐 소리가 나면 없는 편이 낫다
+    minePerfect: function(){ playSample('mineperfect', 1); },
     /* 홀덤 액션 음성 — 서버가 쓰는 행동 이름(fold/check/call/bet/raise/allin)을 그대로 받는다.
        칩 소리와 별개로 호출하는 것이 중요하다: 칩 소리를 이걸로 갈아치우면 안 된다.
 

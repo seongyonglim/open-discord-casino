@@ -64,6 +64,8 @@ const SFX_FILES = new Set([
   'card-flip.mp3',                // 카드 공개 (포커 플립)
   'win-fanfare.wav',              // 승리 팡파레 (그래프게임 · 사다리게임 공용)
   'mine-coin.mp3', 'explode.mp3', // 지뢰찾기 — 안전 칸 금화 / 폭발
+  // 퍼펙트 클리어(안전 칸 전부 오픈) — 한 판에 한 번뿐인 순간이라 따로 둔다
+  'mine-perfect.mp3',
   // 홀덤은 포인트가 아니라 토너먼트 칩을 다루므로 "동전 넣는" 소리가 아니라
   // 칩을 테이블에 내려놓는 소리를 쓴다. 두 종류를 무작위로 번갈아 낸다.
   'chip-bet.mp3', 'chip-bet2.mp3', 'chips-to-winner.mp3',
