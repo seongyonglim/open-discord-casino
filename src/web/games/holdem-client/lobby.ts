@@ -59,16 +59,22 @@ export const LOBBY_EMPTY = `    function renderNoTournament(){
           '<\/div>';
       }
 
-      html +=
-        '<div class="ht-card ht-empty">' +
-          '<div class="ht-empty-ico">♠<\/div>' +
-          '<p class="ht-empty-msg">' +
-            (up ? '지금은 진행 중인 대회가 없습니다.' : '현재 예정된 토너먼트가 없습니다.') +
-          '<\/p>' +
-          '<p class="ht-empty-sub">' +
-            (up ? '위 시각에 등록이 열립니다.' : '다음 공지사항을 확인해 주세요!') +
-          '<\/p>' +
-        '<\/div>';
+      /* 다음 대회 카드가 있으면 빈 상태 카드를 띄우지 않는다.
+         예전에는 셋을 이 순서로 세웠다: 다음 대회 → 지난 대회 → "지금은 진행 중인 대회가
+         없습니다 · 위 시각에 등록이 열립니다". 그 카드가 하는 말은 첫 카드가 이미 다 하고
+         있고("21시간 40분 · 등록 시작까지 남았습니다"), 게다가 "위 시각"이 가리키는 것이
+         두 칸 위라 지난 대회를 건너뛰고 읽어야 했다 — 순서가 이상해 보인 이유가 그것이다.
+
+         예정이 아예 없을 때만 이 카드가 뜻을 갖는다. 그때는 맨 위에 세운다: 지금 상태를
+         먼저 알려야 하고, 그 아래로 지난 대회와 누적 순위가 이어지는 것이 자연스럽다. */
+      if (!up) {
+        html =
+          '<div class="ht-card ht-empty">' +
+            '<div class="ht-empty-ico">♠<\/div>' +
+            '<p class="ht-empty-msg">현재 예정된 토너먼트가 없습니다.<\/p>' +
+            '<p class="ht-empty-sub">다음 공지사항을 확인해 주세요!<\/p>' +
+          '<\/div>' + html;
+      }
 
       lobbyEl.innerHTML = html;
     }

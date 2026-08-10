@@ -164,9 +164,38 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
 }
 
 
+/* ── 규칙 표의 배수 ────────────────────────────────────────────────────
+   손으로 적지 않고 calcMultiplier 로 만든다. 예전에는 문자열로 박아 두었는데, 그러면
+   하우스 엣지나 판 크기를 고치는 날 규칙 설명만 옛 숫자로 남는다(지뢰 10개 줄은 아예
+   전부 열기 값이 빠져 있었다 — 3,236,072배가 너무 커서 적기를 멈춘 흔적이다).
+
+   전부 열기 확률도 함께 적는다. 그 값이 없으면 "5만 배"가 버그로 읽힌다 — 실제로 그
+   제보를 받았다. 배수 = (1 - 엣지) / 확률 이므로 확률의 분모는 배수에서 되돌려 구한다:
+   따로 조합 함수를 두면 같은 수를 두 방법으로 계산하게 되고, 언젠가 갈라진다. */
+function ruleMult(n: number): string {
+  /* 100배 미만은 소수 둘째 자리까지 — 1.03 과 1.13 의 차이가 이 게임의 전부다.
+     자리를 채워 적는다(5 가 아니라 5.00): 표에서 자릿수가 들쭉날쭉하면 열이 어긋나 보인다. */
+  const d = n < 100 ? 2 : 0;
+  return n.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+const MINE_RULE_ROWS = ALLOWED_MINE_COUNTS.map(m => {
+  const maxSafe = TILE_COUNT - m;
+  const full = calcMultiplier(m, maxSafe);
+  // 배수 = (1 - 엣지) / 확률  →  1/확률 = 배수 / (1 - 엣지)
+  const odds = Math.round(full / (1 - HOUSE_EDGE));
+  const cell = (k: number): string =>
+    k <= maxSafe ? `${ruleMult(calcMultiplier(m, k))}배` : '<span class="dim">—</span>';
+  return `<tr><td>지뢰 ${m}개</td>`
+    + `<td class="r">${cell(1)}</td>`
+    + `<td class="r">${cell(10)}</td>`
+    + `<td class="r"><b>${ruleMult(full)}배</b>`
+    + `<span class="dim"> · 1/${odds.toLocaleString('ko-KR')}</span></td></tr>`;
+}).join('\n    ');
+
 /* 규칙 도움말. 숫자는 코드에서 온다 —
    TILE_COUNT 25 · ALLOWED_MINE_COUNTS [1,3,5,10,24] · HOUSE_EDGE 0.01.
-   배수 표의 값은 calcMultiplier로 직접 계산해 넣었다(어림수가 아니다). */
+   배수 표는 위 MINE_RULE_ROWS 가 calcMultiplier 로 만든다(어림수가 아니다). */
 const RULES_HTML = `
   <h4>목표</h4>
   <p><b>25칸</b> 중 지뢰를 피해 칸을 엽니다. 안전한 칸을 열 때마다 배수가 오르고,
@@ -179,14 +208,19 @@ const RULES_HTML = `
     <li>한 번에 한 판만 진행할 수 있습니다</li>
   </ul>
 
-  <h4>지뢰가 많을수록 크게 오릅니다</h4>
+  <h4>배수는 "그 일이 얼마나 드문가"입니다</h4>
+  <p>배수는 <b>성공 확률의 역수</b>입니다(하우스 엣지 1% 제외). 그래서 전부 열기 배수가
+     수만 배로 적혀 있는 것은 금액이 큰 것이 아니라 <b>그만큼 드문 일</b>이라는 뜻입니다 —
+     확률을 나란히 적어 두었으니 함께 보세요.</p>
   <table>
-    <tr><td>지뢰 1개</td><td>한 칸 1.03배 · 전부 열면 24.75배</td></tr>
-    <tr><td>지뢰 3개</td><td>한 칸 1.13배 · 전부 열면 2,277배</td></tr>
-    <tr><td>지뢰 5개</td><td>한 칸 1.24배 · 전부 열면 52,598배</td></tr>
-    <tr><td>지뢰 10개</td><td>한 칸 1.65배</td></tr>
-    <tr><td>지뢰 24개</td><td>한 칸에 24.75배 <span class="dim">(한 방)</span></td></tr>
+    <tr><th>지뢰</th><th class="r">1칸</th><th class="r">10칸</th><th class="r">전부 열기</th></tr>
+    ${MINE_RULE_ROWS}
   </table>
+  <p class="dim">지뢰 24개는 안전한 칸이 하나뿐이라 그 한 칸이 곧 전부 열기입니다.</p>
+
+  <p class="tip"><b>여기서 감이 잡힙니다 —</b> 지뢰 <b>1개</b>를 전부 열기와 지뢰 <b>24개</b>에서
+     한 칸 맞히기는 배수가 똑같이 <b>24.75배</b>입니다. 둘 다 25번에 한 번 되는 일이라서요.
+     한쪽은 24번 연속 성공, 다른 한쪽은 한 번에 정답 — <b>어려움이 같으면 배수도 같습니다.</b></p>
 
   <p class="tip"><b>꿀팁 —</b> 어디서 멈추든 기대값은 같습니다. 지뢰 수와 여는 칸 수는
      <b>"자주 조금" 과 "드물게 크게" 중 무엇을 고를지</b>일 뿐입니다.
