@@ -23,6 +23,17 @@ const RETIRED = ['bj-hit-21', 'mi-23-of-24'];
 
 const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
   {
+    id: 'ho-bounty-4',
+    gameType: 'HOLDEM',
+    title: '죽음의 바운티 헌터',
+    description: '한 토너먼트에서 상대 플레이어를 4명 이상 직접 탈락(KO)시키고 우승을 차지합니다.',
+    /* 프리롤은 참가비가 0 이라 기준을 두면 영영 판정되지 않는다. 그래도 되는 이유는
+       홀덤이 하루 한 번 열리는 대회라서다 — 소액으로 여러 번 돌릴 수가 없다. */
+    minBet: 0,
+    sortAt: 6,
+    // 판정: src/db/holdem.ts awardBounty — 대회가 끝날 때 우승자의 ko_count 를 본다
+  },
+  {
     id: 'bj-double-21',
     gameType: 'BLACKJACK',
     title: '김재원이 되어 보자',

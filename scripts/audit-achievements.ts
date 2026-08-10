@@ -83,22 +83,33 @@ async function main(): Promise<void> {
       description: '1.01배에서 캐시아웃한다', isHidden: true,
     });
     const before = A.achievementsFor('a2')[0];
-    /* 화면에서 가리는 것으로는 안 된다 — 응답에 들어 있으면 개발자 도구로 그대로 읽힌다.
-       그러면 감춰진 것이 아니다. 그래서 db 계층에서 지운다. */
-    ck('달성 전에는 제목이 ???', before.title === '???', before.title);
-    ck('달성 전에는 원래 제목이 응답에 없다', !JSON.stringify(before).includes('김재원'));
-    ck('달성 전에는 원래 설명도 없다', !JSON.stringify(before).includes('1.01'));
-    ck('감춤 안내 문구가 나온다', before.description.includes('해금됩니다'), before.description);
+    /* 감추는 것은 "무엇을 해야 하나"뿐이다. 제목은 보여준다 — 제목까지 가리면 카드가
+       잠긴 칸 하나일 뿐이어서 찾아볼 마음이 안 생기고, 제목으로 조건을 추리하는 것이
+       이 과제의 재미다.
+
+       설명은 화면에서 가리는 것으로는 안 된다 — 응답에 들어 있으면 개발자 도구로 그대로
+       읽힌다. 그래서 db 계층에서 지운다. */
+    ck('달성 전에도 제목은 보인다', before.title === '김재원의 행보', before.title);
+    ck('달성 전에는 조건이 응답에 없다', !JSON.stringify(before).includes('1.01'),
+      JSON.stringify(before));
+    ck('가림 문구가 나온다', before.description === A.HIDDEN_DESC, before.description);
+    ck('가림 문구에 자물쇠가 있다', A.HIDDEN_DESC.startsWith('🔒'), A.HIDDEN_DESC);
+    ck('가림 문구가 추리를 권한다', A.HIDDEN_DESC.includes('제목을 보고 추리'), A.HIDDEN_DESC);
 
     A.unlockAchievement('a2', 'sec-1');
     const after = A.achievementsFor('a2')[0];
-    ck('달성하면 원래 제목으로 바뀐다', after.title === '김재원의 행보', after.title);
+    ck('달성해도 제목은 그대로다', after.title === '김재원의 행보', after.title);
     ck('달성하면 원래 설명으로 바뀐다', after.description.includes('1.01'), after.description);
+    ck('달성 일자가 실려 온다', after.unlockedAt != null && after.unlocked);
 
-    // 남의 화면에서는 여전히 감춰져 있어야 한다
+    // 남의 화면에서는 설명이 여전히 가려져 있어야 한다
     mkUser('a2b');
-    ck('남에게는 여전히 ???', A.achievementsFor('a2b')[0].title === '???');
-    ck('로그인 안 한 화면에서도 ???', A.achievementsFor(null)[0].title === '???');
+    ck('남에게는 설명이 여전히 가려진다',
+      A.achievementsFor('a2b')[0].description === A.HIDDEN_DESC);
+    ck('남에게도 제목은 보인다', A.achievementsFor('a2b')[0].title === '김재원의 행보');
+    ck('로그인 안 한 화면에서도 설명만 가린다',
+      A.achievementsFor(null)[0].description === A.HIDDEN_DESC
+      && A.achievementsFor(null)[0].title === '김재원의 행보');
   }
 
   /* ── 3. 달성 처리 ───────────────────────────────────────────── */
@@ -445,8 +456,8 @@ async function main(): Promise<void> {
     wipe();
     seed();
     const byId = new Map(A.listAchievements().map(a => [a.id, a]));
-    const SEEDED = 15;
-    ck('열다섯 과제가 등록된다', byId.size === SEEDED, String(byId.size));
+    const SEEDED = 16;
+    ck('16개 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
     for (const id of ['bj-double-21', 'crash-x100', 'la-right-7',
@@ -479,13 +490,14 @@ async function main(): Promise<void> {
       && byId.get('ho-straight-flush')?.game_type === 'HOLDEM'
       && byId.get('mi-1-of-25')?.game_type === 'MINES'
       && byId.get('bc-player-7')?.game_type === 'BACCARAT'
+      && byId.get('ho-bounty-4')?.game_type === 'HOLDEM'
       && byId.get('all-first-1')?.game_type === 'ALL'
       && byId.get('roller-coaster')?.game_type === 'ALL'
       && byId.get('mi-24-of-24')?.game_type === 'MINES'
       && byId.get('la-right-7')?.game_type === 'LADDER');
     // 다시 돌려도 늘지 않는다 — 같은 id 는 덮어쓴다
     seed();
-    ck('두 번 돌려도 열다섯 개', A.listAchievements().length === SEEDED,
+    ck('두 번 돌려도 16개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
     /* ── 폐기한 과제 ────────────────────────────────────────────
@@ -500,7 +512,7 @@ async function main(): Promise<void> {
     for (const id of [OLD, 'mi-23-of-24']) {
       ck(`폐기한 ${id} 을 씨앗이 지운다`, !A.listAchievements().find(a => a.id === id));
     }
-    ck('지운 뒤에도 열다섯 개', A.listAchievements().length === SEEDED,
+    ck('지운 뒤에도 16개', A.listAchievements().length === SEEDED,
       String(A.listAchievements().length));
 
     /* 이미 달성한 사람이 있으면 지우지 않는다 — 영구히 남는다고 적어 둔 기록이라,
@@ -812,8 +824,10 @@ async function main(): Promise<void> {
     ck('최소 베팅 규칙이 화면에 적혀 있다', page.includes('베팅이 기준 금액 이상일 때만'));
     ck('카드마다 기준 금액을 적는다', /ac-need[\s\S]{0,120}minBet/.test(page));
     ck('기준이 0이면 안 적는다 (0P 이상은 뜻이 없다)', /v\.minBet > 0/.test(page));
-    /* 감춘 과제에는 안 적는다 — 베팅으로 깨는 것인지 아닌지도 알려 주면 안 된다 */
-    ck('감춘 과제에는 기준을 안 적는다', /hiddenYet[\s\S]{0,60}v\.minBet > 0/.test(page));
+    /* 감춘 과제에도 적는다. 금액은 조건이 아니라 규칙이고(얼마 이상 걸어야 판정된다),
+       그걸 숨기면 "왜 안 깨지지"만 남는다 — 감추는 것은 무엇을 해야 하나뿐이다. */
+    ck('감춘 과제에도 기준을 적는다', !/hiddenYet[\s\S]{0,60}v\.minBet > 0/.test(page));
+    ck('기준 계산에 감춤 여부가 끼지 않는다', !/hiddenYet/.test(page));
 
     /* 연승은 정산 자리에서 쌓이고 과제는 화면 쪽에서 연다. 문지기(1,000P)가 정산 쪽에
        있어야 소액으로 쌓는 것을 막는다 — 과제 쪽에 두면 이미 쌓인 연승으로 열려 버린다. */
@@ -1480,6 +1494,183 @@ async function main(): Promise<void> {
              DELETE FROM poker_bets; DELETE FROM poker_rounds;`);
   }
 
+  /* ── 8-7b. 죽음의 바운티 헌터 ────────────────────────────────── */
+  section('[8-7b] 홀덤 — KO 를 세고 우승자에게만 준다');
+  {
+    const HD = require('../src/db/holdem') as typeof import('../src/db/holdem');
+    const AD = require('../src/db/admin') as typeof import('../src/db/admin');
+    const nowSec = (): number => Math.floor(Date.now() / 1000);
+    const ko = (tid: number, uid: string): number =>
+      (db.prepare(`SELECT ko_count AS n FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`)
+        .get(tid, uid) as { n: number } | undefined)?.n ?? 0;
+
+    /** 대회를 열고 사람을 앉힌 뒤 첫 판을 시작한다. */
+    function openTourney(players: string[]): { id: number; tableId: number } {
+      db.exec(`DELETE FROM holdem_hand_seats; DELETE FROM holdem_hands;
+               DELETE FROM holdem_seats; DELETE FROM holdem_tables;
+               DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
+      const made = AD.createTournament({
+        title: 'ko 검사', regOpenAt: nowSec() - 60, startAt: nowSec() + 3600,
+      });
+      if (!made.ok) throw new Error('대회를 못 열었다: ' + made.error);
+      for (const p of players) HD.registerHoldem(p, p);
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(nowSec() - 1);
+      HD.advanceHoldem();
+      const tb = HD.getTable(made.id);
+      if (!tb) {
+        /* 시작하지 않았다면 이유를 그대로 보여준다 — "undefined 의 id" 로 죽으면
+           대회가 왜 안 열렸는지 알 수 없다(실제로 그 오류를 두 번 봤다). */
+        const row = db.prepare(`SELECT * FROM holdem_tournaments WHERE id = ?`).get(made.id);
+        throw new Error('대회가 시작되지 않았다: ' + JSON.stringify(row)
+          + ' · 등록 ' + JSON.stringify(db.prepare(
+            `SELECT user_id FROM holdem_entries WHERE tournament_id = ?`).all(made.id)));
+      }
+      return { id: made.id, tableId: tb.id };
+    }
+    /** 차례가 열려 있는 동안 계속 행동시킨다(제한 시간은 온전히 남겨 자동 폴드를 막는다). */
+    function drive(tableId: number, act: (uid: string) => void): void {
+      for (let i = 0; i < 60; i++) {
+        const h = HD.getCurrentHand(tableId);
+        if (!h || h.ended_at != null || h.to_act_seat == null) break;
+        const seat = HD.getSeats(tableId).find(x => x.seat === h.to_act_seat);
+        if (!seat) break;
+        db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+          .run(nowSec() + HD.ACTION_SEC, h.id);
+        act(seat.user_id);
+      }
+    }
+    const c = (rank: number, suit = 0): number => rank * 4 + suit;
+
+    /* ── 한 판에 둘 탈락 → 승자에게 KO 둘 ───────────────────────
+       짧은 스택 둘을 서로 다른 금액으로 만들어 전원 올인시킨다. 그러면 사이드 팟이 생기고
+       둘 다 그 판에서 나간다.
+
+       "누가 이길지"를 카드로 정하지 않는다. 홀덤에는 보드와 무관하게 이기는 손이 없어서
+       어떤 카드를 심어도 결과가 확률에 달린다 — 감사가 이따금 실패하게 만드는 종류의
+       설계다. 대신 판이 끝난 뒤 실제 승자를 읽어, 그 사람의 KO 가 탈락자 수와 같은지 본다.
+       확인하려는 것은 "누가 이겼나"가 아니라 "이긴 사람에게 탈락자만큼 쌓였나"다. */
+    wipe(); seedForWiring();
+    for (const p of ['ko_a', 'ko_b', 'ko_c']) mkUser(p, 50_000);
+    const t = openTourney(['ko_a', 'ko_b', 'ko_c']);
+    // 두 사람만 짧게 만든다 — 남는 한 사람이 이기든, 짧은 쪽이 이기든 검사는 성립한다
+    db.prepare(`UPDATE holdem_seats SET stack = 300 WHERE table_id = ? AND user_id = 'ko_b'`).run(t.tableId);
+    db.prepare(`UPDATE holdem_seats SET stack = 900 WHERE table_id = ? AND user_id = 'ko_c'`).run(t.tableId);
+    drive(t.tableId, uid => {
+      if (!HD.holdemAction(uid, 'allin', 0).ok) {
+        if (!HD.holdemAction(uid, 'call', 0).ok) HD.holdemAction(uid, 'check', 0);
+      }
+    });
+    const ended = db.prepare(
+      `SELECT result_json FROM holdem_hands WHERE table_id = ? AND ended_at IS NOT NULL
+        ORDER BY id DESC LIMIT 1`).get(t.tableId) as { result_json: string } | undefined;
+    ck('검사 전제: 판이 끝났다', !!ended);
+    const busted = db.prepare(
+      `SELECT user_id FROM holdem_entries WHERE tournament_id = ? AND elim_seq IS NOT NULL`)
+      .all(t.id) as { user_id: string }[];
+    /* 스택이 0 이 된 사람만 KO 대상이다. 대회가 끝나면 마지막 생존자에게도 elim_seq 가
+       붙으므로(등수를 매기는 방식이다) 그 사람은 빼고 센다. */
+    const zeroed = new Set((db.prepare(
+      `SELECT user_id FROM holdem_seats WHERE table_id = ? AND stack <= 0`)
+      .all(t.tableId) as { user_id: string }[]).map(r => r.user_id));
+    const koTotals = (db.prepare(
+      `SELECT user_id, ko_count FROM holdem_entries WHERE tournament_id = ?`)
+      .all(t.id) as { user_id: string; ko_count: number }[]);
+    const sumKo = koTotals.reduce((n, r) => n + r.ko_count, 0);
+    ck('검사 전제: 짧은 스택 둘이 털렸다', zeroed.size === 2, [...zeroed].join(','));
+    ck('KO 합계가 탈락자 수와 같다', sumKo === zeroed.size, `${sumKo} vs ${zeroed.size}`);
+    /* 그 KO 는 전부 한 사람(승자)에게 가 있어야 한다 — 팟을 한 사람이 다 가져간 판이다. */
+    const holders = koTotals.filter(r => r.ko_count > 0);
+    ck('KO 는 이긴 한 사람에게 몰린다',
+      holders.length === 1 && holders[0].ko_count === 2, JSON.stringify(koTotals));
+    ck('털린 사람에게는 KO 가 없다', !zeroed.has(holders[0]?.user_id ?? ''),
+      `${holders[0]?.user_id} · 털림 ${[...zeroed].join(',')}`);
+    void busted;
+
+    /* ── 우승 + KO 4 이상이면 열린다 ────────────────────────────
+       KO 를 넷까지 실제로 쌓으려면 다섯 명이 차례로 나가는 대회를 돌려야 한다. 여기서
+       보려는 것은 "대회가 끝날 때 우승자의 KO 를 보고 주는가"이므로, 그 값을 넣고
+       실제 finishTournament 를 태운다(위에서 세는 쪽은 이미 확인했다). */
+    /* 대회는 최소 인원이 있어 둘로는 시작되지 않는다 — 셋으로 열고 둘을 떨어뜨려 끝낸다. */
+    const THREE = ['bh1', 'bh2', 'bh3'];
+    const finishWith = (uid: string, kos: number): number => {
+      wipe(); seedForWiring();
+      for (const p of THREE) mkUser(p, 50_000);
+      const tt = openTourney(THREE);
+      db.prepare(`UPDATE holdem_entries SET ko_count = ? WHERE tournament_id = ? AND user_id = ?`)
+        .run(kos, tt.id, uid);
+      /* 나머지를 떨어뜨려 대회를 끝낸다 — 마지막 생존자가 우승이다.
+         탈락 순서(elim_seq)를 함께 넣어야 한다. 좌석만 OUT 으로 두면 finishTournament 가
+         "순서를 못 받은 사람"으로 보고 생존자보다 뒤에 번호를 주는데, 등수는 늦게 나갈수록
+         좋으므로 생존자가 꼴등이 된다(실제로 그렇게 3등이 나왔다). */
+      let seq = 0;
+      for (const other of THREE.filter(x => x !== uid)) {
+        seq++;
+        db.prepare(`UPDATE holdem_seats SET stack = 0, presence = 'OUT'
+                     WHERE table_id = ? AND user_id = ?`).run(tt.tableId, other);
+        db.prepare(`UPDATE holdem_entries SET elim_seq = ?, eliminated_at = ?
+                     WHERE tournament_id = ? AND user_id = ?`)
+          .run(seq, nowSec(), tt.id, other);
+      }
+      db.prepare(`UPDATE holdem_hands SET ended_at = ? WHERE table_id = ?`)
+        .run(nowSec(), tt.tableId);
+      HD.advanceHoldem();
+      return tt.id;
+    };
+
+    const t4 = finishWith('bh1', 4);
+    ck('검사 전제: 대회가 끝났다',
+      (db.prepare(`SELECT finished_at AS f FROM holdem_tournaments WHERE id = ?`).get(t4) as
+        { f: number | null }).f != null);
+    ck('검사 전제: bh1 이 우승이다',
+      (db.prepare(`SELECT finish_place AS p FROM holdem_entries
+                    WHERE tournament_id = ? AND user_id = 'bh1'`).get(t4) as
+        { p: number | null }).p === 1);
+    ck('KO 4 + 우승이면 열린다', A.hasAchievement('bh1', 'ho-bounty-4'));
+
+    const t3 = finishWith('bh1', 3);
+    ck('KO 3 이면 안 열린다', !A.hasAchievement('bh1', 'ho-bounty-4'), String(ko(t3, 'bh1')));
+
+    /* KO 는 넉넉해도 우승이 아니면 안 준다 — 조건의 절반이 우승이다.
+       bh1 을 우승시키고 KO 는 bh2 에게 잔뜩 준다. */
+    const tl = finishWith('bh1', 0);
+    db.prepare(`UPDATE holdem_entries SET ko_count = 9 WHERE tournament_id = ? AND user_id = 'bh2'`)
+      .run(tl);
+    ck('검사 전제: bh2 는 우승이 아니다',
+      (db.prepare(`SELECT finish_place AS p FROM holdem_entries
+                    WHERE tournament_id = ? AND user_id = 'bh2'`).get(tl) as
+        { p: number | null }).p !== 1);
+    ck('우승이 아니면 KO 가 많아도 안 준다', !A.hasAchievement('bh2', 'ho-bounty-4'));
+
+    /* 되감기(운영자)를 하면 KO 도 0 으로 돌아가야 한다 — 안 그러면 되감기 전의 KO 가
+       남아 다시 돌린 대회에서 실제보다 많이 세어진다. */
+    wipe(); seedForWiring();
+    for (const p of ['rw1', 'rw2', 'rw3']) mkUser(p, 50_000);
+    const tr = openTourney(['rw1', 'rw2', 'rw3']);
+    db.prepare(`UPDATE holdem_entries SET ko_count = 5 WHERE tournament_id = ? AND user_id = 'rw1'`)
+      .run(tr.id);
+    HD.adminResetRunningTournament();
+    ck('되감으면 KO 가 0 이 된다', ko(tr.id, 'rw1') === 0, String(ko(tr.id, 'rw1')));
+
+    /* 기준이 설명과 같은가 — 4 라고 적어 놓고 5 에 주면 아무도 이상하다고 못 느낀다. */
+    const hdSrc = require('node:fs').readFileSync('src/db/holdem.ts', 'utf8') as string;
+    const byId4 = new Map(A.listAchievements().map(a => [a.id, a]));
+    ck('KO 기준이 설명과 같다',
+      /KO_GOAL = 4/.test(hdSrc) && !!byId4.get('ho-bounty-4')?.description.includes('4명 이상'),
+      byId4.get('ho-bounty-4')?.description);
+    ck('판정 오류가 대회 정산을 막지 않는다',
+      /function awardBounty[\s\S]*?try \{[\s\S]*?catch/.test(hdSrc));
+    /* KO 기록이 던져도 판은 계속 가야 한다 — 여기는 팟이 이미 나뉜 뒤라, 던지면 그 다음
+       처리(다음 판 예약)가 통째로 안 돈다. 세는 자리에 try/catch 가 있는지 본다. */
+    const elim = hdSrc.slice(hdSrc.indexOf('function eliminateBusted'),
+      hdSrc.indexOf('function finishTournament'));
+    ck('KO 기록 오류도 판을 멈추지 않는다',
+      /try \{[\s\S]*ko_count = ko_count \+ 1[\s\S]*?catch/.test(elim), elim.slice(0, 60));
+
+    db.exec(`DELETE FROM holdem_hand_seats; DELETE FROM holdem_hands;
+             DELETE FROM holdem_seats; DELETE FROM holdem_tables;
+             DELETE FROM holdem_entries; DELETE FROM holdem_tournaments;`);
+  }
+
   /* ── 8-8. 바카라 «플레이어» 7연승 ──────────────────────────── */
   section('[8-8] 바카라 — 플레이어에만 걸어 7연승');
   {
@@ -1777,6 +1968,50 @@ async function main(): Promise<void> {
       byId3.get('roller-coaster')?.description);
   }
 
+  /* ── 8-11. 문지기 전수 검사 ─────────────────────────────────── */
+  section('[8-11] 모든 과제의 최소 베팅이 실제로 막는가');
+  {
+    /* 과제마다 min_bet 을 적어 두었지만, 그 값이 실제로 지키는지는 별개다 — 판정 함수가
+       awardIfBet 을 지나지 않으면 표의 숫자는 글자로만 남는다. 표에 있는 과제 전부에 대해
+       "기준 1P 아래에서는 안 주고, 기준에서는 준다"를 직접 확인한다.
+
+       조건 함수는 항상 참으로 둔다. 여기서 보려는 것은 조건이 아니라 문지기다 —
+       조건 자체는 위의 절들이 게임별로 이미 확인했다. */
+    wipe();
+    seedForWiring();
+    const all = A.listAchievements();
+    ck('검사할 과제가 있다', all.length >= 16, String(all.length));
+    for (const a of all) {
+      const uid = 'gate_' + a.id.replace(/-/g, '_');
+      mkUser(uid);
+      if (a.min_bet > 0) {
+        ck(`${a.id} — ${a.min_bet - 1}P 로는 안 준다`,
+          !A.awardIfBet(uid, a.id, a.min_bet - 1, () => true).unlocked);
+        ck(`${a.id} — ${a.min_bet}P 면 준다`,
+          A.awardIfBet(uid, a.id, a.min_bet, () => true).unlocked);
+      } else {
+        /* 기준이 0 인 과제는 금액과 무관해야 한다 — 0P 로도 열려야 그 말이 참이 된다.
+           (베팅이 없는 과제들이다: 지원금·프리롤·시즌 마감·잔액 궤적·손 속도) */
+        ck(`${a.id} — 0P 로도 준다`, A.awardIfBet(uid, a.id, 0, () => true).unlocked);
+      }
+      // 어느 쪽이든 두 번은 주지 않는다
+      ck(`${a.id} — 두 번은 안 준다`,
+        !A.awardIfBet(uid, a.id, a.min_bet, () => true).unlocked);
+      // 조건이 거짓이면 금액이 충분해도 안 준다
+      const other = uid + '_x';
+      mkUser(other);
+      ck(`${a.id} — 조건이 거짓이면 안 준다`,
+        !A.awardIfBet(other, a.id, a.min_bet + 1_000, () => false).unlocked);
+    }
+
+    /* 달성하면 알림이 하나 생긴다 — 이게 없으면 화면에 아무 일도 안 일어난다.
+       전부에 대해 확인한다: 알림을 만드는 곳이 한 군데라 하나만 봐도 될 것 같지만,
+       그 "한 군데"가 맞는지를 보는 것이 이 검사다. */
+    const noti = db.prepare(
+      `SELECT COUNT(*) AS n FROM notifications WHERE type = 'ACHIEVEMENT'`).get() as { n: number };
+    ck('달성마다 알림이 남는다', noti.n === all.length, `${noti.n} vs ${all.length}`);
+  }
+
   /* ── 9. 입력 검증 ───────────────────────────────────────────── */
   section('[9] 과제 등록 — 잘못된 값 거절');
   {
@@ -1828,9 +2063,9 @@ async function main(): Promise<void> {
       String(seenByOther.unlockedBy));
     ck('로그인 안 한 화면에서도 보인다',
       A.achievementsFor(null).find(v => v.id === 'hid-1')!.unlockedBy === 1);
-    ck('그래도 이름은 여전히 가려져 있다', seenByOther.title === '???', seenByOther.title);
-    ck('설명도 여전히 가려져 있다',
-      seenByOther.description.includes('해금됩니다'), seenByOther.description);
+    ck('이름은 남에게도 보인다', seenByOther.title === '감춘 과제', seenByOther.title);
+    ck('그래도 설명은 가려져 있다',
+      seenByOther.description === A.HIDDEN_DESC, seenByOther.description);
     /* 명단도 내준다 — 화면의 버튼이 부르는 그 길이다. 예전에는 여기서 403 을 돌려줘서
        카드에 인원만 뜨고 눌러도 아무것도 안 나오는 상태가 됐을 것이다. */
     ck('감춘 과제의 달성자 명단도 내준다',

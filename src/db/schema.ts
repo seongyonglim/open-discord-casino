@@ -601,6 +601,12 @@ function initSchema(): void {
   try {
     d.exec(`ALTER TABLE holdem_entries ADD COLUMN paid_in INTEGER NOT NULL DEFAULT 0`);
   } catch { /* 이미 있다 */ }
+  /* 이 대회에서 내가 직접 떨어뜨린 사람 수(KO). 도전과제 "죽음의 바운티 헌터"가 본다.
+     대회마다 다시 세는 값이라 entries 에 둔다 — 사람 단위로 두면 통산이 되어
+     "한 대회에서"라는 조건이 성립하지 않는다. */
+  try {
+    d.exec(`ALTER TABLE holdem_entries ADD COLUMN ko_count INTEGER NOT NULL DEFAULT 0`);
+  } catch { /* 이미 있다 */ }
 
   /* 시즌 0 의 시작일 정정 — 표에 찍힌 값이 카지노를 처음 연 날이 아니라 시즌 행을 만든
      날이었다. 랭킹 배너의 "시작"이 그 값을 그대로 보여준다.

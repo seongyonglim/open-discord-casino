@@ -95,9 +95,10 @@ function card(v: AchievementView, total: number): string {
   /* 최소 베팅을 카드마다 적는다. 안내 문구 한 줄로만 두면 "이 과제도 해당되나"를
      매번 위로 올라가 확인해야 하고, 과제마다 기준이 다를 수 있으면 그 문구가 거짓이 된다.
      0 이면 베팅과 무관한 과제라 아무것도 안 적는다 — "0P 이상"은 뜻이 없다.
-     감춘 과제에는 안 적는다: 베팅으로 깨는 것인지 아닌지도 알려 주지 않아야 감춘 것이다. */
-  const hiddenYet = v.hidden && !v.unlocked;
-  const need = !hiddenYet && v.minBet > 0
+
+     감춘 과제에도 적는다. 금액은 조건이 아니라 규칙이고(얼마 이상 걸어야 판정된다),
+     그걸 숨기면 "왜 안 깨지지"만 남는다 — 감추는 것은 무엇을 해야 하나뿐이다. */
+  const need = v.minBet > 0
     ? `<span class="ac-need num">베팅 ${v.minBet.toLocaleString('ko-KR')}P 이상</span>`
     : '';
   const foot = (v.unlocked

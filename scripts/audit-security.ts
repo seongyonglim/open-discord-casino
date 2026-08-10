@@ -284,9 +284,12 @@ async function main(): Promise<void> {
     const c = mkSession('s_ach', 500);
     const page = await req('GET', '/achievements', { cookie: c });
     ck('도전과제 화면이 열린다', page.status === 200, String(page.status));
-    /* 화면에서 가리는 것으로는 안 된다 — HTML 에 들어 있으면 소스 보기로 그대로 읽힌다 */
-    ck('감춘 과제의 이름이 HTML 에 없다', !page.text.includes('비밀 이름'));
-    ck('감춘 과제의 조건도 HTML 에 없다', !page.text.includes('비밀 조건'));
+    /* 감추는 것은 조건뿐이다 — 제목은 보여준다(제목으로 조건을 추리하는 것이 이 과제의
+       재미다). 그래서 이름은 HTML 에 있는 것이 맞고, 조건은 없어야 한다.
+       화면에서 가리는 것으로는 안 된다: HTML 에 들어 있으면 소스 보기로 그대로 읽힌다. */
+    ck('감춘 과제의 이름은 HTML 에 있다', page.text.includes('비밀 이름'));
+    ck('감춘 과제의 조건은 HTML 에 없다', !page.text.includes('비밀 조건'));
+    ck('가림 문구가 그 자리에 있다', page.text.includes('제목을 보고 추리'));
     ck('공개 과제는 보인다', page.text.includes('공개'));
 
     /* 달성자 명단은 감춘 과제도 내준다 — 감추는 것은 조건이지 사람이 아니다.

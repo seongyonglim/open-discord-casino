@@ -75,6 +75,10 @@ export function listAchievements(): AchievementRow[] {
  * 감춘 과제(is_hidden)의 이름과 설명은 **여기서** 지운다. 화면에서 가리는 것으로는
  * 안 된다 — 응답에 들어 있으면 개발자 도구로 그대로 읽히고, 그러면 감춰진 것이 아니다.
  */
+/* 감춘 과제의 설명 자리에 들어가는 문구. 여기 한 곳에만 둔다 — 화면과 감사가 같은
+   문장을 봐야 하고, 두 곳에 적으면 문구를 고치는 날 한쪽만 바뀐다. */
+export const HIDDEN_DESC = '🔒 숨겨진 도전과제입니다. 조건은 제목을 보고 추리해 보세요!';
+
 export function achievementsFor(userId: string | null): AchievementView[] {
   const mine = new Map<string, number>();
   if (userId) {
@@ -97,8 +101,14 @@ export function achievementsFor(userId: string | null): AchievementView[] {
       unlockedBy: counts.get(a.id) ?? 0,
       id: a.id,
       gameType: a.game_type,
-      title: secret ? '???' : a.title,
-      description: secret ? '알 수 없는 기행이나 불운이 찾아오면 해금됩니다.' : a.description,
+      /* 감추는 것은 "무엇을 해야 하나"뿐이다. 제목은 보여준다 —
+         예전에는 제목까지 ??? 로 가렸는데, 그러면 카드가 "잠긴 칸 하나"일 뿐이어서
+         찾아볼 마음이 안 생긴다. 제목을 보고 조건을 추리하는 것이 이 과제의 재미다.
+         최소 베팅 기준도 보여준다(화면 쪽에서 붙인다) — 금액은 조건이 아니라 규칙이다. */
+      title: a.title,
+      description: secret ? HIDDEN_DESC : a.description,
+      /* 아이콘은 가린 채로 둔다. 제목만으로는 이 카드가 히든이라는 것을 알 수 없고,
+         설명의 자물쇠 하나로는 목록을 훑을 때 눈에 안 들어온다(화면 쪽이 자물쇠를 그린다). */
       iconUrl: secret ? null : a.icon_url,
       hidden: a.is_hidden === 1,
       minBet: a.min_bet,

@@ -674,8 +674,10 @@ export function adminResetRunningTournament(): {
   // 앉아 있는 사람은 그대로. 스택만 되돌리고 탈락 표시를 푼다
   run(`UPDATE holdem_seats SET stack = ?, presence = 'ACTIVE', last_seen_at = ?
         WHERE table_id = ?`, tuning(t).startingStack, now, table.id);
+  /* KO 도 되돌린다. 안 되돌리면 되감기 전에 떨어뜨린 사람이 그대로 남아, 다시 돌린
+     대회에서 실제로 떨어뜨린 수보다 많이 세어진다("한 대회에서"가 깨진다). */
   run(`UPDATE holdem_entries SET finish_place = NULL, elim_seq = NULL,
-         eliminated_at = NULL, prize = 0 WHERE tournament_id = ?`, t.id);
+         eliminated_at = NULL, prize = 0, ko_count = 0 WHERE tournament_id = ?`, t.id);
 
   // 블라인드 1레벨 = 시작 시각을 지금으로
   run(`UPDATE holdem_tournaments SET started_at = ?, finished_at = NULL, cancelled_at = NULL
@@ -1080,7 +1082,7 @@ function endHand(
   awardStraightFlush(t, rows, result.reveal, now);
 
   // 스택이 0이 된 사람을 탈락 처리한다 (같은 핸드에서 여러 명이 나가면 투입액이 많은 쪽이 상위)
-  eliminateBusted(t, table, hand, views, now);
+  eliminateBusted(t, table, hand, views, now, potAwards);
 
   /* 팟이 여러 층이면 화면이 하나씩 넘기며 보여주므로 그만큼 시간이 더 든다.
      늘리지 않으면 마지막 층을 보여주기도 전에 다음 판이 시작된다.
@@ -1109,7 +1111,8 @@ function endHand(
  * 같은 핸드에서 둘 이상이 나가면 이 핸드에 적게 넣은 쪽이 먼저 나간다(실제 규칙).
  */
 function eliminateBusted(
-  t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], now: number
+  t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], now: number,
+  potAwards: { index: number; winners: { seat: number }[] }[] = []
 ): void {
   const busted = getSeats(table.id).filter(s => s.presence !== 'OUT' && s.stack <= 0);
   if (!busted.length) return;
@@ -1120,11 +1123,37 @@ function eliminateBusted(
   });
   let seq = (one<{ n: number }>(
     `SELECT COALESCE(MAX(elim_seq), 0) AS n FROM holdem_entries WHERE tournament_id = ?`, t.id)!).n;
-  for (const s of ranked) {
+  const seatUser = new Map(getSeats(table.id).map(s => [s.seat, s.user_id]));
+  for (const [i, s] of ranked.entries()) {
     seq++;
     run(`UPDATE holdem_seats SET presence = 'OUT' WHERE table_id = ? AND seat = ?`, table.id, s.seat);
     run(`UPDATE holdem_entries SET elim_seq = ?, eliminated_at = ?
          WHERE tournament_id = ? AND user_id = ? AND elim_seq IS NULL`, seq, now, t.id, s.user_id);
+
+    /* ── KO 기록 ──────────────────────────────────────────────────
+       이 사람의 마지막 칩을 가져간 사람에게 하나 준다.
+
+       팟 층은 투입액이 적은 순서대로 쌓인다(사이드 팟의 정의다). 그래서 투입액 오름차순인
+       ranked 의 i 번째 사람은 i 번째 층까지만 자격이 있었고, 그 층의 승자가 그를 떨어뜨린
+       사람이다. 층이 그보다 적으면(폴드로 끝난 판 등) 마지막 층의 승자로 본다.
+
+       한 층을 나눠 가진 경우(스플릿)에는 그 승자 전부에게 준다 — 둘 다 그를 이겼고,
+       KO 를 반으로 쪼갤 방법이 없다.
+
+       실패해도 판을 멈추지 않는다: 여기는 팟이 이미 나뉜 뒤라, 던지면 그 다음 처리
+       (다음 판 예약)가 통째로 안 돈다. */
+    try {
+      const layer = potAwards.length ? potAwards[Math.min(i, potAwards.length - 1)] : null;
+      for (const w of layer?.winners ?? []) {
+        const uid = seatUser.get(w.seat);
+        // 자기 자신을 떨어뜨린 것으로 세지 않는다(같은 핸드에 스택이 0이 된 승자가 있을 수 있다)
+        if (!uid || uid === s.user_id) continue;
+        run(`UPDATE holdem_entries SET ko_count = ko_count + 1
+              WHERE tournament_id = ? AND user_id = ?`, t.id, uid);
+      }
+    } catch (e) {
+      console.error('KO 기록 실패:', e);
+    }
   }
   void hand;
 }
@@ -1162,7 +1191,33 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
   const fresh = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
   if (fresh.finished_at !== now) return;
   payPrizes(fresh, now);
+  awardBounty(fresh);
   announceWinner(fresh);
+}
+
+/* ── 도전과제: 죽음의 바운티 헌터 ──────────────────────────────────────
+   한 대회에서 직접 떨어뜨린 사람이 KO_GOAL 명 이상이고, 그 대회를 우승한다.
+
+   여기서 판정하는 이유: 이 조건은 대회가 끝나야 성립한다(우승이 조건의 절반이다).
+   ko_count 는 대회마다 다시 세므로 통산으로 새는 일이 없다.
+
+   최소 베팅은 이 대회의 참가비를 쓴다. 프리롤은 0 이라 문지기가 서지 않는데 그건 맞다 —
+   홀덤은 하루 한 번 열리는 대회라 소액으로 여러 번 돌릴 수가 없다. */
+const KO_GOAL = 4;
+
+function awardBounty(t: HtRow): void {
+  try {
+    const win = one<{ user_id: string; ko_count: number }>(
+      `SELECT user_id, ko_count FROM holdem_entries
+        WHERE tournament_id = ? AND finish_place = 1 LIMIT 1`, t.id);
+    if (!win) return;
+    const { award } = require('../web/achieve-hook') as typeof import('../web/achieve-hook');
+    award(win.user_id, t.buy_in, [['ho-bounty-4', () => win.ko_count >= KO_GOAL]]);
+  } catch (e) {
+    /* 판정이 던져도 대회 정산은 끝나야 한다 — 여기서 막히면 상금은 이미 나갔는데
+       우승 소식이 안 가고, 다음 요청에서 이중 정산 가드에 걸려 영영 안 간다. */
+    console.error('죽음의 바운티 헌터 판정 오류:', e);
+  }
 }
 
 /**
