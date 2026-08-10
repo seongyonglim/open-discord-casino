@@ -1586,6 +1586,59 @@ async function main(): Promise<void> {
       `${holders[0]?.user_id} · 털림 ${[...zeroed].join(',')}`);
     void busted;
 
+    /* ── 사이드 팟 — 누가 떨어뜨렸는지가 층으로 갈린다 ─────────
+       스택 1 : 2 : 3 으로 셋이 올인하고 손 세기가 A > C > B 인 경우.
+         · 층0 (A·B·C) → A 가 가져간다
+         · 층1 (B·C)   → C 가 가져간다
+       B 만 탈락하고, B 의 마지막 칩은 층1 에 있었으므로 KO 는 C 다.
+
+       한때 "탈락자 순번 i → 층 i" 로 옮겼다가 이 경우에 A 를 세었다 — i 는 탈락자 중
+       몇 번째인지일 뿐이고 층은 투입액으로 정해지므로 서로 다른 값이다. 제보로 찾았다.
+
+       손 세기를 카드로 못 박는다: A=AA · C=KK · B=22 에 보드는 3·4·6·9·T 무지개라
+       스트레이트·플러시·트립스가 없어 A > C > B 가 보드와 무관하게 확정된다. */
+    wipe(); seedForWiring();
+    for (const p of ['sp_a', 'sp_b', 'sp_c']) mkUser(p, 50_000);
+    const sp = openTourney(['sp_a', 'sp_b', 'sp_c']);
+    const spHand = HD.getCurrentHand(sp.tableId)!;
+    const spHole: Record<string, number[]> = {
+      sp_a: [c(12, 0), c(12, 1)],   // A♠A♥
+      sp_c: [c(11, 0), c(11, 1)],   // K♠K♥
+      sp_b: [c(0, 0), c(0, 1)],     // 2♠2♥
+    };
+    for (const s of HD.getSeats(sp.tableId)) {
+      db.prepare(`UPDATE holdem_hand_seats SET hole_json = ? WHERE hand_id = ? AND seat = ?`)
+        .run(JSON.stringify(spHole[s.user_id]), spHand.id, s.seat);
+    }
+    db.prepare(`UPDATE holdem_hands SET board_json = ? WHERE id = ?`)
+      .run(JSON.stringify([c(1, 2), c(2, 3), c(4, 2), c(7, 3), c(8, 2)]), spHand.id);
+    /* 스택은 핸드 스냅샷(holdem_hand_seats.stack)을 바꿔야 한다 — 좌석 표만 바꾸면
+       팟 구조가 안 바뀌어 사이드 팟이 아예 생기지 않는다(그렇게 한 번 헛돌았다). */
+    for (const [uid, v] of [['sp_a', 1_000], ['sp_b', 2_000], ['sp_c', 3_000]] as [string, number][]) {
+      db.prepare(`UPDATE holdem_hand_seats SET stack = ? WHERE hand_id = ? AND user_id = ?`)
+        .run(v, spHand.id, uid);
+      db.prepare(`UPDATE holdem_seats SET stack = ? WHERE table_id = ? AND user_id = ?`)
+        .run(v, sp.tableId, uid);
+    }
+    drive(sp.tableId, uid => {
+      if (!HD.holdemAction(uid, 'allin', 0).ok) {
+        if (!HD.holdemAction(uid, 'call', 0).ok) HD.holdemAction(uid, 'check', 0);
+      }
+    });
+    const spRes = db.prepare(
+      `SELECT result_json FROM holdem_hands WHERE table_id = ? AND ended_at IS NOT NULL
+        ORDER BY id DESC LIMIT 1`).get(sp.tableId) as { result_json: string } | undefined;
+    const spPots = spRes ? (JSON.parse(spRes.result_json) as { pots: { eligible: number[] }[] }).pots : [];
+    ck('검사 전제: 사이드 팟이 생겼다', spPots.length === 2, JSON.stringify(spPots));
+    const spStacks = new Map((db.prepare(
+      `SELECT user_id, stack FROM holdem_seats WHERE table_id = ?`).all(sp.tableId) as
+      { user_id: string; stack: number }[]).map(r => [r.user_id, r.stack]));
+    ck('검사 전제: B 만 털렸다',
+      spStacks.get('sp_b') === 0 && (spStacks.get('sp_a') ?? 0) > 0 && (spStacks.get('sp_c') ?? 0) > 0,
+      JSON.stringify([...spStacks]));
+    ck('사이드 팟 승자(C)가 KO 를 받는다', ko(sp.id, 'sp_c') === 1, String(ko(sp.id, 'sp_c')));
+    ck('메인 팟 승자(A)는 KO 를 안 받는다', ko(sp.id, 'sp_a') === 0, String(ko(sp.id, 'sp_a')));
+
     /* ── 우승 + KO 4 이상이면 열린다 ────────────────────────────
        KO 를 넷까지 실제로 쌓으려면 다섯 명이 차례로 나가는 대회를 돌려야 한다. 여기서
        보려는 것은 "대회가 끝날 때 우승자의 KO 를 보고 주는가"이므로, 그 값을 넣고

@@ -1082,7 +1082,7 @@ function endHand(
   awardStraightFlush(t, rows, result.reveal, now);
 
   // 스택이 0이 된 사람을 탈락 처리한다 (같은 핸드에서 여러 명이 나가면 투입액이 많은 쪽이 상위)
-  eliminateBusted(t, table, hand, views, now, potAwards);
+  eliminateBusted(t, table, hand, views, now, potAwards, pots);
 
   /* 팟이 여러 층이면 화면이 하나씩 넘기며 보여주므로 그만큼 시간이 더 든다.
      늘리지 않으면 마지막 층을 보여주기도 전에 다음 판이 시작된다.
@@ -1112,7 +1112,8 @@ function endHand(
  */
 function eliminateBusted(
   t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], now: number,
-  potAwards: { index: number; winners: { seat: number }[] }[] = []
+  potAwards: { index: number; winners: { seat: number }[] }[] = [],
+  pots: { eligible: number[] }[] = []
 ): void {
   const busted = getSeats(table.id).filter(s => s.presence !== 'OUT' && s.stack <= 0);
   if (!busted.length) return;
@@ -1124,7 +1125,7 @@ function eliminateBusted(
   let seq = (one<{ n: number }>(
     `SELECT COALESCE(MAX(elim_seq), 0) AS n FROM holdem_entries WHERE tournament_id = ?`, t.id)!).n;
   const seatUser = new Map(getSeats(table.id).map(s => [s.seat, s.user_id]));
-  for (const [i, s] of ranked.entries()) {
+  for (const s of ranked) {
     seq++;
     run(`UPDATE holdem_seats SET presence = 'OUT' WHERE table_id = ? AND seat = ?`, table.id, s.seat);
     run(`UPDATE holdem_entries SET elim_seq = ?, eliminated_at = ?
@@ -1133,9 +1134,19 @@ function eliminateBusted(
     /* ── KO 기록 ──────────────────────────────────────────────────
        이 사람의 마지막 칩을 가져간 사람에게 하나 준다.
 
-       팟 층은 투입액이 적은 순서대로 쌓인다(사이드 팟의 정의다). 그래서 투입액 오름차순인
-       ranked 의 i 번째 사람은 i 번째 층까지만 자격이 있었고, 그 층의 승자가 그를 떨어뜨린
-       사람이다. 층이 그보다 적으면(폴드로 끝난 판 등) 마지막 층의 승자로 본다.
+       "마지막 칩"이 어느 층인지가 요점이다. 사이드 팟은 투입액이 적은 순서대로 쌓이고,
+       각 층에는 그 층까지 낸 사람만 자격이 있다(pots[i].eligible). 탈락자가 자격을 가진
+       가장 위 층이 그가 마지막 칩을 걸었던 자리이고, 그 층의 승자가 그를 떨어뜨린 사람이다.
+
+       예: 스택 1 : 2 : 3 으로 셋이 올인하고 손 세기가 A > C > B 라면
+         · 층0 (A·B·C) → A 가 가져간다
+         · 층1 (B·C)   → C 가 가져간다
+       B 만 탈락하는데, B 의 마지막 칩은 층1 에 있었으므로 KO 는 C 다.
+       한때 이 자리를 "탈락자 순번 i → 층 i" 로 옮겼다가 그 경우에 A 를 세었다 —
+       i 는 탈락자 중 몇 번째인지일 뿐이고 층은 투입액으로 정해지므로 서로 다른 값이다.
+
+       자격이 있는 층이 없으면(블라인드로 마지막 칩을 내고 폴드한 경우 — 폴드한 사람은
+       eligible 에 안 들어간다) 메인 팟 승자로 본다. 그 칩을 실제로 가져간 사람이다.
 
        한 층을 나눠 가진 경우(스플릿)에는 그 승자 전부에게 준다 — 둘 다 그를 이겼고,
        KO 를 반으로 쪼갤 방법이 없다.
@@ -1143,7 +1154,12 @@ function eliminateBusted(
        실패해도 판을 멈추지 않는다: 여기는 팟이 이미 나뉜 뒤라, 던지면 그 다음 처리
        (다음 판 예약)가 통째로 안 돈다. */
     try {
-      const layer = potAwards.length ? potAwards[Math.min(i, potAwards.length - 1)] : null;
+      let layer: { winners: { seat: number }[] } | null = null;
+      // potAwards 는 층 번호 오름차순이라, 자격이 있는 것 중 마지막이 가장 위 층이다
+      for (const pa of potAwards) {
+        if (pots[pa.index]?.eligible.includes(s.seat)) layer = pa;
+      }
+      if (!layer) layer = potAwards[0] ?? null;
       for (const w of layer?.winners ?? []) {
         const uid = seatUser.get(w.seat);
         // 자기 자신을 떨어뜨린 것으로 세지 않는다(같은 핸드에 스택이 0이 된 승자가 있을 수 있다)
