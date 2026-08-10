@@ -499,13 +499,28 @@ async function main(): Promise<void> {
       JSON.stringify(noSum.embeds[0].description));
 
     const src = readFileSync('src/discord/announce.ts', 'utf8') as string;
-    ck('URL 이 없으면 건너뛴다', /if \(!hook\)[\s\S]{0,160}return;/.test(src));
+    ck('URL 이 없으면 건너뛴다',
+      /if \(!hook\)[\s\S]{0,200}return \{ ok: false, skipped: true \};/.test(src));
     ck('건너뛴 사실을 로그로 남긴다', src.includes('건너뜀'));
     /* 기다리지 않고 던지지도 않는다. await 를 붙이면 공지 저장이 웹훅 왕복만큼 늦어지고,
        catch 가 없으면 실패가 트랜잭션 밖으로 튀어나간다. */
-    ck('기다리지 않는다 (void fetch)', /void fetch\(/.test(src));
-    ck('실패를 삼킨다 (catch)', /\.catch\(/.test(src));
+    /* 공지 저장 쪽에서 부르는 문은 기다리지 않는다. await 를 붙이면 공지 등록이 웹훅
+       왕복만큼 늦어지고, 실패가 트랜잭션 밖으로 튀어나간다. */
+    ck('기다리지 않는다 (void)', /export function announceNotice[\s\S]{0,200}void sendAnnounce\(/.test(src));
+    ck('실패를 삼킨다 (던지지 않는다)', /catch \(e: unknown\)[\s\S]{0,120}return \{ ok: false/.test(src));
     ck('응답 없는 웹훅에 매달리지 않는다', /AbortSignal\.timeout\(/.test(src));
+    /* 기다릴 수 있는 모양도 있어야 한다 — 운영 도구는 결과를 봐야 하고, 기다리지 않으면
+       스크립트가 요청이 나가기도 전에 끝난다. */
+    ck('기다릴 수 있는 문도 있다', /export async function sendAnnounce/.test(src));
+    const tool = readFileSync('scripts/announce-notice.ts', 'utf8') as string;
+    ck('다시 보내는 도구가 결과를 기다린다', /await sendAnnounce\(/.test(tool));
+    /* 그 도구는 알림만 보낸다 — 공지를 지우고 다시 만들면 앱 안 알림이 한 번 더 쌓이고
+       목록 순서(sort_at)도 바뀐다. 읽는 함수만 들여오는지를 import 줄에서 본다
+       (본문에서 이름을 찾으면 위 주석의 설명 문장에 걸린다 — 실제로 걸렸다). */
+    const dbImport = tool.match(/import \{([^}]*)\} from '\.\.\/src\/db\/notices'/)?.[1] ?? '';
+    ck('그 도구는 읽기만 들여온다',
+      dbImport.trim() === 'listNotices, findNotice', dbImport.trim());
+    ck('숨긴 글은 다시 보내지 않는다', /findNotice\(/.test(tool));
 
     const nsrc = readFileSync('src/db/notices.ts', 'utf8') as string;
     /* 신규 생성에만 붙는다. 수정에 붙으면 오타를 세 번 고칠 때 채널에 네 번 올라온다. */

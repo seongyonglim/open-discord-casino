@@ -69,30 +69,46 @@ export function announceEmbed(n: AnnouncePayload, nowMs: number): Record<string,
 }
 
 /**
- * 보낸다. 절대 던지지 않고 기다리게 하지도 않는다 — 부르는 쪽은 이 줄에서 멈추지 않는다.
+ * 실제로 보낸다. 절대 던지지 않는다 — 결과는 돌려주는 값으로만 알린다.
+ *
+ * 기다릴 수 있는 모양으로 따로 둔 이유: 운영 도구(scripts/announce-notice.ts)는 결과를
+ * 봐야 하고, 기다리지 않으면 스크립트가 끝나 버려 요청이 나가기도 전에 프로세스가 죽는다.
+ * 공지 저장 쪽은 아래 announceNotice 로 부르므로 여전히 기다리지 않는다.
  */
-export function announceNotice(n: AnnouncePayload): void {
+export async function sendAnnounce(n: AnnouncePayload):
+  Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
   const hook = WEBHOOK();
   if (!hook) {
     console.log('[공지 웹훅] DISCORD_ANNOUNCEMENT_WEBHOOK_URL 이 없어 건너뜀:', n.id);
-    return;
+    return { ok: false, skipped: true };
   }
-  const body = announceEmbed(n, Date.now());
-  /* fetch 는 뜨거운 프로미스라 부르는 순간 요청이 나간다. catch 만 붙여 두면
-     부르는 쪽은 기다리지 않고, 실패해도 unhandled rejection 이 되지 않는다. */
-  void fetch(hook, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    /* 웹훅이 응답을 안 주면 이 요청이 영원히 남는다. fly 머신은 요청이 끝나야 잠들 수
-       있으므로 상한을 둔다 — 알림 한 건 때문에 머신이 깨어 있을 이유가 없다. */
-    signal: AbortSignal.timeout(10_000),
-  })
-    .then(r => {
-      if (r.ok) console.log('[공지 웹훅] 전송 완료:', n.id);
-      // 2xx 가 아니면 몸통에 이유가 들어 있다. 그걸 안 찍으면 "왜 안 오는지"를 알 수 없다.
-      else r.text().then(t => console.error('[공지 웹훅] 거절됨', r.status, t.slice(0, 300)))
-        .catch(() => console.error('[공지 웹훅] 거절됨', r.status));
-    })
-    .catch((e: unknown) => console.error('[공지 웹훅] 전송 실패:', e));
+  try {
+    const r = await fetch(hook, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(announceEmbed(n, Date.now())),
+      /* 웹훅이 응답을 안 주면 이 요청이 영원히 남는다. fly 머신은 요청이 끝나야 잠들 수
+         있으므로 상한을 둔다 — 알림 한 건 때문에 머신이 깨어 있을 이유가 없다. */
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (r.ok) {
+      console.log('[공지 웹훅] 전송 완료:', n.id);
+      return { ok: true };
+    }
+    // 2xx 가 아니면 몸통에 이유가 들어 있다. 그걸 안 찍으면 "왜 안 오는지"를 알 수 없다.
+    const t = await r.text().catch(() => '');
+    console.error('[공지 웹훅] 거절됨', r.status, t.slice(0, 300));
+    return { ok: false, error: `${r.status} ${t.slice(0, 200)}` };
+  } catch (e: unknown) {
+    console.error('[공지 웹훅] 전송 실패:', e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+/**
+ * 공지 저장 쪽에서 부르는 문. 기다리지 않고 던지지도 않는다 — 부르는 쪽은 이 줄에서
+ * 멈추지 않고, 실패해도 unhandled rejection 이 되지 않는다.
+ */
+export function announceNotice(n: AnnouncePayload): void {
+  void sendAnnounce(n);
 }
