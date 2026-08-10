@@ -15,7 +15,7 @@
  *
  * id 를 빼면 지금 올라와 있는 공지 목록을 보여준다.
  */
-import { listNotices, findNotice } from '../src/db/notices';
+import { listNotices, findNotice, taggedTitle } from '../src/db/notices';
 import { sendAnnounce } from '../src/discord/announce';
 
 const id = (process.argv[2] ?? '').trim();
@@ -38,7 +38,9 @@ if (!n) {
 /* 최상위 await 는 쓰지 않는다 — tsx 가 이 스크립트를 cjs 로 바꿔 돌리므로 그 자리에서
    "Top-level await is currently not supported" 로 죽는다(운영 머신에서 실제로 죽었다). */
 async function main(): Promise<void> {
-  console.log(`보낸다: [${n!.kind}] ${n!.title}`);
+  /* 로그도 taggedTitle 을 지난다. 손으로 이으면 여기만 `[업데이트] [업데이트] …` 로
+     찍혀서, 실제로는 잘 나갔는데도 아직 안 고쳐진 것으로 읽힌다(실제로 그렇게 읽혔다). */
+  console.log(`보낸다: ${taggedTitle(n!.kind, n!.title)}`);
   const r = await sendAnnounce({ id: n!.id, kind: n!.kind, title: n!.title, summary: n!.summary });
   if (r.ok) {
     console.log('완료. 채널을 확인해 보라.');

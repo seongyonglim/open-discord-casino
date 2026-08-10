@@ -527,9 +527,13 @@ async function main(): Promise<void> {
     /* 그 도구는 알림만 보낸다 — 공지를 지우고 다시 만들면 앱 안 알림이 한 번 더 쌓이고
        목록 순서(sort_at)도 바뀐다. 읽는 함수만 들여오는지를 import 줄에서 본다
        (본문에서 이름을 찾으면 위 주석의 설명 문장에 걸린다 — 실제로 걸렸다). */
-    const dbImport = tool.match(/import \{([^}]*)\} from '\.\.\/src\/db\/notices'/)?.[1] ?? '';
-    ck('그 도구는 읽기만 들여온다',
-      dbImport.trim() === 'listNotices, findNotice', dbImport.trim());
+    const dbImport = (tool.match(/import \{([^}]*)\} from '\.\.\/src\/db\/notices'/)?.[1] ?? '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    /* 쓰기 함수를 들여오지 않는지를 본다. 읽기·문자열 만드는 함수는 늘어날 수 있으므로
+       목록을 못 박지 않고, "쓰는 것"만 금지한다. */
+    const WRITES = ['createNotice', 'updateNotice', 'toggleNotice', 'deleteNotice', 'seedNoticesOnce'];
+    ck('그 도구는 쓰기 함수를 안 들여온다',
+      dbImport.length > 0 && !dbImport.some(x => WRITES.includes(x)), dbImport.join(','));
     ck('숨긴 글은 다시 보내지 않는다', /findNotice\(/.test(tool));
 
     const nsrc = readFileSync('src/db/notices.ts', 'utf8') as string;
