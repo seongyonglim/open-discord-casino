@@ -499,6 +499,23 @@ async function main(): Promise<void> {
       hasLogo ? String(em.footer.icon_url).endsWith('/img/logo.png') : !('icon_url' in em.footer),
       `logo.png ${hasLogo ? '있음' : '없음'} · icon_url=${String(em.footer.icon_url)}`);
     ck('SVG 를 아이콘으로 쓰지 않는다', !String(em.footer.icon_url ?? '').endsWith('.svg'));
+    if (hasLogo) {
+      /* 파일이 있어도 서버가 내보내지 않으면 디스코드에는 여전히 깨진 그림이 남는다.
+         화이트리스트와 MIME 둘 다 필요하다 — png 가 MIME 표에 없으면
+         application/octet-stream 으로 나가고, 디스코드는 그걸 이미지로 그리지 않는다
+         (404 도 아니고 200 인데 안 보이는 종류의 실패다). */
+      const srvSrc = readFileSync('src/web/server.ts', 'utf8') as string;
+      ck('로고가 서버 화이트리스트에 있다', /IMG_FILES = new Set\(\[[^\]]*'logo\.png'/.test(srvSrc));
+      ck('png MIME 이 있다', /png: 'image\/png'/.test(srvSrc));
+      const png = readFileSync('public/img/logo.png');
+      ck('로고가 온전한 PNG 다',
+        png.slice(0, 8).toString('hex') === '89504e470d0a1a0a'
+        && png.slice(-8, -4).toString('ascii') === 'IEND',
+        `${png.length}B`);
+      ck('로고가 정사각형이다',
+        png.readUInt32BE(16) === png.readUInt32BE(20) && png.readUInt32BE(16) >= 128,
+        `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`);
+    }
     /* 공지 제목에 @everyone 이 들어가면 그대로 전체 멘션이 나간다 — 글 쓴 사람이
        의도한 것이 아니다. 웹훅이 멘션을 만들지 못하게 막아 둔다. */
     ck('멘션을 만들지 않는다', Array.isArray(e.allowed_mentions?.parse)

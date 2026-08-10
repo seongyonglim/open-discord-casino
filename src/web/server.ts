@@ -93,11 +93,18 @@ const SFX_FILES = new Set([
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',
+  /* png 이 없으면 application/octet-stream 으로 나가고, 디스코드는 그걸 이미지로 안 그린다 —
+     404 도 아니고 200 인데 안 보이는 종류의 실패라 원인을 찾기 어렵다. */
+  png: 'image/png',
   svg: 'image/svg+xml; charset=utf-8',
 };
 // 디스코드 임베드에서 불러가는 이미지. 디스코드 CDN에 올리는 대신 여기서 서빙한다
 // (봇이 파일을 첨부하면 메시지를 지우고 다시 올릴 때마다 업로드가 반복된다).
-const IMG_FILES = new Set(['broke.jpg']);
+/* logo.png 는 favicon.svg 를 256×256 으로 구운 것이다(헤드리스 크롬으로 렌더 →
+   scripts/ 에 남기지 않았다: 한 번 굽고 끝나는 일이라 도구를 두면 그게 더 부담이다).
+   왜 SVG 가 아니라 PNG 인가: 디스코드 임베드는 SVG 를 그리지 않는다(png·jpg·gif·webp만).
+   공지 웹훅의 푸터 아이콘이 이 파일을 쓴다 — 없으면 아이콘 없이 글자만 나간다. */
+const IMG_FILES = new Set(['broke.jpg', 'logo.png']);
 // 뒷면 두 종류 — back(남색)은 블랙잭·바카라·포커 플립, back-red(마룬)은 홀덤 테이블이 쓴다
 const CARD_FILES = new Set<string>(['back.svg', 'back-red.svg']);
 for (const s of ['s', 'h', 'd', 'c']) {
