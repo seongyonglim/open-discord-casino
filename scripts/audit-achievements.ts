@@ -2262,6 +2262,54 @@ async function main(): Promise<void> {
     ck('소스에 자물쇠 아이콘이 없다', !/LOCK_ICON/.test(src));
   }
 
+  /* ── 12. 목록 순서 ───────────────────────────────────────────── */
+  section('[12] 목록 순서 — 희귀한 것이 위, 동률은 게임별 묶음');
+  {
+    db.exec(`DELETE FROM achievements; DELETE FROM user_achievements;`);
+    // sort_at 을 일부러 뒤섞어 넣는다 — 넣은 순서가 아니라 sort_at 을 보는지 확인한다
+    const seed: [string, number, number][] = [   // [id, sort_at, 달성자 수]
+      ['z-common', 90, 3],   // 가장 흔하다 → 맨 아래
+      ['b-mid', 20, 1],
+      ['a-rare', 10, 0],     // 동률 0명 중 sort_at 이 가장 앞
+      ['c-rare', 30, 0],
+      ['d-rare', 25, 0],
+    ];
+    for (const [id, sortAt] of seed) {
+      A.upsertAchievement({
+        id, gameType: 'ALL', title: id, description: 'x', sortAt, minBet: 0,
+      });
+    }
+    let u = 0;
+    for (const [id, , n] of seed) {
+      for (let i = 0; i < n; i++) { const who = `su${u++}`; Q.upsertUser(who, who, null); A.unlockAchievement(who, id); }
+    }
+    const order = A.achievementsFor(null).map(v => v.id);
+    ck('희귀한 것이 위로 온다', order.join(',') === 'a-rare,d-rare,c-rare,b-mid,z-common', order.join(','));
+    /* 동률은 sort_at 순이어야 한다. 안정 정렬에 기대고 있으므로, 그 성질이 깨지면
+       여기서 잡힌다 — a(10) → d(25) → c(30) 이고 넣은 순서(a,c,d)와는 다르다. */
+    const ties = order.slice(0, 3);
+    ck('동률은 게임별 묶음(sort_at) 순', ties.join(',') === 'a-rare,d-rare,c-rare', ties.join(','));
+
+    /* 내가 깼다고 자리가 움직이면 안 된다 — 희귀도만 본다. */
+    Q.upsertUser('me1', 'me1', null);
+    A.unlockAchievement('me1', 'b-mid');   // 1명 → 2명
+    const mineOrder = A.achievementsFor('me1').map(v => v.id);
+    ck('달성 여부가 자리를 바꾸지 않는다',
+      mineOrder.join(',') === 'a-rare,d-rare,c-rare,b-mid,z-common', mineOrder.join(','));
+    ck('달성 표시는 남아 있다',
+      A.achievementsFor('me1').find(v => v.id === 'b-mid')!.unlocked);
+    /* 달성자 수가 뒤집히면 순서도 뒤집힌다 — 정렬이 실제로 그 값을 본다는 증거다. */
+    for (let i = 0; i < 5; i++) { const who = `bm${i}`; Q.upsertUser(who, who, null); A.unlockAchievement(who, 'b-mid'); }
+    const flipped = A.achievementsFor(null).map(v => v.id);
+    ck('흔해지면 아래로 내려간다', flipped[flipped.length - 1] === 'b-mid', flipped.join(','));
+
+    /* 탭은 같은 목록을 거르기만 한다 — 거른 뒤에도 순서가 유지되어야 한다. */
+    const all = A.achievementsFor(null);
+    const tabbed = all.filter(v => v.gameType === 'ALL').map(v => v.id);
+    ck('탭으로 걸러도 순서가 유지된다', tabbed.join(',') === all.map(v => v.id).join(','),
+      tabbed.join(','));
+  }
+
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   process.exit(fail ? 1 : 0);
 }

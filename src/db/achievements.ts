@@ -60,7 +60,7 @@ export interface AchievementView {
   id: string; gameType: string; title: string; description: string;
   iconUrl: string | null; hidden: boolean; minBet: number;
   unlocked: boolean; unlockedAt: number | null;
-  /** 몇 명이 해냈나. 감춘 과제는 -1 (아직 알려 줄 수 없다는 뜻) */
+  /** 몇 명이 해냈나. 감춘 과제도 실제 인원을 담는다(목록 정렬의 1차 기준이다). */
   unlockedBy: number;
 }
 
@@ -107,15 +107,29 @@ export function achievementsFor(userId: string | null): AchievementView[] {
          최소 베팅 기준도 보여준다(화면 쪽에서 붙인다) — 금액은 조건이 아니라 규칙이다. */
       title: a.title,
       description: secret ? HIDDEN_DESC : a.description,
-      /* 아이콘은 가린 채로 둔다. 제목만으로는 이 카드가 히든이라는 것을 알 수 없고,
-         설명의 자물쇠 하나로는 목록을 훑을 때 눈에 안 들어온다(화면 쪽이 자물쇠를 그린다). */
+      /* 과제별로 따로 넣은 그림은 가린다 — 그림이 조건을 그대로 알려 줄 수 있다.
+         그러면 화면은 게임 분류 아이콘으로 되돌아간다(감춘 카드도 자기 게임 것을 쓴다). */
       iconUrl: secret ? null : a.icon_url,
       hidden: a.is_hidden === 1,
       minBet: a.min_bet,
       unlocked,
       unlockedAt: at ?? null,
     };
-  });
+  })
+    /* 희귀한 것이 위로 온다 — 달성자가 적은 순이다.
+       달성률(=달성자/참가자)로 나눠 보지 않는다. 분모가 모두 같아서 순서가 달성자 수와
+       똑같고, 나누기만 늘어난다.
+
+       달성 여부는 순서에 넣지 않는다. 내가 깬 희귀 과제가 상단에 남아 있는 편이 좋고,
+       카드 색이 살아 있어 구분은 그것으로 충분하다.
+
+       ── 동률은 왜 따로 안 적나
+       listAchievements 가 이미 sort_at → id 순으로 주고, JS 정렬은 안정 정렬이라
+       (ES2019 부터 명세) 달성자 수가 같은 것들은 들어온 순서, 즉 게임별 묶음 순서를
+       그대로 지킨다. 그래서 비교 함수 한 줄로 "희귀도 → 게임별 묶음 → id"가 된다.
+       시즌 초에는 대부분이 0명이라 사실상 게임별 묶음으로 보이고, 시즌이 익으면서
+       희귀도가 자연히 주도권을 가져간다. 정렬을 손으로 다시 매길 일이 없다. */
+    .sort((x, y) => x.unlockedBy - y.unlockedBy);
 }
 
 export interface AchievementProgress { total: number; unlocked: number; percent: number }
