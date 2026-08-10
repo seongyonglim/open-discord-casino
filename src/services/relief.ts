@@ -14,6 +14,7 @@
 //  · 지급 조건 검사와 실제 지급은 queries.claimRelief가 한 트랜잭션에서 처리한다(이중 지급 방지).
 import { claimRelief } from '../db/queries';
 import { rewards } from './rewards';
+import { buffed } from './buff';
 
 /* 지급액은 시즌마다 다르다 — services/rewards 의 표를 보라. 여기서 곱하지 않는다.
    반드시 reliefAmount() 로 읽는다: 어딘가에 숫자를 직접 적으면 안내에 쓰인 금액과
@@ -22,6 +23,11 @@ export const RELIEF_COOLDOWN_SEC = 2 * 60 * 60;
 
 export const reliefAmount = () => rewards().relief;
 
+/* 실제로 들어오는 금액. 도전과제 버프가 사람마다 다르므로 지원금판에 적히는 기본액
+   (reliefAmount)과 갈린다 — 판은 모두가 보는 한 장이라 기본액을 적고, 받는 사람에게는
+   이 값을 알려 준다. 두 함수를 나눠 두는 이유가 그것이다. */
+export const reliefAmountFor = (userId: string) => buffed(reliefAmount(), userId);
+
 export function claim(userId: string) {
-  return claimRelief(userId, reliefAmount(), RELIEF_COOLDOWN_SEC);
+  return claimRelief(userId, reliefAmountFor(userId), RELIEF_COOLDOWN_SEC);
 }

@@ -461,6 +461,81 @@ async function main(): Promise<void> {
       /\.volwrap:hover \.volpop[^{]*\.volwrap\.open \.volpop/.test(css.replace(/\s+/g, ' ')));
   }
 
+  /* ── 공지 웹훅 ─────────────────────────────────────────────────────
+     새 공지가 올라가면 디스코드 채널로 알린다. 여기서 확인할 것은 두 가지다:
+     임베드 모양이 규격을 지키는가, 그리고 이 알림이 공지 저장을 절대 방해하지 않는가.
+     두 번째가 더 중요하다 — 웹훅이 죽었는데 공지 등록이 실패하면 운영자는 같은 글을
+     두 번 올리게 되고, 두 번째는 duplicate 로 거절당해 무슨 일인지 알 수 없다. */
+  console.log('\n[5] 공지 웹훅 — 모양과 안전장치');
+  {
+    const AN = require('../src/discord/announce') as typeof import('../src/discord/announce');
+    const N = require('../src/db/notices') as typeof import('../src/db/notices');
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+
+    // 2026-08-10 09:05 KST
+    const at = Date.UTC(2026, 7, 10, 0, 5, 0);
+    const e = AN.announceEmbed(
+      { id: 'x-1', kind: '패치노트', title: '제목', summary: '한 줄 요약' }, at) as any;
+    const em = e.embeds[0];
+    ck('제목이 [태그] 제목 이다', em.title === '[패치노트] 제목', String(em.title));
+    ck('설명이 요약이다', em.description === '한 줄 요약', String(em.description));
+    ck('색이 시그니처 골드다', em.color === 0xd4af37, String(em.color));
+    ck('작성일시가 KST 다', em.fields[0].value === '2026-08-10 09:05',
+      `${em.fields[0].name}=${em.fields[0].value}`);
+    ck('공지 상세로 가는 링크가 있다', String(em.url).endsWith('/notices/x-1'), String(em.url));
+    ck('본문에도 같은 링크가 있다', String(e.content).includes('/notices/x-1'));
+    ck('푸터가 규격대로다', em.footer.text === 'OD CASINO Official Announcement', em.footer.text);
+    /* 푸터 아이콘은 실제로 서비스가 내보내는 파일이어야 한다 — 없는 경로를 적으면
+       디스코드에 깨진 이미지가 남는다. public/img/logo.png 는 없다. */
+    ck('푸터 아이콘이 실제 파일을 가리킨다', String(em.footer.icon_url).endsWith('/favicon.svg'),
+      String(em.footer.icon_url));
+    /* 공지 제목에 @everyone 이 들어가면 그대로 전체 멘션이 나간다 — 글 쓴 사람이
+       의도한 것이 아니다. 웹훅이 멘션을 만들지 못하게 막아 둔다. */
+    ck('멘션을 만들지 않는다', Array.isArray(e.allowed_mentions?.parse)
+      && e.allowed_mentions.parse.length === 0, JSON.stringify(e.allowed_mentions));
+    /* 요약은 필수 항목이 아니다. 빈 문자열을 description 에 넣으면 디스코드가 400 을 준다. */
+    const noSum = AN.announceEmbed({ id: 'x-2', kind: '점검', title: 'T', summary: '' }, at) as any;
+    ck('요약이 없으면 설명을 아예 뺀다', !('description' in noSum.embeds[0]),
+      JSON.stringify(noSum.embeds[0].description));
+
+    const src = readFileSync('src/discord/announce.ts', 'utf8') as string;
+    ck('URL 이 없으면 건너뛴다', /if \(!hook\)[\s\S]{0,160}return;/.test(src));
+    ck('건너뛴 사실을 로그로 남긴다', src.includes('건너뜀'));
+    /* 기다리지 않고 던지지도 않는다. await 를 붙이면 공지 저장이 웹훅 왕복만큼 늦어지고,
+       catch 가 없으면 실패가 트랜잭션 밖으로 튀어나간다. */
+    ck('기다리지 않는다 (void fetch)', /void fetch\(/.test(src));
+    ck('실패를 삼킨다 (catch)', /\.catch\(/.test(src));
+    ck('응답 없는 웹훅에 매달리지 않는다', /AbortSignal\.timeout\(/.test(src));
+
+    const nsrc = readFileSync('src/db/notices.ts', 'utf8') as string;
+    /* 신규 생성에만 붙는다. 수정에 붙으면 오타를 세 번 고칠 때 채널에 네 번 올라온다. */
+    const iCreate = nsrc.indexOf('export function createNotice');
+    const iUpdate = nsrc.indexOf('export function updateNotice');
+    const iCall = nsrc.indexOf('announceNotice({');
+    ck('신규 생성에서만 부른다', iCall > iCreate && iCall < iUpdate,
+      `create=${iCreate} call=${iCall} update=${iUpdate}`);
+    ck('수정·삭제에서는 안 부른다',
+      nsrc.slice(iUpdate).indexOf('announceNotice') < 0);
+    // 숨김으로 올린 글은 알리지 않는다 — 전체 알림과 같은 기준이어야 한다
+    ck('숨긴 글은 알리지 않는다', /if \(n\.active\) \{[\s\S]{0,700}announceNotice\(/.test(nsrc));
+
+    /* 진짜로 저장을 막지 않는가. 웹훅 URL 을 살아 있지 않은 주소로 두고 공지를 만든다 —
+       전송은 반드시 실패하고, 그래도 글은 들어가 있어야 한다. */
+    const before = process.env.DISCORD_ANNOUNCEMENT_WEBHOOK_URL;
+    process.env.DISCORD_ANNOUNCEMENT_WEBHOOK_URL = 'http://127.0.0.1:1/nope';
+    const made = N.createNotice({
+      id: 'audit-hook-1', date: '2026-08-10', kind: '점검', title: '웹훅 검사',
+      summary: '', sections: [{ heading: '본문', paras: ['한 줄'] }], active: true,
+    });
+    ck('웹훅이 죽어도 공지는 등록된다', made.ok, JSON.stringify(made));
+    ck('실제로 표에 들어갔다', !!N.listNoticesAdmin().find(x => x.id === 'audit-hook-1'));
+    process.env.DISCORD_ANNOUNCEMENT_WEBHOOK_URL = before;
+    // 환경변수 이름이 요청서와 같은가 — 다르면 운영자가 넣어도 아무 일이 안 일어난다
+    ck('환경변수 이름이 문서와 같다',
+      src.includes('DISCORD_ANNOUNCEMENT_WEBHOOK_URL')
+      && readFileSync('.env.example', 'utf8').includes('DISCORD_ANNOUNCEMENT_WEBHOOK_URL'));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

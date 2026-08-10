@@ -247,6 +247,9 @@ export function signedPts(n: number): string {
 const REASON_LABEL: Record<string, string> = {
   attendance: '출석 체크',
   weekly_streak_bonus: '주간 개근 보너스',
+  full_streak_bonus: '개근상',
+  /* 예전 이름. 개근 기준이 30일에서 28일로 바뀌면서 사유도 갈았다 —  지난 원장에
+     남아 있을 수 있으므로 이름표는 남겨 둔다(지우면 그 줄이 영문으로 보인다). */
   monthly_streak_bonus: '월간 개근 보너스',
   disaster_relief: '개인회생 지원금',
   bug_report_bounty: '버그 제보 보상',

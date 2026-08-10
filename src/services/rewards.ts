@@ -27,8 +27,8 @@ export interface RewardTable {
   dailyWeekend: number;
   /** 7일 연속 */
   weeklyStreak: number;
-  /** 30일 연속 */
-  monthlyStreak: number;
+  /** STREAK_FULL_DAYS 일 연속 */
+  fullStreak: number;
   /** 파산 지원금 */
   relief: number;
   /** 프리롤 상금 풀 — 참가자 1인당 (평일) */
@@ -36,6 +36,12 @@ export interface RewardTable {
   /** 프리롤 상금 풀 — 참가자 1인당 (주말) */
   freerollPerHeadWeekend: number;
 }
+
+/* 버그·개선 제보 보상. 시즌 표에 넣지 않는다 — 시즌마다 달라지는 값이 아니고,
+   지급도 게임이 아니라 운영자가 손으로 한다(어드민 화면 · scripts/grant-points.ts).
+   여기 한 곳에 두는 이유는 어드민 화면의 기본 추천 금액과 안내 문구가 같은 값을
+   봐야 하기 때문이다 — 두 곳에 적으면 공지에 적힌 금액과 실제 지급액이 갈라진다. */
+export const BUG_REPORT_BOUNTY = 10_000;
 
 /* 번호 순으로 적는다. 새 시즌의 값을 바꾸려면 그 줄만 고치면 된다. */
 export const REWARDS_BY_SEASON: { season: number; r: RewardTable }[] = [
@@ -45,7 +51,7 @@ export const REWARDS_BY_SEASON: { season: number; r: RewardTable }[] = [
       daily: 1_000,
       dailyWeekend: 2_000,
       weeklyStreak: 5_000,
-      monthlyStreak: 10_000,
+      fullStreak: 10_000,
       relief: 200,
       freerollPerHead: 1_000,
       freerollPerHeadWeekend: 2_000,
@@ -57,7 +63,7 @@ export const REWARDS_BY_SEASON: { season: number; r: RewardTable }[] = [
       daily: 5_000,
       dailyWeekend: 10_000,
       weeklyStreak: 25_000,
-      monthlyStreak: 50_000,
+      fullStreak: 50_000,
       relief: 1_000,
       freerollPerHead: 5_000,
       freerollPerHeadWeekend: 10_000,

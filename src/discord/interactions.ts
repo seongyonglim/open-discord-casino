@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { verifyKey, InteractionType, InteractionResponseType } from 'discord-interactions';
 import { REST, Routes, ComponentType, ButtonStyle } from 'discord.js';
 import { checkIn, rewardSummary } from '../services/economy';
-import { claim as claimRelief, reliefAmount, RELIEF_COOLDOWN_SEC } from '../services/relief';
+import { claim as claimRelief, reliefAmount, reliefAmountFor, RELIEF_COOLDOWN_SEC } from '../services/relief';
+import { rewardBuff } from '../services/buff';
 import {
   upsertUser, ensureSeedAdmin, getWebUser, getLeaderboard, reliefCountToday,
   getBoard, setBoard, clearBoard, type BoardKind,
@@ -231,11 +232,16 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
   const caller = identifyCaller(interaction);
   const result = checkIn(caller.id, caller.username, caller.avatar);
 
+  /* 도전과제 버프를 함께 알려 준다. 지급액만 보면 왜 안내판의 금액보다 많은지 알 수 없고,
+     버프가 있는 줄 모르면 과제를 깰 이유도 하나 줄어든다. 0% 면 빈 문자열이라 안 붙는다. */
+  const buffLine = result.buffPercent > 0
+    ? `\n🏆 도전과제 버프 **+${result.buffPercent}%** 적용 중` : '';
+
   if (result.alreadyCheckedIn) {
     return ephemeral(
       res,
       `이미 오늘 출석했습니다. KST 자정이 지나면 다시 출석할 수 있어요!\n` +
-      `연속 출석 **${result.streak}일** · 잔액 **${pts(result.balance)}**`
+      `연속 출석 **${result.streak}일** · 잔액 **${pts(result.balance)}**` + buffLine
     );
   }
 
@@ -251,7 +257,7 @@ async function handleComponent(interaction: any, res: ServerResponse): Promise<v
   const log = [
     `**${esc(caller.username)}**님 출석 완료 ${dailyGrant ? signedPts(dailyGrant.delta) : ''} · 연속 **${result.streak}일**`,
     ...bonusLines,
-    `잔액 ${pts(result.balance)}`,
+    `잔액 ${pts(result.balance)}` + buffLine.replace('\n', ' · '),
   ].join('\n');
   // 응답을 이미 보냈으므로 아래 REST 호출이 길어져도 3초 제한과 무관하다.
   // 로그를 먼저 찍고 버튼을 그 아래로 내려야 버튼이 항상 맨 밑에 남는다.
@@ -295,7 +301,11 @@ async function handleReliefClaim(interaction: any, res: ServerResponse): Promise
 
   // 출석과 마찬가지로 누가 신청했는지 채널에 공개로 남긴다
   ackSilently(res);
-  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(reliefAmount())}\n`
+  /* 실제로 들어간 금액을 적는다 — reliefAmount() 는 안내판에 적히는 기본액이고,
+     받은 사람에게 들어간 값은 도전과제 버프가 곱해진 쪽이다. 둘을 섞으면 로그가 거짓이 된다. */
+  const buff = rewardBuff(caller.id);
+  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(reliefAmountFor(caller.id))}`
+    + (buff.percent > 0 ? ` · 🏆 도전과제 버프 **+${buff.percent}%**` : '') + '\n'
     + `잔액 ${pts(r.balance)} · 다음 신청 <t:${r.nextAvailableAt}:R>`;
   await postChannelMessage(interaction.channel_id, log)
     .catch((e: unknown) => console.error('지원금 로그 게시 실패:', e));

@@ -11,7 +11,7 @@
  *  3. 끝나고 불변식을 전수 검사한다. 어긋나면 그 자리에서 알린다.
  *
  * 사용법 (fly 머신에서):
- *   GRANT_IDS=<쉼표구분 유저ID> GRANT_AMOUNT=2000 GRANT_REASON=bug_report_bounty \
+ *   GRANT_IDS=<쉼표구분 유저ID> GRANT_AMOUNT=10000 GRANT_REASON=bug_report_bounty \
  *     node --experimental-sqlite --require tsx/cjs scripts/grant-points.ts
  *
  * DRY_RUN=1 을 주면 무엇이 바뀔지만 출력하고 쓰지 않는다.

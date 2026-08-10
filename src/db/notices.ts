@@ -11,6 +11,7 @@
 import { one, all, run, tx } from './queries';
 import { notifyAll } from './notifications';
 import { NOTICES as SEED, type Notice, type NoticeSection } from '../web/notices';
+import { announceNotice } from '../discord/announce';
 
 export type { Notice, NoticeSection };
 
@@ -199,6 +200,12 @@ export function createNotice(n: NoticeInput): { ok: true } | { ok: false; error:
        한 줄만 넣는다 — 사람 수만큼 복사하면 사람이 늘 때마다 비용이 는다. */
     if (n.active) {
       notifyAll('ANNOUNCEMENT', '새 공지사항', `[${n.kind}] ${n.title.trim()}`, '/notices/' + n.id);
+      /* 디스코드 채널에도 알린다. 트랜잭션 안에서 부르지만 이 함수는 아무것도 기다리지
+         않고 던지지도 않는다(discord/announce) — 웹훅이 죽어도 이 저장은 그대로 끝난다.
+         숨김으로 올린 글은 알리지 않는다: 위의 전체 알림과 같은 기준이라야,
+         "아직 보여줄 준비가 안 된 글"이 한쪽으로만 새어 나가지 않는다.
+         수정·삭제에는 붙이지 않는다 — 오타를 세 번 고치면 채널에 네 번 올라온다. */
+      announceNotice({ id: n.id, kind: n.kind, title: n.title.trim(), summary: n.summary.trim() });
     }
     return { ok: true as const };
   });

@@ -20,7 +20,9 @@
  */
 import { createNotice, updateNotice, NOTICE_KINDS, type NoticeSection } from '../src/db/notices';
 import { listAchievements } from '../src/db/achievements';
-import { rewardsForSeason } from '../src/services/rewards';
+import { rewardsForSeason, BUG_REPORT_BOUNTY } from '../src/services/rewards';
+import { BUFF_PER_ACHIEVEMENT } from '../src/services/buff';
+import { STREAK_WEEK_DAYS, STREAK_FULL_DAYS } from '../src/services/economy';
 import { getDb } from '../src/db/schema';
 
 const db = getDb();
@@ -30,6 +32,9 @@ const FORCE = process.env.FORCE === '1';
 
 const p = (n: number): string => n.toLocaleString('ko-KR') + 'P';
 const s0 = rewardsForSeason(0), s1 = rewardsForSeason(1);
+/** 버프 가산율(%)과 본문에 쓰는 예시 개수. 둘 다 코드에서 나온 값이다. */
+const buffPct = Math.round(BUFF_PER_ACHIEVEMENT * 100);
+const buffEx = 10;
 const ach = listAchievements();
 /** 종목 수 — "12종" 같은 수치를 손으로 적지 않기 위해 표에서 센다. */
 const achCount = ach.length;
@@ -75,8 +80,8 @@ const DRAFTS: Draft[] = [
           rows: [
             ['출석 체크 (평일)', p(s0.daily), p(s1.daily)],
             ['출석 체크 (주말)', p(s0.dailyWeekend), p(s1.dailyWeekend)],
-            ['7일 연속 개근', p(s0.weeklyStreak), p(s1.weeklyStreak)],
-            ['30일 연속 개근', p(s0.monthlyStreak), p(s1.monthlyStreak)],
+            [`${STREAK_WEEK_DAYS}일 연속 개근`, p(s0.weeklyStreak), p(s1.weeklyStreak)],
+            [`${STREAK_FULL_DAYS}일 연속 개근`, p(s0.fullStreak), p(s1.fullStreak)],
             ['파산 지원금', p(s0.relief), p(s1.relief)],
             ['프리롤 상금 (1인당 · 평일)', p(s0.freerollPerHead), p(s1.freerollPerHead)],
             ['프리롤 상금 (1인당 · 주말)', p(s0.freerollPerHeadWeekend), p(s1.freerollPerHeadWeekend)],
@@ -178,6 +183,73 @@ const DRAFTS: Draft[] = [
           '조건을 만족했는데 달성되지 않았다면 <b>그 판의 베팅 금액</b>을 먼저 확인해 주세요. '
             + '그래도 이상하면 디스코드 채널로 알려주시면 기록을 확인해 드리겠습니다.',
         ],
+      },
+    ],
+  },
+  {
+    id: '2026-08-10-buff-and-streak',
+    date: '2026-08-10',
+    /* 태그는 [업데이트] 다. 요청서의 예시는 [패치노트] 였지만 이 시스템의 태그는 넷뿐이고
+       (업데이트 · 신규 · 시즌 · 점검), 없는 값을 넣으면 등록 자체가 거절된다.
+       세 항목 중 둘이 "있던 것이 바뀐다"라서 이 서비스의 정의상 업데이트가 맞다. */
+    kind: '업데이트',
+    title: '도전과제 보상 버프 도입 · 개근 기준 변경 · 제보 보상 상향',
+    summary: `도전과제 하나당 출석·지원금 보상이 ${buffPct}% 늘어납니다. `
+      + `개근상 기준이 ${STREAK_FULL_DAYS}일로 완화되고, 제보 보상은 ${p(BUG_REPORT_BOUNTY)}로 올랐습니다.`,
+    sections: [
+      {
+        heading: '적용 일시',
+        paras: [`2026년 8월 10일 (KST) — 적용 완료`],
+      },
+      {
+        heading: '1. 🏆 도전과제 보상 버프',
+        paras: [
+          `달성한 도전과제 <b>하나당 ${buffPct}%</b>씩, 받으시는 보상이 늘어납니다. `
+            + '도전과제를 깨 둘수록 매일 받는 보상이 계속 커집니다.',
+        ],
+        bullets: [
+          `<b>적용 대상</b> — 출석 체크(일일 · ${STREAK_WEEK_DAYS}일 개근 · ${STREAK_FULL_DAYS}일 개근)와 `
+            + '파산 지원금입니다.',
+          `<b>계산</b> — 합연산입니다. ${buffEx}개를 달성했다면 기본 보상의 `
+            + `<b>${Math.round((1 + buffEx * BUFF_PER_ACHIEVEMENT) * 100)}%</b>를 받습니다 — `
+            + `${p(s1.daily)} 항목이라면 ${p(Math.floor(s1.daily * (1 + buffEx * BUFF_PER_ACHIEVEMENT)))}입니다.`,
+          '<b>게임 배당에는 적용되지 않습니다.</b> 배당에 붙으면 사람마다 게임의 확률이 달라지므로, '
+            + '지급 보상에만 붙습니다.',
+          '도전과제는 시즌이 바뀌어도 사라지지 않으므로, <b>이 버프도 계속 유지</b>됩니다.',
+          '적용 중인 버프는 로비의 <b>연속 출석</b> 칸과 출석·지원금 수령 메시지에 함께 표시됩니다.',
+        ],
+      },
+      {
+        heading: `2. 📅 개근상 기준 ${STREAK_FULL_DAYS}일로 완화`,
+        paras: [
+          `개근상 달성 기준을 <b>30일에서 ${STREAK_FULL_DAYS}일로</b> 완화했습니다. `
+            + `${STREAK_FULL_DAYS}일은 정확히 ${STREAK_FULL_DAYS / STREAK_WEEK_DAYS}주라, `
+            + '어느 요일에 시작해도 같은 요일에 받게 됩니다.',
+        ],
+        bullets: [
+          `<b>${STREAK_WEEK_DAYS}일 개근</b> +${p(s1.weeklyStreak)} · `
+            + `<b>${STREAK_FULL_DAYS}일 개근</b> +${p(s1.fullStreak)}`,
+          `${STREAK_FULL_DAYS}일째는 ${STREAK_WEEK_DAYS}일 개근 조건과도 겹치는 날입니다. `
+            + `그날은 <b>중복 지급되지 않고 ${STREAK_FULL_DAYS}일 개근상만</b> 단일 지급됩니다 — `
+            + `더 큰 쪽이 나갑니다.`,
+          '연속일수가 끊기면 1일부터 다시 시작합니다. 출석은 KST 자정에 초기화됩니다.',
+        ],
+      },
+      {
+        heading: '3. 🐛 버그·개선 제보 보상 5배 상향',
+        paras: [
+          `OD CASINO 를 함께 고쳐 주시는 분들을 위해, 버그와 개선 의견 제보 보상을 `
+            + `기존 2,000P 에서 <b>${p(BUG_REPORT_BOUNTY)}</b> 로 다섯 배 올립니다.`,
+        ],
+        bullets: [
+          '디스코드 채널로 알려주시면 확인 후 지급합니다.',
+          '<b>재현 방법</b>(어떤 화면에서 무엇을 눌렀을 때 어떻게 됐는지)이 함께 있으면 큰 도움이 됩니다.',
+          '이미 알려진 문제이거나 재현되지 않는 경우에는 지급되지 않을 수 있습니다.',
+        ],
+      },
+      {
+        heading: '문의',
+        paras: ['이상하거나 불편한 점은 디스코드 채널로 알려주세요. 확인하는 대로 반영하겠습니다.'],
       },
     ],
   },

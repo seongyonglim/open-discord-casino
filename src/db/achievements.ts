@@ -206,6 +206,17 @@ export function activePlayerCount(): number {
     `SELECT COUNT(*) AS n FROM users WHERE last_active > 0`)!.n;
 }
 
+/** 그 사람이 달성한 과제 수. 보상 버프의 재료다(services/buff). */
+export function unlockedCountOf(userId: string): number {
+  /* 표에 남아 있는 과제만 센다. 폐기한 과제(retireAchievement)는 달성자가 없을 때만
+     지워지므로 여기서 빠질 일이 없지만, 조인을 걸어 두면 "표에 없는 id 로 남은 기록"이
+     버프에 섞이는 경우가 원리적으로 사라진다. */
+  return one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM user_achievements ua
+       JOIN achievements a ON a.id = ua.achievement_id
+      WHERE ua.user_id = ? AND ua.is_unlocked = 1 AND a.active = 1`, userId)!.n;
+}
+
 export function hasAchievement(userId: string, achievementId: string): boolean {
   return one<{ n: number }>(
     `SELECT COUNT(*) AS n FROM user_achievements

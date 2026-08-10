@@ -14,6 +14,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { layout, esc, jsonForScript } from './views';
 import * as T from '../services/tournament';
+import { BUG_REPORT_BOUNTY } from '../services/rewards';
 import { readJson, sendJson } from './http';
 import {
   listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
@@ -1000,17 +1001,23 @@ export function adminPage(user: WebUser): string {
         .catch(function(){ lBody.innerHTML = '<tr><td colspan="4" class="ad-note">불러오지 못했습니다.<\\/td><\\/tr>'; });
     }
 
+    var BOUNTY = ${jsonForScript(BUG_REPORT_BOUNTY)};
+
     uBody.addEventListener('click', function(ev){
       var led = ev.target.closest ? ev.target.closest('.ad-led') : null;
       if (led) { loadLedger(led.getAttribute('data-id'), led.getAttribute('data-name')); return; }
       var b = ev.target.closest ? ev.target.closest('.ad-give') : null;
       if (!b) return;
       var name = b.getAttribute('data-name'), id = b.getAttribute('data-id');
-      var raw = prompt(name + ' 님에게 줄 포인트 (빼려면 음수)', '');
+      /* 가장 자주 하는 지급이 제보 보상이라 그 금액을 기본값으로 채워 둔다.
+         값은 코드에서 온다(services/rewards 의 BUG_REPORT_BOUNTY) — 여기 숫자를 적어 두면
+         금액을 올리는 날 공지와 어드민 화면이 갈라진다. */
+      var raw = prompt(name + ' 님에게 줄 포인트 (빼려면 음수)', String(BOUNTY));
       if (raw == null || raw === '') return;
       var amount = Math.floor(Number(raw));
       if (!isFinite(amount) || amount === 0) { alert('숫자를 넣어 주세요.'); return; }
-      var memo = prompt('사유 (원장에 남습니다)', '운영 지급') || '';
+      var memo = prompt('사유 (원장에 남습니다)',
+        amount === BOUNTY ? '버그 제보 보상' : '운영 지급') || '';
       confirmThen(amount > 0 ? '포인트를 지급할까요?' : '포인트를 차감할까요?',
         name + ' 님에게 ' + num(amount) + 'P. 사유: ' + memo,
         function(){

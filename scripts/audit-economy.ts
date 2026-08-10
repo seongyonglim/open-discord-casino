@@ -740,19 +740,19 @@ section('[8b] 시즌별 보상 금액');
      "보면 바로 안다"이므로, 검사도 그 금액을 그대로 적는다. */
   const s0 = R.rewardsForSeason(0), s1 = R.rewardsForSeason(1);
   ck('시즌 0 출석 1,000 / 2,000', s0.daily === 1000 && s0.dailyWeekend === 2000);
-  ck('시즌 0 개근 5,000 / 10,000', s0.weeklyStreak === 5000 && s0.monthlyStreak === 10_000);
+  ck('시즌 0 개근 5,000 / 10,000', s0.weeklyStreak === 5000 && s0.fullStreak === 10_000);
   ck('시즌 0 지원금 200', s0.relief === 200);
   ck('시즌 0 프리롤 1,000 / 2,000',
     s0.freerollPerHead === 1000 && s0.freerollPerHeadWeekend === 2000);
 
   ck('시즌 1 출석 5,000 / 10,000', s1.daily === 5000 && s1.dailyWeekend === 10_000);
-  ck('시즌 1 개근 25,000 / 50,000', s1.weeklyStreak === 25_000 && s1.monthlyStreak === 50_000);
+  ck('시즌 1 개근 25,000 / 50,000', s1.weeklyStreak === 25_000 && s1.fullStreak === 50_000);
   ck('시즌 1 지원금 1,000', s1.relief === 1000);
   ck('시즌 1 프리롤 5,000 / 10,000',
     s1.freerollPerHead === 5000 && s1.freerollPerHeadWeekend === 10_000);
   ck('전부 정확히 다섯 배다 (공지한 그대로)',
     s1.daily === s0.daily * 5 && s1.dailyWeekend === s0.dailyWeekend * 5
-    && s1.weeklyStreak === s0.weeklyStreak * 5 && s1.monthlyStreak === s0.monthlyStreak * 5
+    && s1.weeklyStreak === s0.weeklyStreak * 5 && s1.fullStreak === s0.fullStreak * 5
     && s1.relief === s0.relief * 5 && s1.freerollPerHead === s0.freerollPerHead * 5
     && s1.freerollPerHeadWeekend === s0.freerollPerHeadWeekend * 5);
 
@@ -777,7 +777,7 @@ section('[8b] 시즌별 보상 금액');
   ck('출석이 5,000 이 된다', E.dailyWeekday() === 5000, String(E.dailyWeekday()));
   ck('주말 출석이 10,000 이 된다', E.dailyWeekend() === 10_000, String(E.dailyWeekend()));
   ck('주간 개근이 25,000 이 된다', E.weeklyStreakBonus() === 25_000);
-  ck('월간 개근이 50,000 이 된다', E.monthlyStreakBonus() === 50_000);
+  ck('28일 개근이 50,000 이 된다', E.fullStreakBonus() === 50_000);
   ck('지원금이 1,000 이 된다', RL.reliefAmount() === 1000, String(RL.reliefAmount()));
   ck('프리롤 기본 배수가 5,000 이 된다', S.defaultConfig().weekdayMultiplier === 5000,
     String(S.defaultConfig().weekdayMultiplier));
@@ -1471,6 +1471,171 @@ section('[10b] 첫 시즌으로 지난 기록 가져오기');
   }
 }
 auditLedger('시즌 후');
+
+/* ── 12. 도전과제 보상 버프 · 개근 기준 ─────────────────────── */
+section('[12] 도전과제 버프 · 28일 개근');
+{
+  const B = require('../src/services/buff') as typeof import('../src/services/buff');
+  const E = require('../src/services/economy') as typeof import('../src/services/economy');
+  const RL = require('../src/services/relief') as typeof import('../src/services/relief');
+  const AC = require('../src/db/achievements') as typeof import('../src/db/achievements');
+  const SE = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const db = getDb();
+
+  db.exec(`DELETE FROM user_achievements; DELETE FROM achievements;`);
+  for (let i = 1; i <= 12; i++) {
+    AC.upsertAchievement({ id: `bf-${i}`, gameType: 'ALL', title: `표본 ${i}` });
+  }
+  const give = (uid: string, n: number): void => {
+    for (let i = 1; i <= n; i++) AC.unlockAchievement(uid, `bf-${i}`);
+  };
+
+  /* ── 가산은 합연산이다 ────────────────────────────────────
+     곱연산(1.05^n)으로 두면 과제가 늘어날 때 지급액이 눈덩이처럼 커지고, "몇 %인가"를
+     사람이 머리로 계산할 수 없다. 열 개면 1.63배가 아니라 1.5배여야 한다. */
+  ck('과제 하나당 5%', B.BUFF_PER_ACHIEVEMENT === 0.05, String(B.BUFF_PER_ACHIEVEMENT));
+  mkUser('bf_none', 0);
+  ck('달성이 없으면 0%', B.rewardBuff('bf_none').percent === 0);
+  ck('달성이 없으면 그대로', B.buffed(5_000, 'bf_none') === 5_000,
+    String(B.buffed(5_000, 'bf_none')));
+  ck('버프가 없으면 안내 문구도 없다', B.buffNote('bf_none') === '', B.buffNote('bf_none'));
+
+  mkUser('bf_one', 0); give('bf_one', 1);
+  ck('한 개면 +5%', B.rewardBuff('bf_one').percent === 5);
+  ck('한 개면 5,250P', B.buffed(5_000, 'bf_one') === 5_250, String(B.buffed(5_000, 'bf_one')));
+
+  mkUser('bf_ten', 0); give('bf_ten', 10);
+  ck('열 개면 +50%', B.rewardBuff('bf_ten').percent === 50, String(B.rewardBuff('bf_ten').percent));
+  // 요청서에 적힌 그 예시다 — 5,000P + 10개 = 7,500P
+  ck('열 개면 5,000 → 7,500', B.buffed(5_000, 'bf_ten') === 7_500,
+    String(B.buffed(5_000, 'bf_ten')));
+  ck('곱연산이 아니다 (1.05^10 = 8,144 가 아니다)', B.buffed(5_000, 'bf_ten') !== 8_144);
+  ck('안내 문구에 퍼센트와 개수가 함께 있다',
+    B.buffNote('bf_ten').includes('+50%') && B.buffNote('bf_ten').includes('10개'),
+    B.buffNote('bf_ten'));
+
+  /* 포인트는 언제나 내림이다. 3개(+15%) × 201P = 231.15 → 231. */
+  mkUser('bf_odd', 0); give('bf_odd', 3);
+  ck('내림이다 (반올림하지 않는다)', B.buffed(201, 'bf_odd') === 231,
+    String(B.buffed(201, 'bf_odd')));
+  ck('버프가 붙어도 정수다', Number.isInteger(B.buffed(1, 'bf_ten')));
+
+  /* 표에서 지운 과제는 버프에 안 들어간다 — 폐기한 과제로 버프가 남으면
+     "지웠는데 효과는 남는" 상태가 된다. */
+  db.prepare(`DELETE FROM achievements WHERE id = 'bf-1'`).run();
+  ck('표에 없는 과제는 안 센다', B.rewardBuff('bf_ten').count === 9,
+    String(B.rewardBuff('bf_ten').count));
+  AC.upsertAchievement({ id: 'bf-1', gameType: 'ALL', title: '표본 1' });
+
+  /* ── 실제 지급에 붙는가 ──────────────────────────────────── */
+  for (const t of ['season_stats', 'season_results', 'seasons']) db.prepare(`DELETE FROM ${t}`).run();
+  SE.currentSeason();                                  // 시즌 0 (평일 1,000 / 지원금 200)
+  const daily = E.dailyWeekday(), weekend = E.dailyWeekend();
+
+  mkUser('bf_ci', 0);
+  give('bf_ci', 10);
+  const ci = E.checkIn('bf_ci', 'bf_ci', null);
+  const att = ci.breakdown.find(g => g.reason === 'attendance')!;
+  /* 평일·주말이 갈리므로 어느 쪽이든 기본액의 1.5배여야 한다 —
+     "오늘이 무슨 요일인가"에 검사가 걸리면 주말마다 감사가 깨진다. */
+  ck('출석 지급에 버프가 붙는다',
+    att.delta === Math.floor(daily * 1.5) || att.delta === Math.floor(weekend * 1.5),
+    `${att.delta} (평일 ${daily} · 주말 ${weekend})`);
+  ck('버프율을 응답에 실어 준다', ci.buffPercent === 50, String(ci.buffPercent));
+  ck('원장에 들어간 값도 그 값이다', bal('bf_ci') === ci.granted,
+    `${bal('bf_ci')} vs ${ci.granted}`);
+
+  mkUser('bf_ci0', 0);
+  const ci0 = E.checkIn('bf_ci0', 'bf_ci0', null);
+  const att0 = ci0.breakdown.find(g => g.reason === 'attendance')!;
+  ck('버프가 없으면 기본액 그대로',
+    att0.delta === daily || att0.delta === weekend, String(att0.delta));
+  ck('버프가 0 이면 0 을 실어 준다', ci0.buffPercent === 0);
+
+  /* 지원금도 같다. 판에 적히는 기본액(reliefAmount)과 실제로 들어가는 값이 갈린다 — */
+  mkUser('bf_rl', 0); give('bf_rl', 10);
+  ck('지원금 기본액은 그대로', RL.reliefAmount() === 200, String(RL.reliefAmount()));
+  ck('사람마다 다른 실지급액을 따로 준다',
+    RL.reliefAmountFor('bf_rl') === 300, String(RL.reliefAmountFor('bf_rl')));
+  const rl = RL.claim('bf_rl');
+  ck('지원금이 버프만큼 들어간다', rl.ok && bal('bf_rl') === 300, String(bal('bf_rl')));
+
+  /* ── 28일 개근 · 중복 방지 ───────────────────────────────── */
+  ck('개근 기준이 7일과 28일이다',
+    E.STREAK_WEEK_DAYS === 7 && E.STREAK_FULL_DAYS === 28,
+    `${E.STREAK_WEEK_DAYS} / ${E.STREAK_FULL_DAYS}`);
+  ck('28은 7의 배수다 (그래서 겹치는 날이 온다)',
+    E.STREAK_FULL_DAYS % E.STREAK_WEEK_DAYS === 0);
+  ck('안내 문구가 28일을 말한다',
+    E.rewardSummary().includes('28일 연속') && !E.rewardSummary().includes('30일'),
+    E.rewardSummary());
+
+  /* 연속일수를 손으로 밀어 넣고 그 다음 날 출석시킨다 — 28일을 실제로 기다릴 수는 없다.
+     어제 날짜를 넣어야 연속으로 이어진다(그 자리에서 1로 끊기면 검사가 뜻을 잃는다). */
+  const kst = (backDays: number): string => new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(Date.now() - backDays * 86_400_000));
+  const dayAfter = (uid: string, streak: number): ReturnType<typeof E.checkIn> => {
+    db.prepare(`UPDATE users SET current_streak = ?, last_checkin_date = ? WHERE id = ?`)
+      .run(streak, kst(1), uid);
+    return E.checkIn(uid, uid, null);
+  };
+  const reasons = (r: ReturnType<typeof E.checkIn>): string[] =>
+    r.breakdown.map(g => g.reason).sort();
+
+  mkUser('bf_d7', 0);
+  ck('7일째에는 주간 보너스', reasons(dayAfter('bf_d7', 6)).join(',') === 'attendance,weekly_streak_bonus',
+    reasons(dayAfter('bf_d7', 6)).join(','));
+
+  mkUser('bf_d8', 0);
+  ck('8일째에는 출석만', reasons(dayAfter('bf_d8', 7)).join(',') === 'attendance');
+
+  /* 여기가 이 절의 요점이다. 28일째는 7의 배수이기도 하므로, 분기를 잘못 쓰면 둘 다 나간다.
+     그러면 "28일 개근상 50,000P"라고 적어 놓고 75,000P 가 들어간다. */
+  mkUser('bf_d28', 0);
+  const d28 = dayAfter('bf_d28', 27);
+  ck('28일째에는 개근상만 (주간 보너스와 겹치지 않는다)',
+    reasons(d28).join(',') === 'attendance,full_streak_bonus', reasons(d28).join(','));
+  ck('주간 보너스가 함께 나가지 않았다',
+    !d28.breakdown.some(g => g.reason === 'weekly_streak_bonus'));
+  ck('개근상 금액이 표의 값이다',
+    d28.breakdown.find(g => g.reason === 'full_streak_bonus')!.delta === E.fullStreakBonus(),
+    String(d28.breakdown.find(g => g.reason === 'full_streak_bonus')!.delta));
+
+  // 56일(28의 두 배)도 같다 — 28일마다 반복되는 자리다
+  mkUser('bf_d56', 0);
+  ck('56일째에도 개근상만',
+    reasons(dayAfter('bf_d56', 55)).join(',') === 'attendance,full_streak_bonus');
+  // 35일(7의 배수지만 28의 배수가 아니다)에는 주간 보너스가 맞다
+  mkUser('bf_d35', 0);
+  ck('35일째에는 주간 보너스',
+    reasons(dayAfter('bf_d35', 34)).join(',') === 'attendance,weekly_streak_bonus');
+
+  /* 개근상에도 버프가 붙는다 — 요청서가 "출석체크 모든 보상"이라고 적었다 */
+  mkUser('bf_d28b', 0); give('bf_d28b', 10);
+  const d28b = dayAfter('bf_d28b', 27);
+  ck('개근상에도 버프가 붙는다',
+    d28b.breakdown.find(g => g.reason === 'full_streak_bonus')!.delta
+      === Math.floor(E.fullStreakBonus() * 1.5),
+    String(d28b.breakdown.find(g => g.reason === 'full_streak_bonus')!.delta));
+
+  db.exec(`DELETE FROM user_achievements; DELETE FROM achievements;`);
+}
+auditLedger('버프 후');
+
+/* ── 13. 제보 보상 ──────────────────────────────────────────── */
+section('[13] 버그 제보 보상 10,000P');
+{
+  const R = require('../src/services/rewards') as typeof import('../src/services/rewards');
+  const { readFileSync } = require('node:fs') as typeof import('node:fs');
+  ck('기본 지급액이 10,000P', R.BUG_REPORT_BOUNTY === 10_000, String(R.BUG_REPORT_BOUNTY));
+  /* 어드민 화면이 그 값을 기본값으로 채워야 한다. 화면에 숫자를 직접 적어 두면
+     금액을 올리는 날 공지와 어드민이 갈라진다. */
+  const ad = readFileSync('src/web/admin.ts', 'utf8') as string;
+  ck('어드민 지급 창이 그 값을 기본값으로 쓴다',
+    /var BOUNTY = /.test(ad) && /prompt\([^;]*String\(BOUNTY\)\)/.test(ad));
+  ck('어드민이 숫자를 직접 적지 않는다', !/prompt\([^)]*'2000'/.test(ad));
+}
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);

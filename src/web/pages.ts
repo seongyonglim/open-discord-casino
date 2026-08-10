@@ -9,6 +9,7 @@ import {
 } from '../db/queries';
 import { recentHoldemWinners, type HoldemStatus } from '../db/holdem';
 import * as T from '../services/tournament';
+import { rewardBuff } from '../services/buff';
 import { listNotices, noticeNeighbors, type Notice } from '../db/notices';
 import { upcomingHint } from '../db/recurrence';
 
@@ -292,6 +293,10 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
   const netSub = today.rounds === 0 ? '아직 플레이 없음' : `${today.rounds}판`;
 
   const ff = nextFreerollStat(ht);
+  /* 도전과제 버프. 출석 칸 아래에 붙인다 — 출석과 지원금에만 걸리는 버프라 그 자리가
+     맞고, 버프가 없는 사람에게는 "디스코드에서 출석" 안내가 그대로 남아야 한다
+     (0% 뱃지는 알려주는 것이 없고 자리만 차지한다). */
+  const buff = rewardBuff(user.id);
 
   return `<div class="stat-row">
     <div class="stat"><div class="lbl">내 잔액</div>
@@ -302,7 +307,9 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
       <div class="sub">${esc(netSub)}</div></div>
     <div class="stat"><div class="lbl">연속 출석</div>
       <div class="${streakCls}">${user.current_streak}일</div>
-      <div class="sub">디스코드에서 출석</div></div>
+      <div class="sub">${buff.percent > 0
+        ? `<span class="buff-badge">🏆 도전과제 버프 +${buff.percent}%</span>`
+        : '디스코드에서 출석'}</div></div>
     <div class="stat"><div class="lbl">${esc(ff.label)}</div>
       <div class="val">${esc(ff.value)}</div>
       <div class="sub">${esc(ff.sub)}</div></div>
