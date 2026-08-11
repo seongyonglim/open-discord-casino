@@ -748,7 +748,10 @@ export function holdemPage(user: WebUser): string {
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
       'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide','myturn',
-      'potwin','clockwarn','allinbgm'];</script>
+      'potwin','clockwarn','allinbgm',
+      /* 처형 총성 — 미리 받아 둔다. 탈락은 판이 끝나는 순간에 터지는데 그때 받으러
+         가면 소리가 총자국보다 늦게 도착하고, 첫 KO 는 합성음으로 대체된다. */
+      'gunshot'];</script>
   <script>
   (function(){
 ${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY_EMPTY}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}

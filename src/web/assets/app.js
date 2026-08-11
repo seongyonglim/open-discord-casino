@@ -292,6 +292,10 @@
        울려도 기계적으로 들리지 않는다. */
     chipbet: ['chip-bet', 'chip-bet2'],
     chipwin: ['chips-to-winner'],   // 팟이 승자에게 밀려가는 소리
+    /* PKO 처형 총성. 세 발이 한 파일에 들어 있다.
+       이 줄이 없으면 playSample 이 이름을 못 찾아 늘 실패하고 합성음으로 떨어진다 —
+       파일을 넣고 화이트리스트에 올려도 소리가 한 번도 안 나갔던 이유가 이것이다. */
+    gunshot: ['gunshot'],
     /* 토너먼트 우승 — 음원 파일(public/sfx/tournament-win.mp3)은 아직 없다.
        없으면 playSample이 false를 돌려주고 기존 팡파레로 대체되므로 지금도 동작한다.
        파일을 넣는 순간 자동으로 그쪽이 쓰인다(SFX_NORM에 보정값만 재서 넣으면 된다). */

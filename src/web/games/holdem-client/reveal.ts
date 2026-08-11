@@ -73,6 +73,14 @@ export const REVEAL = `    var holeOpenAt = {}, holeRevealHand = null, holeDoneA
     }
     function syncHole(hole, s){
       if (!hole) return;
+      /* 처형을 위해 판을 비운 상태면 홀 카드도 걷는다 — 보드만 지우고 카드를 두면
+         "정리했다"가 아니라 "보드가 사라졌다"로 보인다. 모두의 카드가 같이 내려가야
+         빈 테이블이 되고, 그 위에서 총성이 주인공이 된다. */
+      if (koClearHand === (st.table || {}).handNo) {
+        hole.classList.remove('up');
+        while (hole.firstChild) hole.removeChild(hole.firstChild);
+        return;
+      }
       var cls = s.userId === MEID ? 'hero' : 'sm';
       /* 아직 이 자리를 열 시각이 안 됐으면 서버가 준 카드를 무시하고 뒷면으로 둔다.
          내 카드는 예외다 — 내 패는 언제나 내가 보고 있던 것이다. */

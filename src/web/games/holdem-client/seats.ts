@@ -39,9 +39,14 @@ export const SEATS = `    var seatXY = {};
        요구한 순서가 [칩 이동 → 처형(3발) → 현상금 상승]이고, 처형과 상승이 같은 순간에
        터지면 무엇 때문에 올랐는지가 안 읽힌다. */
     var koBurstEndsAt = 0;
-    /* 칩이 승자에게 닿은 뒤 처형까지의 한 박자. settleDone 자체가 이미 팟 흡수 뒤
-       1.25초를 두지만, 거기서 곧바로 쏘면 정산의 꼬리와 겹쳐 읽힌다. */
-    var KO_LEAD_MS = 350;
+    /* 카드를 걷고 나서 첫 발까지의 한 박자. 카드가 사라지는 것과 총성이 동시면
+       "정리했다"가 안 읽히고 그냥 화면이 바뀐 것으로 보인다. 빈 테이블을 한 번
+       보여 주고 쏜다. */
+    var KO_LEAD_MS = 600;
+    /* 처형을 위해 판을 비운 판 번호. board.ts·reveal.ts 가 이 값을 보고 카드를 다시
+       그리지 않는다(조각들은 하나의 클로저를 공유한다). 다음 판이 오면 번호가 달라져
+       저절로 풀리므로 되돌리는 코드가 따로 없다. */
+    var koClearHand = null;
     /* 한 발. 소리·섬광·흔들림·자국이 같은 박자에 온다 — 따로 예약하면 미세하게
        엇나가고, 그러면 "맞았다"로 안 읽힌다. */
     function koShot(seatEl, idx, withSound){
@@ -89,6 +94,20 @@ export const SEATS = `    var seatXY = {};
       var t = Date.now();
       var at = koShotTimes();
       var lead = t >= koBurstUntil;     // 이 묶음의 첫 사람인가
+      if (lead) {
+        /* 처형 전에 판을 비운다 — 보드와 모두의 홀 카드를 걷는다.
+           레퍼런스도 그렇게 한다: 카드가 있는 채로 쏘면 총성이 카드와 자리를 다투고,
+           빈 테이블이면 그 순간의 주인공이 처형이 된다.
+           지우는 것은 화면뿐이고 결과(서버가 준 board·cards)는 그대로다 — 다음 판이
+           오면 handNo 가 달라져 저절로 원래대로 그린다. */
+        koClearHand = (st.table || {}).handNo;
+        if (typeof syncBoard === 'function' && st.table) syncBoard(st.table);
+        var holes = seatsEl.querySelectorAll('.ht-hole');
+        for (var hi = 0; hi < holes.length; hi++) {
+          holes[hi].classList.remove('up');
+          while (holes[hi].firstChild) holes[hi].removeChild(holes[hi].firstChild);
+        }
+      }
       if (lead) {
         koBurstUntil = t + KO_LEAD_MS + koBurstLen() + 200;
         /* 소리는 한 번만 재생한다 — 세 발이 한 파일에 들어 있다. */

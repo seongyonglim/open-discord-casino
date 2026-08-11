@@ -130,6 +130,18 @@ export const BOARD = `    var BOARD_FIRST_MS = 560;     // 이번에 깔 첫 장
     }
     function syncBoard(tb){
       var cards = tb.board || [];
+      /* 처형(PKO) 을 위해 판을 비운 상태면 아무것도 그리지 않는다.
+         정산이 끝난 뒤 보드와 홀 카드를 걷어 내고 그 빈 테이블에서 총을 쏘기 때문이다.
+         이 문이 없으면 다음 폴링이 곧바로 보드를 다시 깔아 카드가 되살아난다.
+         다음 판이 시작되면 handNo 가 달라져 저절로 풀린다. */
+      if (koClearHand === tb.handNo) {
+        clearBoardReveal();
+        clearSqueeze();
+        shownBoard = 0;
+        if (boardEl.innerHTML !== '') boardEl.innerHTML = '';
+        boardRevealed = true;
+        return;
+      }
       /* 래빗을 펼쳐 둔 판이면 그쪽이 보드를 그린다.
 
          조건에 "래빗이 실제로 열릴 수 있는 상태인가"까지 넣는다. 판 번호만 비교하면

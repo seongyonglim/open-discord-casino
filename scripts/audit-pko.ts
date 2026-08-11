@@ -535,6 +535,27 @@ async function main(): Promise<void> {
     /* (5-d) 처형은 세 발이다. 음원(gunshot.mp3)에 세 발이 들어 있고, 총알이 박히는
        시각은 그 음원의 실제 발사 시점을 읽어 쓴다 — 간격을 화면이 따로 정하면
        소리와 그림이 어긋난다. 값은 소리 옆(app.js)에 한 벌만 둔다. */
+    /* 음원이 실제로 재생될 수 있는가. 여기가 이 기능에서 가장 조용하게 깨졌던 자리다:
+       파일을 넣고 SFX_EXT·화이트리스트에 올렸는데도 SFX_SETS 에 이름을 안 넣어서
+       playSample 이 늘 실패하고 합성음으로 떨어졌다 — 소리가 한 번도 나가지 않았고,
+       "함수가 있다"만 보는 검사는 그것을 통과시켰다.
+
+       그래서 playSample 로 부르는 모든 이름이 SFX_SETS 에 있는지 전부 훑는다.
+       다음에 음원을 추가하는 사람도 같은 함정에 빠지지 않는다. */
+    {
+      const sets = /var SFX_SETS = \{([\s\S]*?)\n  \};/.exec(appSrc)?.[1] ?? '';
+      const named = new Set(Array.from(sets.matchAll(/^\s*([a-z0-9]+):/gm), m => m[1]));
+      ck('SFX_SETS 를 읽었다', named.size > 5, [...named].join(','));
+      const used = new Set(Array.from(appSrc.matchAll(/playSample\('([a-z0-9]+)'/g), m => m[1]));
+      const missing = [...used].filter(n => !named.has(n));
+      ck('playSample 로 부르는 이름이 전부 SFX_SETS 에 있다', missing.length === 0,
+        missing.join(','));
+      ck('총성이 SFX_SETS 에 있다', named.has('gunshot'));
+      // 미리 받아 두지 않으면 첫 KO 는 파일이 아니라 합성음으로 나간다
+      const holdemSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
+      ck('총성을 홀덤 화면이 미리 받는다',
+        /__SFX_NEED__[\s\S]{0,400}?'gunshot'/.test(holdemSrc));
+    }
     ck('음원의 발사 시각이 app.js 에 있다', /gunfireShots: \[30, 305, 1335\]/.test(appSrc));
     ck('세 발이 한 번의 재생으로 나간다 (발마다 재생하지 않는다)',
       /gunfire: function\(\)\{\s*\r?\n\s*if \(playSample\('gunshot', 1\)\) return;/.test(appSrc));
@@ -564,9 +585,16 @@ async function main(): Promise<void> {
 
     /* (5-f) 명찰 자리는 카드 상태로 갈린다. 자리(hero)로 가르면 카드가 없는 동안에도
        떠 있어 "프레임에 물린 명찰"이라는 레퍼런스의 핵심을 잃는다. */
-    ck('카드가 펼쳐질 때만 명찰이 올라간다',
-      /\.ht-hole\.up \+ \.ht-avbox \.ht-bounty\{top:/.test(cssSrc));
+    /* .up 만 보면 폴드한 패(visibility:hidden)에서도 명찰이 떠 있는다 — 실측 -13px.
+       "카드가 실제로 보이는 자리"만 올려야 한다. */
+    ck('카드가 실제로 보일 때만 명찰이 올라간다',
+      /\.ht-hole\.up:not\(\.folded\):not\(:empty\) \+ \.ht-avbox \.ht-bounty\{top:/.test(cssSrc));
     ck('자리로 가르지 않는다', !/\.ht-seat\.hero \.ht-bounty\{top:/.test(cssSrc));
+    /* 접은 패는 마우스를 올리면 다시 보인다 — 그때는 명찰도 같이 비켜서야 한다.
+       치우면 카드가 사라지고 명찰도 내려온다(transition 이 둘을 잇는다). */
+    ck('접은 패에 마우스를 올리면 명찰도 같이 올라간다',
+      /\.ht-seat\.hero:hover \.ht-hole\.up\.folded:not\(:empty\) \+ \.ht-avbox \.ht-bounty\{/
+        .test(cssSrc));
     // transition 은 본 규칙 안에 있다(같은 클래스를 두 번 정의하면 CSS 감사가 잡는다)
     ck('명찰이 부드럽게 움직인다', /\.ht-bounty\{[^}]*transition:top/.test(cssSrc));
     /* 베팅 칩이 명찰 자리를 파고들지 않아야 한다 — 실측 11px 겹쳤다 */
