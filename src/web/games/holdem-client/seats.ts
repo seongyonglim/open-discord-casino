@@ -435,7 +435,8 @@ export const SEATS = `    var seatXY = {};
 
          정산이 끝난 판인지(settleDone)까지 함께 봐야 한다 — 안 그러면 카드가 열리는
          중에 미리 창을 열어 두고, 정작 총격은 나중에 시작된다. */
-      if (pko && settleDone(tb)) {
+      // 아래 루프의 koShow 와 같은 조건이어야 한다 — 어긋나면 창을 미리 열거나 못 연다
+      if (pko && resultReady() && settleDone(tb)) {
         var fresh = seats.some(function(s){
           return s.presence === 'OUT' && !koFired[s.seat];
         });
@@ -542,11 +543,14 @@ export const SEATS = `    var seatXY = {};
 
            koFired 에 남기는 이유가 하나 더 있다: 폴링은 창을 다시 열 때도 돌아서,
            기억이 없으면 새로고침한 사람에게 남의 탈락이 방금 일어난 것처럼 터진다. */
-        /* 결과 연출이 끝난 뒤에 터진다. 서버는 판이 끝나는 순간 탈락을 확정하지만,
-           그때 화면은 아직 보드를 열고 팟을 옮기는 중이다 — 거기서 바로 KO 를 띄우면
-           "카드도 안 열렸는데 누가 죽었는지 이미 안다"가 되고, 쇼다운을 볼 이유가 없어진다.
-           settleDone 은 이 판의 정산 연출이 끝났는지를 알려 준다(폴드로 끝난 판은 즉시 참). */
-        var koShow = pko && s.presence === 'OUT' && settleDone(tb);
+        /* 처형은 쇼다운의 마지막 순서다. 두 조건을 함께 봐야 한다:
+             resultReady()  모든 홀 카드와 보드가 다 열렸고 읽을 한 박자까지 지났다
+             settleDone(tb) 팟이 승자에게 넘어가는 연출까지 끝났다
+           settleDone 만 보면 부족했다 — 팟 연출은 tb.ended 를 보고 시작하므로 보드가
+           아직 깔리는 중에도 끝날 수 있고, 그러면 턴 카드가 떨어지자마자 화면이
+           처형으로 넘어간다(제보로 확인). 카드가 다 나오고 칩이 옮겨진 뒤여야 한다.
+           폴드로 끝난 판은 둘 다 즉시 참이라 곧바로 진행된다. */
+        var koShow = pko && s.presence === 'OUT' && resultReady() && settleDone(tb);
         if (koShow && !koFired[s.seat]) {
           koFired[s.seat] = 1;
           /* 처음 그리는 프레임에는 터뜨리지 않는다. 이미 탈락한 사람이 있는 판에

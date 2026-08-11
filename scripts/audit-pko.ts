@@ -431,7 +431,7 @@ async function main(): Promise<void> {
        다른 곳이 남는다(정산 대기를 넣으면서 실제로 그 문제가 생겼다). */
     ck('KO 조건에 pko 가 들어 있다', /var koShow = pko &&/.test(seatsSrc));
     ck('KO 조건이 한 곳에만 있다',
-      (seatsSrc.match(/s\.presence === 'OUT' && settleDone/g) ?? []).length === 1);
+      (seatsSrc.match(/s\.presence === 'OUT' && resultReady\(\) && settleDone/g) ?? []).length === 1);
 
     // (4) payload: 일반 판에는 칸 자체가 없어야 한다
     ck('bountyPool 은 PKO 에서만 실린다', /bountyPool: isPko\(t\) \?/.test(stateSrc));
@@ -522,7 +522,7 @@ async function main(): Promise<void> {
        그 사이에 KO 를 띄우면 쇼다운을 볼 이유가 없어지고, 뱃지를 올리면 "카드도 안 열렸는데
        남의 바운티를 이미 가져갔다"로 보인다 — 실제로 플랍만 깔린 화면에서 그랬다. */
     ck('KO 연출이 정산 완료를 기다린다',
-      /var koShow = pko && s\.presence === 'OUT' && settleDone\(tb\)/.test(seatsSrc));
+      /var koShow = pko && s\.presence === 'OUT' && resultReady\(\) && settleDone\(tb\)/.test(seatsSrc));
     ck('총자국과 흑백 처리가 같은 신호를 쓴다',
       /shots\[si\]\.hidden = !koShow/.test(seatsSrc) && /toggle\('koed', koShow\)/.test(seatsSrc));
     ck('바운티 뱃지 변화도 정산 완료를 기다린다',
@@ -579,7 +579,7 @@ async function main(): Promise<void> {
     ck('현상금 상승이 총격이 끝날 때까지 기다린다',
       /var waiting = !settleDone\(tb\) \|\| Date\.now\(\) < koBurstEndsAt/.test(seatsSrc));
     ck('총격 시각을 좌석 루프 전에 잡는다 (좌석 순서에 걸리지 않게)',
-      /if \(pko && settleDone\(tb\)\) \{[\s\S]{0,400}?koBurstEndsAt = end/.test(seatsSrc));
+      /if \(pko && resultReady\(\) && settleDone\(tb\)\) \{[\s\S]{0,400}?koBurstEndsAt = end/.test(seatsSrc));
     ck('오른 만큼을 따로 띄운다', /\.ht-bgain\{/.test(cssSrc)
       && /htBGain/.test(cssSrc) && /'\+' \+ stackText\(bv - prev\)/.test(seatsSrc));
 

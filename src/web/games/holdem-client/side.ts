@@ -107,8 +107,32 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
           '<span>참가 ' + t.registered + '명 · 지급 ' + t.itm + '명<\\/span>' +
         '<\\/div>' +
         '<div class="ht-pz-list">' + prizeListHtml(t) + '<\\/div>' +
+        /* PKO 는 참가비의 절반이 현상금으로 빠지므로, 상금표만 보면 "참가비 만 원인데
+           상금이 왜 반이지"가 된다. 빠진 절반이 어디 있는지와 그것이 어떻게 오는지를
+           같은 자리에 적는다 — 이 블록이 유저가 상금 구조를 확인하는 유일한 곳이다.
+           (한동안 화면에 바운티 이야기가 아예 없었다. 걷은 돈의 절반이 설명 없이
+            사라진 것으로 보였다.) */
+        (t.mode === 'PKO_BOUNTY'
+          ? '<div class="ht-pz-bty">' +
+              '<div class="ht-pz-bty-h">현상금 펀드 <b>' + num(t.bountyPool || 0) + 'P<\\/b><\\/div>' +
+              /* 마지막 줄이 이 안내의 핵심이다. "절반만 받는다"까지만 읽으면 나머지
+                 절반을 떼인 것으로 오해한다 — 실제로는 얹힌 절반도 우승하면 전부 받고,
+                 걷은 현상금은 1P 도 남지 않는다. 그 사실을 문장으로 못 박아 둔다. */
+              '<div class="ht-pz-bty-b">' +
+                '참가비 ' + num(t.buyIn) + 'P 중 <b>' + num(t.buyIn - Math.floor(t.buyIn / 2))
+                + 'P<\\/b>는 상금 풀로, <b>' + num(Math.floor(t.buyIn / 2))
+                + 'P<\\/b>는 내 머리 위 현상금으로 걸립니다.<br>' +
+                '상대를 탈락시키면 그 사람 현상금의 <b>절반을 즉시 현금으로 받고<\\/b>, ' +
+                '나머지 <b>절반은 내 현상금에 얹힙니다<\\/b>.<br>' +
+                '얹힌 절반도 <b>내가 우승하면 전부 받습니다<\\/b> — ' +
+                '걷은 현상금은 1P도 남지 않고 참가자에게 돌아갑니다.' +
+              '<\\/div>' +
+            '<\\/div>'
+          : '') +
         (t.buyIn > 0
-          ? '<div class="ht-pz-note">참가비 ' + num(t.buyIn) + 'P가 그대로 상금이 됩니다<\\/div>'
+          ? '<div class="ht-pz-note">' + (t.mode === 'PKO_BOUNTY'
+              ? '상금 풀 + 현상금 펀드 = 걷은 참가비 전액입니다'
+              : '참가비 ' + num(t.buyIn) + 'P가 그대로 상금이 됩니다') + '<\\/div>'
           : '<div class="ht-pz-note">참가비 없는 프리롤입니다 — 상금은 운영에서 지급합니다<\\/div>');
     }
 
