@@ -1513,60 +1513,132 @@
      일반 대회에서는 이 요소들이 아예 만들어지지 않는다(seats.ts 가 PKO 일 때만 그린다).
      그래서 여기 규칙은 "있으면 이렇게 보인다"만 적는다 — 숨기는 규칙을 두지 않는다.
 
-     뱃지는 아바타 위쪽 바깥에 걸친다. 아바타 안에 두면 행동 배지(.ht-abadge, z7)와
-     같은 자리를 놓고 다투고, 아래는 이름 태그(.ht-plate)가 이미 쓰고 있다.
-     "머리 위"라는 요구 그대로가 마침 유일하게 빈 자리다. */
-  .ht-bounty{position:absolute;left:50%;bottom:calc(100% + 3px);transform:translateX(-50%);
-    z-index:8;pointer-events:none;white-space:nowrap;
-    padding:1.5px 6px;border-radius:999px;
-    font-size:10px;font-weight:800;letter-spacing:.2px;
-    font-variant-numeric:tabular-nums;
-    color:#f4dc8a;background:rgba(24,18,4,.9);
-    border:1px solid rgba(212,175,55,.55);
-    box-shadow:0 2px 7px rgba(0,0,0,.5)}
-  /* 값이 오르는 순간의 황금색 반짝임. 글자만 밝히지 않고 테두리·그림자까지 같이 밀어야
-     "숫자가 커졌다"가 아니라 "받았다"로 읽힌다. 0.62초 — 다음 폴링(1초)보다 짧아야
-     연출이 겹치지 않는다. */
-  .ht-bounty.up{animation:htBountyUp .62s ease-out}
+     ── 금빛 표지판 (GG 스타일 골드 플레이트)
+     둥근 알약이 아니라 각진 금속판이다. 위 두 모서리만 살짝 깎고(2px) 아래는 직각으로
+     둔다 — 아래가 아바타 테두리에 맞물리는 변이라 각이 살아 있어야 "판이 박혀 있다"로
+     읽힌다. 알약이었을 때는 떠 있는 태그로 보였다.
+
+     금속감은 그라데이션의 중간 꺾임에서 나온다: 45% 에서 밝은 금(#d4b583)이었다가
+     50% 에서 한 단 어두워지고(#b8955a) 다시 밝아진다. 이 급한 단차가 판 가운데를 지나는
+     하이라이트 선이 되고, 그것이 없으면 그냥 노란 사각형이다.
+
+     테두리는 두 겹이다 — 밖은 짙은 금테(#7d6133), 안은 inset 으로 밝은 선(#fff1d0).
+     두 선 사이의 명암 차이가 두께감을 만든다.
+
+     transform 은 X 만 쓴다. 아래 애니메이션의 모든 프레임에도 같은 translateX 를 적어야
+     한다 — scale 만 적으면 transform 이 통째로 대체되어 명찰이 오른쪽으로 튄다. */
+  .ht-bounty{position:absolute;left:50%;top:-10px;transform:translateX(-50%);
+    z-index:25;pointer-events:none;white-space:nowrap;
+    height:19px;line-height:17px;box-sizing:border-box;padding:0 10px;
+    border-radius:2px 2px 0 0;
+    /* Impact 는 좁고 굵어 긴 금액(17,500P)도 아바타 폭 안에 들어간다.
+       letter-spacing 을 음수로 두는 것도 같은 이유다 — 금속 각인처럼 촘촘해 보인다. */
+    font-family:Impact,'Arial Black','Haettenschweiler',sans-serif;
+    font-size:12px;font-weight:900;letter-spacing:-.5px;
+    color:#1f1406;
+    background:linear-gradient(180deg,#f0e2c8 0%,#d4b583 45%,#b8955a 50%,#ead7b7 100%);
+    border:1px solid #7d6133;
+    /* inset 이 안쪽 밝은 선, 뒤의 것은 펠트에서 판을 떼어 놓는 그림자다 */
+    box-shadow:inset 0 0 0 1px #fff1d0, 0 2px 4px rgba(0,0,0,.55);
+    text-shadow:0 1px 0 rgba(255,255,255,.6);
+    /* 카드가 열리고 닫힐 때 명찰이 순간이동하면 눈에 걸린다 — 아래 .ht-hole.up 규칙이
+       top 을 바꾸므로 그 전환만 부드럽게 한다. 펄스는 transform 이라 부딪히지 않는다. */
+    transition:top .18s ease-out}
+  /* 내 자리만 예외다. 남의 카드는 아바타 뒤(z1)에 엎어져 있지만 내 카드는 아바타 위로
+     자라 올라오고(그 자체는 예전부터의 배치다), 명찰이 그 위에 앉으면 카드 상단 23px 를
+     덮는다 — 하필 숫자와 문양이 인쇄된 자리다(실측). 내 카드는 이 화면에서 가장 중요한
+     정보라 그것을 가릴 수는 없다. 그래서 명찰만 카드 위로 올린다.
+
+     top 으로 올린다 — transform 으로 올리면 아래 애니메이션이 transform 을 통째로
+     대체하면서 펄스가 도는 동안 명찰이 원래 자리로 튄다.
+     아바타 크기에 비례해 둔다: 카드도 --htAv 와 함께 줄어들므로 픽셀로 박으면
+     좁은 화면에서 어긋난다. */
+  /* 카드가 펼쳐져 있을 때만 명찰을 올린다.
+
+     .ht-hole.up 은 "카드가 공개돼 아바타 위로 커져 나왔다"는 뜻이고(reveal.ts 가 붙인다),
+     마크업에서 .ht-avbox 바로 앞에 있어 인접 형제로 잡힌다. 그래서 카드가 있는 자리만
+     저절로 비켜서고, 카드가 없거나 엎어져 있으면 프로필에 물린 제자리로 내려온다.
+
+     한때 "내 자리는 늘 올린다"로 두었는데, 그러면 카드가 없는 동안에도 명찰이 붕 떠
+     레퍼런스의 핵심인 일체감을 잃었다. 자리로 가르지 말고 상태로 갈라야 했다.
+
+     transition 은 위 .ht-bounty 규칙에 함께 넣었다 — 같은 클래스를 최상위에서 두 번
+     정의하면 감사가 잡는다(어느 쪽이 이기는지가 순서에 달려 읽기 어려워지기 때문이다). */
+  .ht-hole.up + .ht-avbox .ht-bounty{top:calc(-0.44 * var(--htAv))}
+  /* 값이 오르는 순간 — 살짝 커졌다 돌아오며 황금빛이 번진다.
+     0.5초. 다음 폴링(1초)보다 짧아야 연출이 겹치지 않는다.
+     transform-origin 을 아래 가운데로 둔다 — 위로만 자라야 아바타에 맞물린 아래 변이
+     떨어지지 않는다(기본값 center 로 두면 판이 아바타 속으로 파고든다). */
+  .ht-bounty.up{animation:htBountyUp .5s ease-out;transform-origin:50% 100%}
   @keyframes htBountyUp{
     0%{transform:translateX(-50%) scale(1)}
-    18%{transform:translateX(-50%) scale(1.28);
-      color:#fff8dc;background:rgba(212,175,55,.92);
-      border-color:#ffe9a3;box-shadow:0 0 16px rgba(255,215,80,.85)}
-    55%{transform:translateX(-50%) scale(1.06);
-      color:#ffe9a3;border-color:rgba(255,215,80,.8);
-      box-shadow:0 0 10px rgba(255,215,80,.45)}
+    35%{transform:translateX(-50%) scale(1.2);
+      background:linear-gradient(180deg,#fffaf0 0%,#f0dcb2 45%,#dcc088 50%,#fff6e4 100%);
+      border-color:#c9a35c;
+      box-shadow:inset 0 0 0 1px #fffdf5, 0 2px 4px rgba(0,0,0,.55),
+        0 0 16px rgba(255,215,80,.9)}
+    70%{transform:translateX(-50%) scale(1.06);
+      box-shadow:inset 0 0 0 1px #fff1d0, 0 2px 4px rgba(0,0,0,.55),
+        0 0 9px rgba(255,215,80,.45)}
     100%{transform:translateX(-50%) scale(1)}
   }
-  /* 총자국 — 아바타 가운데. 방사형 그라디언트 둘을 겹쳐 그린다: 안쪽의 검은 구멍과
-     그 주변에 번지는 갈라진 자리다. 이미지 파일을 쓰지 않는 이유는 아바타 크기가
-     화면 폭에 따라 달라져서(--htAv) 어떤 크기에서도 선명해야 하기 때문이다. */
-  .ht-hole-shot{position:absolute;left:50%;top:50%;
-    width:calc(var(--htAv) * .42);height:calc(var(--htAv) * .42);
+  /* 총자국 — 방사형 그라디언트 둘을 겹쳐 그린다: 안쪽의 검은 구멍과 그 주변에 번지는
+     갈라진 자리다. 이미지 파일을 쓰지 않는 이유는 아바타 크기가 화면 폭에 따라
+     달라져서(--htAv) 어떤 크기에서도 선명해야 하기 때문이다.
+
+     세 발이 박힌다. 자리를 미리 흩어 둔다 — 한 점에 모으면 세 발이 한 발로 보이고,
+     무작위로 뽑으면 폴링마다 자리가 바뀐다. 가운데를 중심으로 삼각으로 벌린다.
+     한 발이 크면 셋이 겹치므로 예전(42%)보다 작게 잡는다. */
+  .ht-hole-shot{position:absolute;
+    width:calc(var(--htAv) * .3);height:calc(var(--htAv) * .3);
     transform:translate(-50%,-50%);
-    z-index:6;pointer-events:none;border-radius:50%;
+    z-index:8;pointer-events:none;border-radius:50%;
     background:
+      /* 흰 균열 — 구멍 주위로 유리가 깨진 자리다. 레퍼런스에서 이 흰 링이 자국을
+         "총알이 박혔다"로 읽히게 만드는 결정적인 요소였다(검은 구멍만 두었을 때는
+         그냥 얼룩으로 보였다). conic 으로 방사형 금을 내고 그 위에 구멍을 얹는다. */
       radial-gradient(circle at 50% 50%,
-        #000 0 32%, rgba(20,10,6,.92) 33% 46%, rgba(60,30,16,.55) 47% 64%,
-        rgba(90,50,25,.28) 65% 82%, transparent 83%),
-      radial-gradient(circle at 42% 40%, rgba(255,255,255,.16) 0 12%, transparent 13%);
-    box-shadow:0 0 0 1px rgba(0,0,0,.6), inset 0 0 6px rgba(0,0,0,.9)}
+        #000 0 30%, rgba(15,8,5,.95) 31% 40%, transparent 41%),
+      conic-gradient(from 12deg,
+        rgba(255,255,255,.85) 0 3deg, transparent 3deg 26deg,
+        rgba(255,255,255,.7) 26deg 29deg, transparent 29deg 62deg,
+        rgba(255,255,255,.8) 62deg 65deg, transparent 65deg 104deg,
+        rgba(255,255,255,.62) 104deg 107deg, transparent 107deg 148deg,
+        rgba(255,255,255,.8) 148deg 151deg, transparent 151deg 196deg,
+        rgba(255,255,255,.66) 196deg 199deg, transparent 199deg 242deg,
+        rgba(255,255,255,.78) 242deg 245deg, transparent 245deg 292deg,
+        rgba(255,255,255,.7) 292deg 295deg, transparent 295deg 336deg,
+        rgba(255,255,255,.8) 336deg 339deg, transparent 339deg 360deg),
+      radial-gradient(circle at 50% 50%,
+        rgba(255,255,255,.5) 0 44%, rgba(255,255,255,.18) 45% 62%, transparent 66%);
+    box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 5px rgba(0,0,0,.85)}
+  /* 세 자리를 넓게 벌린다 — 레퍼런스도 얼굴을 가로질러 흩어져 있다.
+     모으면 세 발이 한 발로 보인다. */
+  .ht-hole-shot.s1{left:32%;top:40%}
+  .ht-hole-shot.s2{left:70%;top:34%}
+  .ht-hole-shot.s3{left:60%;top:66%}
   /* 박히는 순간 — 크게 들어와 제 크기로 내려앉는다. 커졌다 작아지는 것이 "박혔다"다.
-     0.28초. 총성(0.42초)보다 짧게 끝나야 소리가 그림보다 오래 남는다. */
+     0.28초. 발 간격(130ms)보다 길어서 세 자국의 연출이 조금 겹치는데, 그게 오히려
+     연달아 맞는 것처럼 보인다. */
   .ht-hole-shot.hit{animation:htShot .28s cubic-bezier(.2,1.5,.4,1)}
   @keyframes htShot{
     0%{transform:translate(-50%,-50%) scale(2.4);opacity:0}
     35%{opacity:1}
     100%{transform:translate(-50%,-50%) scale(1);opacity:1}
   }
-  /* KO 반투명 오버레이. 아바타를 덮는 원이고, 글자는 그 위에 얹는다. */
-  .ht-ko-ov{position:absolute;inset:0;z-index:7;
-    display:flex;align-items:center;justify-content:center;
-    border-radius:50%;pointer-events:none;
-    font-size:calc(var(--htAv) * .3);font-weight:900;letter-spacing:1px;
-    color:rgba(255,90,90,.92);
-    background:rgba(8,8,8,.52);
-    text-shadow:0 2px 6px rgba(0,0,0,.9)}
+  /* 총구 섬광 — 발사마다 아바타를 한 번 확 밝힌다. 자국만 늘리면 "언제 맞았는지"가
+     안 보인다(자국은 조용히 늘어날 뿐이다). 주황 → 노랑 코어로 두 겹이다.
+     남지 않는다: 0.18초 뒤 JS 가 감춘다. */
+  .ht-muzzle{position:absolute;inset:-10%;z-index:9;pointer-events:none;border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255,247,214,.95) 0 12%,
+        rgba(255,190,60,.8) 13% 32%, rgba(255,120,20,.35) 33% 58%, transparent 62%)}
+  .ht-muzzle.flash{animation:htMuzzle .18s ease-out}
+  @keyframes htMuzzle{
+    0%{opacity:0;transform:scale(.5)}
+    25%{opacity:1;transform:scale(1.15)}
+    100%{opacity:0;transform:scale(1.35)}
+  }
   /* 탈락한 자리 — 폴드와 같은 흑백 처리를 쓰지만 더 깊게 누른다.
      폴드는 "이 판에서 빠졌다"이고 KO 는 "대회가 끝났다"라서 같은 세기면 구분이 안 된다. */
   .ht-seat.koed{opacity:.72}
@@ -1576,7 +1648,7 @@
      "총이 발사됐다"로 읽힌다(좌석만 흔들면 그 사람이 떤 것처럼 보인다).
      420ms — koBang 의 setTimeout 과 같은 값이다. 흔들림 폭은 작게 둔다:
      크게 흔들면 카드와 칩을 읽는 중인 사람의 눈이 따라가지 못한다. */
-  .ht-felt.koshake{animation:htKoShake .42s ease-out}
+  .ht-felt.koshake{animation:htKoShake .24s ease-out}
   @keyframes htKoShake{
     0%,100%{transform:translate(0,0)}
     12%{transform:translate(-4px,2px)}
@@ -1590,5 +1662,43 @@
   @media (prefers-reduced-motion:reduce){
     .ht-felt.koshake{animation:none}
     .ht-hole-shot.hit{animation:none}
+    .ht-muzzle.flash{animation:none}
     .ht-bounty.up{animation:none}
+  }
+  /* 명찰 글자 크기는 13px 고정이다(명찰이 작아지면 금액을 읽는 목적을 잃는다). 다만
+     아바타는 화면이 좁아지면 66px → 58px → 그 아래로 줄어드는데, 그때도 13px 이면
+     명찰이 아바타보다 넓어져 옆자리와 겹친다. 좁은 구간에서만 한 단계씩 줄인다. */
+  @media (max-width:820px){
+    .ht-bounty{font-size:12px;padding:1px 6px}
+  }
+  @media (max-width:480px){
+    .ht-bounty{font-size:11px;padding:0 5px;border-bottom-width:1px}
+  }
+  /* ── 오른 현상금 (명찰 위로 떠오르는 숫자) ─────────────────────────
+     레퍼런스에서 승자 위로 큰 금색 숫자가 떠오르며 사라진다. 명찰 숫자만 바뀌면
+     "얼마를 받았나"를 이전 값과 뺄셈해야 알 수 있는데, 그 순간에 그럴 사람은 없다.
+
+     명찰(19px)보다 크게 잡는다 — 이 숫자가 그 순간의 주인공이다.
+     그림자를 진하게 두르는 이유는 펠트·아바타·카드 어디 위에 떠도 읽혀야 하기 때문이다. */
+  .ht-bgain{position:absolute;left:50%;bottom:calc(100% + 2px);
+    transform:translateX(-50%);
+    z-index:26;pointer-events:none;white-space:nowrap;
+    font-family:Impact,'Arial Black','Haettenschweiler',sans-serif;
+    font-size:17px;font-weight:900;letter-spacing:-.5px;
+    color:#ffe9a8;
+    text-shadow:0 0 3px rgba(0,0,0,.95), 0 1px 2px rgba(0,0,0,.9),
+      0 2px 10px rgba(255,190,60,.55)}
+  /* 1.4초 — 뜨고, 읽히고, 사라진다. 너무 짧으면 숫자를 못 읽고 길면 다음 판까지 남는다. */
+  .ht-bgain.rise{animation:htBGain 1.4s ease-out}
+  @keyframes htBGain{
+    0%{transform:translateX(-50%) translateY(6px) scale(.7);opacity:0}
+    18%{transform:translateX(-50%) translateY(0) scale(1.12);opacity:1}
+    30%{transform:translateX(-50%) translateY(-3px) scale(1);opacity:1}
+    72%{transform:translateX(-50%) translateY(-16px) scale(1);opacity:1}
+    100%{transform:translateX(-50%) translateY(-30px) scale(.96);opacity:0}
+  }
+  @media (max-width:820px){ .ht-bgain{font-size:15px} }
+  @media (max-width:480px){ .ht-bgain{font-size:13px} }
+  @media (prefers-reduced-motion:reduce){
+    .ht-bgain.rise{animation:none}
   }

@@ -16,17 +16,53 @@ export const SEATS = `    var seatXY = {};
          koSeen       한 번이라도 그려 본 적이 있나 — 첫 프레임에는 터뜨리지 않는다.
                       이미 탈락자가 있는 판에 뒤늦게 들어오면 그 몫이 한꺼번에 터진다. */
     var bountyShown = {}, koFired = {}, koSeen = false;
-    /* KO 한 방. 총성 + 화면 흔들림 + 총자국이 한 박자에 같이 온다 —
-       셋을 따로 예약하면 소리와 그림이 미세하게 엇나가고, 그러면 "맞았다"로 안 읽힌다. */
-    function koBang(seatEl){
-      if (casinoSfx && casinoSfx.gunshot) casinoSfx.gunshot();
-      var shot = seatEl.querySelector('.ht-hole-shot');
+    /* 총알이 박히는 시각. 음원(gunshot.mp3)의 실제 발사 시점을 그대로 읽어 쓴다 —
+       간격을 우리가 정하면 소리와 그림이 어긋난다. 값은 app.js 의 소리 옆에 있다.
+       음원을 못 읽는 환경(구형 브라우저 등)에서도 배열은 있으므로 연출은 그대로 돈다. */
+    function koShotTimes(){
+      var s = (window.casinoSfx && casinoSfx.gunfireShots) || [30, 305, 1335];
+      var base = s[0] || 0;
+      return s.map(function(ms){ return ms - base; });   // 첫 발을 0 으로 맞춘다
+    }
+    /* 총격 전체 길이 — 마지막 발 이후 잔향까지. 현상금 상승이 이 뒤에 온다. */
+    function koBurstLen(){
+      var t = koShotTimes();
+      return t[t.length - 1] + 420;
+    }
+    /* 이 총격 묶음이 끝나는 시각. 두 사람이 같은 판에 털릴 때 소리와 흔들림이 두 배로
+       겹치는 것을 막는다 — 자국은 각자에게 박히되 청각·흔들림은 한 묶음만 간다.
+       (셋이 동시에 털리면 아홉 발이 되어 화면이 멈추지 않고 떨린다.) */
+    var koBurstUntil = 0;
+    /* 좌석별 총격 시작 시각 — 발사가 도는 중에는 갱신 루프가 자국을 건드리지 않게 한다. */
+    var koBurstSeat = {};
+    /* 총격이 완전히 끝나는 시각. 현상금 상승 연출이 이때까지 기다린다 —
+       요구한 순서가 [칩 이동 → 처형(3발) → 현상금 상승]이고, 처형과 상승이 같은 순간에
+       터지면 무엇 때문에 올랐는지가 안 읽힌다. */
+    var koBurstEndsAt = 0;
+    /* 칩이 승자에게 닿은 뒤 처형까지의 한 박자. settleDone 자체가 이미 팟 흡수 뒤
+       1.25초를 두지만, 거기서 곧바로 쏘면 정산의 꼬리와 겹쳐 읽힌다. */
+    var KO_LEAD_MS = 350;
+    /* 한 발. 소리·섬광·흔들림·자국이 같은 박자에 온다 — 따로 예약하면 미세하게
+       엇나가고, 그러면 "맞았다"로 안 읽힌다. */
+    function koShot(seatEl, idx, withSound){
+      var shot = seatEl.querySelector('.ht-hole-shot.s' + (idx + 1));
       if (shot) {
         shot.hidden = false;
         shot.classList.remove('hit');
         void shot.offsetWidth;          // 같은 프레임으로 묶이면 애니메이션이 다시 안 돈다
         shot.classList.add('hit');
       }
+      var mz = seatEl.querySelector('.ht-muzzle');
+      if (mz) {
+        mz.hidden = false;
+        mz.classList.remove('flash');
+        void mz.offsetWidth;
+        mz.classList.add('flash');
+        /* 섬광은 남지 않는다 — 총구 불빛이라 발사 순간에만 있어야 한다.
+           자국(.ht-hole-shot)은 반대로 판이 끝날 때까지 남는다. */
+        setTimeout(function(){ mz.hidden = true; }, 180);
+      }
+      if (!withSound) return;
       /* 흔들림은 펠트에 준다. 좌석만 흔들면 "그 사람이 떨었다"로 보이고, 판이 흔들려야
          "총이 발사됐다"가 된다.
 
@@ -36,13 +72,38 @@ export const SEATS = `    var seatXY = {};
          하필 KO 와 팟 정산은 같은 순간에 일어나므로 반드시 겹친다. 펠트는 칩 층의
          형제라 여기서 끊긴다.
 
-         이미 흔들리는 중이면 다시 걸지 않는다 — 한 판에 셋이 털리면 세 번 겹쳐
-         화면이 계속 떨린다. */
+         발사마다 다시 건다(remove → 리플로우 → add). 예전에는 "이미 흔들리는 중이면
+         건너뛴다"였는데, 세 발로 늘리면서 그 규칙이 첫 발만 흔들고 나머지 둘은 소리만
+         남게 만든다 — 한 방을 세 방으로 만든 이유가 바로 그 튀는 느낌이라 안 된다. */
       var felt = tableEl ? tableEl.querySelector('.ht-felt') : null;
-      if (felt && !felt.classList.contains('koshake')) {
+      if (felt) {
+        felt.classList.remove('koshake');
+        void felt.offsetWidth;
         felt.classList.add('koshake');
-        setTimeout(function(){ felt.classList.remove('koshake'); }, 420);
+        setTimeout(function(){ felt.classList.remove('koshake'); }, 240);
       }
+    }
+    /* KO 세 발. 자국은 늘 세 개가 박히고, 소리와 흔들림은 같은 순간에 여러 명이
+       털렸을 때 한 묶음만 낸다. */
+    function koBang(seatEl, seat){
+      var t = Date.now();
+      var at = koShotTimes();
+      var lead = t >= koBurstUntil;     // 이 묶음의 첫 사람인가
+      if (lead) {
+        koBurstUntil = t + KO_LEAD_MS + koBurstLen() + 200;
+        /* 소리는 한 번만 재생한다 — 세 발이 한 파일에 들어 있다. */
+        if (casinoSfx && casinoSfx.gunfire) {
+          setTimeout(function(){ casinoSfx.gunfire(); }, KO_LEAD_MS);
+        }
+      }
+      koBurstSeat[seat] = t;
+      /* 총격이 끝나는 시각을 남긴다 — 현상금 상승은 이 뒤에 온다.
+         여러 명이 동시에 털리면 가장 늦게 끝나는 것을 기준으로 둔다. */
+      var ends = t + KO_LEAD_MS + koBurstLen();
+      if (ends > koBurstEndsAt) koBurstEndsAt = ends;
+      at.forEach(function(ms, k){
+        setTimeout(function(){ koShot(seatEl, k, lead); }, KO_LEAD_MS + ms);
+      });
     }
     /* ── 스타디움(알약) 둘레 위의 자리 ──────────────────────────────
        테이블은 위아래가 직선이고 좌우 끝만 반원인 알약 모양이다. 타원이었을 때는
@@ -93,10 +154,15 @@ export const SEATS = `    var seatXY = {};
            위쪽 자리에서는 그게 테이블 밖(위)이라 걸릴 것이 없고 아래쪽 자리에서만
            테이블 안쪽으로 뻗는다. 그래서 6시 자리에서만 칩 기둥과 금액 배지가 카드
            윗부분(숫자·문양이 있는 자리)에 얹혔다 — 실측 10px 겹침.
-           22px 올리면 11px 여백이 남는다. ny로 비례를 주어 아래쪽 반원도 같이 따라온다.
-           픽셀이 아니라 H 비율로 적는다 — 좁은 화면에서는 카드도 같이 작아지므로
-           고정 픽셀이면 그쪽에서만 과하게 올라간다(0.067 × 326 = 22). */
-        by -= Math.max(0, ny) * H * 0.067;
+           ny로 비례를 주어 아래쪽 반원도 같이 따라온다. 픽셀이 아니라 H 비율로 적는다 —
+           좁은 화면에서는 카드도 같이 작아지므로 고정 픽셀이면 그쪽에서만 과하게 올라간다.
+
+           0.067(22px)이었다. PKO 명찰이 아바타 위에 앉으면서 그 22px 자리를 명찰이
+           함께 쓰게 됐고, 6시 자리에서 칩 기둥 아래끝이 명찰 위쪽을 11px 파고들었다(실측).
+           0.119(39px)로 올려 17px 를 더 벌린다 — 겹침 11px 을 지우고 6px 여백을 남긴다.
+           일반 대회에는 명찰이 없지만 같은 값을 쓴다: 칩이 조금 더 안쪽에 놓이는 것은
+           어느 판에서도 문제가 아니고, 판마다 칩 자리가 달라지면 그게 더 이상하다. */
+        by -= Math.max(0, ny) * H * 0.119;
         out.push({
           x: +(x / W * 100).toFixed(2), y: +(y / H * 100).toFixed(2),
           nx: nx, ny: ny,
@@ -243,9 +309,21 @@ export const SEATS = `    var seatXY = {};
                  일반 판에 바운티가 뜨고, 그건 "같은 베이스지만 다른 게임"이라는 약속을
                  깨는 종류의 실수다. 없으면 실수로 보일 수가 없다. */
               (pko ? '<span class="ht-bounty" hidden></span>' : '') +
-              /* KO 총자국 — 탈락하는 순간 아바타 가운데에 박힌다. 역시 PKO 전용이다. */
-              (pko ? '<span class="ht-hole-shot" hidden></span>' : '') +
-              (pko ? '<span class="ht-ko-ov" hidden>KO</span>' : '') +
+              /* 오른 만큼을 명찰 위로 띄운다. 명찰 숫자만 바뀌면 "얼마를 받았나"를
+                 이전 값과 비교해서 뺄셈해야 알 수 있다 — 그 순간에 그럴 사람은 없다.
+                 증가액을 따로, 크게, 위로 떠오르며 보여 준다. */
+              (pko ? '<span class="ht-bgain" hidden></span>' : '') +
+              /* KO 총자국 — 탈락하는 순간 세 발이 연달아 박힌다. 역시 PKO 전용이다.
+                 한 발이면 "탈락 표시"로 보이고, 세 발이 시차를 두고 박히면서 그때마다
+                 화면이 흔들려야 "총에 맞았다"가 된다.
+
+                 세 자리를 미리 흩어 둔다(s1·s2·s3). 무작위로 뽑으면 폴링마다 자리가
+                 바뀌고, 한 곳에 모으면 세 발이 한 발로 보인다.
+                 총구 섬광(.ht-muzzle)은 발사마다 한 번 번쩍인다. */
+              (pko ? '<span class="ht-hole-shot s1" hidden></span>'
+                + '<span class="ht-hole-shot s2" hidden></span>'
+                + '<span class="ht-hole-shot s3" hidden></span>'
+                + '<span class="ht-muzzle" hidden></span>' : '') +
               /* 폴드 F 배지는 없앴다. 접은 사람은 좌석이 통째로 흐려지고 아바타가
                  흑백이 되며 카드도 어두워진다 — 세 겹으로 이미 말하고 있는 것을
                  네 번째로 말하는 표시였고, 태그 오른쪽 위에 동그라미가 하나 더
@@ -329,6 +407,24 @@ export const SEATS = `    var seatXY = {};
       if (seatsEl.dataset.sig !== sig) { seatsEl.dataset.sig = sig; seatsEl.innerHTML = html; }
       if (spotsEl.dataset.sig !== vol) { spotsEl.dataset.sig = vol; spotsEl.innerHTML = vol; }
 
+      /* 이 프레임에 새로 털린 자리가 있으면 아래 루프에 들어가기 전에 총격 시각을 잡아 둔다.
+
+         이 줄이 없으면 순서에 걸린다: 아래 루프는 좌석 번호대로 도는데, 승자가 탈락자보다
+         먼저 나오면 승자의 현상금 상승을 판단하는 시점에 koBurstEndsAt 이 아직 0 이라
+         "기다릴 것 없다"가 되어 증가액이 총알보다 먼저 뜬다(실측: 총알 0ms 인데 증가액이
+         그보다 앞).
+
+         정산이 끝난 판인지(settleDone)까지 함께 봐야 한다 — 안 그러면 카드가 열리는
+         중에 미리 창을 열어 두고, 정작 총격은 나중에 시작된다. */
+      if (pko && settleDone(tb)) {
+        var fresh = seats.some(function(s){
+          return s.presence === 'OUT' && !koFired[s.seat];
+        });
+        if (fresh && koSeen) {
+          var end = Date.now() + KO_LEAD_MS + koBurstLen();
+          if (end > koBurstEndsAt) koBurstEndsAt = end;
+        }
+      }
       // 자주 바뀌는 것은 골격을 건드리지 않고 제자리에서 갱신한다
       seats.forEach(function(s){
         var nmEl = document.getElementById('htnm-' + s.seat);
@@ -362,6 +458,21 @@ export const SEATS = `    var seatXY = {};
         if (bEl) {
           var bv = s.bounty || 0;
           var prev = bountyShown[s.seat];
+          /* 결과 연출이 끝나기 전에는 값을 붙들고 있는다.
+             서버는 판이 끝나는 순간 정산을 확정하지만, 화면은 그때부터 보드를 한 장씩
+             열고 팟을 옮기는 중이다. 그 사이에 숫자를 올리면 "카드도 안 열렸는데 남의
+             바운티를 이미 가져갔다"로 보인다 — 실제로 플랍만 깔린 화면에서 뱃지가
+             먼저 올라갔다.
+
+             내려가는 쪽도 같이 붙든다: 털린 사람의 뱃지가 결과 전에 사라지면 그 판에서
+             무엇이 걸려 있었는지 읽을 수 없다.
+
+             처음 그리는 값(prev 가 없다)은 기다리지 않는다 — 판 중간에 들어온 사람에게
+             빈 자리만 보여줄 이유가 없다. 기다리는 것은 "변화"뿐이다. */
+          /* 처형(3발)이 끝날 때까지도 붙들고 있는다. 순서가 [칩 이동 → 처형 → 현상금
+             상승]이라, 처형과 상승이 같은 순간에 터지면 무엇 때문에 올랐는지가 안 읽힌다. */
+          var waiting = !settleDone(tb) || Date.now() < koBurstEndsAt;
+          if (prev != null && bv !== prev && waiting) bv = prev;
           if (bv > 0) {
             bEl.textContent = stackText(bv) + 'P';
             bEl.hidden = false;
@@ -374,6 +485,19 @@ export const SEATS = `    var seatXY = {};
               void bEl.offsetWidth;
               bEl.classList.add('up');
               if (casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
+              /* 오른 만큼을 명찰 위로 띄운다 — 명찰 숫자만 바뀌면 이전 값과 뺄셈해야
+                 얼마를 받았는지 알 수 있고, 그 순간에 그럴 사람은 없다. */
+              var gEl = seatEl.querySelector('.ht-bgain');
+              if (gEl) {
+                gEl.textContent = '+' + stackText(bv - prev) + 'P';
+                gEl.hidden = false;
+                gEl.classList.remove('rise');
+                void gEl.offsetWidth;
+                gEl.classList.add('rise');
+                /* 떠오른 숫자는 남지 않는다 — 다음 판까지 붙어 있으면 지금 걸린 금액과
+                   헷갈린다. 애니메이션(1.4초)이 끝나면 치운다. */
+                (function(el){ setTimeout(function(){ el.hidden = true; }, 1400); })(gEl);
+              }
             }
           } else {
             bEl.hidden = true;
@@ -399,20 +523,37 @@ export const SEATS = `    var seatXY = {};
 
            koFired 에 남기는 이유가 하나 더 있다: 폴링은 창을 다시 열 때도 돌아서,
            기억이 없으면 새로고침한 사람에게 남의 탈락이 방금 일어난 것처럼 터진다. */
-        var wasOut = koFired[s.seat];
-        if (pko && s.presence === 'OUT' && !wasOut) {
+        /* 결과 연출이 끝난 뒤에 터진다. 서버는 판이 끝나는 순간 탈락을 확정하지만,
+           그때 화면은 아직 보드를 열고 팟을 옮기는 중이다 — 거기서 바로 KO 를 띄우면
+           "카드도 안 열렸는데 누가 죽었는지 이미 안다"가 되고, 쇼다운을 볼 이유가 없어진다.
+           settleDone 은 이 판의 정산 연출이 끝났는지를 알려 준다(폴드로 끝난 판은 즉시 참). */
+        var koShow = pko && s.presence === 'OUT' && settleDone(tb);
+        if (koShow && !koFired[s.seat]) {
           koFired[s.seat] = 1;
           /* 처음 그리는 프레임에는 터뜨리지 않는다. 이미 탈락한 사람이 있는 판에
              뒤늦게 들어오면 그 사람들 몫이 한꺼번에 터진다. */
-          if (koSeen) koBang(seatEl);
+          if (koSeen) koBang(seatEl, s.seat);
         } else if (s.presence !== 'OUT') {
           koFired[s.seat] = 0;
         }
-        var shotEl = seatEl.querySelector('.ht-hole-shot');
-        var koEl = seatEl.querySelector('.ht-ko-ov');
-        if (shotEl) shotEl.hidden = s.presence !== 'OUT';
-        if (koEl) koEl.hidden = s.presence !== 'OUT';
-        seatEl.classList.toggle('koed', pko && s.presence === 'OUT');
+        /* 자국 세 개를 함께 다룬다.
+             · 살아 있는 자리 → 전부 감춘다.
+             · 총격이 도는 중  → 손대지 않는다. koShot 이 하나씩 드러내는 시차가 이 연출의
+                                 전부이고, 여기서 켜면 폴링이 세 발을 한꺼번에 띄워 버린다.
+             · 그 밖에        → 전부 드러낸다. 이미 털린 판에 새로고침해서 들어온 경우가
+                                 이쪽인데, 한때 "감추기만" 하도록 두었다가 그 화면에서
+                                 총자국이 아예 안 보였다(흑백 처리만 남았다). */
+        var shots = seatEl.querySelectorAll('.ht-hole-shot');
+        var bursting = koShow && koBurstSeat[s.seat]
+          && Date.now() - koBurstSeat[s.seat] < KO_LEAD_MS + koBurstLen() + 300;
+        if (!bursting) {
+          for (var si = 0; si < shots.length; si++) shots[si].hidden = !koShow;
+        }
+        if (!koShow) {
+          var mzEl = seatEl.querySelector('.ht-muzzle');
+          if (mzEl) mzEl.hidden = true;
+        }
+        seatEl.classList.toggle('koed', koShow);
         seatEl.classList.toggle('sitout', s.presence === 'SIT_OUT');
         seatEl.classList.toggle('disc', s.presence === 'DISCONNECTED');
         // 딜러 버튼·배지는 만들어 두고 감췄다 켠다 (요소를 새로 만들면 카드까지 딸려 다시 생긴다)

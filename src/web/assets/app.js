@@ -140,7 +140,8 @@
                   'act-allin':'mp3', 'act-bet':'mp3', 'act-call':'mp3',
                   'act-check':'mp3', 'act-raise':'mp3', 'act-fold':'mp3', 'fold-slide':'mp3',
                   'my-turn':'mp3',
-                  'win-pot':'mp3', 'clock-warn':'mp3', 'allin-bgm':'mp3' };
+                  'win-pot':'mp3', 'clock-warn':'mp3', 'allin-bgm':'mp3',
+                  'gunshot':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
   // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
@@ -207,6 +208,11 @@
                     짧은 효과음 기준선(-32dB)에 맞춘다 — 우승 음악(tournament-win)과 같은
                     높이다(보정 후 피크 -9.8dB). */
     'win-pot': 1.0, 'allin-bgm': 1.0, 'clock-warn': 6.4, 'mine-perfect': 0.78,
+    /* PKO 처형 총성. 실측 RMS -23.2dB · 피크 -5.3dB · 2.48초(세 발이 한 파일).
+       기준선(-32dB)에 맞추면 0.365 이고 보정 후 피크는 -14dB 다.
+       기준선보다 더 낮추지 않는다 — 이 소리는 대회에서 한 사람이 나갈 때만 나고,
+       작으면 "처형"이 아니라 배경음이 된다. */
+    'gunshot': 0.365,
     /* 팟 획득 음악. 실측 RMS -33.5dB · 4.61초.
        칩이 밀려가는 소리(chips-to-winner, 실효 -31.0dB) 위에 겹쳐 깔린다. 지속음이라
        같은 RMS로 맞추면 짧은 칩 소리보다 훨씬 크게 느껴져서 3dB 아래(-34dB)에 둔다 —
@@ -555,6 +561,25 @@
       noiseBurst(c, t, 0.18, 0.34, 'lowpass', 900, 90);
       // 3) 잔향 — 길고 낮게. 크기는 몸통의 1/4 이하여야 뭉개지지 않는다
       noiseBurst(c, t + 0.02, 0.42, 0.07, 'lowpass', 320, 60);
+    },
+    /* 처형 세 발이 든 실제 음원의 발사 시각(ms). 화면이 이 값을 읽어 총알이 박히는
+       순간을 맞춘다 — 음원과 시각 효과가 어긋나면 "소리 따로 그림 따로"가 된다.
+
+       파형에서 잰 값이다(모노 8kHz, 5ms 창 RMS, 문턱 최대치의 25%):
+       앞 무음 0.93초를 잘라 낸 뒤 30 · 305 · 1335ms. 간격이 275ms 와 1030ms 로
+       고르지 않은데, 그 불규칙함이 이 음원의 리듬이라 고르게 펴면 안 된다.
+       음원을 바꾸면 이 배열도 같이 바꿔야 한다 — 그래서 소리 옆에 둔다. */
+    gunfireShots: [30, 305, 1335],
+    /* 처형 총성. 세 발이 한 파일에 들어 있어 한 번만 재생한다 — 발마다 따로 재생하면
+       간격이 음원의 리듬이 아니라 우리가 정한 숫자가 되고, 그러면 총성이 어색해진다.
+       음원이 아직 안 받아졌으면 합성음을 같은 시각에 세 번 낸다. */
+    gunfire: function(){
+      if (playSample('gunshot', 1)) return;
+      var self = this;
+      this.gunfireShots.forEach(function(ms, i){
+        if (i === 0) self.gunshot();
+        else setTimeout(function(){ self.gunshot(); }, ms - self.gunfireShots[0]);
+      });
     },
     /* 바운티가 올랐을 때. 아주 짧은 2음 상승 — 금색 반짝임과 같은 박자다.
        총성과 반대 방향(올라가는 음)이라 "받았다"로 읽힌다. */

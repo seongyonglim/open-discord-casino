@@ -90,6 +90,9 @@ const SFX_FILES = new Set([
   /* 올인 — 판을 통째로 거는 순간에만 깔린다(콜이 우연히 올인이 된 경우는 제외).
      act-allin 음성이 "올인"이라고 말하고, 이건 그 순간의 분위기를 담당한다. */
   'allin-bgm.mp3',
+  /* PKO 처형 — 세 발이 한 파일에 들어 있다(30ms · 305ms · 1335ms).
+     발마다 따로 재생하지 않는 이유는 그 간격이 음원의 리듬이기 때문이다. */
+  'gunshot.mp3',
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',

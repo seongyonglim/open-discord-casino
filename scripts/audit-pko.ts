@@ -412,17 +412,26 @@ async function main(): Promise<void> {
     const seatsSrc = fsx.readFileSync('src/web/games/holdem-client/seats.ts', 'utf8');
     const stateSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
 
-    // (1) 좌석 골격: 세 요소가 모두 pko 조건 뒤에 있어야 한다
-    for (const cls of ['ht-bounty', 'ht-hole-shot', 'ht-ko-ov']) {
-      const line = seatsSrc.split(/\r?\n/).find(l => l.includes(`"${cls}"`) && l.includes('span'));
-      ck(`${cls} 는 pko 일 때만 만들어진다`, line != null && /\(pko \?/.test(line),
-        line?.trim().slice(0, 70) ?? '(줄을 못 찾았다)');
+    /* (1) 좌석 골격: 바운티 관련 요소가 전부 pko 조건 뒤에 있어야 한다.
+       클래스 이름으로 줄을 찾는다 — 자국은 'ht-hole-shot s1' 처럼 뒤에 번호가 붙으므로
+       정확히 일치로 찾으면 못 찾는다(한 번 그렇게 헛돌았다). */
+    for (const cls of ['ht-bounty', 'ht-bgain', 'ht-hole-shot', 'ht-muzzle']) {
+      /* 자국·섬광은 한 삼항식이 여러 줄에 걸쳐 있어 그 줄만 보면 `(pko ?` 가 안 보인다.
+         조건이 시작된 줄부터 이어 붙여 본다. */
+      const lines = seatsSrc.split(/\r?\n/);
+      const at = lines.findIndex(l => l.includes(`class="${cls}`) && l.includes('span'));
+      const block = at < 0 ? '' : lines.slice(Math.max(0, at - 3), at + 1).join(' ');
+      ck(`${cls} 는 pko 일 때만 만들어진다`, at >= 0 && /\(pko \?/.test(block),
+        at < 0 ? '(줄을 못 찾았다)' : lines[at].trim().slice(0, 70));
     }
     // (2) 골격 서명에 pko 가 들어가야 한다 — 안 들어가면 모드가 바뀌어도 DOM 이 재사용된다
     ck('좌석 골격 서명이 모드를 포함한다', /sigParts\.push\([^)]*pko/.test(seatsSrc));
-    // (3) KO 연출은 pko 조건 뒤에서만 터진다
-    ck('KO 연출이 pko 조건 뒤에 있다', /if \(pko && s\.presence === 'OUT'/.test(seatsSrc));
-    ck('koed 클래스도 pko 조건이 붙는다', /toggle\('koed', pko &&/.test(seatsSrc));
+    /* (3) KO 연출은 pko 조건 뒤에서만 터진다. 조건은 koShow 한 곳에 모여 있다 —
+       예전에는 조건을 쓰는 자리마다 pko 를 다시 적었는데, 그러면 한 곳을 고칠 때
+       다른 곳이 남는다(정산 대기를 넣으면서 실제로 그 문제가 생겼다). */
+    ck('KO 조건에 pko 가 들어 있다', /var koShow = pko &&/.test(seatsSrc));
+    ck('KO 조건이 한 곳에만 있다',
+      (seatsSrc.match(/s\.presence === 'OUT' && settleDone/g) ?? []).length === 1);
 
     // (4) payload: 일반 판에는 칸 자체가 없어야 한다
     ck('bountyPool 은 PKO 에서만 실린다', /bountyPool: isPko\(t\) \?/.test(stateSrc));
@@ -436,9 +445,46 @@ async function main(): Promise<void> {
     ck('바운티 상향 소리가 있다', /bountyUp: function\(\)\{/.test(appSrc));
     const cssSrc = fsx.readFileSync('src/web/assets/css/09-holdem.css', 'utf8');
     for (const need of ['.ht-bounty', 'htBountyUp', '.ht-hole-shot', 'htShot',
-      '.ht-ko-ov', '.ht-seat.koed', 'htKoShake']) {
+      '.ht-seat.koed', 'htKoShake']) {
       ck(`CSS 에 ${need} 가 있다`, cssSrc.includes(need));
     }
+    /* (5-a) 금빛 명찰 — 아바타 상단 테두리에 물려 앉는다 */
+    {
+      /* 여러 규칙에 나뉘어 있으므로(transition 을 따로 둔다) 전부 이어 본다 */
+      const rule = (cssSrc.match(/\.ht-bounty\{[^}]*\}/g) ?? []).join('');
+      ck('명찰이 아바타 상단에 물린다 (top:-10px + X 중앙 정렬)',
+        /top:-10px/.test(rule) && /transform:translateX\(-50%\)/.test(rule), rule.slice(0, 90));
+      ck('금속 골드 그라데이션 (가운데 단차가 하이라이트 선을 만든다)',
+        /linear-gradient\(180deg,#f0e2c8 0%,#d4b583 45%,#b8955a 50%,#ead7b7 100%\)/i.test(rule));
+      ck('짙은 금테 + 안쪽 밝은 선 (두 겹이 두께감을 만든다)',
+        /border:1px solid #7d6133/i.test(rule) && /inset 0 0 0 1px #fff1d0/i.test(rule));
+      ck('각진 모서리 (위만 2px, 아래는 직각)', /border-radius:2px 2px 0 0/.test(rule));
+      ck('펠트에서 판을 떼어 놓는 그림자', /0 2px 4px rgba\(0,0,0,\.55\)/.test(rule));
+      ck('각인 느낌의 굵은 좁은 글자',
+        /font-family:Impact/.test(rule) && /font-size:12px/.test(rule)
+        && /font-weight:900/.test(rule) && /letter-spacing:-\.5px/.test(rule)
+        && /color:#1f1406/i.test(rule));
+      ck('글자 하이라이트가 있다', /text-shadow:0 1px 0 rgba\(255,255,255,\.6\)/.test(rule));
+      ck('얇고 다부진 높이 (18~20px)', /height:19px/.test(rule));
+      /* 단위는 붙여 쓴다 — 숫자만 있으면 칩인지 포인트인지 알 수 없다 */
+      ck('금액에 P 단위를 붙인다', /stackText\(bv\) \+ 'P'/.test(seatsSrc));
+
+      // 상승 펄스: 1.2배 · 0.5초 · 황금 글로우
+      const kf = /@keyframes htBountyUp\{([\s\S]*?)\n  \}/.exec(cssSrc)?.[1] ?? '';
+      ck('펄스가 0.5초다', /\.ht-bounty\.up\{animation:htBountyUp \.5s/.test(cssSrc));
+      ck('펄스가 1.2배까지 커진다', /scale\(1\.2\)/.test(kf));
+      ck('황금 글로우가 있다', /0 0 16px rgba\(255,215,80,\.9\)/.test(kf));
+      /* transform 은 통째로 대체된다. keyframes 의 모든 프레임에 translate 를 같이
+         적지 않으면 펄스가 도는 동안 명찰이 오른쪽 아래로 튄다 — 눈에 바로 띄는 버그다. */
+      const frames = kf.match(/\d+%\{[^}]*/g) ?? [];
+      const withTransform = frames.filter(f => /transform:/.test(f));
+      ck('펄스 프레임을 찾았다', frames.length >= 3, String(frames.length));
+      ck('모든 프레임이 translate 를 함께 적는다 (명찰이 튀지 않게)',
+        withTransform.length === frames.length
+        && withTransform.every(f => /translateX\(-50%\)/.test(f)),
+        `${withTransform.length}/${frames.length}`);
+    }
+
     /* 흔들림을 펠트에 걸어야 한다. #htTable 에 걸면 그 안의 .chip-fly-layer 가
        position:fixed 라 조상 transform 에 끌려가 날아가는 칩이 통째로 어긋난다 —
        KO 와 팟 정산은 같은 순간이라 반드시 겹친다. */
@@ -450,6 +496,82 @@ async function main(): Promise<void> {
     ck('prefers-reduced-motion 에서 애니메이션을 끈다',
       /prefers-reduced-motion[\s\S]{0,300}htKoShake|prefers-reduced-motion[\s\S]{0,300}koshake/
         .test(cssSrc));
+
+    /* (5-b) hidden 으로 감추는 요소에 display 를 주면 감춰지지 않는다.
+       UA 스타일시트의 [hidden]{display:none} 보다 클래스 규칙의 우선순위가 높기 때문이다.
+       한때 KO 오버레이가 display:flex 라서, 탈락자가 하나도 없는 판에서 전 좌석에 KO 가
+       떠 있었다. 속성값만 읽는 검사는 이것을 못 잡는다(hidden = true 를 확인하고 통과했다).
+       그래서 "hidden 으로 감추는 클래스" 전부를 훑어 display 를 주면서 방어가 없는 것을
+       찾는다 — 그 오버레이는 없앴지만 함정 자체는 남아 있어 다음 요소가 또 걸릴 수 있다. */
+    {
+      const hid = new Set<string>();
+      for (const m of seatsSrc.matchAll(/class="([a-z0-9 -]+)"[^>]*hidden/g)) {
+        for (const cls of m[1].split(/\s+/)) if (cls) hid.add(cls);
+      }
+      ck('hidden 으로 감추는 클래스를 찾았다', hid.size > 0, [...hid].join(','));
+      const bad: string[] = [];
+      for (const cls of hid) {
+        const rule = new RegExp('\\.' + cls.replace(/-/g, '\\-') + '\\{[^}]*display\\s*:');
+        if (rule.test(cssSrc) && !cssSrc.includes(`.${cls}[hidden]`)) bad.push(cls);
+      }
+      ck('display 를 주면서 [hidden] 방어가 없는 요소가 없다', bad.length === 0, bad.join(','));
+    }
+
+    /* (5-c) 결과 연출이 끝나기 전에 KO·바운티가 먼저 나오면 안 된다.
+       서버는 판이 끝나는 순간 정산을 확정하지만 화면은 그때부터 보드를 열고 팟을 옮긴다.
+       그 사이에 KO 를 띄우면 쇼다운을 볼 이유가 없어지고, 뱃지를 올리면 "카드도 안 열렸는데
+       남의 바운티를 이미 가져갔다"로 보인다 — 실제로 플랍만 깔린 화면에서 그랬다. */
+    ck('KO 연출이 정산 완료를 기다린다',
+      /var koShow = pko && s\.presence === 'OUT' && settleDone\(tb\)/.test(seatsSrc));
+    ck('총자국과 흑백 처리가 같은 신호를 쓴다',
+      /shots\[si\]\.hidden = !koShow/.test(seatsSrc) && /toggle\('koed', koShow\)/.test(seatsSrc));
+    ck('바운티 뱃지 변화도 정산 완료를 기다린다',
+      /if \(prev != null && bv !== prev && waiting\) bv = prev/.test(seatsSrc));
+    /* KO 표시는 총자국 하나다. 빨간 "KO" 글자를 얹었다가 없앴다 — 총자국이 이미 다 말하고
+       있고 글자와 검은 원이 그 그림을 덮기만 했다. 되살아나지 않게 못 박는다. */
+    ck('KO 글자 오버레이가 없다',
+      !seatsSrc.includes('ht-ko-ov') && !cssSrc.includes('ht-ko-ov'));
+
+    /* (5-d) 처형은 세 발이다. 음원(gunshot.mp3)에 세 발이 들어 있고, 총알이 박히는
+       시각은 그 음원의 실제 발사 시점을 읽어 쓴다 — 간격을 화면이 따로 정하면
+       소리와 그림이 어긋난다. 값은 소리 옆(app.js)에 한 벌만 둔다. */
+    ck('음원의 발사 시각이 app.js 에 있다', /gunfireShots: \[30, 305, 1335\]/.test(appSrc));
+    ck('세 발이 한 번의 재생으로 나간다 (발마다 재생하지 않는다)',
+      /gunfire: function\(\)\{\s*\r?\n\s*if \(playSample\('gunshot', 1\)\) return;/.test(appSrc));
+    ck('음원을 못 받았을 때 합성음으로 같은 리듬을 낸다',
+      /gunfireShots\.forEach/.test(appSrc) && /self\.gunshot\(\)/.test(appSrc));
+    ck('화면이 음원의 발사 시각을 읽어 쓴다',
+      /casinoSfx\.gunfireShots/.test(seatsSrc));
+    ck('화면에 발사 간격을 따로 박아 두지 않았다',
+      !/KO_SHOT_GAP_MS\s*=\s*\d/.test(seatsSrc));
+    ck('총자국이 셋이다', /s1/.test(seatsSrc) && /s2/.test(seatsSrc) && /s3/.test(seatsSrc)
+      && /\.ht-hole-shot\.s3\{/.test(cssSrc));
+    ck('자국마다 흰 균열이 있다 (검은 구멍만으로는 얼룩으로 보인다)',
+      /\.ht-hole-shot\{[\s\S]*?conic-gradient/.test(cssSrc));
+    ck('총구 섬광이 있고 남지 않는다',
+      /\.ht-muzzle\{/.test(cssSrc) && /mz\.hidden = true/.test(seatsSrc));
+
+    /* (5-e) 순서: [칩 이동 → 처형 3발 → 현상금 상승]. 상승이 총격보다 먼저 뜨면
+       무엇 때문에 올랐는지가 안 읽힌다. 좌석 루프는 번호대로 도는데 승자가 탈락자보다
+       먼저 나올 수 있어서, 루프에 들어가기 전에 총격 시각을 잡아 두어야 한다 —
+       그러지 않으면 승자를 판단하는 시점에 값이 아직 0 이라 증가액이 먼저 떴다(실측). */
+    ck('현상금 상승이 총격이 끝날 때까지 기다린다',
+      /var waiting = !settleDone\(tb\) \|\| Date\.now\(\) < koBurstEndsAt/.test(seatsSrc));
+    ck('총격 시각을 좌석 루프 전에 잡는다 (좌석 순서에 걸리지 않게)',
+      /if \(pko && settleDone\(tb\)\) \{[\s\S]{0,400}?koBurstEndsAt = end/.test(seatsSrc));
+    ck('오른 만큼을 따로 띄운다', /\.ht-bgain\{/.test(cssSrc)
+      && /htBGain/.test(cssSrc) && /'\+' \+ stackText\(bv - prev\)/.test(seatsSrc));
+
+    /* (5-f) 명찰 자리는 카드 상태로 갈린다. 자리(hero)로 가르면 카드가 없는 동안에도
+       떠 있어 "프레임에 물린 명찰"이라는 레퍼런스의 핵심을 잃는다. */
+    ck('카드가 펼쳐질 때만 명찰이 올라간다',
+      /\.ht-hole\.up \+ \.ht-avbox \.ht-bounty\{top:/.test(cssSrc));
+    ck('자리로 가르지 않는다', !/\.ht-seat\.hero \.ht-bounty\{top:/.test(cssSrc));
+    // transition 은 본 규칙 안에 있다(같은 클래스를 두 번 정의하면 CSS 감사가 잡는다)
+    ck('명찰이 부드럽게 움직인다', /\.ht-bounty\{[^}]*transition:top/.test(cssSrc));
+    /* 베팅 칩이 명찰 자리를 파고들지 않아야 한다 — 실측 11px 겹쳤다 */
+    ck('아래쪽 자리 베팅 칩을 명찰만큼 더 올렸다',
+      /H \* 0\.119/.test(seatsSrc) && !/H \* 0\.067/.test(seatsSrc));
 
     // (6) 어드민에서 PKO 를 열 수 있고, 프리롤에는 걸 수 없다
     const admSrc = fsx.readFileSync('src/web/admin.ts', 'utf8');
