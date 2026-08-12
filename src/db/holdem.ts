@@ -671,7 +671,7 @@ export function advanceHoldem(userId?: string): HoldemStatus {
       run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL`, now, t.id);
       /* 참가비를 걷었으면 돌려준다. 판이 열리지 않았고, 인원 미달은 참가자 잘못이 아니다.
          돌려주지 않으면 3명이 안 모여 취소된 판에 돈만 잃는 사람이 생긴다. */
-      refundEntries(t.id, 'holdem:cancel:');
+      refundEntries(t.id, 'holdem:cancel:', { netBounty: true });
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
@@ -1512,7 +1512,16 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
      구조상 이 값은 0 이다. 그래도 계산해 내보낸다: 등록 취소·중단처럼 계산 밖의 일이
      끼면 0 이 아닐 수 있고, 그때 DB 에 남기는 것보다 우승자에게 가는 편이 맞다. */
   const left = Math.max(0, Math.floor(t.bounty_pool) - cash - heads);
-  const total = mine + left;
+  /* 탈락자 머리에 갇힌 값도 우승자에게 보낸다.
+     settleBounty 는 "잡은 사람"이 한 명도 없으면 아무것도 하지 않고 돌아간다(그 판
+     승자가 자기도 털려서 탈락자보다 칩이 많지 않은 경우). 그때 탈락자 머리 값이 그
+     행에 남는데, 위의 left 는 heads 에 그 값까지 세므로 0 이 되어 아무도 받지 못한다.
+     즉 그대로 두면 유저에게 덜 지급된다(실측: 3인 판에서 20,000P 가 DB 에만 남았다).
+     실제 KO 500 회에서는 한 번도 나오지 않았지만, 안 나온 것과 없는 것은 다르다.
+     결과적으로 total = 펀드 − 이미 나간 현금 이 되어 펀드가 통째로 빠져나간다. */
+  const stuck = cur.filter(r => r.user_id !== champ.user_id)
+    .reduce((n, r) => n + Math.max(0, r.bounty), 0);
+  const total = mine + left + stuck;
   if (total <= 0) return;
 
   /* 우승자 봉투도 여기서 열린다 — 미스터리에서는 마지막 봉투를 우승자가 여는 셈이고,
@@ -1521,6 +1530,11 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
         WHERE tournament_id = ? AND user_id = ? AND bounty = ?`,
     total, t.id, champ.user_id, mine);
   if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
+  /* 갇힌 값을 걷어 온 자리도 비운다 — 비우지 않으면 다음 호출이 같은 값을 또 센다. */
+  if (stuck > 0) {
+    run(`UPDATE holdem_entries SET bounty = 0, bounty_revealed = 1
+          WHERE tournament_id = ? AND user_id != ? AND bounty > 0`, t.id, champ.user_id);
+  }
   adjustBalance(champ.user_id, total, 'game:holdem:bounty:final:' + t.id);
 }
 
@@ -1750,7 +1764,7 @@ export function cancelRunningHoldemOnBoot(): number {
       run(`UPDATE holdem_tournaments SET cancelled_at = ? WHERE id = ?`, nowSec(), t.id);
       /* 상금은 대회가 끝날 때만 나가므로 여기서 되돌릴 상금은 없다. 하지만 참가비는
          등록할 때 이미 걷었다 — 판이 중간에 없어졌으니 돌려준다. */
-      refundEntries(t.id, 'holdem:cancel:');
+      refundEntries(t.id, 'holdem:cancel:', { netBounty: true });
     }
     return rows.length;
   });
@@ -1766,18 +1780,48 @@ export function cancelRunningHoldemOnBoot(): number {
  *
  * 반드시 adjustBalance 를 거친다(원장을 함께 쓴다). 잔액을 직접 UPDATE 하면
  * 감사가 매번 검사하는 그 불변식이 깨진다.
+ *
+ * 바운티 판은 전액을 돌려주면 안 된다. 상금은 대회가 끝날 때만 나가지만 **바운티 현금은
+ * KO 가 날 때마다 즉시 나간다** — 그러고 나서 참가비를 전액 돌려주면 그 현금이 회수되지
+ * 않아 걷지 않은 포인트가 발행된다(4인 10,000P 판에서 실측 2,500P). 재시작마다 도는
+ * cancelRunningHoldemOnBoot 가 이 함수를 쓰므로 자동으로 새는 경로였다.
+ *
+ * 그래서 돌려주는 값을 이렇게 둔다:
+ *
+ *     환불 = 참가비 − 펀드에 넣은 몫 + 아직 내 머리에 남은 값
+ *     Σ 환불 = 걷은 참가비 − 펀드 + (펀드 − 나간 현금) = 걷은 참가비 − 나간 현금
+ *
+ * 대회 전체 수지가 정확히 0 이 된다. 이미 받은 KO 현금을 도로 빼앗지 않으므로(음수
+ * 지급이 없다) 잔액이 마이너스로 내려갈 일도 없다. 시작 전 취소라면 머리 값이 아직
+ * 몫 그대로여서 예전과 똑같은 전액 환불이 된다 — 흔한 쪽 동작은 바뀌지 않는다.
+ *
+ * 이 계산은 **취소**용이다(netBounty). 삭제(revokePrizesAndPurge)는 나간 현금을 직접
+ * 걷어 가므로 참가비를 전액 돌려줘야 하고, 그쪽에서는 이 옵션을 끈다 — 양쪽을 다 하면
+ * 펀드만큼 두 번 걷혀서 유저가 손해를 본다(3인 10,000P 50% 판에서 실측 15,000P).
  */
-export function refundEntries(tournamentId: number, reasonPrefix: string): number {
-  const rows = all<{ user_id: string; paid_in: number }>(
-    `SELECT user_id, SUM(paid_in) AS paid_in FROM holdem_entries
-      WHERE tournament_id = ? AND paid_in > 0 GROUP BY user_id`, tournamentId);
+export function refundEntries(tournamentId: number, reasonPrefix: string,
+  opts: { netBounty?: boolean } = {}): number {
+  const t = opts.netBounty
+    ? one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, tournamentId) : null;
+  const share = t && isPko(t) ? T.bountyShare(bountyUnitOf(t), bountyPctOf(t)) : 0;
+  const rows = all<{ user_id: string; paid_in: number; bounty: number; n: number }>(
+    `SELECT user_id, SUM(paid_in) AS paid_in, SUM(bounty) AS bounty, COUNT(*) AS n
+       FROM holdem_entries WHERE tournament_id = ? AND paid_in > 0 GROUP BY user_id`, tournamentId);
   let total = 0;
   for (const r of rows) {
-    adjustBalance(r.user_id, r.paid_in, reasonPrefix + tournamentId);
-    total += r.paid_in;
+    /* 몫은 참가비를 넘을 수 없으므로(몫 = floor(참가비 × 비율/100)) 음수가 되지 않는다.
+       그래도 clamp 를 둔다 — 여기서 음수가 나가면 남의 지갑을 깎는 일이다. */
+    const amt = opts.netBounty
+      ? Math.max(0, r.paid_in - share * r.n + Math.max(0, r.bounty))
+      : r.paid_in;
+    if (amt > 0) adjustBalance(r.user_id, amt, reasonPrefix + tournamentId);
+    total += amt;
   }
   if (rows.length) {
-    run(`UPDATE holdem_entries SET paid_in = 0 WHERE tournament_id = ?`, tournamentId);
+    /* 머리 값도 함께 비운다 — 돌려준 값을 남겨 두면 두 번 부르는 경로에서 또 세어진다.
+       미스터리 봉투는 이 시점에 열린 것으로 둔다(돌려줬으니 감출 것이 없다). */
+    run(`UPDATE holdem_entries SET paid_in = 0, bounty = 0, bounty_revealed = 1
+          WHERE tournament_id = ?`, tournamentId);
   }
   return total;
 }

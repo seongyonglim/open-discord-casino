@@ -875,6 +875,269 @@ async function main(): Promise<void> {
       /b\?\.mode === 'MYSTERY_BOUNTY' \? 'MYSTERY_BOUNTY' : 'CLASSIC'/.test(admSrc));
   }
 
+  /* ── 9. 중단 ────────────────────────────────────────────────────
+     "상금은 대회가 끝날 때만 나간다"는 전제로 짜인 자리들이 있다. 바운티는 그 전제를
+     깬다 — KO 현금은 판 도중에 나간다. 그래서 중단·마감 양쪽에서 총액을 다시 본다. */
+  section('[9] 중단 — 진행 중인 판을 취소해도 포인트가 늘거나 줄지 않는다');
+  {
+    for (const mode of ['PKO_BOUNTY', 'MYSTERY_BOUNTY'] as const) {
+      wipe();
+      const BUY9 = 10_000;
+      const who9 = ['q1', 'q2', 'q3', 'q4'];
+      for (const p of who9) mkUser(p, 500_000);
+      const before = new Map(who9.map(p =>
+        [p, (db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number }).balance]));
+      const mk = AD.createTournament({
+        title: '중단 ' + mode, regOpenAt: now() - 60, startAt: now() + 3_600,
+        buyIn: BUY9, mode, bountyPct: 50, startingStack: 5_000, levelMin: 2,
+        lateRegMin: 1, graceMin: 30,
+      });
+      if (!mk.ok) { ck(`${mode}: 대회가 열린다`, false, mk.error); continue; }
+      for (const p of who9) HD.registerHoldem(p, p);
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+      HD.advanceHoldem();
+      const tb = HD.getTable(mk.id)!;
+
+      /* KO 를 딱 한 번 만들고 멈춘다. 한 자리 칩을 줄여 그 자리와 한 명만 붙인다 —
+         전원 올인으로 두면 첫 판에 셋이 동시에 터져 대회가 끝나 버리고, 그러면
+         "진행 중인 판 취소"를 볼 수 없다. */
+      const h0 = HD.getCurrentHand(tb.id)!;
+      const hs0 = HD.getHandSeats(h0.id);
+      db.prepare(`UPDATE holdem_hand_seats SET stack = 200 WHERE hand_id = ? AND seat = ?`)
+        .run(h0.id, hs0[0]!.seat);
+      const fighters = new Set([hs0[0]!.seat, hs0[1]!.seat].map(s =>
+        HD.getSeats(tb.id).find(x => x.seat === s)!.user_id));
+      for (let step = 0; step < 2_000; step++) {
+        const kos = (db.prepare(`SELECT COALESCE(SUM(ko_count), 0) AS s FROM holdem_entries
+                                  WHERE tournament_id = ?`).get(mk.id) as { s: number }).s;
+        const fin = (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
+          .get(mk.id) as { finished_at: number | null }).finished_at;
+        if (kos > 0 || fin != null) break;
+        const h = HD.getCurrentHand(tb.id);
+        if (!h || h.ended_at != null || h.to_act_seat == null) {
+          db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(now() - 1, tb.id);
+          HD.advanceHoldem();
+          continue;
+        }
+        const s = HD.getSeats(tb.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+        if (!s) break;
+        db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+          .run(now() + HD.ACTION_SEC, h.id);
+        db.prepare(`UPDATE holdem_seats SET last_seen_at = ?, presence = 'ACTIVE'
+                     WHERE table_id = ? AND presence != 'OUT'`).run(now(), tb.id);
+        if (fighters.has(s.user_id)) {
+          if (!HD.holdemAction(s.user_id, 'allin', 0).ok
+            && !HD.holdemAction(s.user_id, 'call', 0).ok) HD.holdemAction(s.user_id, 'check', 0);
+        } else if (!HD.holdemAction(s.user_id, 'fold', 0).ok) {
+          HD.holdemAction(s.user_id, 'check', 0);
+        }
+      }
+      const cashOut = (db.prepare(
+        `SELECT COALESCE(SUM(delta), 0) AS s FROM points_ledger WHERE reason = ?`)
+        .get('game:holdem:bounty:' + mk.id) as { s: number }).s;
+      ck(`${mode}: 검사 전제 — 판 도중에 이미 현금이 나갔다`, cashOut > 0, String(cashOut));
+      ck(`${mode}: 검사 전제 — 아직 끝나지 않았다`,
+        (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
+          .get(mk.id) as { finished_at: number | null }).finished_at == null);
+
+      // 재시작 취소 — 배포마다 실제로 도는 그 함수다
+      HD.cancelRunningHoldemOnBoot();
+      const delta = who9.reduce((n, p) => n +
+        ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
+          .balance - (before.get(p) ?? 0)), 0);
+      /* 이것이 이 절의 핵심이다. 예전에는 참가비를 전액 돌려주면서 이미 나간 KO 현금을
+         회수하지 않아 그만큼 발행됐다(4인 10,000P 판에서 2,500P). */
+      ck(`${mode}: 참가자 잔액 총합이 그대로다 (걷지 않은 발행 0)`, delta === 0, String(delta));
+      ck(`${mode}: 머리에 남은 값이 없다`,
+        (db.prepare(`SELECT COALESCE(SUM(bounty), 0) AS s FROM holdem_entries
+                      WHERE tournament_id = ?`).get(mk.id) as { s: number }).s === 0);
+      // 두 번 불러도 같아야 한다 — 취소와 삭제가 잇달아 지나가는 경로가 있다
+      HD.refundEntries(mk.id, 'holdem:cancel:');
+      const delta2 = who9.reduce((n, p) => n +
+        ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
+          .balance - (before.get(p) ?? 0)), 0);
+      ck(`${mode}: 환불을 두 번 불러도 한 번만 나간다`, delta2 === 0, String(delta2));
+    }
+
+    /* 시작 전 취소는 예전 그대로 전액이어야 한다 — 흔한 쪽 동작을 바꾸면 안 된다. */
+    wipe();
+    const who0 = ['r1', 'r2', 'r3'];
+    for (const p of who0) mkUser(p, 100_000);
+    const mk0 = AD.createTournament({
+      title: '시작 전 취소', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 10_000, mode: 'PKO_BOUNTY', bountyPct: 50,
+    });
+    if (mk0.ok) {
+      for (const p of who0) HD.registerHoldem(p, p);
+      const back = HD.refundEntries(mk0.id, 'holdem:cancel:');
+      ck('시작 전 취소는 참가비 전액을 돌려준다', back === 30_000, String(back));
+      ck('시작 전 취소 뒤 잔액이 원래대로다',
+        who0.every(p => (db.prepare(`SELECT balance FROM users WHERE id = ?`)
+          .get(p) as { balance: number }).balance === 100_000));
+    } else ck('시작 전 취소 대회가 열린다', false, mk0.error);
+
+    /* 마감에서 "갇힌 머리 값"이 회수되는지. settleBounty 를 거치지 않은 탈락자를
+       만들어 두고(잡은 사람이 없는 경우와 같은 상태) 마감을 태운다. */
+    wipe();
+    const who1 = ['s9', 's8', 's7'];
+    for (const p of who1) mkUser(p, 100_000);
+    const mk1 = AD.createTournament({
+      title: '갇힘', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 0, prizeMultiplier: 10_000, mode: 'PKO_BOUNTY', bountyPct: 100,
+      startingStack: 5_000, levelMin: 2, lateRegMin: 1, graceMin: 30,
+    });
+    if (mk1.ok) {
+      for (const p of who1) HD.registerHoldem(p, p);
+      const pool1 = (db.prepare(`SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`)
+        .get(mk1.id) as { bounty_pool: number }).bounty_pool;
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+      HD.advanceHoldem();
+      const tb1 = HD.getTable(mk1.id)!;
+      const ss = HD.getSeats(tb1.id);
+      // 두 명을 머리 값 그대로 남긴 채 OUT 으로 돌린다 — settleBounty 를 타지 않는다
+      for (let i = 1; i < ss.length; i++) {
+        db.prepare(`UPDATE holdem_seats SET presence = 'OUT', stack = 0
+                     WHERE table_id = ? AND seat = ?`).run(tb1.id, ss[i]!.seat);
+        db.prepare(`UPDATE holdem_entries SET elim_seq = ?, eliminated_at = ?
+                     WHERE tournament_id = ? AND user_id = ?`, ).run(i, now(), mk1.id, ss[i]!.user_id);
+      }
+      db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(now() - 1, tb1.id);
+      HD.advanceHoldem();
+      const out1 = (db.prepare(
+        `SELECT COALESCE(SUM(delta), 0) AS s FROM points_ledger WHERE reason LIKE ?`)
+        .get('game:holdem:bounty%' + mk1.id) as { s: number }).s;
+      const heads1 = (db.prepare(`SELECT COALESCE(SUM(bounty), 0) AS s FROM holdem_entries
+                                   WHERE tournament_id = ?`).get(mk1.id) as { s: number }).s;
+      ck('잡은 사람이 없어 갇힌 머리 값도 우승자에게 나간다',
+        out1 === pool1, `${out1} vs ${pool1}`);
+      ck('갇혔던 자리도 비워진다', heads1 === 0, String(heads1));
+    } else ck('갇힘 검사 대회가 열린다', false, mk1.error);
+  }
+
+  /* ── 10. 삭제 ───────────────────────────────────────────────────
+     "없던 일로 만들기"(revokePrizesAndPurge)는 상금만 걷어 가도록 짜여 있었다. 바운티
+     현금은 KO 마다 이미 나갔으므로 그것까지 걷지 않으면 펀드 전액이 발행된 채로 끝난다. */
+  section('[10] 삭제 — 대회를 없던 일로 만들면 수지가 정확히 0 이 된다');
+  {
+    /** 대회를 끝까지 돌린다 — [5] 와 같은 방식(카드에 손대지 않는다) */
+    function drive(tid: number, tableId: number): void {
+      for (let step = 0; step < 4_000; step++) {
+        const fin = (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
+          .get(tid) as { finished_at: number | null }).finished_at;
+        if (fin != null) return;
+        const h = HD.getCurrentHand(tableId);
+        if (!h || h.ended_at != null || h.to_act_seat == null) {
+          db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(now() - 1, tableId);
+          HD.advanceHoldem();
+          continue;
+        }
+        const s = HD.getSeats(tableId).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+        if (!s) return;
+        db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+          .run(now() + HD.ACTION_SEC, h.id);
+        if (!HD.holdemAction(s.user_id, 'allin', 0).ok
+          && !HD.holdemAction(s.user_id, 'call', 0).ok) HD.holdemAction(s.user_id, 'check', 0);
+      }
+    }
+
+    for (const mode of ['PKO_BOUNTY', 'MYSTERY_BOUNTY', 'CLASSIC'] as const) {
+      wipe();
+      const who = ['g1', 'g2', 'g3'];
+      for (const p of who) mkUser(p, 500_000);
+      const before = new Map(who.map(p =>
+        [p, (db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number }).balance]));
+      const mk = AD.createTournament({
+        title: '삭제 ' + mode, regOpenAt: now() - 60, startAt: now() + 3_600,
+        buyIn: 10_000, mode, bountyPct: 50,
+        startingStack: 5_000, levelMin: 2, lateRegMin: 1, graceMin: 30,
+      });
+      if (!mk.ok) { ck(`${mode}: 대회가 열린다`, false, mk.error); continue; }
+      for (const p of who) HD.registerHoldem(p, p);
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+      HD.advanceHoldem();
+      drive(mk.id, HD.getTable(mk.id)!.id);
+      ck(`${mode}: 검사 전제 — 대회가 끝났다`,
+        (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
+          .get(mk.id) as { finished_at: number | null }).finished_at != null);
+      /* 끝난 직후에는 걷은 만큼 정확히 나가 있어야 한다 — 여기가 어긋나면 아래 검사는
+         무의미하다(삭제가 아니라 정산이 틀린 것이다). */
+      const midDelta = who.reduce((n, p) => n +
+        ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
+          .balance - (before.get(p) ?? 0)), 0);
+      ck(`${mode}: 마감 직후 잔액 총합이 그대로다`, midDelta === 0, String(midDelta));
+
+      const rv = AD.revokePrizesAndPurge(mk.id);
+      ck(`${mode}: 삭제가 된다`, rv.ok, rv.ok ? '' : rv.error);
+      const after = who.reduce((n, p) => n +
+        ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
+          .balance - (before.get(p) ?? 0)), 0);
+      /* 이것이 이 절의 핵심이다. 예전에는 바운티 현금을 걷지 않아 펀드 전액이 남았다. */
+      ck(`${mode}: 삭제 뒤에도 잔액 총합이 그대로다`, after === 0, String(after));
+    }
+
+    /* 취소된 판을 삭제하는 경로. 취소가 이미 정산을 끝냈으므로 삭제는 돈을 건드리면
+       안 된다 — 여기서 또 걷으면 유저가 두 번 손해를 본다. */
+    wipe();
+    const who2 = ['g7', 'g8', 'g9', 'g0'];
+    for (const p of who2) mkUser(p, 500_000);
+    const before2 = new Map(who2.map(p =>
+      [p, (db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number }).balance]));
+    const mk2 = AD.createTournament({
+      title: '취소 후 삭제', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 10_000, mode: 'PKO_BOUNTY', bountyPct: 50,
+      startingStack: 5_000, levelMin: 2, lateRegMin: 1, graceMin: 30,
+    });
+    if (mk2.ok) {
+      for (const p of who2) HD.registerHoldem(p, p);
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+      HD.advanceHoldem();
+      const tb2 = HD.getTable(mk2.id)!;
+      // KO 를 한 번 만들고 취소한다 (한 자리만 짧게 만들어 둘이 붙인다)
+      const h2 = HD.getCurrentHand(tb2.id)!;
+      const hs2 = HD.getHandSeats(h2.id);
+      db.prepare(`UPDATE holdem_hand_seats SET stack = 200 WHERE hand_id = ? AND seat = ?`)
+        .run(h2.id, hs2[0]!.seat);
+      const fight = new Set([hs2[0]!.seat, hs2[1]!.seat].map(s =>
+        HD.getSeats(tb2.id).find(x => x.seat === s)!.user_id));
+      for (let step = 0; step < 2_000; step++) {
+        const kos = (db.prepare(`SELECT COALESCE(SUM(ko_count), 0) AS s FROM holdem_entries
+                                  WHERE tournament_id = ?`).get(mk2.id) as { s: number }).s;
+        const fin = (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
+          .get(mk2.id) as { finished_at: number | null }).finished_at;
+        if (kos > 0 || fin != null) break;
+        const h = HD.getCurrentHand(tb2.id);
+        if (!h || h.ended_at != null || h.to_act_seat == null) {
+          db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(now() - 1, tb2.id);
+          HD.advanceHoldem();
+          continue;
+        }
+        const s = HD.getSeats(tb2.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+        if (!s) break;
+        db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+          .run(now() + HD.ACTION_SEC, h.id);
+        db.prepare(`UPDATE holdem_seats SET last_seen_at = ?, presence = 'ACTIVE'
+                     WHERE table_id = ? AND presence != 'OUT'`).run(now(), tb2.id);
+        if (fight.has(s.user_id)) {
+          if (!HD.holdemAction(s.user_id, 'allin', 0).ok
+            && !HD.holdemAction(s.user_id, 'call', 0).ok) HD.holdemAction(s.user_id, 'check', 0);
+        } else if (!HD.holdemAction(s.user_id, 'fold', 0).ok) {
+          HD.holdemAction(s.user_id, 'check', 0);
+        }
+      }
+      HD.cancelRunningHoldemOnBoot();
+      const afterCancel = who2.reduce((n, p) => n +
+        ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
+          .balance - (before2.get(p) ?? 0)), 0);
+      ck('취소 직후 잔액 총합이 그대로다', afterCancel === 0, String(afterCancel));
+      const rv2 = AD.revokePrizesAndPurge(mk2.id);
+      ck('취소된 판도 삭제된다', rv2.ok, rv2.ok ? '' : rv2.error);
+      const afterPurge = who2.reduce((n, p) => n +
+        ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
+          .balance - (before2.get(p) ?? 0)), 0);
+      ck('취소된 판을 삭제해도 돈이 다시 걷히지 않는다', afterPurge === 0, String(afterPurge));
+    } else ck('취소 후 삭제 대회가 열린다', false, mk2.error);
+  }
+
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   process.exit(fail ? 1 : 0);
 }

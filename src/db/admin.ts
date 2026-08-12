@@ -123,11 +123,20 @@ export function revokePrizesAndPurge(id: number):
     if (t.started_at != null && t.finished_at == null && t.cancelled_at == null) {
       return { ok: false as const, error: 'running' as const };
     }
+    /* 바운티 현금도 함께 되돌린다. 상금은 대회가 끝날 때만 나가지만 바운티는 KO 마다
+       나갔으므로, 상금만 걷어 가면 그 현금이 그대로 남는다 — 없던 일로 만들려는 판에서
+       펀드 전액이 발행된 채로 끝난다(4인 10,000P 50% 판이면 20,000P).
+
+       단 취소된 판은 제외한다. 취소는 그 시점에 이미 정산을 끝냈다 — refundEntries 가
+       나간 현금만큼 참가비에서 덜어 내고 돌려줬으므로 그 판의 수지는 이미 0 이다.
+       여기서 또 걷으면 두 번 걷는 것이 되어 유저가 그만큼 손해를 본다. */
+    const alsoBounty = t.finished_at != null;
     /* 한 사람이 한 대회에서 상금을 두 번 받을 수는 없지만, 합쳐서 한 번에 되돌린다 —
        원장에 같은 사유가 두 줄 남는 것보다 한 줄이 읽기 쉽다. */
     const paid = all<{ user_id: string; n: number }>(
-      `SELECT user_id, SUM(prize) AS n FROM holdem_entries
-        WHERE tournament_id = ? AND prize > 0 GROUP BY user_id`, id);
+      `SELECT user_id, SUM(prize) + SUM(CASE WHEN ? THEN bounty_won ELSE 0 END) AS n
+         FROM holdem_entries WHERE tournament_id = ? GROUP BY user_id
+        HAVING n > 0`, alsoBounty ? 1 : 0, id);
     let revoked = 0;
     for (const p of paid) {
       adjustBalance(p.user_id, -p.n, 'tournament:revoke:' + id);
@@ -325,7 +334,7 @@ export function cancelRunningTournament():
     run(`UPDATE holdem_tournaments SET cancelled_at = unixepoch() WHERE id = ?`, t.id);
     /* 참가비를 걷었으면 돌려준다. 판이 끝까지 가지 않아 상금이 나가지 않았으므로,
        돌려주지 않으면 걷기만 하고 아무에게도 주지 않은 돈이 된다. */
-    const refunded = refundEntries(t.id, 'holdem:abort:');
+    const refunded = refundEntries(t.id, 'holdem:abort:', { netBounty: true });
     return { ok: true as const, id: t.id, refunded };
   });
 }
