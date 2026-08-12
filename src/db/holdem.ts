@@ -145,12 +145,13 @@ export function isMystery(t: { mode?: string } | null | undefined): boolean {
 export function isPko(t: { mode?: string } | null | undefined): boolean {
   return t?.mode === 'PKO_BOUNTY' || isMystery(t);
 }
-/* 이 판의 바운티 몫(%). 미스터리는 전액이다 — 순위 상금을 두지 않는 것이 그 모드의
-   뜻이므로, 행에 어떤 값이 들어 있어도 여기서 100 으로 못 박는다. */
+/* 이 판의 바운티 몫(%). 두 바운티 모드가 같은 규칙을 쓴다 — 운영자가 대회마다 정한다.
+   한때 미스터리를 100% 로 못 박았는데 그럴 이유가 없었다: 미스터리와 프로그레시브의
+   차이는 "금액을 감추고 봉투로 흩는가"와 "잡은 사람이 독식하는가"이고, 순위 상금을
+   함께 둘지는 그것과 무관한 선택이다. */
 export function bountyPctOf(
   t: { mode?: string; bounty_pct?: number } | null | undefined
 ): number {
-  if (isMystery(t)) return 100;
   return T.clampBountyPct(t?.bounty_pct);
 }
 

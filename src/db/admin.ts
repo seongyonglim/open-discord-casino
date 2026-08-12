@@ -251,7 +251,10 @@ export function createTournament(o: {
     const mode = o.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY'
       : o.mode === 'MYSTERY_BOUNTY' ? 'MYSTERY_BOUNTY' : 'CLASSIC';
     /* 미스터리는 전액 바운티다 — 순위 상금을 두지 않는 것이 그 모드의 뜻이다. */
-    const bountyPct = mode === 'MYSTERY_BOUNTY' ? 100 : T.clampBountyPct(o.bountyPct);
+    /* 두 바운티 모드가 같은 규칙을 쓴다 — 미스터리도 순위 상금을 함께 둘 수 있다.
+       모드가 정하는 것은 "금액을 감추고 봉투로 흩는가"와 "잡은 사람이 독식하는가"이고,
+       순위 상금을 얼마 남길지는 그것과 별개의 선택이다. */
+    const bountyPct = T.clampBountyPct(o.bountyPct);
     /* 바운티는 "1인당 금액의 절반"이다 — 참가비 대회는 참가비, 프리롤은 상금 배수가
        그 값이다. 둘 다 0 이면 머리에 걸 값이 없어서, 열려도 바운티가 하나도 없는
        "이름만 바운티 대회"가 된다. 화면도 잠그지만 여기서 한 번 더 막는다:

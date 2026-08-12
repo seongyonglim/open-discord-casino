@@ -608,9 +608,10 @@ export function adminPage(user: WebUser): string {
       var mystery = ncMode.value === 'MYSTERY_BOUNTY';
       var pctEl = document.getElementById('ncPct');
       var pctWrap = document.getElementById('ncPctWrap');
-      if (pctWrap) pctWrap.hidden = ncMode.value !== 'PKO_BOUNTY';
-      var pct = mystery ? 100
-        : Math.min(100, Math.max(10, Math.floor(Number(pctEl && pctEl.value) || 50)));
+      /* 두 바운티 모드가 함께 쓴다 — 미스터리도 순위 상금을 남길 수 있다.
+         일반 대회에서만 감춘다(바운티가 없으니 고를 것이 없다). */
+      if (pctWrap) pctWrap.hidden = ncMode.value === 'CLASSIC';
+      var pct = Math.min(100, Math.max(10, Math.floor(Number(pctEl && pctEl.value) || 50)));
       var bty = Math.floor(unit * pct / 100);
       var hint = document.getElementById('ncModeHint');
       if (hint) {
@@ -621,8 +622,10 @@ export function adminPage(user: WebUser): string {
             ? '바운티 없이 순위 상금만 나눕니다'
             : (buyin ? '참가비' : '배수') + ' ' + unit.toLocaleString('ko-KR') + 'P 중 '
               + bty.toLocaleString('ko-KR') + 'P 가 바운티'
-              + (mystery ? ' · 금액은 잡히기 전까지 비공개'
-                         : ' · 나머지 ' + (unit - bty).toLocaleString('ko-KR') + 'P 가 순위 상금');
+              + (unit - bty > 0
+                ? ' · 나머지 ' + (unit - bty).toLocaleString('ko-KR') + 'P 가 순위 상금'
+                : ' (순위 상금 없음)')
+              + (mystery ? ' · 바운티 금액은 비공개' : '');
       }
       var pctHint = document.getElementById('ncPctHint');
       if (pctHint) {

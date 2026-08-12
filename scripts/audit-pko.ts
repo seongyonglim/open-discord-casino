@@ -241,7 +241,7 @@ async function main(): Promise<void> {
     for (const p of who) mkUser(p, 100_000);
     const made = AD.createTournament({
       title: '미스터리', regOpenAt: now() - 60, startAt: now() + 3_600,
-      buyIn: BUY2, mode: 'MYSTERY_BOUNTY',
+      buyIn: BUY2, mode: 'MYSTERY_BOUNTY', bountyPct: 100,
     });
     ck('미스터리 대회가 열린다', made.ok, made.ok ? '' : made.error);
     if (!made.ok) { console.log('열지 못해 중단'); process.exit(1); }
@@ -250,10 +250,10 @@ async function main(): Promise<void> {
     const trow = db.prepare(`SELECT * FROM holdem_tournaments WHERE id = ?`).get(mid) as never;
     ck('isMystery 가 참이다', HD.isMystery(trow));
     ck('isPko 도 참이다 (바운티가 걸린 판이다)', HD.isPko(trow));
-    /* 미스터리는 전액 바운티다 — 순위 상금이 남아 있으면 모드의 뜻이 어긋난다 */
-    ck('바운티 몫이 100% 로 못 박힌다', HD.bountyPctOf(trow) === 100,
+    /* 이 판은 100% 로 열었다 — 전액 바운티면 순위 상금이 한 푼도 남지 않아야 한다 */
+    ck('고른 몫(100%)이 그대로 쓰인다', HD.bountyPctOf(trow) === 100,
       String(HD.bountyPctOf(trow)));
-    ck('순위 상금 팟이 0 이다', HD.prizePoolOf(trow, who.length) === 0,
+    ck('전액 바운티면 순위 상금 팟이 0 이다', HD.prizePoolOf(trow, who.length) === 0,
       String(HD.prizePoolOf(trow, who.length)));
     const pool2 = (db.prepare(`SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`)
       .get(mid) as { bounty_pool: number }).bounty_pool;
@@ -289,19 +289,83 @@ async function main(): Promise<void> {
       /bEl\.textContent = '\?'/.test(seatsSrc2) && /classList\.add\('sealed'\)/.test(seatsSrc2));
     ck('물음표에서 금액으로 뒤집히는 것도 상승으로 본다',
       /prev !== undefined && \(prev === null \|\| bv > prev\)/.test(seatsSrc2));
+    /* 등수 표와 갈래 줄은 모드가 아니라 "순위 상금이 실제로 있는지"로 갈라야 한다 —
+       모드로 가르면 순위 상금을 남긴 미스터리에서 상금표가 사라진다. */
     const sideSrc = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
-    ck('미스터리는 등수 표를 그리지 않는다 (순위 상금이 없다)',
-      /mystery \? '' : '<div class="ht-pz-list">/.test(sideSrc));
-    ck('미스터리는 갈래 줄을 그리지 않는다', /\(isPko && !mystery/.test(sideSrc));
-    // 어드민에서 고를 수 있고, 비율은 PKO 에서만 보인다
+    ck('등수 표는 순위 상금이 있을 때만 그린다',
+      /var hasRank = t\.prizePool > 0/.test(sideSrc)
+      && /hasRank \? '<div class="ht-pz-list">/.test(sideSrc));
+    ck('갈래 줄도 순위 상금 유무로 가른다', /\(isPko && hasRank/.test(sideSrc));
+    ck('모드로 등수 표를 가르지 않는다', !/mystery \? '' : '<div class="ht-pz-list">/
+      .test(sideSrc));
+    // 어드민에서 고를 수 있고, 비율은 두 바운티 모드가 함께 쓴다
     const admSrc2 = fsx.readFileSync('src/web/admin.ts', 'utf8');
     ck('어드민에 미스터리 선택이 있다', /value="MYSTERY_BOUNTY"/.test(admSrc2));
     ck('바운티 몫 입력이 있다', /id="ncPct"/.test(admSrc2));
-    ck('몫 입력은 PKO 에서만 보인다',
-      /pctWrap\.hidden = ncMode\.value !== 'PKO_BOUNTY'/.test(admSrc2));
-    ck('미스터리는 서버가 100% 로 못 박는다',
-      /mode === 'MYSTERY_BOUNTY' \? 100 : T\.clampBountyPct/
+    ck('몫 입력은 일반 대회에서만 감춘다',
+      /pctWrap\.hidden = ncMode\.value === 'CLASSIC'/.test(admSrc2));
+    ck('서버가 모드로 몫을 덮어쓰지 않는다',
+      !/mode === 'MYSTERY_BOUNTY' \? 100/
         .test(fsx.readFileSync('src/db/admin.ts', 'utf8')));
+    ck('bountyPctOf 가 미스터리를 예외로 두지 않는다',
+      !/isMystery\(t\)\) return 100/.test(fsx.readFileSync('src/db/holdem.ts', 'utf8')));
+  }
+
+  /* 미스터리도 순위 상금을 함께 둘 수 있다. 모드가 정하는 것은 "금액을 감추는가"와
+     "잡은 사람이 독식하는가"이고, 순위 상금을 남길지는 그것과 별개다. 여기서는 몫을
+     쪼갠 판이 두 갈래로 정확히 갈리고, 걷은 돈이 한 푼도 새지 않는지를 원장으로 본다. */
+  section('[2-d] 미스터리 + 순위 상금 — 몫을 쪼개도 갈래와 총액이 맞는다');
+  {
+    for (const pct of [10, 40, 60, 75, 100]) {
+      wipe();
+      const BUY3 = 7_777;                       // 나누면 딱 떨어지지 않는 값으로 본다
+      const who3 = ['s1', 's2', 's3', 's4', 's5'];
+      for (const p of who3) mkUser(p, 100_000);
+      const mk = AD.createTournament({
+        title: `미스터리 ${pct}%`, regOpenAt: now() - 60, startAt: now() + 3_600,
+        buyIn: BUY3, mode: 'MYSTERY_BOUNTY', bountyPct: pct,
+      });
+      ck(`${pct}%: 대회가 열린다`, mk.ok, mk.ok ? '' : mk.error);
+      if (!mk.ok) continue;
+      for (const p of who3) HD.registerHoldem(p, p);
+      const tr = db.prepare(`SELECT * FROM holdem_tournaments WHERE id = ?`)
+        .get(mk.id) as { bounty_pool: number; bounty_pct: number };
+      ck(`${pct}%: 고른 몫이 행에 남는다`, tr.bounty_pct === pct, String(tr.bounty_pct));
+      ck(`${pct}%: bountyPctOf 가 그 값을 읽는다`,
+        HD.bountyPctOf(tr as never) === pct, String(HD.bountyPctOf(tr as never)));
+
+      /* 두 갈래의 합이 걷은 전액이어야 한다 — 한쪽을 비율로 정하고 다른 쪽을 "나머지"로
+         두었으므로 이 등식은 구조적으로 성립한다. 그래도 확인한다: 예전에 keep 이 0 일 때
+         프리롤 경로로 새어 상금이 두 배가 된 적이 있다. */
+      const unit = BUY3;
+      const wantBty = Math.floor(unit * pct / 100);
+      const collected = unit * who3.length;
+      ck(`${pct}%: 펀드가 1인당 ${wantBty}P × ${who3.length} 이다`,
+        tr.bounty_pool === wantBty * who3.length, String(tr.bounty_pool));
+      const rank = HD.prizePoolOf(tr as never, who3.length);
+      ck(`${pct}%: 순위 상금 팟이 나머지다`,
+        rank === (unit - wantBty) * who3.length, `${rank}`);
+      ck(`${pct}%: 두 갈래 합이 걷은 전액이다`,
+        rank + tr.bounty_pool === collected, `${rank}+${tr.bounty_pool} vs ${collected}`);
+      /* 내 봉투는 감춰지지만, 배정 전 등록 시점의 머리 값은 1인 몫이어야 한다 */
+      ck(`${pct}%: 등록 시 머리 값이 1인 몫이다`,
+        entriesOf(mk.id).every(r => r.bounty === wantBty),
+        entriesOf(mk.id).map(r => r.bounty).join(','));
+
+      // 봉투는 바운티 갈래만 흩는다 — 순위 상금까지 봉투에 들어가면 상금이 사라진다
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+      HD.advanceHoldem();
+      const envs = entriesOf(mk.id).map(r => r.bounty);
+      ck(`${pct}%: 봉투 합이 바운티 갈래와 같다`,
+        envs.reduce((a, b) => a + b, 0) === tr.bounty_pool,
+        `${envs.reduce((a, b) => a + b, 0)} vs ${tr.bounty_pool}`);
+      ck(`${pct}%: 봉투가 제각각이다`, new Set(envs).size > 1, envs.join(','));
+    }
+    /* 독식 규칙은 몫과 무관하게 유지돼야 한다 — 잡으면 전액을 받고 내 머리는 그대로다.
+       (PKO 는 절반만 현금이고 절반이 머리로 옮겨간다.) */
+    const hdSrc = fsx.readFileSync('src/db/holdem.ts', 'utf8');
+    ck('미스터리는 머리 몫이 0 이다 (잡은 사람이 독식한다)',
+      /isMystery\(t\) \? 0 : T\.PKO_HEAD_RATIO/.test(hdSrc));
   }
 
   section('[3] 일반 대회 — 바운티 칸이 전부 0 이다');
@@ -418,18 +482,33 @@ async function main(): Promise<void> {
   section('[5] 마감 — 걷은 바운티가 전부 유저에게 돌아간다');
   {
     /* 여러 인원·여러 참가비로 대회를 끝까지 돌린다. 홀수 참가비를 섞는 것이 요점이다 —
-       내림이 물리는 자리가 있으면 여기서 잔돈이 남는다. */
-    for (const [n, buy] of [[3, 10_000], [4, 9_999], [5, 1_001], [6, 3]] as [number, number][]) {
+       내림이 물리는 자리가 있으면 여기서 잔돈이 남는다.
+       두 바운티 모드를 같은 검사에 넣는다. 지급 규칙이 서로 다르므로(PKO 는 절반이
+       머리로 옮겨가고 미스터리는 잡은 사람이 독식한다) 보존이 한쪽에서만 성립할 수 있다.
+       몫을 쪼갠 판(60%/75%)도 섞는다 — 상금과 바운티 두 갈래로 나가도 총액이 맞아야 한다. */
+    const CASES: [number, number, 'PKO_BOUNTY' | 'MYSTERY_BOUNTY', number][] = [
+      [3, 10_000, 'PKO_BOUNTY', 50],
+      [4, 9_999, 'PKO_BOUNTY', 50],
+      [5, 1_001, 'PKO_BOUNTY', 50],
+      [6, 3, 'PKO_BOUNTY', 50],
+      [4, 9_999, 'PKO_BOUNTY', 70],
+      [5, 10_000, 'MYSTERY_BOUNTY', 100],
+      [4, 7_777, 'MYSTERY_BOUNTY', 60],
+      [6, 1_001, 'MYSTERY_BOUNTY', 75],
+      [3, 3, 'MYSTERY_BOUNTY', 40],
+    ];
+    for (const [n, buy, mode, pct] of CASES) {
+      const tag = `${n}명/${buy}P/${mode === 'MYSTERY_BOUNTY' ? '미스터리' : 'PKO'}${pct}%`;
       wipe();
       const who = Array.from({ length: n }, (_, i) => `f${i}`);
       for (const p of who) mkUser(p, 1_000_000);
       const balBefore = new Map(who.map(p =>
         [p, (db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number }).balance]));
       const made = AD.createTournament({
-        title: `마감 ${n}/${buy}`, regOpenAt: now() - 60, startAt: now() + 3_600,
-        buyIn: buy, mode: 'PKO_BOUNTY',
+        title: `마감 ${tag}`, regOpenAt: now() - 60, startAt: now() + 3_600,
+        buyIn: buy, mode, bountyPct: pct,
       });
-      if (!made.ok) { ck(`${n}명/${buy}P: 대회가 열린다`, false, made.error); continue; }
+      if (!made.ok) { ck(`${tag}: 대회가 열린다`, false, made.error); continue; }
       const id = made.id;
       for (const p of who) HD.registerHoldem(p, p);
       const pool = (db.prepare(`SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`)
@@ -461,7 +540,7 @@ async function main(): Promise<void> {
       }
       const done = db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
         .get(id) as { finished_at: number | null };
-      ck(`${n}명/${buy}P: 검사 전제 — 대회가 끝났다`, done.finished_at != null);
+      ck(`${tag}: 검사 전제 — 대회가 끝났다`, done.finished_at != null);
       if (done.finished_at == null) continue;
 
       const rows = entriesOf(id);
@@ -475,11 +554,11 @@ async function main(): Promise<void> {
         `SELECT COALESCE(SUM(delta), 0) AS s FROM points_ledger
           WHERE reason = ? OR reason = ?`)
         .get(`game:holdem:bounty:${id}`, `game:holdem:bounty:final:${id}`) as { s: number }).s;
-      ck(`${n}명/${buy}P: 나간 바운티 = 걷은 펀드 (1P 오차 없음)`,
+      ck(`${tag}: 나간 바운티 = 걷은 펀드 (1P 오차 없음)`,
         paidAll === pool, `${paidAll} vs ${pool}`);
-      ck(`${n}명/${buy}P: 머리에 남은 값이 없다`,
+      ck(`${tag}: 머리에 남은 값이 없다`,
         rows.every(r => r.bounty === 0), rows.map(r => `${r.user_id}=${r.bounty}`).join(','));
-      ck(`${n}명/${buy}P: bounty_won 합 = 걷은 펀드`,
+      ck(`${tag}: bounty_won 합 = 걷은 펀드`,
         rows.reduce((s, r) => s + r.bounty_won, 0) === pool,
         `${rows.reduce((s, r) => s + r.bounty_won, 0)} vs ${pool}`);
       void paid;
@@ -488,14 +567,14 @@ async function main(): Promise<void> {
          이쪽이 요구서의 "전체 바이인 총액 중 1P 의 오차도 없이" 그 자체다. */
       const collected = rows.reduce((s, r) => s + r.paid_in, 0);
       const prizes = rows.reduce((s, r) => s + r.prize, 0);
-      ck(`${n}명/${buy}P: 상금 + 바운티 = 걷은 참가비`,
+      ck(`${tag}: 상금 + 바운티 = 걷은 참가비`,
         prizes + paidAll === collected, `${prizes}+${paidAll} vs ${collected}`);
       /* 잔액 변화로도 확인한다. 표를 안 보고 유저 지갑만 보는 검사다 —
          표와 지갑이 어긋나는 실수를 이쪽이 잡는다. */
       const delta = who.reduce((s, p) =>
         s + ((db.prepare(`SELECT balance FROM users WHERE id = ?`).get(p) as { balance: number })
           .balance - (balBefore.get(p) ?? 0)), 0);
-      ck(`${n}명/${buy}P: 참가자 잔액 총합이 그대로다 (서비스가 삼킨 돈 0)`,
+      ck(`${tag}: 참가자 잔액 총합이 그대로다 (서비스가 삼킨 돈 0)`,
         delta === 0, String(delta));
     }
   }
