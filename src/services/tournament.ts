@@ -371,28 +371,141 @@ export function clampBountyPct(v: number | null | undefined): number {
    전부 같은 무게가 되어 "누굴 잡을까"에 답이 하나뿐이다(큰 스택). 금액을 흩고 감추면
    그 관계가 끊어져서, 첫 판에 터진 숏칩이 잭팟을 들고 있을 수도 있다.
 
-   가중치는 앞이 잭팟이고 뒤로 완만하게 줄어든다. 전부 비슷하면 봉투를 열 이유가 없고,
-   잭팟만 크고 나머지가 0 에 가까우면 대부분의 KO 가 허탕으로 느껴진다. */
-const ENVELOPE_WEIGHTS = [38, 18, 13, 10, 8, 6, 3, 2, 2];
+   ── 고정 표를 버린 이유 ─────────────────────────────────────────
+   처음에는 가중치를 표로 박아 뒀다([38, 18, 13, 10, 8, 6, 3, 2, 2]). 그러면 인원이
+   같으면 금액도 늘 같다 — 6 인이면 언제나 40.9 / 19.4 / 14.0 / 10.8 / 8.6 / 6.5% 다.
+   누가 어느 봉투를 받는지만 무작위였고, 금액표는 한 번 보면 외워졌다.
+   그건 "미스터리"가 아니라 "자리 뽑기"다.
+
+   그래서 금액 자체를 매 대회 새로 뽑는다. 1% 단위 100 칸을 무작위로 나눈다.
+
+   세 가지를 지킨다.
+     1) 아무도 빈 봉투를 받지 않는다 — 바닥을 먼저 깔고 나머지를 흩는다.
+        0P 짜리 봉투는 열리는 순간이 허탕이라 연출이 죽는다.
+     2) 한 봉투가 너무 크지 않다 — 상한을 둔다. 상한이 없으면 5 인에서 89%,
+        3 인에서 96% 짜리 봉투가 나왔다(실측). 그러면 나머지 넷은 껍데기가 되고,
+        대회가 "그 한 명을 누가 잡느냐" 하나로 줄어든다.
+     3) 그래도 잭팟이 생길 여지는 남긴다 — 가중치를 지수분포(-ln U)로 뽑는다.
+        100 칸을 그냥 고르게 나눠 주면 큰 수의 법칙에 눌려 전부 비슷해지고,
+        그러면 1)·2) 와 반대로 "전부 평범한" 대회가 되어 봉투를 열 이유가 없다.
+
+   무작위 원천은 부르는 쪽이 넘긴다. 여기서 crypto 를 직접 쓰면 같은 인원·같은 펀드에서
+   결과가 매번 달라져 검사가 불가능해진다 — 감사는 고정 수열을 넣어 성질을 확인한다. */
+/** 몫을 1% 단위로 쪼갠다 — 100 칸을 나눠 갖는다. */
+const ENVELOPE_UNITS = 100;
+
+/* 인원별 봉투 몫의 범위(총 바운티의 %). 계산식이 아니라 표로 둔다 — 눈으로 보고
+   조절할 수 있어야 하는 값이고, 식으로 두면 한 인원을 고치려다 전부 흔든다.
+
+   상한을 왜 인원에 따라 낮추는가: 3 인에서 50% 는 나머지 둘이 25% 씩이라 괜찮지만,
+   9 인에서 50% 는 나머지 여덟이 6% 씩이 되어 껍데기가 된다. 그래서 "평균의 두 배 반"
+   근처로 맞춰 내려온다 — 어느 인원에서도 잭팟이 평균의 2~2.7배다.
+
+   하한은 평균의 절반 근처다. 바닥이 전체의 절반쯤(lo × n ≈ 45~50)을 먹고, 남은 절반을
+   무작위로 흩는다 — 바닥이 너무 높으면 흩을 칸이 없어 전부 비슷해지고(9 인에 10% 를
+   깔면 흩을 칸이 10 개뿐이다), 너무 낮으면 껍데기 봉투가 생긴다.
+
+     인원   평균    범위        바닥 합   잭팟/평균
+      3    33.3%   15 ~ 50%     45%       1.5배
+      4    25.0%   12 ~ 50%     48%       2.0배
+      5    20.0%   10 ~ 45%     50%       2.3배
+      6    16.7%    8 ~ 40%     48%       2.4배
+      7    14.3%    7 ~ 36%     49%       2.5배
+      8    12.5%    6 ~ 32%     48%       2.6배
+      9    11.1%    5 ~ 30%     45%       2.7배 */
+const ENVELOPE_RANGE: Record<number, { lo: number; hi: number }> = {
+  3: { lo: 15, hi: 50 },
+  4: { lo: 12, hi: 50 },
+  5: { lo: 10, hi: 45 },
+  6: { lo: 8, hi: 40 },
+  7: { lo: 7, hi: 36 },
+  8: { lo: 6, hi: 32 },
+  9: { lo: 5, hi: 30 },
+};
 
 /**
- * 펀드를 n 개의 봉투로 나눈다. 합이 정확히 펀드다 — 내림으로 남는 몫은 잭팟에 얹는다
- * (버리면 총액이 안 맞고, 여러 봉투에 흩으면 어느 것이 잭팟인지 흐려진다).
+ * 이 인원에서 봉투 하나가 받을 수 있는 몫의 범위(%).
  *
- * 순서는 그대로 돌려준다(잭팟이 0번). 누구에게 어느 봉투가 가는지는 부르는 쪽이 섞는다 —
- * 여기서 섞으면 같은 인원·같은 펀드에서 결과가 매번 달라져 검사가 불가능해진다.
+ * 표에 없는 인원(2 인 이하, 10 인 이상)은 표의 비율을 그대로 이어 쓴다 — 대회는 3 인
+ * 이상 9 인 이하지만(MIN_PLAYERS·MAX_PLAYERS), 늦은 등록이 상한 위로 갈 수 있고
+ * 검사는 경계 밖도 넣어 본다. 그때도 lo × n ≤ 100 ≤ hi × n 이어야 칸을 다 놓을 수 있다.
  */
-export function mysteryEnvelopes(fund: number, n: number): number[] {
+export function envelopeRange(n: number): { lo: number; hi: number } {
+  const count = Math.max(1, Math.floor(n));
+  const fixed = ENVELOPE_RANGE[count];
+  if (fixed) return fixed;
+  if (count === 1) return { lo: ENVELOPE_UNITS, hi: ENVELOPE_UNITS };
+  const avg = ENVELOPE_UNITS / count;
+  return {
+    lo: Math.max(1, Math.floor(avg * 0.45)),
+    // 채울 수 있는 최소값(평균)보다는 커야 한다 — 작으면 100 칸을 다 놓을 수 없다
+    hi: Math.max(Math.ceil(avg), Math.floor(avg * 2.7)),
+  };
+}
+
+/**
+ * 펀드를 n 개의 봉투로 나눈다. 합이 정확히 펀드다 — 내림으로 남는 몫은 가장 큰 봉투에
+ * 얹는다(버리면 총액이 안 맞고, 여러 봉투에 흩으면 어느 것이 잭팟인지 흐려진다).
+ *
+ * 순서는 뽑힌 그대로 돌려준다. 누구에게 어느 봉투가 가는지는 부르는 쪽이 섞는다.
+ *
+ * @param rand [0,1) 을 돌려주는 함수. 안 주면 균등 분포를 쓴다 — 그때는 결과가 매번
+ *   달라지므로, 검사는 반드시 고정 수열을 넣어야 한다.
+ */
+export function mysteryEnvelopes(
+  fund: number, n: number, rand: () => number = () => Math.random(),
+): number[] {
   const total = Math.max(0, Math.floor(fund));
   const count = Math.max(0, Math.floor(n));
   if (count === 0) return [];
-  /* 인원이 가중치 표보다 많으면 남는 사람들은 가장 작은 가중치를 나눠 쓴다 —
-     9 인이 상한이지만(MAX_PLAYERS) 늦은 등록이 그 위로 갈 수 있다. */
-  const w = Array.from({ length: count },
-    (_, i) => ENVELOPE_WEIGHTS[i] ?? ENVELOPE_WEIGHTS[ENVELOPE_WEIGHTS.length - 1]);
-  const sum = w.reduce((a, b) => a + b, 0);
-  const out = w.map(x => Math.floor(total * x / sum));
-  out[0] += total - out.reduce((a, b) => a + b, 0);
+  if (count === 1) return [total];
+
+  const { lo, hi } = envelopeRange(count);
+  /* 바닥을 먼저 깔고 남은 칸을 흩는다. 바닥이 100 칸을 넘으면(표 밖의 큰 인원) 흩을 것이
+     없으므로 균등하게 나눈다 — 그때는 미스터리가 성립하지 않지만, 금액이 틀리는 것보다는
+     낫다(합은 어떤 경우에도 펀드와 같아야 한다). */
+  const base = Math.min(lo, Math.floor(ENVELOPE_UNITS / count));
+  const units = Array.from({ length: count }, () => base);
+  let left = ENVELOPE_UNITS - base * count;
+
+  /* 지수 가중치. u 가 0 이면 -ln u 가 무한이 되므로 0 을 피한다 — rand() 가 0 을 돌려줄
+     수 있고(Math.random 은 [0,1)), 그러면 한 봉투가 칸을 독식한다. */
+  const w = Array.from({ length: count }, () => {
+    const u = Math.min(1, Math.max(1e-9, rand()));
+    return -Math.log(u);
+  });
+
+  /* 칸을 하나씩 놓는다. 가중치대로 고르되 상한에 닿은 봉투는 건너뛴다.
+     한꺼번에 비율로 나누고 나서 상한으로 자르면 잘라낸 만큼이 붕 떠서 다시 나눠야 하고,
+     그 재분배가 또 상한을 넘을 수 있다(반복해야 수렴한다). 한 칸씩 놓으면 상한을 넘을
+     수가 없고 합도 정확하다 — 100 칸 × 9 명이라 비용도 없다. */
+  for (let guard = 0; left > 0 && guard < ENVELOPE_UNITS * 4; guard++) {
+    let wSum = 0;
+    for (let i = 0; i < count; i++) if (units[i] < hi) wSum += w[i];
+    if (wSum <= 0) break;                 // 전부 상한 — 아래에서 균등하게 밀어 넣는다
+    let pick = Math.min(1, Math.max(0, rand())) * wSum;
+    let at = -1;
+    for (let i = 0; i < count; i++) {
+      if (units[i] >= hi) continue;
+      pick -= w[i];
+      at = i;                             // 마지막으로 자격이 있던 자리 — 부동소수 오차 대비
+      if (pick <= 0) break;
+    }
+    if (at < 0) break;
+    units[at]++;
+    left--;
+  }
+  /* 상한 때문에 남은 칸이 있으면(전원이 상한에 닿았다 — 인원이 아주 적을 때) 순서대로
+     하나씩 밀어 넣는다. 버리면 합이 펀드와 어긋난다. */
+  for (let i = 0; left > 0; i = (i + 1) % count) { units[i]++; left--; }
+
+  /* 칸 → 금액. 1 칸이 펀드의 1% 인데 그 값이 정수가 아닐 수 있으므로(펀드 3P) 여기서도
+     내림하고 남는 1P 들을 가장 큰 봉투에 얹는다. 합이 정확히 펀드여야 한다 —
+     이 대회의 유일한 불변식이 "걷은 펀드가 1P 도 남지 않고 나간다"다. */
+  let top = 0;
+  for (let i = 1; i < units.length; i++) if (units[i] > units[top]) top = i;
+  const out = units.map(x => Math.floor(total * x / ENVELOPE_UNITS));
+  out[top] += total - out.reduce((a, b) => a + b, 0);
   return out;
 }
 

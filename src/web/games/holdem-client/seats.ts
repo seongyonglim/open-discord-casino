@@ -67,8 +67,14 @@ export const SEATS = `    var seatXY = {};
          칩 이동 → 카드 정리 → 처형 → 개봉(봉투마다) → 확보 표시(+N P) → 다음 판 / 우승 팝업
        서버의 nextHandDelaySec 이 이 길이를 알고 다음 판을 미룬다(mysteryReveals). */
     var MYS_IN_MS = 340;        // 전광판이 올라온다
-    var MYS_ROLL_MS = 1600;     // 숫자가 굴러간다 (긴장을 만드는 구간)
-    var MYS_LAND_MS = 1500;     // 당첨 금액에서 멈추고 읽는 시간
+    /* 굴러가는 구간. 회전 음원(reel-roll.mp3)의 실측 길이가 2.05초라 그것에 맞춘다 —
+       소리가 먼저 끝나면 굴러가는 동안 무음이 생기고, 늦게 끝나면 멈춘 뒤에도 돌아가는
+       소리가 남는다. 음원을 바꾸면 이 값도 같이 재서 바꿔야 한다. */
+    var MYS_ROLL_MS = 2000;
+    /* 멈추고 읽는 시간. 확정 음원의 잔향까지 잘라낸 실측 길이가 1.35초다(trimSilence 가
+       최대치의 2% 에서 자른다). 그보다 조금 길게 둔다 — 소리가 끝나기 전에 화면이
+       넘어가면 잘린 것처럼 들린다. */
+    var MYS_LAND_MS = 1500;
     var MYS_OUT_MS = 300;       // 내려간다. 다음 봉투는 이것이 끝난 뒤에 시작한다
     var MYS_TICK_MS = 55;       // 굴러가는 숫자가 바뀌는 간격
     function mysBoxLen(){ return MYS_IN_MS + MYS_ROLL_MS + MYS_LAND_MS; }
@@ -119,14 +125,25 @@ export const SEATS = `    var seatXY = {};
          자릿수가 들쭉날쭉해서 폭이 흔들리고, 무엇보다 "있을 수 있는 금액"으로 안 보인다. */
       setTimeout(function(){
         box.className = 'ht-mysbox in roll';
-        var pool = (job.pool && job.pool.length) ? job.pool : [job.amount];
-        /* 소리를 숫자와 같은 타이머에서 낸다 — 따로 예약하면 눈은 55ms 마다 바뀌는데
-           소리는 제 리듬으로 가서 "소리 따로 그림 따로"가 된다. 그래서 굴러가는 소리는
-           음원 파일을 두지 않는다(파일 길이는 이 간격을 모른다). */
+        /* 회전음은 한 번만 재생한다 — 굴러가는 구간(MYS_ROLL_MS)과 같은 길이의 음원이라
+           박자를 맞출 것이 없다. 예전에는 숫자가 바뀔 때마다 딸깍 소리를 냈는데,
+           음원이 오면서 그럴 필요가 없어졌다. */
+        if (window.casinoSfx && casinoSfx.reelRoll) casinoSfx.reelRoll();
+        /* 굴러가는 숫자는 **자릿수마다 0~9 를 마구 뽑는다.**
+           예전에는 이 판에 실제로 열린 금액들을 돌려 보여줬는데, 그러면 굴러가는 것만
+           보고도 다른 봉투가 얼마인지 다 알 수 있었다 — 미스터리의 뜻이 사라진다
+           (실측 로그에 다른 사람 봉투 금액이 그대로 찍혔다).
+           자릿수는 당첨 금액과 같게 고정한다: 그래야 폭이 흔들리지 않고, 자릿수 자체로
+           금액의 크기를 짐작할 여지도 최소가 된다. */
+        var digits = String(Math.max(1, job.amount)).length;
         mysRollTimer = setInterval(function(){
-          var pick = pool[Math.floor(Math.random() * pool.length)];
-          amtEl.textContent = stackText(pick) + 'P';
-          if (window.casinoSfx && casinoSfx.reelTick) casinoSfx.reelTick();
+          var s = '';
+          for (var d = 0; d < digits; d++) {
+            // 맨 앞자리만 1~9 — 0 으로 시작하면 자릿수가 줄어 보여 폭이 흔들린다
+            s += String(d === 0 ? 1 + Math.floor(Math.random() * 9)
+              : Math.floor(Math.random() * 10));
+          }
+          amtEl.textContent = Number(s).toLocaleString('ko-KR') + 'P';
         }, MYS_TICK_MS);
       }, MYS_IN_MS);
       // 멈춤 — 당첨 금액에서 딱 선다. 여기가 결과다

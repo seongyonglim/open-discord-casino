@@ -829,10 +829,9 @@ export function holdemPage(user: WebUser): string {
       'potwin','clockwarn','allinbgm',
       /* 처형 총성 — 미리 받아 둔다. 탈락은 판이 끝나는 순간에 터지는데 그때 받으러
          가면 소리가 총자국보다 늦게 도착하고, 첫 KO 는 합성음으로 대체된다.
-         전광판이 멈추는 소리도 같은 이유로 함께 받는다 — 처형이 끝나자마자 이어진다.
-         (파일은 아직 없다. 없으면 아무 일도 일어나지 않고 합성음이 쓰인다.)
-         굴러가는 소리는 합성음뿐이라 받을 것이 없다. */
-      'gunshot', 'reelstop'];</script>
+         미스터리 전광판 소리(회전·멈춤)와 바운티 획득 소리도 같은 이유로 함께 받는다 —
+         처형이 끝나자마자 이어진다. */
+      'gunshot', 'reelroll', 'reelstop', 'bountyearn'];</script>
   <script>
   (function(){
 ${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY_EMPTY}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}

@@ -214,24 +214,104 @@ async function main(): Promise<void> {
 
   section('[2-c] 미스터리 바운티 — 봉투가 제각각이고 열릴 때까지 감춰진다');
   {
-    /* 봉투 나누기부터 본다. 합이 펀드와 정확히 같아야 하고, 잭팟이 실제로 커야 한다 —
-       전부 비슷하면 봉투를 열 이유가 없고, 합이 어긋나면 없는 돈이 나가거나 남는다. */
+    /* 봉투 나누기부터 본다. 금액은 대회마다 새로 뽑히므로(고정 표를 버렸다) 기대값을 손으로
+       적을 수 없다 — 성질을 검사한다. 합이 펀드와 정확히 같아야 하고, 빈 봉투가 없어야
+       하고, 금액이 실제로 흩어져야 한다.
+
+       무작위 원천을 넣어 돌린다. 뽑기가 들어간 함수를 기본 난수로 검사하면 어쩌다 통과하는
+       판이 생긴다 — 여러 수열로 여러 번 돌려 성질이 언제나 성립하는지 본다. */
+    const mkRand = (seed: number): (() => number) => {
+      /* 선형 합동 — 씨앗을 주면 늘 같은 수열이 나온다(검사가 재현된다). 암호적 강도는
+         필요 없다: 실서버는 crypto 를 넣는다(holdem.ts 의 배정 자리). */
+      let s = seed >>> 0;
+      return () => { s = (s * 1103515245 + 12345) >>> 0; return s / 4294967296; };
+    };
     for (const n of [2, 3, 6, 9, 12]) {
       for (const fund of [3, 999, 30_000, 90_000, 123_457]) {
-        const e = T.mysteryEnvelopes(fund, n);
-        ck(`봉투 ${n}개 · 펀드 ${fund}: 합이 펀드와 같다`,
-          e.reduce((a, b) => a + b, 0) === fund, `${e.reduce((a, b) => a + b, 0)}`);
-        ck(`봉투 ${n}개 · 펀드 ${fund}: 개수가 인원과 같다`, e.length === n);
-        ck(`봉투 ${n}개 · 펀드 ${fund}: 음수가 없다`, e.every(x => x >= 0));
+        let sumBad = 0, negBad = 0, lenBad = 0, zeroBad = 0, overBad = 0, underBad = 0;
+        let widest = 0;
+        const { lo, hi } = T.envelopeRange(n);
+        for (let seed = 1; seed <= 60; seed++) {
+          const e = T.mysteryEnvelopes(fund, n, mkRand(seed * 7919));
+          if (e.reduce((a, b) => a + b, 0) !== fund) sumBad++;
+          if (e.some(x => x < 0)) negBad++;
+          if (e.length !== n) lenBad++;
+          /* 빈 봉투는 열리는 순간이 허탕이라 연출이 죽는다. 펀드가 인원보다 작으면
+             1P 도 못 받는 봉투가 어쩔 수 없이 생기므로 그때는 세지 않는다. */
+          if (fund >= n * 100 && e.some(x => x === 0)) zeroBad++;
+          /* 범위를 지키는지. 1% 단위로 나눈 뒤 금액으로 바꾸면서 내림이 물리므로,
+             큰 펀드에서만 정확히 잰다(작은 펀드는 1P 가 1% 를 넘는다). */
+          if (fund >= 30_000) {
+            const pct = e.map(x => x * 100 / fund);
+            /* 남는 1P 를 가장 큰 봉투에 얹으므로 상한을 1% 만큼 넘을 수 있다 */
+            if (pct.some(p => p > hi + 1)) overBad++;
+            if (pct.some(p => p < lo - 0.001)) underBad++;
+          }
+          widest = Math.max(widest, Math.max(...e) / Math.max(1, Math.min(...e)));
+        }
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 합이 언제나 펀드와 같다`, sumBad === 0, `${sumBad}/60`);
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 음수가 없다`, negBad === 0, `${negBad}/60`);
         /* 봉투 수를 인원과 같게 두는 이유: KO 가 인원-1 번이고 마지막 하나를 우승자가
            열어서 남는 봉투가 없다. 그래서 개수 검사가 총액 검사와 같은 무게다. */
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 개수가 인원과 같다`, lenBad === 0, `${lenBad}/60`);
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 빈 봉투가 없다`, zeroBad === 0, `${zeroBad}/60`);
         if (fund >= 30_000) {
-          ck(`봉투 ${n}개 · 펀드 ${fund}: 잭팟이 가장 크다`,
-            e[0] === Math.max(...e), `${e[0]} vs ${Math.max(...e)}`);
+          /* 상한이 이 모드의 균형이다. 없으면 5 인에서 89% 짜리 봉투가 나오고(실측)
+             나머지 넷이 껍데기가 되어 대회가 "그 한 명을 누가 잡느냐"로 줄어든다. */
+          ck(`봉투 ${n}개 · 펀드 ${fund}: 상한 ${hi}% 를 넘지 않는다`,
+            overBad === 0, `${overBad}/60`);
+          ck(`봉투 ${n}개 · 펀드 ${fund}: 하한 ${lo}% 아래로 내려가지 않는다`,
+            underBad === 0, `${underBad}/60`);
+          /* 흩어져야 한다 — 전부 비슷하면 봉투를 열 이유가 없다. 범위가 허락하는 최대
+             배수(hi/lo)의 절반은 넘어야 "제각각"이라고 할 수 있다. */
+          if (n >= 3) {
+            ck(`봉투 ${n}개 · 펀드 ${fund}: 금액이 흩어진다`, widest >= hi / lo / 2,
+              `${widest.toFixed(1)}배 (최대 ${(hi / lo).toFixed(1)}배)`);
+          }
         }
       }
     }
-    ck('0 명이면 빈 배열', T.mysteryEnvelopes(1_000, 0).length === 0);
+    /* 범위 표. 계산식이 아니라 표로 둔 값이라, 표가 흔들리면 모드의 균형이 흔들린다.
+       바닥 합이 전체의 절반 근처여야 한다 — 너무 높으면 흩을 칸이 없어 전부 비슷해지고,
+       너무 낮으면 껍데기 봉투가 생긴다. */
+    for (const [n, lo, hi] of [[3, 15, 50], [4, 12, 50], [5, 10, 45],
+      [6, 8, 40], [7, 7, 36], [8, 6, 32], [9, 5, 30]] as [number, number, number][]) {
+      const r = T.envelopeRange(n);
+      ck(`${n}인 범위가 ${lo}~${hi}% 다`, r.lo === lo && r.hi === hi, `${r.lo}~${r.hi}`);
+      ck(`${n}인: 바닥을 다 깔 수 있다 (lo × n ≤ 100)`, r.lo * n <= 100, `${r.lo * n}`);
+      ck(`${n}인: 상한으로 100 칸을 채울 수 있다 (hi × n ≥ 100)`, r.hi * n >= 100, `${r.hi * n}`);
+      ck(`${n}인: 바닥 합이 절반 근처다 (40~55%)`, r.lo * n >= 40 && r.lo * n <= 55,
+        `${r.lo * n}%`);
+      /* 잭팟이 평균의 1.5~3 배. 그 아래면 평범하고, 그 위면 나머지가 껍데기가 된다. */
+      const times = r.hi / (100 / n);
+      ck(`${n}인: 잭팟이 평균의 1.5~3배다`, times >= 1.5 && times <= 3,
+        `${times.toFixed(1)}배`);
+    }
+    ck('0 명이면 빈 배열', T.mysteryEnvelopes(1_000, 0, mkRand(1)).length === 0);
+    ck('1 명이면 펀드 전액', T.mysteryEnvelopes(1_000, 1, mkRand(1))[0] === 1_000);
+    /* ── 고정 표를 버렸다는 것 ──────────────────────────────────────
+       예전에는 가중치가 표로 박혀 있어서 인원이 같으면 금액도 늘 같았다 — 6 인이면 언제나
+       40.9 / 19.4 / … % 였고, 한 번 보면 외워졌다. 그건 "미스터리"가 아니라 자리 뽑기다.
+       같은 인원·같은 펀드로 여러 번 뽑아 결과가 달라지는지 본다. */
+    {
+      const seen = new Set<string>();
+      for (let seed = 1; seed <= 30; seed++) {
+        seen.add(T.mysteryEnvelopes(50_000, 5, mkRand(seed * 104729)).join(','));
+      }
+      ck('같은 인원·같은 펀드에서도 금액이 매번 다르다', seen.size >= 25, `${seen.size}/30`);
+      const src = fsx.readFileSync('src/services/tournament.ts', 'utf8');
+      ck('고정 가중치 표가 남아 있지 않다', !/ENVELOPE_WEIGHTS/.test(src));
+      ck('1% 단위 100 칸으로 쪼갠다', /ENVELOPE_UNITS = 100/.test(src));
+      ck('인원별 범위를 표로 둔다 (식이 아니라 눈으로 조절한다)',
+        /const ENVELOPE_RANGE: Record<number/.test(src));
+      ck('상한이 있다 (없으면 나머지가 껍데기가 된다)', /hi: 50/.test(src));
+      /* 다항분포(한 칸씩 무작위로 나눠 주기)로 두면 큰 수의 법칙에 눌려 전부 비슷해진다.
+         지수 가중치여야 한쪽에 크게 몰리는 판이 섞여 나온다. */
+      ck('지수 가중치를 쓴다 (평평해지지 않게)', /-Math\.log\(u\)/.test(src));
+      /* 실서버는 예측 불가능한 난수를 써야 한다 — 이 값이 곧 돈이다. */
+      ck('실서버 배정은 crypto 를 쓴다',
+        /randomInt\(0, 2 \*\* 32\) \/ 2 \*\* 32/.test(fsx.readFileSync('src/db/holdem.ts', 'utf8')));
+    }
 
     /* 실제 대회를 열어 봉투가 배정되고, 감춰지고, 열리는지 본다. */
     wipe();
@@ -816,28 +896,48 @@ async function main(): Promise<void> {
       const holdemSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
       ck('총성을 홀덤 화면이 미리 받는다',
         /__SFX_NEED__[\s\S]{0,700}?'gunshot'/.test(holdemSrc));
-      /* 전광판이 멈추는 소리도 함께 받는다 — 처형이 끝나자마자 이어지므로 그때 받으러
-         가면 늦다. 파일이 아직 없어도 등록은 해 둔다: playSample 이 실패하면 합성음이
-         대신 울리고, 파일을 넣는 순간 자동으로 그쪽이 쓰인다. */
-      ck('멈추는 소리를 미리 받는다',
-        /__SFX_NEED__[\s\S]{0,900}?'reelstop'/.test(holdemSrc));
+      /* 전광판 소리와 획득 소리도 함께 받는다 — 처형이 끝나자마자 이어지므로 그때
+         받으러 가면 소리가 그림보다 늦게 도착한다. */
+      ck('전광판·획득 소리를 미리 받는다',
+        /'gunshot', 'reelroll', 'reelstop', 'bountyearn'/.test(holdemSrc));
       /* named 는 SFX_SETS 의 키(부르는 이름)다. 파일명은 SFX_EXT 쪽에 있으므로 따로 본다 —
          한쪽만 올려 두면 playSample 이 조용히 실패한다(총성이 그렇게 안 나갔다). */
-      ck('멈추는 소리가 SFX_SETS 에 있다', named.has('reelstop'));
-      ck('멈추는 음원 파일명이 SFX_EXT 에 있다', /'reel-stop':'mp3'/.test(appSrc));
-      ck('멈추는 소리에 합성음 대체가 있다',
-        /reelStop: function\(\)\{[\s\S]{0,220}?playSample\('reelstop'/.test(appSrc));
-      /* 굴러가는 소리는 일부러 음원을 두지 않는다 — 숫자가 바뀌는 간격에 맞아야 하는
-         소리라 파일 길이가 그 간격을 모른다. 슬롯이 생기면 그 뜻이 흐려진다. */
-      ck('굴러가는 소리는 합성음뿐이다',
-        /reelTick: function\(\)/.test(appSrc) && !/playSample\('reeltick'/.test(appSrc));
-      ck('상자 소리가 남아 있지 않다',
-        !/boxShake|boxOpen|box-shake|box-open/.test(appSrc));
-      /* 음원을 요구했다는 기록이 남아야 한다 — 사양(길이·성격)을 코드 주석에만 두면
-         파일을 만들 사람에게 전달되지 않는다. */
-      ck('요구 사양이 문서로 남아 있다',
-        fsx.existsSync('docs/audio-requests.md')
-        && /reel-stop\.mp3/.test(fsx.readFileSync('docs/audio-requests.md', 'utf8')));
+      ck('전광판·획득 소리가 SFX_SETS 에 있다',
+        named.has('reelroll') && named.has('reelstop') && named.has('bountyearn'));
+      ck('음원 파일명이 SFX_EXT 에 있다',
+        /'reel-roll':'mp3'/.test(appSrc) && /'reel-stop':'mp3'/.test(appSrc)
+        && /'bounty-earn':'mp3'/.test(appSrc));
+      /* 파일이 실제로 있어야 한다 — SFX_EXT 에만 올리고 파일을 안 넣으면 조용히
+         합성음으로 떨어진다(그 함정으로 총성이 한 번도 안 나갔다). */
+      ck('음원 파일이 실제로 있다',
+        ['reel-roll', 'reel-stop', 'bounty-earn']
+          .every(f => fsx.existsSync(`public/sfx/${f}.mp3`)));
+      /* 음량 보정이 없으면 획득 소리 하나가 나머지를 다 덮는다 — 실측 RMS 가
+         -29.2 / -24.3 / -15.5dB 로 13.7dB 벌어져 있다. */
+      ck('음량 보정값이 있다',
+        /'reel-roll': 0\.610, 'reel-stop': 0\.437, 'bounty-earn': 0\.158/.test(appSrc));
+      // 화이트리스트에 없으면 파일이 있어도 404 가 된다 (서버가 이름으로만 받는다)
+      {
+        const srvSrc = fsx.readFileSync('src/web/server.ts', 'utf8');
+        ck('음원이 서빙 화이트리스트에 있다',
+          /'reel-roll\.mp3', 'reel-stop\.mp3'/.test(srvSrc)
+          && /'bounty-earn\.mp3'/.test(srvSrc));
+      }
+      /* 음원이 들어와도 합성음 대체는 남겨 둔다 — 나중에 음원을 교체하는 사이에도
+         조용해지지 않아야 한다. */
+      ck('합성음 대체가 남아 있다',
+        /reelRoll: function\(\)\{[\s\S]{0,300}?playSample\('reelroll'/.test(appSrc)
+        && /reelStop: function\(\)\{[\s\S]{0,300}?playSample\('reelstop'/.test(appSrc)
+        && /bountyUp: function\(\)\{[\s\S]{0,300}?playSample\('bountyearn'/.test(appSrc));
+      /* 딸깍 소리는 걷어냈다 — 회전 음원이 그 구간을 통째로 덮으므로 숫자마다 소리를
+         낼 필요가 없어졌다. 상자 소리도 마찬가지로 가리킬 물건이 없다. */
+      ck('딸깍·상자 소리가 남아 있지 않다',
+        !/reelTick/.test(appSrc) && !/boxShake|boxOpen|box-shake|box-open/.test(appSrc));
+      /* 화면 구간이 음원 길이에 맞아야 한다 — 소리가 먼저 끝나면 무음이 생기고,
+         늦게 끝나면 멈춘 뒤에도 돌아가는 소리가 남는다. */
+      ck('굴리는 구간이 회전 음원 길이(2.05초)에 맞다',
+        /MYS_ROLL_MS = 2000/.test(fsx.readFileSync(
+          'src/web/games/holdem-client/seats.ts', 'utf8')));
     }
     ck('음원의 발사 시각이 app.js 에 있다', /gunfireShots: \[30, 305, 1335\]/.test(appSrc));
     ck('세 발이 한 번의 재생으로 나간다 (발마다 재생하지 않는다)',
@@ -1414,11 +1514,10 @@ async function main(): Promise<void> {
         .test(cssSrc));
 
     // 소리는 각 박자에 붙는다
-    /* 굴러가는 소리는 숫자를 바꾸는 그 타이머 안에서 낸다 — 따로 예약하면 눈은 55ms
-       마다 바뀌는데 소리는 제 리듬으로 가서 "소리 따로 그림 따로"가 된다. */
-    ck('굴러가는 소리가 숫자와 같은 타이머에서 난다',
-      /amtEl\.textContent = stackText\(pick\) \+ 'P';[\s\S]{0,120}?casinoSfx\.reelTick\(\)/
-        .test(seatsSrc));
+    /* 회전음은 굴리는 구간과 같은 길이의 음원이라 한 번만 재생한다 — 숫자마다 딸깍
+       소리를 내던 방식은 음원이 오면서 필요가 없어졌다. */
+    ck('굴러갈 때 회전음이 한 번 난다',
+      /'ht-mysbox in roll';[\s\S]{0,260}?casinoSfx\.reelRoll\(\)/.test(seatsSrc));
     ck('멈출 때 소리가 난다',
       /'ht-mysbox in land'[\s\S]{0,180}?casinoSfx\.reelStop\(\)/.test(seatsSrc));
 
@@ -1451,8 +1550,15 @@ async function main(): Promise<void> {
     ck('몇 번째 봉투인지 점으로 알려준다',
       /id="htMysDots"/.test(htmlSrc) && /job\.total > 1/.test(seatsSrc)
       && /\.ht-mysbox-dots i\.on\{/.test(cssSrc));
-    ck('굴러가는 숫자를 실제 봉투 금액에서 뽑는다',
-      /var pool = \(job\.pool && job\.pool\.length\) \? job\.pool : \[job\.amount\]/.test(seatsSrc));
+    /* 굴러가는 숫자로 실제 봉투 금액을 돌리면, 굴러가는 것만 보고도 다른 봉투가 얼마인지
+       다 알 수 있다 — 미스터리의 뜻이 사라진다(실측 로그에 남의 봉투 금액이 그대로 찍혔다).
+       자릿수마다 0~9 를 마구 뽑고, 자릿수만 당첨 금액과 같게 고정한다(폭이 흔들리지 않게). */
+    ck('굴러가는 숫자를 마구잡이로 뽑는다 (다른 봉투가 새지 않게)',
+      /Math\.floor\(Math\.random\(\) \* 10\)/.test(seatsSrc)
+      && /var digits = String\(Math\.max\(1, job\.amount\)\)\.length/.test(seatsSrc));
+    ck('실제 봉투 금액을 돌리지 않는다', !/job\.pool/.test(seatsSrc));
+    ck('맨 앞자리는 0 이 아니다 (폭이 흔들리지 않게)',
+      /1 \+ Math\.floor\(Math\.random\(\) \* 9\)/.test(seatsSrc));
     /* 판에 한 번만 재생해야 한다 — 폴링마다 같은 목록이 오고, 창을 다시 열어도 온다 */
     ck('같은 판을 두 번 재생하지 않는다',
       /mysPlayed\[tb\.handNo\] = 1;/.test(seatsSrc));

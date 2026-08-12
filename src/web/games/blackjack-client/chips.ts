@@ -64,6 +64,23 @@ export function bjChips(p0: string | number): string {
         // 판 도중에 들어왔거나 남의 자리를 처음 볼 땐 총액밖에 모르니 그때만 쪼갠다
         if (bet > 0) { pile.bet = bet; pushChips(el, pile, decompose(bet), owner, ''); }
       }
+      /* 지금 그려 둔 칩들의 합. pile.bet 이라는 별도 카운터가 아니라 이 값을 근거로 삼는다 —
+         카운터는 "올렸다고 믿는 금액"이고 이건 "실제로 화면에 있는 금액"이다. 둘이 어긋나는
+         경로가 실제로 있었다(아래 dropMyChip 주석). */
+      function pileSum(pile){
+        var s = 0;
+        for (var i = 0; i < pile.list.length; i++) s += pile.list[i].d;
+        return s;
+      }
+      /* 자리에서 빠진 좌석의 기록을 버린다.
+         Clear Screen 을 누르면 그 좌석이 st.seats 에서 사라지고, 그러면 아래 syncPile 이
+         그 좌석에 대해 아예 돌지 않아 옛 기록이 남는다 — 같은 자리에 다시 올리면 그
+         옛 기록이 되살아난다(동전 세 개를 지우고 골드바를 올렸는데 동전이 다시 나왔다). */
+      function dropStalePiles(seats){
+        var live = {};
+        for (var i = 0; i < seats.length; i++) live[seats[i].seat] = 1;
+        for (var k in piles) if (!live[k]) delete piles[k];
+      }
       function syncPile(s, roundId){
         var el = document.getElementById('bjp-'+s.seat);
         if (!el) return;
@@ -71,6 +88,10 @@ export function bjChips(p0: string | number): string {
         if (!pile || pile.round !== roundId) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
         // 줄었으면(회수) 애니메이션 없이 다시 그린다
         if (s.bet < pile.bet) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
+        /* 화면에 그려진 합이 서버 금액과 다르면 무슨 경로로든 어긋난 것이다 — 다시 그린다.
+           여기가 마지막 안전망이라 조건을 금액 하나로만 둔다. 아래 delta 계산은 "얼마나
+           더 날려 보낼까"를 정하는 것이고, 이 검사는 "지금 화면이 맞나"를 본다. */
+        if (pileSum(pile) !== s.bet) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
         var delta = s.bet - pile.bet;
         if (delta > 0) {
           pile.bet = s.bet;
@@ -129,6 +150,10 @@ export function bjChips(p0: string | number): string {
       // 방금 누른 코인 버튼의 실제 화면 위치에서 출발해 자리 안 제자리로 날아온다.
       function dropMyChip(seat, denom){
         var el = document.getElementById('bjp-'+seat), pile = piles[seat];
+        /* 요소나 기록이 없으면 여기서 그릴 수가 없다 — Clear 로 자리가 비면 그 좌석의
+           칸이 화면에서 사라지고, 폴링이 돌기 전에 다시 올리면 이 경로로 들어온다.
+           조용히 돌아가도 괜찮다: 다음 폴링의 syncPile 이 "그려진 합 ≠ 서버 금액"을 보고
+           다시 그린다. 그 안전망이 없을 때는 옛 동전이 되살아났다. */
         if (!el || !pile) return;
         var added = pushChips(el, pile, [denom], MEID, 'pending');
         pile.bet += denom;

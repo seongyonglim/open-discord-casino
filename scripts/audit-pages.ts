@@ -772,6 +772,40 @@ async function main(): Promise<void> {
     ck('판이 바뀌면 서버 값으로 돌아간다', /potShown = 0, potShownHand = null/.test(se));
   }
 
+  console.log('\n[9] 블랙잭 칩 더미 — 지운 칩이 되살아나지 않는다');
+  {
+    /* 제보된 버그: 동전(10·100·500)을 올리고 Clear Screen 한 뒤 같은 자리에 골드바를
+       올리면, 서버 금액은 1000P 인데 화면에는 옛 동전 셋이 다시 나타났다.
+
+       경로 (실측으로 확인):
+         1. 동전 셋 → piles[2] = { bet: 610, list: [10,100,500] }
+         2. Clear → 그 좌석이 st.seats 에서 빠진다 → 칸(#bjp-2)이 사라지고, syncPile 이
+            그 좌석에 대해 아예 돌지 않아 piles[2] 가 옛 기록 그대로 남는다
+         3. 골드바 클릭 → dropMyChip 이 칸을 못 찾아(요소가 없다) 조용히 돌아간다
+         4. 다음 폴링 → s.bet(1000) > pile.bet(610) 이라 "줄었다" 로 안 잡히고,
+            내 좌석이라 그리기를 건너뛴다 → 그 다음 폴링에서 paintPile 이 옛 목록을 복원
+
+       그래서 두 곳을 막는다: 빠진 좌석의 기록을 버리고(원인), 그려진 합이 서버 금액과
+       다르면 무조건 다시 그린다(경로 무관 안전망). */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const ch = readFileSync('src/web/games/blackjack-client/chips.ts', 'utf8') as string;
+    const se2 = readFileSync('src/web/games/blackjack-client/seats.ts', 'utf8') as string;
+    ck('빠진 좌석의 칩 기록을 버린다', /function dropStalePiles\(seats\)/.test(ch)
+      && /for \(var k in piles\) if \(!live\[k\]\) delete piles\[k\]/.test(ch));
+    ck('좌석 루프보다 먼저 버린다', /dropStalePiles\(st\.seats \|\| \[\]\);/.test(se2)
+      && se2.indexOf('dropStalePiles') < se2.indexOf('syncPile(s, r.id)'));
+    /* pile.bet 은 "올렸다고 믿는 금액"이고 pileSum 은 "실제로 화면에 있는 금액"이다.
+       둘이 어긋나는 경로가 있었으므로 판단은 뒤쪽을 근거로 해야 한다. */
+    ck('그려진 칩의 합으로 판단한다', /function pileSum\(pile\)/.test(ch)
+      && /if \(pileSum\(pile\) !== s\.bet\) return rebuildPile/.test(ch));
+    ck('합이 어긋나면 delta 계산보다 먼저 다시 그린다',
+      ch.indexOf('pileSum(pile) !== s.bet') < ch.indexOf('var delta = s.bet - pile.bet'));
+    /* 복원은 반드시 기록 목록 기준이어야 한다 — 총액을 다시 쪼개면 500 두 개가 1000 한 개로
+       합쳐져서 "올린 그대로"가 아니게 된다. 그 규칙은 그대로 남아 있어야 한다. */
+    ck('칸이 비었을 때의 복원은 목록 기준이다',
+      /if \(el\.childElementCount !== pile\.list\.length\) paintPile\(el, pile\)/.test(ch));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

@@ -93,6 +93,11 @@ const SFX_FILES = new Set([
   /* PKO 처형 — 세 발이 한 파일에 들어 있다(30ms · 305ms · 1335ms).
      발마다 따로 재생하지 않는 이유는 그 간격이 음원의 리듬이기 때문이다. */
   'gunshot.mp3',
+  /* 미스터리 바운티 전광판 — 돌아가는 소리(2.05초)와 멈추는 소리.
+     화면 구간이 이 음원 길이에 맞춰져 있다(seats.ts 의 MYS_ROLL_MS · MYS_LAND_MS). */
+  'reel-roll.mp3', 'reel-stop.mp3',
+  // 바운티를 챙길 때 — 아바타 위로 +N P 가 떠오르는 순간(0.53초)
+  'bounty-earn.mp3',
 ]);
 const MIME: Record<string, string> = {
   ogg: 'audio/ogg', mp3: 'audio/mpeg', wav: 'audio/wav', jpg: 'image/jpeg',

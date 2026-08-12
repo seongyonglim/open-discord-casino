@@ -743,7 +743,13 @@ function startTournament(t: HtRow, regs: HtEntryRow[], now: number): void {
   if (isMystery(t)) {
     const pool = one<{ bounty_pool: number }>(
       `SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`, t.id)!.bounty_pool;
-    const envs = T.mysteryEnvelopes(pool, regs.length);
+    /* 금액을 매 대회 새로 뽑는다. 무작위는 여기서 넣는다 — 순수 계산 쪽에 crypto 를 두면
+       같은 인원·같은 펀드에서 결과가 매번 달라져 검사할 수 없다.
+       Math.random 이 아니라 crypto 를 쓰는 이유: 이 값이 곧 돈이고, 예측 가능한 난수는
+       "다음 대회 잭팟이 누구 자리인지" 를 맞힐 여지를 남긴다. 2^32 로 나눠 [0,1) 을
+       만든다(randomInt 의 상한은 열린 구간이라 1 이 나오지 않는다). */
+    const envs = T.mysteryEnvelopes(pool, regs.length,
+      () => randomInt(0, 2 ** 32) / 2 ** 32);
     /* 누구에게 어느 봉투가 가는지는 여기서 섞는다 — 자리 배치와 같은 이유로,
        등록 순서대로 주면 먼저 등록한 사람이 늘 잭팟을 든다. */
     for (let i = envs.length - 1; i > 0; i--) {

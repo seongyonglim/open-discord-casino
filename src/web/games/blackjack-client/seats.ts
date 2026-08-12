@@ -55,6 +55,11 @@ export const BJ_SEATS_JS = `      /* ── 자리 ─────────�
           // 더미 기록은 버리지 않는다 — 아래 syncPile이 기록 그대로 새 칸에 다시 그린다
         }
         var dealt = 0;
+        /* 자리에서 빠진 좌석의 칩 기록을 먼저 버린다. Clear Screen 을 누르면 그 좌석이
+           st.seats 에서 사라지므로 아래 루프가 그 좌석을 돌지 않고, 기록이 그대로 남아
+           같은 자리에 다시 올릴 때 되살아난다(실측: 동전 셋을 지우고 골드바를 올렸는데
+           동전 셋이 다시 나왔다). */
+        dropStalePiles(st.seats || []);
         (st.seats||[]).forEach(function(s){
           var el = document.getElementById('bjh-'+s.seat);
           if (el) dealt += syncCards(el, 'seat'+s.seat, s.cards);
