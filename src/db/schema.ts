@@ -617,8 +617,11 @@ function initSchema(): void {
      1P 까지 맞춰 나가야 하는 돈이라 그 어긋남이 곧 없는 포인트를 발행하는 일이 된다.
 
      bounty      = 지금 내 머리에 걸린 값. KO 당하면 0 이 된다.
-     bounty_won  = 지금까지 KO 로 받아 챙긴 현금 누계(이미 잔액에 들어간 돈이다).
-                   화면에 "번 바운티"를 적기 위한 값이고, 총액 검산의 근거도 된다. */
+     bounty_won  = 지금까지 KO 로 벌어 둔 금액 누계. **아직 지갑에 없는 돈이다** —
+                   바운티는 대회가 끝날 때 한 번에 나간다. 그래서 이 값은 "예정액"이고,
+                   실제로 나간 금액은 bounty_paid 에 따로 적는다.
+     bounty_paid = 실제로 지급된 금액. 마감 정산이 한 번만 나가게 하는 자물쇠이자,
+                   대회를 되돌릴 때 "얼마를 걷어 와야 하는가"의 유일한 근거다. */
   for (const col of [
     `mode TEXT NOT NULL DEFAULT 'CLASSIC'`,
     `bounty_pool INTEGER NOT NULL DEFAULT 0`,
@@ -638,6 +641,7 @@ function initSchema(): void {
     `bounty INTEGER NOT NULL DEFAULT 0`,
     `bounty_won INTEGER NOT NULL DEFAULT 0`,
     `bounty_revealed INTEGER NOT NULL DEFAULT 0`,
+    `bounty_paid INTEGER NOT NULL DEFAULT 0`,
   ]) {
     try { d.exec(`ALTER TABLE holdem_entries ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
   }

@@ -69,10 +69,15 @@ export function purgeTournament(id: number): { ok: true; removed: number } | { o
        둘 다 원장에 이미 기록된 돈이라, 대회 행만 지우면 근거 없는 포인트가 남는다.
        (인원 미달로 취소된 판은 그때 이미 돌려주고 paid_in 을 0 으로 내렸으므로
        여기서는 걸리지 않는다 — 지울 수 있다.) */
-    const money = one<{ prize: number; fees: number }>(
-      `SELECT COALESCE(SUM(prize), 0) AS prize, COALESCE(SUM(paid_in), 0) AS fees
+    /* 바운티도 함께 본다. 프리롤 바운티 판은 상금 팟이 0 이고 참가비도 걷지 않으므로
+       위의 두 값만 보면 "흔적 없는 판"으로 읽히는데, 마감에서 펀드가 실제로 나갔다. */
+    const money = one<{ prize: number; fees: number; bounty: number }>(
+      `SELECT COALESCE(SUM(prize), 0) AS prize, COALESCE(SUM(paid_in), 0) AS fees,
+              COALESCE(SUM(bounty_paid), 0) AS bounty
          FROM holdem_entries WHERE tournament_id = ?`, id)!;
-    if (money.prize > 0 || money.fees > 0) return { ok: false as const, error: 'paid' as const };
+    if (money.prize > 0 || money.fees > 0 || money.bounty > 0) {
+      return { ok: false as const, error: 'paid' as const };
+    }
 
     return { ok: true as const, removed: removeTournamentRows(id) };
   });
@@ -123,20 +128,19 @@ export function revokePrizesAndPurge(id: number):
     if (t.started_at != null && t.finished_at == null && t.cancelled_at == null) {
       return { ok: false as const, error: 'running' as const };
     }
-    /* 바운티 현금도 함께 되돌린다. 상금은 대회가 끝날 때만 나가지만 바운티는 KO 마다
-       나갔으므로, 상금만 걷어 가면 그 현금이 그대로 남는다 — 없던 일로 만들려는 판에서
-       펀드 전액이 발행된 채로 끝난다(4인 10,000P 50% 판이면 20,000P).
+    /* 바운티도 함께 되돌린다. 상금만 걷어 가면 마감 때 나간 바운티가 그대로 남아,
+       없던 일로 만들려는 판에서 펀드 전액이 발행된 채 끝난다.
 
-       단 취소된 판은 제외한다. 취소는 그 시점에 이미 정산을 끝냈다 — refundEntries 가
-       나간 현금만큼 참가비에서 덜어 내고 돌려줬으므로 그 판의 수지는 이미 0 이다.
-       여기서 또 걷으면 두 번 걷는 것이 되어 유저가 그만큼 손해를 본다. */
-    const alsoBounty = t.finished_at != null;
+       기준을 bounty_won(예정액)이 아니라 bounty_paid(실제 지급액)로 둔다. 중간에 끊긴
+       판은 예정액만 있고 나간 것이 없으므로 bounty_paid 가 0 이고, 그래서 취소된 판을
+       지울 때 없는 돈을 걷어 가는 일이 생기지 않는다 — 대회 상태를 따로 따질 필요가
+       없다는 뜻이기도 하다. 지급 여부의 근거를 한 칸으로 못 박아 두는 것이 요점이다. */
     /* 한 사람이 한 대회에서 상금을 두 번 받을 수는 없지만, 합쳐서 한 번에 되돌린다 —
        원장에 같은 사유가 두 줄 남는 것보다 한 줄이 읽기 쉽다. */
     const paid = all<{ user_id: string; n: number }>(
-      `SELECT user_id, SUM(prize) + SUM(CASE WHEN ? THEN bounty_won ELSE 0 END) AS n
+      `SELECT user_id, SUM(prize) + SUM(bounty_paid) AS n
          FROM holdem_entries WHERE tournament_id = ? GROUP BY user_id
-        HAVING n > 0`, alsoBounty ? 1 : 0, id);
+        HAVING n > 0`, id);
     let revoked = 0;
     for (const p of paid) {
       adjustBalance(p.user_id, -p.n, 'tournament:revoke:' + id);
@@ -334,7 +338,7 @@ export function cancelRunningTournament():
     run(`UPDATE holdem_tournaments SET cancelled_at = unixepoch() WHERE id = ?`, t.id);
     /* 참가비를 걷었으면 돌려준다. 판이 끝까지 가지 않아 상금이 나가지 않았으므로,
        돌려주지 않으면 걷기만 하고 아무에게도 주지 않은 돈이 된다. */
-    const refunded = refundEntries(t.id, 'holdem:abort:', { netBounty: true });
+    const refunded = refundEntries(t.id, 'holdem:abort:');
     return { ok: true as const, id: t.id, refunded };
   });
 }

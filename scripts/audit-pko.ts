@@ -50,10 +50,10 @@ function bountyPaid(tid: number): number {
 }
 function entriesOf(tid: number) {
   return db.prepare(
-    `SELECT user_id, bounty, bounty_won, ko_count, prize, finish_place, paid_in
+    `SELECT user_id, bounty, bounty_won, bounty_paid, ko_count, prize, finish_place, paid_in
        FROM holdem_entries WHERE tournament_id = ? ORDER BY user_id`).all(tid) as {
-    user_id: string; bounty: number; bounty_won: number; ko_count: number;
-    prize: number; finish_place: number | null; paid_in: number;
+    user_id: string; bounty: number; bounty_won: number; bounty_paid: number;
+    ko_count: number; prize: number; finish_place: number | null; paid_in: number;
   }[];
 }
 
@@ -457,17 +457,21 @@ async function main(): Promise<void> {
     ck('머리가 자기 몫 + 얻은 몫 만큼 늘었다',
       k1.bounty === (before.get('k1') ?? 0) + one.head * 2,
       `${k1.bounty} vs ${(before.get('k1') ?? 0) + one.head * 2}`);
-    ck('현금 누계가 맞다', k1.bounty_won === one.cash * 2,
+    ck('확보 누계가 맞다', k1.bounty_won === one.cash * 2,
       `${k1.bounty_won} vs ${one.cash * 2}`);
-    /* 원장에 실제로 들어갔는지 본다 — 표만 고치고 잔액을 안 올리는 실수가 가장 흔하다 */
+    /* 판 도중에는 지갑이 움직이지 않아야 한다. 바운티가 나가는 자리는 마감 정산 한 곳뿐이다 —
+       한동안 여기서 곧바로 지급했고, 그래서 "상금은 대회가 끝날 때만 나간다"를 전제로 짜인
+       중단 환불과 대회 삭제가 조용히 새고 있었다([9]·[10]). 나가는 자리를 늘리지 않는 것이
+       계산을 맞추는 것보다 안전하다는 판단이고, 그 판단을 여기서 못 박는다. */
     const balAfter = (db.prepare(`SELECT balance FROM users WHERE id = 'k1'`)
       .get() as { balance: number }).balance;
-    ck('현금이 잔액에 즉시 들어갔다', balAfter - balBefore === one.cash * 2,
-      `${balAfter - balBefore} vs ${one.cash * 2}`);
-    ck('원장에 바운티 항목이 남았다',
+    ck('판 도중에는 잔액이 움직이지 않는다', balAfter - balBefore === 0,
+      String(balAfter - balBefore));
+    ck('판 도중에는 원장에 바운티 항목이 없다',
       (db.prepare(
         `SELECT COUNT(*) AS n FROM points_ledger WHERE user_id = 'k1' AND reason LIKE 'game:holdem:bounty%'`)
-        .get() as { n: number }).n > 0);
+        .get() as { n: number }).n === 0);
+    ck('아직 지급 표시가 서지 않았다', k1.bounty_paid === 0, String(k1.bounty_paid));
 
     /* 이 순간의 보존: 아직 마감 전이라도 [현금으로 나간 것 + 머리에 남은 것] 이 펀드와 같아야 한다 */
     const pool = (db.prepare(`SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`)
@@ -561,6 +565,15 @@ async function main(): Promise<void> {
       ck(`${tag}: bounty_won 합 = 걷은 펀드`,
         rows.reduce((s, r) => s + r.bounty_won, 0) === pool,
         `${rows.reduce((s, r) => s + r.bounty_won, 0)} vs ${pool}`);
+      /* 예정액(bounty_won)과 실제 지급액(bounty_paid)이 마감 뒤에는 같아야 한다.
+         두 칸을 두는 이유는 판 도중에 갈리기 때문이다 — 그때는 예정만 있고 지급은 0 이다.
+         끝난 뒤에도 갈려 있으면 화면이 가리키는 숫자와 지갑에 들어간 돈이 다르다는 뜻이다. */
+      ck(`${tag}: 지급액 = 예정액 (화면 숫자와 지갑이 같다)`,
+        rows.reduce((s, r) => s + r.bounty_paid, 0) === rows.reduce((s, r) => s + r.bounty_won, 0),
+        `${rows.reduce((s, r) => s + r.bounty_paid, 0)} vs ${rows.reduce((s, r) => s + r.bounty_won, 0)}`);
+      ck(`${tag}: 지급액 합 = 원장에 찍힌 금액`,
+        rows.reduce((s, r) => s + r.bounty_paid, 0) === paidAll,
+        `${rows.reduce((s, r) => s + r.bounty_paid, 0)} vs ${paidAll}`);
       void paid;
 
       /* 대회 전체로도 본다: 걷은 참가비 총액이 상금 + 바운티로 정확히 나갔는가.
@@ -935,7 +948,12 @@ async function main(): Promise<void> {
       const cashOut = (db.prepare(
         `SELECT COALESCE(SUM(delta), 0) AS s FROM points_ledger WHERE reason = ?`)
         .get('game:holdem:bounty:' + mk.id) as { s: number }).s;
-      ck(`${mode}: 검사 전제 — 판 도중에 이미 현금이 나갔다`, cashOut > 0, String(cashOut));
+      const accrued = (db.prepare(`SELECT COALESCE(SUM(bounty_won), 0) AS s FROM holdem_entries
+                                    WHERE tournament_id = ?`).get(mk.id) as { s: number }).s;
+      /* 검사가 성립하려면 KO 가 실제로 났어야 한다 — 확보액으로 확인한다.
+         그리고 그 확보액이 지갑으로는 나가지 않았다는 것이 이 절의 전제다. */
+      ck(`${mode}: 검사 전제 — KO 로 확보된 금액이 있다`, accrued > 0, String(accrued));
+      ck(`${mode}: 판 도중에는 지갑으로 나간 것이 없다`, cashOut === 0, String(cashOut));
       ck(`${mode}: 검사 전제 — 아직 끝나지 않았다`,
         (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
           .get(mk.id) as { finished_at: number | null }).finished_at == null);
@@ -1136,6 +1154,91 @@ async function main(): Promise<void> {
           .balance - (before2.get(p) ?? 0)), 0);
       ck('취소된 판을 삭제해도 돈이 다시 걷히지 않는다', afterPurge === 0, String(afterPurge));
     } else ck('취소 후 삭제 대회가 열린다', false, mk2.error);
+  }
+
+  /* ── 11. 나가는 자리 ────────────────────────────────────────────
+     이 절은 금액을 세지 않는다. 지키려는 것은 구조다 — **바운티가 지갑으로 나가는 자리는
+     하나여야 한다.** 자리가 둘이 되는 순간 "상금은 대회가 끝날 때만 나간다"를 전제로 짜인
+     자리들(중단 환불, 대회 삭제, 삭제 가능 판정)이 하나씩 어긋나기 시작하고, 그 어긋남은
+     총액 검사가 아니라 그 경로를 일부러 태워 봐야 드러난다. 실제로 그렇게 새고 있었다.
+     그래서 자리 수 자체를 검사해 둔다. */
+  section('[11] 구조 — 바운티가 지갑으로 나가는 자리는 한 곳뿐이다');
+  {
+    const hdSrc = fsx.readFileSync('src/db/holdem.ts', 'utf8');
+    const spots = hdSrc.match(/adjustBalance\([^)]*game:holdem:bounty/g) ?? [];
+    ck('adjustBalance 로 바운티를 내보내는 자리가 하나다', spots.length === 1,
+      `${spots.length} 곳`);
+    /* KO 정산 함수 본문에 지급이 없어야 한다 — 위 검사는 개수만 보므로 그 하나가
+       어디에 있는지도 못 박는다. */
+    const koBody = hdSrc.slice(hdSrc.indexOf('function settleBounty'),
+      hdSrc.indexOf('function finishTournament'));
+    ck('KO 정산(settleBounty)에는 지급이 없다', !/adjustBalance\(/.test(koBody));
+    ck('KO 정산은 확보액만 적는다', /bounty_won = bounty_won \+ \?/.test(koBody));
+    const payBody = hdSrc.slice(hdSrc.indexOf('function payBounties'),
+      hdSrc.indexOf('/* ── 유저 동작'));
+    ck('마감 정산(payBounties)이 그 하나를 가진다',
+      /adjustBalance\([^)]*game:holdem:bounty/.test(payBody));
+    /* 이중 지급 자물쇠는 조건부 UPDATE + changes() 여야 한다. 값을 다시 읽어 비교하면
+       "내가 방금 넣었다"와 "원래 그 값이었다"를 구분하지 못한다. */
+    ck('지급 표시가 조건부 UPDATE 로 선다',
+      /bounty_paid = \?\s*\n?\s*WHERE id = \? AND bounty_paid = 0/.test(payBody));
+    ck('changes() 로 확인한 뒤에 지급한다',
+      /changes\(\) AS n[\s\S]{0,120}?adjustBalance/.test(payBody));
+    /* 환불은 상계하지 않는다 — 나간 것이 없으므로 상계할 것도 없다. 상계가 되살아나면
+       삭제 경로와 겹쳐 과다 회수가 된다(실측 15,000P). */
+    ck('환불이 참가비를 그대로 돌려준다',
+      /adjustBalance\(r\.user_id, r\.paid_in, reasonPrefix/.test(hdSrc));
+    ck('환불에 바운티 상계가 없다', !/netBounty/.test(hdSrc));
+    // 되돌리는 쪽은 예정액이 아니라 지급액을 근거로 삼는다
+    const admSrc3 = fsx.readFileSync('src/db/admin.ts', 'utf8');
+    ck('회수는 bounty_paid 를 근거로 한다',
+      /SUM\(prize\) \+ SUM\(bounty_paid\)/.test(admSrc3));
+    ck('회수가 예정액(bounty_won)을 걷지 않는다', !/SUM\(bounty_won\)/.test(admSrc3));
+    ck('흔적 없는 판 판정도 bounty_paid 를 본다',
+      /SUM\(bounty_paid\), 0\) AS bounty/.test(admSrc3));
+    // 화면은 "확보"라고 적는다 — 지갑에 아직 없는 돈이다
+    const sideSrc3 = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
+    ck('화면이 "획득"이 아니라 "확보"라고 적는다',
+      /내가 확보/.test(sideSrc3) && !/내가 획득/.test(sideSrc3));
+    ck('언제 들어오는지도 적는다', /대회가 끝날 때 한 번에/.test(sideSrc3));
+    ck('"즉시 받습니다" 가 남아 있지 않다', !/즉시 받습니다/.test(sideSrc3));
+
+    /* 프리롤 바운티 판은 상금 팟과 참가비가 모두 0 이라, 예전 기준으로는 "경제에 흔적이
+       없는 판"으로 읽혀 그냥 지워졌다. 마감에서 펀드가 실제로 나갔으므로 거절해야 한다. */
+    wipe();
+    for (const p of ['z1', 'z2', 'z3']) mkUser(p, 100_000);
+    const mkz = AD.createTournament({
+      title: '프리롤 바운티', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 0, prizeMultiplier: 10_000, mode: 'PKO_BOUNTY', bountyPct: 100,
+      startingStack: 5_000, levelMin: 2, lateRegMin: 1, graceMin: 30,
+    });
+    if (mkz.ok) {
+      for (const p of ['z1', 'z2', 'z3']) HD.registerHoldem(p, p);
+      db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+      HD.advanceHoldem();
+      const tbz = HD.getTable(mkz.id)!;
+      for (let step = 0; step < 4_000; step++) {
+        const fin = (db.prepare(`SELECT finished_at FROM holdem_tournaments WHERE id = ?`)
+          .get(mkz.id) as { finished_at: number | null }).finished_at;
+        if (fin != null) break;
+        const h = HD.getCurrentHand(tbz.id);
+        if (!h || h.ended_at != null || h.to_act_seat == null) {
+          db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`).run(now() - 1, tbz.id);
+          HD.advanceHoldem();
+          continue;
+        }
+        const s = HD.getSeats(tbz.id).find(x => x.seat === h.to_act_seat && x.presence !== 'OUT');
+        if (!s) break;
+        db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+          .run(now() + HD.ACTION_SEC, h.id);
+        if (!HD.holdemAction(s.user_id, 'allin', 0).ok
+          && !HD.holdemAction(s.user_id, 'call', 0).ok) HD.holdemAction(s.user_id, 'check', 0);
+      }
+      const bp = entriesOf(mkz.id).reduce((n, r) => n + r.bounty_paid, 0);
+      ck('검사 전제 — 프리롤 바운티에서 펀드가 나갔다', bp === 30_000, String(bp));
+      ck('상금 0 · 참가비 0 이라도 바운티가 나간 판은 그냥 지울 수 없다',
+        AD.purgeTournament(mkz.id).ok === false);
+    } else ck('프리롤 바운티 대회가 열린다', false, mkz.error);
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
