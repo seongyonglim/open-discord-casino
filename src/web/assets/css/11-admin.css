@@ -97,6 +97,8 @@
   .ad-tag.buy{background:rgba(255,179,92,.13);color:#ffb35c}
   /* PKO(바운티) 판. 바이인 태그 옆에 붙으므로 색이 겹치면 안 된다 — 금색 계열로 둔다 */
   .ad-tag.pko{background:rgba(212,175,55,.16);color:#e8c86a}
+  /* 미스터리는 PKO 와 구분돼야 한다 — 금액이 비공개라 운영 판단이 달라진다 */
+  .ad-tag.mystery{background:rgba(150,110,220,.16);color:#b898ea}
   .ad-st{display:inline-block;font-size:11.5px;font-weight:700;white-space:nowrap}
   .ad-st.s-wait{color:var(--muted)}
   .ad-st.s-run{color:var(--win)}

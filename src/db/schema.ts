@@ -622,12 +622,22 @@ function initSchema(): void {
   for (const col of [
     `mode TEXT NOT NULL DEFAULT 'CLASSIC'`,
     `bounty_pool INTEGER NOT NULL DEFAULT 0`,
+    /* 참가비(프리롤이면 배수) 중 바운티로 갈 몫(%). 나머지가 순위 상금이다.
+       대회마다 다르게 열 수 있어야 해서 설정이 아니라 판에 붙인다 — 설정이면
+       나중에 값을 고칠 때 이미 열린 판의 약속이 조용히 바뀐다.
+       미스터리 모드는 늘 100 이다(전액 바운티). */
+    `bounty_pct INTEGER NOT NULL DEFAULT 50`,
   ]) {
     try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
   }
+  /* bounty_revealed — 이 사람의 봉투 금액이 공개됐나.
+     미스터리 방식이라 금액은 잡히는 순간(또는 우승하는 순간)에만 열린다. 감추는 일을
+     화면에 맡기지 않는다: 응답에 들어 있으면 개발자 도구로 그대로 읽히고 그러면 감춘
+     것이 아니다 — 홀 카드와 같은 규율이다. */
   for (const col of [
     `bounty INTEGER NOT NULL DEFAULT 0`,
     `bounty_won INTEGER NOT NULL DEFAULT 0`,
+    `bounty_revealed INTEGER NOT NULL DEFAULT 0`,
   ]) {
     try { d.exec(`ALTER TABLE holdem_entries ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
   }

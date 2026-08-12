@@ -24,8 +24,10 @@ export interface AdminTournamentRow {
   /** 목록이 "이 판이 얼마짜리인가"를 다시 재는 데 쓴다 — 지급액만으로는 안 끝난 판을 못 읽는다 */
   prize_fixed: number;
   buy_in: number;
-  /** 판의 종류. 'CLASSIC' | 'PKO_BOUNTY' — 목록이 PKO 태그를 붙이는 데 쓴다 */
+  /** 판의 종류. 'CLASSIC' | 'PKO_BOUNTY' | 'MYSTERY_BOUNTY' — 목록이 태그를 붙이는 데 쓴다 */
   mode: string;
+  /** 바운티 몫(%). 목록이 "바운티 70%" 처럼 적는 데 쓴다 */
+  bounty_pct: number;
   entries: number;
   /** 실제로 지급된 상금 합계. 0이면 이 대회는 경제에 아무 흔적도 남기지 않았다. */
   paid: number;
@@ -178,7 +180,9 @@ export function createTournament(o: {
   buyIn?: number;
   /* 판의 종류. 기본은 CLASSIC 이라 부르는 곳을 고치지 않으면 지금까지의 대회가 나온다.
      PKO_BOUNTY 는 참가비를 상금 팟과 바운티 펀드로 나누고, 화면도 바운티를 그린다. */
-  mode?: 'CLASSIC' | 'PKO_BOUNTY';
+  mode?: 'CLASSIC' | 'PKO_BOUNTY' | 'MYSTERY_BOUNTY';
+  /** 1인당 금액 중 바운티로 갈 몫(%). PKO_BOUNTY 에서만 쓰고, 미스터리는 늘 100 이다 */
+  bountyPct?: number;
   /** 보장 상금(GTD). 참가비 대회에서 걷은 돈이 이에 못 미치면 모자란 만큼 얹는다 */
   prizeFixed?: number;
   /* 판의 모양. 안 주면 자동 개최 전용 템플릿의 값을 쓴다 — 반복 개최가 그 길로 들어온다.
@@ -244,7 +248,21 @@ export function createTournament(o: {
     /* 모르는 값이 오면 CLASSIC 으로 떨어뜨린다. 오타가 그대로 저장되면 mode 비교가
        전부 빗나가 "바운티 대회인데 바운티가 없는 판"이 되고, 그건 걷은 돈이 갈 곳을
        잃는다는 뜻이다. 알 수 없는 값은 지금까지의 대회로 보는 편이 안전하다. */
-    const mode = o.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY' : 'CLASSIC';
+    const mode = o.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY'
+      : o.mode === 'MYSTERY_BOUNTY' ? 'MYSTERY_BOUNTY' : 'CLASSIC';
+    /* 미스터리는 전액 바운티다 — 순위 상금을 두지 않는 것이 그 모드의 뜻이다. */
+    const bountyPct = mode === 'MYSTERY_BOUNTY' ? 100 : T.clampBountyPct(o.bountyPct);
+    /* 바운티는 "1인당 금액의 절반"이다 — 참가비 대회는 참가비, 프리롤은 상금 배수가
+       그 값이다. 둘 다 0 이면 머리에 걸 값이 없어서, 열려도 바운티가 하나도 없는
+       "이름만 바운티 대회"가 된다. 화면도 잠그지만 여기서 한 번 더 막는다:
+       화면을 거치지 않는 경로(반복 개최 템플릿·직접 호출)가 있다. */
+    if (mode !== 'CLASSIC' && buyIn <= 0
+      && Math.max(0, Math.floor(o.prizeMultiplier ?? cfg.weekdayMultiplier)) <= 0) {
+      return {
+        ok: false as const, error: 'bad_rules' as const,
+        detail: '바운티 대회는 참가비나 상금 배수가 있어야 합니다 (그 절반이 현상금이 됩니다)',
+      };
+    }
     const fixed = Math.max(0, Math.floor(o.prizeFixed ?? cfg.prizeFixed));
     /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이다. */
     const title = (o.title ?? '').trim() || (buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
@@ -252,11 +270,11 @@ export function createTournament(o: {
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
-            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode, bounty_pct)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       T.kstDateStr(startAt * 1000), title,
       regOpenAt, startAt, startAt + grace.n * 60, mult,
-      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode);
+      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode, bountyPct);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
 }

@@ -80,6 +80,13 @@ export function actOpenAt(hand: { action_deadline: number | null }): number | nu
    (holdem.ts의 nextHandPoke). 그 몫을 여기서 또 세면 이중이다. */
 const SETTLE_TAIL_SEC = 6.35;   // 카드가 다 열린 뒤 마지막 칩이 흡수될 때까지
 const NEXT_HAND_GAP_SEC = 1.25; // 흡수 → 다음 판
+/* PKO 처형 연출에 드는 시간.
+     화면 쪽 결과 대기 1.5 + 카드 정리까지의 한 박자 0.6
+     + 총 3발(마지막이 1.335) + 잔향 0.42 + 오른 바운티가 떠 있는 1.6 ≈ 5.5초
+   이걸 안 더하면 다음 판이 연출보다 먼저 시작되고, 그러면 탈락한 자리가 화면에서
+   사라져 처형이 통째로 생략된다 — 실제로 그렇게 스킵됐다. 사이드 팟 판에서 특히
+   잘 나온다: 층마다 시간이 붙어 정산이 늦게 끝나므로 남는 여유가 없다. */
+const KO_EXECUTION_SEC = 5.5;
 /* 사이드 팟 한 층을 더 보여주는 데 드는 시간.
    층마다 [WIN 배지 → 1.0초 대기 → 칩 이동 1.8초 → 더미 시차]를 재생한다. */
 const SIDE_POT_STEP_SEC = 2.9;
@@ -97,10 +104,13 @@ export function revealSec(boardAtEnd: number, liveCount = 2): number {
 /** 판이 끝난 시점부터 다음 판이 시작되기까지 (초, 정수). */
 export function nextHandDelaySec(o: {
   showdown: boolean; boardAtEnd: number; liveCount: number; extraPots: number;
+  /** 이 판에 PKO 처형이 있나 — 있으면 그 연출이 끝날 때까지 다음 판을 미룬다 */
+  koExecution?: boolean;
 }): number {
   const reveal = o.showdown && o.liveCount > 1 ? revealSec(o.boardAtEnd, o.liveCount) : 0;
   const sides = Math.max(0, o.extraPots) * SIDE_POT_STEP_SEC;
-  return Math.round(reveal + SETTLE_TAIL_SEC + sides + NEXT_HAND_GAP_SEC);
+  const ko = o.koExecution ? KO_EXECUTION_SEC : 0;
+  return Math.round(reveal + SETTLE_TAIL_SEC + sides + NEXT_HAND_GAP_SEC + ko);
 }
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
@@ -120,19 +130,51 @@ export interface HtRow {
   mode: string;
   /** 걷은 바운티 펀드 총액. CLASSIC 은 늘 0 이다 */
   bounty_pool: number;
+  /** 1인당 금액 중 바운티로 갈 몫(%). 나머지가 순위 상금. 미스터리는 늘 100 이다 */
+  bounty_pct: number;
   /** 등록 시작 알림을 보낸 시각. 서버 타이머가 없어서 "한 번만"을 이 열로 지킨다 */
   reg_notified_at: number | null;
 }
 
-/** 바운티 대회인가. 문자열 비교를 한 곳에만 둔다 — 오타가 조용히 CLASSIC 으로 읽힌다. */
+/** 미스터리 바운티인가 — 봉투 금액이 제각각이고 잡히기 전까지 감춰진다. */
+export function isMystery(t: { mode?: string } | null | undefined): boolean {
+  return t?.mode === 'MYSTERY_BOUNTY';
+}
+/* 바운티가 걸린 판인가(프로그레시브든 미스터리든). 문자열 비교를 한 곳에만 둔다 —
+   오타가 조용히 CLASSIC 으로 읽히면 걷은 돈이 갈 곳을 잃는다. */
 export function isPko(t: { mode?: string } | null | undefined): boolean {
-  return t?.mode === 'PKO_BOUNTY';
+  return t?.mode === 'PKO_BOUNTY' || isMystery(t);
+}
+/* 이 판의 바운티 몫(%). 미스터리는 전액이다 — 순위 상금을 두지 않는 것이 그 모드의
+   뜻이므로, 행에 어떤 값이 들어 있어도 여기서 100 으로 못 박는다. */
+export function bountyPctOf(
+  t: { mode?: string; bounty_pct?: number } | null | undefined
+): number {
+  if (isMystery(t)) return 100;
+  return T.clampBountyPct(t?.bounty_pct);
+}
+
+/**
+ * 이 판에서 "한 사람이 가져오는 금액". 바운티를 여기서 반으로 갈라 낸다.
+ *
+ *   참가비 대회 — 참가비 그 자체(유저가 낸 돈)
+ *   프리롤     — 상금 배수(1인당 얼마를 얹어 주는가. 서비스가 발행하는 돈)
+ *
+ * 둘을 하나로 묶는 이유는 바운티가 "머리에 얼마가 걸리나"이고 그건 늘 1인당 금액이기
+ * 때문이다. 프리롤이라고 바운티를 못 걸 이유가 없다 — 배수 10,000 이면 5,000 은 상금,
+ * 5,000 은 머리 값으로 두면 된다. 발행 총액은 어느 쪽이든 인원 × 배수로 같다.
+ *
+ * 보장 상금(GTD)만 있고 배수가 0 인 프리롤은 1인당 금액이 없어서 0 이 나온다 —
+ * 그런 판에는 바운티를 걸 수 없다(어드민이 막는다).
+ */
+export function bountyUnitOf(t: { prize_multiplier: number; buy_in: number }): number {
+  return t.buy_in > 0 ? Math.floor(t.buy_in) : Math.max(0, Math.floor(t.prize_multiplier));
 }
 
 /**
  * 이 판의 "순수 상금 팟" 총액.
  *
- * PKO 는 참가비의 절반이 바운티로 빠지므로 상금 팟은 그 나머지로만 세어야 한다.
+ * PKO 는 1인당 금액의 절반이 바운티로 빠지므로 상금 팟은 그 나머지로만 세어야 한다.
  * 이 계산을 부르는 곳이 네 군데(지급·상태 payload·어드민·로비 안내)라 함수를 하나 둔다 —
  * 한 곳만 빠뜨리면 화면이 약속한 상금과 실제 지급액이 달라지고, 그건 운영자가 아니라
  * 유저가 먼저 발견한다.
@@ -141,8 +183,16 @@ export function prizePoolOf(
   t: { prize_multiplier: number; prize_fixed?: number; buy_in: number; mode?: string },
   entryCount: number, prizeFixed = t.prize_fixed ?? 0
 ): number {
-  const per = isPko(t) ? T.prizeShare(t.buy_in) : t.buy_in;
-  return T.prizePool(entryCount, t.prize_multiplier, prizeFixed, per);
+  if (!isPko(t)) return T.prizePool(entryCount, t.prize_multiplier, prizeFixed, t.buy_in);
+  /* 갈라내는 자리는 참가비냐 배수냐로 다르다 — prizePool 이 그 둘을 다른 인자로 받는다.
+     어느 쪽이든 "1인당 금액에서 바운티 몫을 뺀 나머지"를 넘긴다. */
+  const keep = T.prizeShare(bountyUnitOf(t), bountyPctOf(t));
+  /* 바운티가 전액이면 순위 상금이 없다 — 0 을 그대로 prizePool 에 넘기면 "참가비가 없는
+     판"으로 읽혀 배수 경로를 타고 엉뚱한 값이 나온다(실측: 미스터리인데 20,000P 가 잡혔다). */
+  if (keep <= 0 && prizeFixed <= 0) return 0;
+  return t.buy_in > 0
+    ? T.prizePool(entryCount, t.prize_multiplier, prizeFixed, keep)
+    : T.prizePool(entryCount, keep, prizeFixed, 0);
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -181,6 +231,8 @@ export interface HtEntryRow {
   bounty: number;
   /** KO 로 받아 챙긴 바운티 현금 누계 — 이미 잔액에 들어간 돈이다 (PKO 전용) */
   bounty_won: number;
+  /** 이 사람의 봉투 금액이 공개됐나 (미스터리 전용, 1 = 열렸다) */
+  bounty_revealed: number;
 }
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
@@ -664,6 +716,29 @@ function startTournament(t: HtRow, regs: HtEntryRow[], now: number): void {
       tableId, seat, r.user_id, r.username, tuning(t).startingStack, now);
   });
 
+  /* ── 미스터리 바운티 봉투 배정 ────────────────────────────────────
+     인원이 확정되는 시점이 여기다 — 등록은 계속 들어올 수 있으므로 미리 나눠 둘 수 없다.
+     사람 수만큼 봉투를 만들고 무작위로 하나씩 준다. 봉투 수를 인원과 같게 두는 이유:
+     KO 가 인원-1 번 일어나고 마지막 하나는 우승자가 열어서, 남는 봉투가 없다.
+
+     등록할 때 넣어 둔 균등한 머리 값을 여기서 봉투 금액으로 덮어쓴다. 합은 그대로
+     펀드와 같으므로(mysteryEnvelopes 가 보장한다) 총액이 흔들리지 않는다. */
+  if (isMystery(t)) {
+    const pool = one<{ bounty_pool: number }>(
+      `SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`, t.id)!.bounty_pool;
+    const envs = T.mysteryEnvelopes(pool, regs.length);
+    /* 누구에게 어느 봉투가 가는지는 여기서 섞는다 — 자리 배치와 같은 이유로,
+       등록 순서대로 주면 먼저 등록한 사람이 늘 잭팟을 든다. */
+    for (let i = envs.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      const tmp = envs[i]; envs[i] = envs[j]; envs[j] = tmp;
+    }
+    regs.forEach((r, i) => {
+      run(`UPDATE holdem_entries SET bounty = ?, bounty_revealed = 0
+            WHERE tournament_id = ? AND user_id = ?`, envs[i] ?? 0, t.id, r.user_id);
+    });
+  }
+
   const table = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE id = ?`, tableId)!;
   startHand(t, table, now);
 }
@@ -1113,7 +1188,7 @@ function endHand(
   awardStraightFlush(t, rows, result.reveal, now);
 
   // 스택이 0이 된 사람을 탈락 처리한다 (같은 핸드에서 여러 명이 나가면 투입액이 많은 쪽이 상위)
-  eliminateBusted(t, table, hand, views, now, potAwards, pots);
+  const bustedNow = eliminateBusted(t, table, hand, views, now, potAwards, pots);
 
   /* 팟이 여러 층이면 화면이 하나씩 넘기며 보여주므로 그만큼 시간이 더 든다.
      늘리지 않으면 마지막 층을 보여주기도 전에 다음 판이 시작된다.
@@ -1131,6 +1206,9 @@ function endHand(
   const delay = nextHandDelaySec({
     showdown: showdown && live.length > 1,
     boardAtEnd, liveCount: live.length, extraPots,
+    /* 처형이 있으면 그 연출이 끝날 때까지 다음 판을 미룬다 — 안 그러면 탈락한 자리가
+       화면에서 사라지면서 처형이 통째로 생략된다. */
+    koExecution: isPko(t) && bustedNow > 0,
   });
   run(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`, now + delay, table.id);
 }
@@ -1145,9 +1223,9 @@ function eliminateBusted(
   t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], now: number,
   potAwards: { index: number; winners: { seat: number }[] }[] = [],
   pots: { eligible: number[] }[] = []
-): void {
+): number {
   const busted = getSeats(table.id).filter(s => s.presence !== 'OUT' && s.stack <= 0);
-  if (!busted.length) return;
+  if (!busted.length) return 0;
   const ranked = busted.sort((a, b) => {
     const ca = views.find(v => v.seat === a.seat)?.committed ?? 0;
     const cb = views.find(v => v.seat === b.seat)?.committed ?? 0;
@@ -1222,6 +1300,8 @@ function eliminateBusted(
     }
   }
   void hand;
+  /* 이 판에 몇 명이 나갔나 — 부르는 쪽이 다음 판 지연(처형 연출 시간)을 정하는 데 쓴다 */
+  return busted.length;
 }
 
 /**
@@ -1249,13 +1329,19 @@ function settleBounty(t: HtRow, bustedUserId: string, killers: string[], now: nu
   /* 먼저 머리를 0 으로 만든다. 조건부 UPDATE 로 "그 값이 그대로 있을 때만" 내린다 —
      같은 사람의 KO 가 두 경로에서 겹쳐 들어와도 두 번 나가지 않는다(상금 지급과 같은 방식).
      changes() 로 실제로 줄이 바뀌었는지 확인하고, 아니면 아무것도 주지 않는다. */
-  run(`UPDATE holdem_entries SET bounty = 0
+  /* 머리를 0 으로 내리면서 봉투를 열어 둔다(bounty_revealed) — 미스터리는 이 순간이
+     금액이 공개되는 시점이다. 프로그레시브에도 같이 세워 둔다: 값이 0 이 되었으므로
+     감출 것이 없고, 화면이 "열렸다"를 한 가지 기준으로만 보면 된다. */
+  run(`UPDATE holdem_entries SET bounty = 0, bounty_revealed = 1
         WHERE tournament_id = ? AND user_id = ? AND bounty = ?`, t.id, bustedUserId, bounty);
   if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
 
+  /* 미스터리는 머리가 자라지 않는다 — 봉투 금액을 전액 현금으로 준다.
+     프로그레시브는 절반씩 갈린다. */
+  const headRatio = isMystery(t) ? 0 : T.PKO_HEAD_RATIO;
   const shares = T.splitBounty(bounty, killers.length);
   killers.forEach((uid, i) => {
-    const { head, cash } = T.bountySplit(shares[i] ?? 0);
+    const { head, cash } = T.bountySplit(shares[i] ?? 0, headRatio);
     if (head > 0) {
       run(`UPDATE holdem_entries SET bounty = bounty + ?
             WHERE tournament_id = ? AND user_id = ?`, head, t.id, uid);
@@ -1428,7 +1514,9 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
   const total = mine + left;
   if (total <= 0) return;
 
-  run(`UPDATE holdem_entries SET bounty = 0, bounty_won = bounty_won + ?
+  /* 우승자 봉투도 여기서 열린다 — 미스터리에서는 마지막 봉투를 우승자가 여는 셈이고,
+     그것이 아무도 잭팟을 못 열었을 때의 마지막 반전이 된다. */
+  run(`UPDATE holdem_entries SET bounty = 0, bounty_revealed = 1, bounty_won = bounty_won + ?
         WHERE tournament_id = ? AND user_id = ? AND bounty = ?`,
     total, t.id, champ.user_id, mine);
   if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
@@ -1521,7 +1609,10 @@ export function registerHoldem(userId: string, username: string):
        나눈 값을 걷을 때 확정해 행에 적는다: 나중에 참가비 설정을 보고 다시 계산하면
        그 사이에 값이 바뀌었을 때 걷은 것과 다른 액수를 나눠 주게 되고, 이 펀드는
        마지막에 1P 까지 맞춰 내보내야 하는 돈이라 그 어긋남이 곧 없는 포인트가 된다. */
-    const myBounty = isPko(t) ? T.bountyShare(fee) : 0;
+    /* 1인당 금액에서 갈라낸다 — 참가비 대회는 참가비, 프리롤은 상금 배수다.
+       프리롤 바운티는 서비스가 발행하는 돈이지만 흐름은 똑같다: 걷은(=약속한) 펀드가
+       1P 도 남지 않고 참가자에게 돌아간다. */
+    const myBounty = isPko(t) ? T.bountyShare(bountyUnitOf(t), bountyPctOf(t)) : 0;
     try {
       run(`INSERT INTO holdem_entries
              (tournament_id, user_id, username, registered_at, paid_in, bounty)

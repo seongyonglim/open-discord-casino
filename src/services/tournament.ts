@@ -330,20 +330,69 @@ export function prizePool(
    포인트는 잔액 = 원장 누적합이 유일한 불변식이라 그 어긋남이 곧 버그다.
    지금 구조에서는 상수를 어떤 값으로 바꿔도 head + cash === bounty 가 유지된다. */
 
-/** 참가비 중 바운티 펀드로 갈 비율. 나머지가 순수 상금 팟이다(GG 와 같은 반반). */
-export const PKO_BOUNTY_RATIO = 0.5;
+/** 바운티 몫의 기본값(%). 운영자가 대회마다 고칠 수 있고, 안 정하면 이 값이다. */
+export const BOUNTY_PCT_DEFAULT = 50;
+/** 바운티 몫으로 넣을 수 있는 범위(%). 0 이면 바운티가 없어 모드의 뜻이 사라진다. */
+export const BOUNTY_PCT_MIN = 10;
+export const BOUNTY_PCT_MAX = 100;
+
+/** 대회 행의 bounty_pct 를 안전한 범위로 다듬는다. 화면과 서버가 같은 규칙을 써야 한다. */
+export function clampBountyPct(v: number | null | undefined): number {
+  const n = Math.floor(Number(v ?? BOUNTY_PCT_DEFAULT));
+  if (!Number.isFinite(n)) return BOUNTY_PCT_DEFAULT;
+  return Math.min(BOUNTY_PCT_MAX, Math.max(BOUNTY_PCT_MIN, n));
+}
+
 /** KO 로 가져간 바운티 중 "떨어뜨린 사람 머리"에 얹을 비율. 나머지는 즉시 현금이다. */
 export const PKO_HEAD_RATIO = 0.5;
 
-/** 참가비 한 사람분 중 바운티 펀드로 가는 몫. 내림한다(포인트는 늘 내린다). */
-export function bountyShare(buyIn: number): number {
-  return Math.floor(Math.max(0, Math.floor(buyIn)) * PKO_BOUNTY_RATIO);
+/* ── 미스터리 바운티 봉투 ──────────────────────────────────────────
+   사람마다 머리에 걸린 금액이 다르고, 잡히기 전까지 아무도 모른다.
+
+   왜 이렇게 하나: 인원이 3~9 명이면 KO 가 2~8 번뿐이다. 금액이 전부 같으면 그 몇 번이
+   전부 같은 무게가 되어 "누굴 잡을까"에 답이 하나뿐이다(큰 스택). 금액을 흩고 감추면
+   그 관계가 끊어져서, 첫 판에 터진 숏칩이 잭팟을 들고 있을 수도 있다.
+
+   가중치는 앞이 잭팟이고 뒤로 완만하게 줄어든다. 전부 비슷하면 봉투를 열 이유가 없고,
+   잭팟만 크고 나머지가 0 에 가까우면 대부분의 KO 가 허탕으로 느껴진다. */
+const ENVELOPE_WEIGHTS = [38, 18, 13, 10, 8, 6, 3, 2, 2];
+
+/**
+ * 펀드를 n 개의 봉투로 나눈다. 합이 정확히 펀드다 — 내림으로 남는 몫은 잭팟에 얹는다
+ * (버리면 총액이 안 맞고, 여러 봉투에 흩으면 어느 것이 잭팟인지 흐려진다).
+ *
+ * 순서는 그대로 돌려준다(잭팟이 0번). 누구에게 어느 봉투가 가는지는 부르는 쪽이 섞는다 —
+ * 여기서 섞으면 같은 인원·같은 펀드에서 결과가 매번 달라져 검사가 불가능해진다.
+ */
+export function mysteryEnvelopes(fund: number, n: number): number[] {
+  const total = Math.max(0, Math.floor(fund));
+  const count = Math.max(0, Math.floor(n));
+  if (count === 0) return [];
+  /* 인원이 가중치 표보다 많으면 남는 사람들은 가장 작은 가중치를 나눠 쓴다 —
+     9 인이 상한이지만(MAX_PLAYERS) 늦은 등록이 그 위로 갈 수 있다. */
+  const w = Array.from({ length: count },
+    (_, i) => ENVELOPE_WEIGHTS[i] ?? ENVELOPE_WEIGHTS[ENVELOPE_WEIGHTS.length - 1]);
+  const sum = w.reduce((a, b) => a + b, 0);
+  const out = w.map(x => Math.floor(total * x / sum));
+  out[0] += total - out.reduce((a, b) => a + b, 0);
+  return out;
+}
+
+/**
+ * 참가비 한 사람분 중 바운티 펀드로 가는 몫. 내림한다(포인트는 늘 내린다).
+ *
+ * 비율은 대회마다 다르다 — 운영자가 정한다. 안 주면 기본값(50%)이다.
+ * 미스터리 모드는 100 을 넘겨 전액을 바운티로 쓴다.
+ */
+export function bountyShare(buyIn: number, pct: number = BOUNTY_PCT_DEFAULT): number {
+  const b = Math.max(0, Math.floor(buyIn));
+  return Math.floor(b * clampBountyPct(pct) / 100);
 }
 
 /** 참가비 한 사람분 중 순수 상금 팟으로 가는 몫. 나머지 전부라 둘의 합이 참가비다. */
-export function prizeShare(buyIn: number): number {
+export function prizeShare(buyIn: number, pct: number = BOUNTY_PCT_DEFAULT): number {
   const b = Math.max(0, Math.floor(buyIn));
-  return b - bountyShare(b);
+  return b - bountyShare(b, pct);
 }
 
 /**
@@ -351,9 +400,14 @@ export function prizeShare(buyIn: number): number {
  * 머리 쪽만 내리고 현금은 나머지 전부다 — 그래서 head + cash 가 언제나 원래 값이고
  * 1P 도 사라지지 않는다. (둘 다 내리면 홀수마다 1P 가 증발한다.)
  */
-export function bountySplit(bounty: number): { head: number; cash: number } {
+export function bountySplit(
+  bounty: number, headRatio: number = PKO_HEAD_RATIO
+): { head: number; cash: number } {
   const b = Math.max(0, Math.floor(bounty));
-  const head = Math.floor(b * PKO_HEAD_RATIO);
+  /* 미스터리는 0 을 넘긴다 — 봉투 금액이 처음부터 정해져 있어 머리가 자라지 않는다.
+     범위를 여기서 좁힌다: 1 을 넘는 값이 들어오면 cash 가 음수가 되어 없는 돈이 나간다. */
+  const r = Math.min(1, Math.max(0, headRatio));
+  const head = Math.floor(b * r);
   return { head, cash: b - head };
 }
 

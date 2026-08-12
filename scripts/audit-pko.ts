@@ -90,8 +90,24 @@ async function main(): Promise<void> {
        같은 합이 100% 가 아닌 설정이 들어올 수 없는 구조인지 본다. */
     ck('머리 비율이 0~1 사이다', T.PKO_HEAD_RATIO >= 0 && T.PKO_HEAD_RATIO <= 1,
       String(T.PKO_HEAD_RATIO));
-    ck('바운티 비율이 0~1 사이다', T.PKO_BOUNTY_RATIO >= 0 && T.PKO_BOUNTY_RATIO <= 1,
-      String(T.PKO_BOUNTY_RATIO));
+    /* 바운티 몫은 이제 대회마다 다르다 — 범위 밖 값이 들어와도 다듬어져야 한다.
+       0% 면 바운티가 없어 모드의 뜻이 사라지고, 100% 를 넘으면 순위 상금이 음수가 된다. */
+    for (const v of [-50, 0, 5, 10, 50, 100, 150, NaN, null, undefined]) {
+      const got = T.clampBountyPct(v as never);
+      ck(`몫 ${String(v)} → ${got}% (범위 안)`,
+        got >= T.BOUNTY_PCT_MIN && got <= T.BOUNTY_PCT_MAX);
+    }
+    ck('기본값이 범위 안이다',
+      T.BOUNTY_PCT_DEFAULT >= T.BOUNTY_PCT_MIN && T.BOUNTY_PCT_DEFAULT <= T.BOUNTY_PCT_MAX);
+    /* 몫을 어떤 값으로 잡아도 두 갈래의 합이 1인당 금액이어야 한다 — 여기가 무너지면
+       걷은 돈보다 많거나 적게 나간다. */
+    for (const pct of [10, 33, 50, 67, 100]) {
+      for (const unit of [3, 999, 1_001, 10_000, 123_457]) {
+        ck(`몫 ${pct}% · ${unit}P: 바운티+상금 = 1인당 금액`,
+          T.bountyShare(unit, pct) + T.prizeShare(unit, pct) === unit,
+          `${T.bountyShare(unit, pct)}+${T.prizeShare(unit, pct)}`);
+      }
+    }
     const src = fsx.readFileSync('src/services/tournament.ts', 'utf8');
     ck('현금은 "나머지 전부" 로 계산한다 (별도 비율 상수가 없다)',
       /cash:\s*b\s*-\s*head/.test(src));
@@ -146,6 +162,148 @@ async function main(): Promise<void> {
   }
 
   /* ── 3. CLASSIC 은 아무것도 달라지지 않는다 ───────────────────── */
+  section('[2-b] 프리롤 PKO — 참가비 없이 상금 배수를 반으로 가른다');
+  {
+    /* 바운티는 "1인당 금액의 절반"이고, 프리롤에도 1인당 금액이 있다(상금 배수).
+       한때 참가비만 보고 프리롤을 통째로 막아 두었는데 막을 이유가 없었다 —
+       배수 10,000 이면 5,000 은 상금 5,000 은 머리 값으로 두면 되고, 서비스가 발행하는
+       총액은 어느 쪽이든 인원 × 배수로 같다. */
+    wipe();
+    const MULT = 10_000;
+    const who = ['fr1', 'fr2', 'fr3', 'fr4'];
+    for (const p of who) mkUser(p, 100_000);
+    const made = AD.createTournament({
+      title: '프리롤 PKO', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 0, prizeMultiplier: MULT, prizeFixed: 0, mode: 'PKO_BOUNTY',
+    });
+    ck('프리롤에도 바운티를 걸 수 있다', made.ok, made.ok ? '' : made.error);
+    if (made.ok) {
+      for (const p of who) HD.registerHoldem(p, p);
+      const t = db.prepare(`SELECT * FROM holdem_tournaments WHERE id = ?`).get(made.id) as never;
+      const rows = entriesOf(made.id);
+      ck('1인당 금액은 배수다', HD.bountyUnitOf(t) === MULT, String(HD.bountyUnitOf(t)));
+      ck('머리 값이 배수의 절반이다', rows.every(r => r.bounty === T.bountyShare(MULT)),
+        rows.map(r => r.bounty).join(','));
+      ck('참가비는 걷지 않는다', rows.every(r => r.paid_in === 0));
+      const pool = (db.prepare(`SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`)
+        .get(made.id) as { bounty_pool: number }).bounty_pool;
+      ck('펀드 = 머리 값의 합', pool === T.bountyShare(MULT) * who.length, String(pool));
+      /* 상금 팟 + 펀드가 "배수 × 인원" 과 같아야 한다 — 어긋나면 서비스가 발행하는
+         총액이 예전 프리롤과 달라진다(운영자가 약속한 금액이 바뀐다). */
+      ck('상금 팟 + 펀드 = 배수 × 인원',
+        HD.prizePoolOf(t, who.length) + pool === MULT * who.length,
+        `${HD.prizePoolOf(t, who.length)} + ${pool} vs ${MULT * who.length}`);
+      ck('상금 팟은 나머지 몫으로만 센다',
+        HD.prizePoolOf(t, who.length) === T.prizeShare(MULT) * who.length);
+    }
+    /* 1인당 금액이 없는 판(배수 0 · GTD 만)에는 걸 수 없어야 한다 — 열리면
+       "이름만 바운티 대회"가 된다. 화면도 잠그지만 화면을 안 거치는 경로가 있다. */
+    wipe();
+    const bad = AD.createTournament({
+      title: 'GTD 만', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 0, prizeMultiplier: 0, prizeFixed: 50_000, mode: 'PKO_BOUNTY',
+    });
+    ck('배수도 참가비도 0 이면 바운티 대회를 거부한다', !bad.ok,
+      bad.ok ? '열렸다' : String((bad as { detail?: string }).detail ?? bad.error));
+    // 어드민 화면도 같은 기준으로 잠근다
+    const admSrc = fsx.readFileSync('src/web/admin.ts', 'utf8');
+    ck('화면은 1인당 금액으로 잠근다 (참가 방식이 아니라)',
+      /ncMode\.disabled = unit <= 0/.test(admSrc));
+    ck('금액을 고치면 잠금이 따라온다',
+      /\['ncBuyIn', 'ncMult', 'ncPct'\]\.forEach/.test(admSrc));
+  }
+
+  section('[2-c] 미스터리 바운티 — 봉투가 제각각이고 열릴 때까지 감춰진다');
+  {
+    /* 봉투 나누기부터 본다. 합이 펀드와 정확히 같아야 하고, 잭팟이 실제로 커야 한다 —
+       전부 비슷하면 봉투를 열 이유가 없고, 합이 어긋나면 없는 돈이 나가거나 남는다. */
+    for (const n of [2, 3, 6, 9, 12]) {
+      for (const fund of [3, 999, 30_000, 90_000, 123_457]) {
+        const e = T.mysteryEnvelopes(fund, n);
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 합이 펀드와 같다`,
+          e.reduce((a, b) => a + b, 0) === fund, `${e.reduce((a, b) => a + b, 0)}`);
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 개수가 인원과 같다`, e.length === n);
+        ck(`봉투 ${n}개 · 펀드 ${fund}: 음수가 없다`, e.every(x => x >= 0));
+        /* 봉투 수를 인원과 같게 두는 이유: KO 가 인원-1 번이고 마지막 하나를 우승자가
+           열어서 남는 봉투가 없다. 그래서 개수 검사가 총액 검사와 같은 무게다. */
+        if (fund >= 30_000) {
+          ck(`봉투 ${n}개 · 펀드 ${fund}: 잭팟이 가장 크다`,
+            e[0] === Math.max(...e), `${e[0]} vs ${Math.max(...e)}`);
+        }
+      }
+    }
+    ck('0 명이면 빈 배열', T.mysteryEnvelopes(1_000, 0).length === 0);
+
+    /* 실제 대회를 열어 봉투가 배정되고, 감춰지고, 열리는지 본다. */
+    wipe();
+    const BUY2 = 10_000;
+    const who = ['m1', 'm2', 'm3', 'm4'];
+    for (const p of who) mkUser(p, 100_000);
+    const made = AD.createTournament({
+      title: '미스터리', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: BUY2, mode: 'MYSTERY_BOUNTY',
+    });
+    ck('미스터리 대회가 열린다', made.ok, made.ok ? '' : made.error);
+    if (!made.ok) { console.log('열지 못해 중단'); process.exit(1); }
+    const mid = made.id;
+    for (const p of who) HD.registerHoldem(p, p);
+    const trow = db.prepare(`SELECT * FROM holdem_tournaments WHERE id = ?`).get(mid) as never;
+    ck('isMystery 가 참이다', HD.isMystery(trow));
+    ck('isPko 도 참이다 (바운티가 걸린 판이다)', HD.isPko(trow));
+    /* 미스터리는 전액 바운티다 — 순위 상금이 남아 있으면 모드의 뜻이 어긋난다 */
+    ck('바운티 몫이 100% 로 못 박힌다', HD.bountyPctOf(trow) === 100,
+      String(HD.bountyPctOf(trow)));
+    ck('순위 상금 팟이 0 이다', HD.prizePoolOf(trow, who.length) === 0,
+      String(HD.prizePoolOf(trow, who.length)));
+    const pool2 = (db.prepare(`SELECT bounty_pool FROM holdem_tournaments WHERE id = ?`)
+      .get(mid) as { bounty_pool: number }).bounty_pool;
+    ck('펀드가 걷은 전액이다', pool2 === BUY2 * who.length, String(pool2));
+
+    // 시작하면 봉투가 배정된다
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+    HD.advanceHoldem();
+    const rows2 = db.prepare(
+      `SELECT user_id, bounty, bounty_revealed FROM holdem_entries WHERE tournament_id = ?`)
+      .all(mid) as { user_id: string; bounty: number; bounty_revealed: number }[];
+    ck('봉투 합이 펀드와 같다', rows2.reduce((s, r) => s + r.bounty, 0) === pool2,
+      `${rows2.reduce((s, r) => s + r.bounty, 0)} vs ${pool2}`);
+    /* 금액이 제각각이어야 한다 — 전부 같으면 봉투가 아니라 균등 배분이다 */
+    ck('금액이 제각각이다', new Set(rows2.map(r => r.bounty)).size > 1,
+      rows2.map(r => r.bounty).join(','));
+    ck('시작 시점에는 아무 봉투도 열려 있지 않다',
+      rows2.every(r => r.bounty_revealed === 0));
+
+    /* 감추는 일을 화면에 맡기면 안 된다 — 응답에 들어 있으면 개발자 도구로 그대로 읽히고,
+       그러면 감춘 것이 아니다. 홀 카드와 같은 규율이므로 소스에서 확인한다. */
+    const stSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
+    ck('열리지 않은 봉투는 payload 에 실리지 않는다',
+      /\(mysteryOn && e\.bounty_revealed !== 1\) \? null : e\.bounty/.test(stSrc));
+    ck('내 봉투도 감춘다 (본인조차 모른다)',
+      /isMystery\(t\) && entries\.find\([\s\S]{0,80}?bounty_revealed !== 1/.test(stSrc));
+    ck('0 이 아니라 null 로 준다 (빈 봉투와 구분된다)',
+      /\? null : e\.bounty/.test(stSrc));
+    /* 화면은 null 을 물음표로 그린다. seatsSrc 는 뒤쪽 [8] 절에서 다시 읽으므로
+       여기서는 지역 변수로 따로 읽는다 — 절 사이에 변수를 공유하면 순서를 바꿀 수 없다. */
+    const seatsSrc2 = fsx.readFileSync('src/web/games/holdem-client/seats.ts', 'utf8');
+    ck('감춘 봉투는 물음표로 그린다',
+      /bEl\.textContent = '\?'/.test(seatsSrc2) && /classList\.add\('sealed'\)/.test(seatsSrc2));
+    ck('물음표에서 금액으로 뒤집히는 것도 상승으로 본다',
+      /prev !== undefined && \(prev === null \|\| bv > prev\)/.test(seatsSrc2));
+    const sideSrc = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
+    ck('미스터리는 등수 표를 그리지 않는다 (순위 상금이 없다)',
+      /mystery \? '' : '<div class="ht-pz-list">/.test(sideSrc));
+    ck('미스터리는 갈래 줄을 그리지 않는다', /\(isPko && !mystery/.test(sideSrc));
+    // 어드민에서 고를 수 있고, 비율은 PKO 에서만 보인다
+    const admSrc2 = fsx.readFileSync('src/web/admin.ts', 'utf8');
+    ck('어드민에 미스터리 선택이 있다', /value="MYSTERY_BOUNTY"/.test(admSrc2));
+    ck('바운티 몫 입력이 있다', /id="ncPct"/.test(admSrc2));
+    ck('몫 입력은 PKO 에서만 보인다',
+      /pctWrap\.hidden = ncMode\.value !== 'PKO_BOUNTY'/.test(admSrc2));
+    ck('미스터리는 서버가 100% 로 못 박는다',
+      /mode === 'MYSTERY_BOUNTY' \? 100 : T\.clampBountyPct/
+        .test(fsx.readFileSync('src/db/admin.ts', 'utf8')));
+  }
+
   section('[3] 일반 대회 — 바운티 칸이 전부 0 이다');
   {
     wipe();
@@ -526,7 +684,7 @@ async function main(): Promise<void> {
     ck('총자국과 흑백 처리가 같은 신호를 쓴다',
       /shots\[si\]\.hidden = !koShow/.test(seatsSrc) && /toggle\('koed', koShow\)/.test(seatsSrc));
     ck('바운티 뱃지 변화도 정산 완료를 기다린다',
-      /if \(prev != null && bv !== prev && waiting\) bv = prev/.test(seatsSrc));
+      /if \(prev !== undefined && bv !== prev && waiting\) bv = prev/.test(seatsSrc));
     /* KO 표시는 총자국 하나다. 빨간 "KO" 글자를 얹었다가 없앴다 — 총자국이 이미 다 말하고
        있고 글자와 검은 원이 그 그림을 덮기만 했다. 되살아나지 않게 못 박는다. */
     ck('KO 글자 오버레이가 없다',
@@ -580,8 +738,33 @@ async function main(): Promise<void> {
       /var waiting = !settleDone\(tb\) \|\| Date\.now\(\) < koBurstEndsAt/.test(seatsSrc));
     ck('총격 시각을 좌석 루프 전에 잡는다 (좌석 순서에 걸리지 않게)',
       /if \(pko && resultReady\(\) && settleDone\(tb\)\) \{[\s\S]{0,400}?koBurstEndsAt = end/.test(seatsSrc));
+/* (5-g) 다음 판이 연출보다 먼저 시작되면 탈락한 자리가 화면에서 사라져 처형이
+       통째로 생략된다 — 실제로 사이드 팟 판에서 그렇게 스킵됐다. 서버가 그 시간을
+       계산에 넣어야 한다(화면은 다음 판 시작을 미룰 수 없다). */
+    {
+      const base = { showdown: true, boardAtEnd: 5, liveCount: 3, extraPots: 1 };
+      const noKo = HD.nextHandDelaySec(base);
+      const withKo = HD.nextHandDelaySec({ ...base, koExecution: true });
+      ck('처형이 있으면 다음 판을 더 미룬다', withKo > noKo, `${noKo} → ${withKo}초`);
+      /* 연출 전체가 5초를 넘으므로(결과 대기 1.5 + 정리 0.6 + 총알 1.335 + 잔향 0.42
+         + 바운티 1.6) 그만큼은 확보돼야 한다 */
+      ck('미루는 시간이 연출 길이를 덮는다', withKo - noKo >= 5, String(withKo - noKo));
+      ck('처형이 없으면 예전과 같다', HD.nextHandDelaySec(base) === noKo);
+      const hdSrc = fsx.readFileSync('src/db/holdem.ts', 'utf8');
+      ck('탈락이 있을 때만 미룬다', /koExecution: isPko\(t\) && bustedNow > 0/.test(hdSrc));
+    }
+    /* (5-h) 우승 팝업이 처형·바운티 상승보다 먼저 뜨면 화면을 덮어 마지막 연출을 못 본다 */
+    {
+      const celSrc = fsx.readFileSync('src/web/games/holdem-client/celebrate.ts', 'utf8');
+      ck('우승 팝업이 처형이 끝날 때까지 기다린다',
+        /koBurstEndsAt \+ KO_GAIN_HOLD_MS/.test(celSrc));
+      ck('오른 바운티가 떠 있는 시간까지 기다린다',
+        /KO_GAIN_HOLD_MS = \d+/.test(seatsSrc));
+    }
     ck('오른 만큼을 따로 띄운다', /\.ht-bgain\{/.test(cssSrc)
-      && /htBGain/.test(cssSrc) && /'\+' \+ stackText\(bv - prev\)/.test(seatsSrc));
+      /* 봉투가 열릴 때(prev 가 null)는 차액이 아니라 열린 금액 전체를 띄운다 */
+      && /htBGain/.test(cssSrc)
+      && /stackText\(prev === null \? bv : bv - prev\)/.test(seatsSrc));
 
     /* (5-f) 명찰 자리는 카드 상태로 갈린다. 자리(hero)로 가르면 카드가 없는 동안에도
        떠 있어 "프레임에 물린 명찰"이라는 레퍼런스의 핵심을 잃는다. */
@@ -604,10 +787,13 @@ async function main(): Promise<void> {
     // (6) 어드민에서 PKO 를 열 수 있고, 프리롤에는 걸 수 없다
     const admSrc = fsx.readFileSync('src/web/admin.ts', 'utf8');
     ck('어드민에 대회 종류 선택이 있다', /id="ncMode"/.test(admSrc));
-    ck('프리롤이면 종류를 잠근다', /ncMode\.disabled = !buyin/.test(admSrc));
-    ck('프리롤이면 CLASSIC 으로 보낸다', /mode: buyin \? ncMode\.value : 'CLASSIC'/.test(admSrc));
+    /* 잠그는 기준이 "참가 방식"에서 "1인당 금액"으로 바뀌었다 — 프리롤도 배수가 있으면
+       바운티를 걸 수 있다(자세한 검사는 [2-b]). 여기서는 옛 기준이 되살아나지 않는지만 본다. */
+    ck('참가 방식으로 잠그지 않는다', !/ncMode\.disabled = !buyin/.test(admSrc));
+    ck('프리롤을 CLASSIC 으로 강제하지 않는다',
+      !/mode: buyin \? ncMode\.value : 'CLASSIC'/.test(admSrc));
     ck('서버가 모르는 값을 CLASSIC 으로 떨어뜨린다',
-      /b\?\.mode === 'PKO_BOUNTY' \? 'PKO_BOUNTY' : 'CLASSIC'/.test(admSrc));
+      /b\?\.mode === 'MYSTERY_BOUNTY' \? 'MYSTERY_BOUNTY' : 'CLASSIC'/.test(admSrc));
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

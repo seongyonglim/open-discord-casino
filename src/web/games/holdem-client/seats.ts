@@ -39,6 +39,10 @@ export const SEATS = `    var seatXY = {};
        요구한 순서가 [칩 이동 → 처형(3발) → 현상금 상승]이고, 처형과 상승이 같은 순간에
        터지면 무엇 때문에 올랐는지가 안 읽힌다. */
     var koBurstEndsAt = 0;
+    /* 총격이 끝난 뒤 오른 현상금 숫자가 떠 있는 시간(.ht-bgain 애니메이션 1.4초).
+       우승 축하 팝업이 이만큼 더 기다린다 — 먼저 뜨면 화면을 덮어 마지막 KO 연출과
+       오른 현상금을 통째로 못 본다. celebrate.ts 가 이 값을 읽는다. */
+    var KO_GAIN_HOLD_MS = 1600;
     /* 카드를 걷고 나서 첫 발까지의 한 박자. 카드가 사라지는 것과 총성이 동시면
        "정리했다"가 안 읽히고 그냥 화면이 바뀐 것으로 보인다. 빈 테이블을 한 번
        보여 주고 쏜다. */
@@ -265,7 +269,11 @@ export const SEATS = `    var seatXY = {};
       var blindSeats = blindSeatsOf(tb);
       /* 바운티 대회인가. 좌석 골격에 바운티·KO 요소를 넣을지 여부를 이 값 하나가 정한다.
          서버가 PKO 가 아니면 mode 를 CLASSIC 으로 주고 좌석에 bounty 칸 자체를 안 싣는다. */
-      var pko = (st.tournament || {}).mode === 'PKO_BOUNTY';
+      /* 바운티가 걸린 판이면 켠다 — 프로그레시브든 미스터리든 명찰과 처형 연출은 같다.
+         모드 이름 하나만 보면 미스터리에서 명찰 요소가 아예 안 만들어진다(실측: 물음표도
+         안 나왔다). 서버의 isPko 와 같은 뜻을 여기서도 유지해야 한다. */
+      var tmode = (st.tournament || {}).mode;
+      var pko = tmode === 'PKO_BOUNTY' || tmode === 'MYSTERY_BOUNTY';
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
@@ -476,7 +484,11 @@ export const SEATS = `    var seatXY = {};
            내려가는 일은 KO 당해 0 이 되는 순간뿐인데 그때는 총자국이 이미 말하고 있다. */
         var bEl = seatEl.querySelector('.ht-bounty');
         if (bEl) {
-          var bv = s.bounty || 0;
+          /* 미스터리는 서버가 금액 대신 null 을 준다 — 열리기 전까지 아무도, 본인조차
+             모른다. 그때는 물음표를 그린다. null 과 0 을 구분해야 한다: 0 으로 합치면
+             "봉투가 비었다"와 "아직 안 열렸다"가 같아진다. */
+          var hidden = s.bounty === null || s.bounty === undefined;
+          var bv = hidden ? null : (s.bounty || 0);
           var prev = bountyShown[s.seat];
           /* 결과 연출이 끝나기 전에는 값을 붙들고 있는다.
              서버는 판이 끝나는 순간 정산을 확정하지만, 화면은 그때부터 보드를 한 장씩
@@ -492,13 +504,23 @@ export const SEATS = `    var seatXY = {};
           /* 처형(3발)이 끝날 때까지도 붙들고 있는다. 순서가 [칩 이동 → 처형 → 현상금
              상승]이라, 처형과 상승이 같은 순간에 터지면 무엇 때문에 올랐는지가 안 읽힌다. */
           var waiting = !settleDone(tb) || Date.now() < koBurstEndsAt;
-          if (prev != null && bv !== prev && waiting) bv = prev;
-          if (bv > 0) {
+          if (prev !== undefined && bv !== prev && waiting) bv = prev;
+          if (bv === null) {
+            /* 아직 안 열린 봉투 — 물음표만 그린다. 금액은 서버에도 안 실려 있다.
+               "?" 자체가 이 모드의 재미라 명찰을 감추지 않는다: 저 사람이 얼마를 들고
+               있는지 모른다는 사실이 보여야 한다. */
+            bEl.textContent = '?';
+            bEl.classList.add('sealed');
+            bEl.hidden = false;
+          } else if (bv > 0) {
             bEl.textContent = stackText(bv) + 'P';
+            bEl.classList.remove('sealed');
             bEl.hidden = false;
             /* 처음 본 값(prev 가 undefined)에는 번쩍이지 않는다 — 화면에 들어온 것을
                "올랐다"로 읽으면 새로고침마다 전 좌석이 한꺼번에 반짝인다. */
-            if (prev != null && bv > prev) {
+            /* 물음표에서 금액으로 뒤집히는 것도 "올랐다"로 본다(prev 가 null 이었다) —
+               미스터리에서는 그 순간이 봉투가 열리는 클라이맥스다. */
+            if (prev !== undefined && (prev === null || bv > prev)) {
               bEl.classList.remove('up');
               /* 클래스를 떼고 바로 붙이면 브라우저가 같은 프레임으로 묶어 애니메이션이
                  다시 시작되지 않는다. 레이아웃을 한 번 읽어 강제로 끊는다. */
@@ -509,7 +531,7 @@ export const SEATS = `    var seatXY = {};
                  얼마를 받았는지 알 수 있고, 그 순간에 그럴 사람은 없다. */
               var gEl = seatEl.querySelector('.ht-bgain');
               if (gEl) {
-                gEl.textContent = '+' + stackText(bv - prev) + 'P';
+                gEl.textContent = '+' + stackText(prev === null ? bv : bv - prev) + 'P';
                 gEl.hidden = false;
                 gEl.classList.remove('rise');
                 void gEl.offsetWidth;

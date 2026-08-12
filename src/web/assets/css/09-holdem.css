@@ -1262,8 +1262,29 @@
   .ht-pz-bty-h{display:flex;justify-content:space-between;align-items:baseline;
     font-size:12px;font-weight:700;color:#e8c86a;margin-bottom:6px}
   .ht-pz-bty-h b{font-size:14px;font-variant-numeric:tabular-nums}
+  /* 총 현상금 옆의 내 획득분. 총액보다 작게 두어 "전체 중 내 몫"으로 읽히게 한다 */
+  /* 아직 안 열린 봉투 — 금액 대신 물음표. 금빛은 유지하되 광택을 죽여
+     "봉인된 판" 으로 읽히게 한다. 열리는 순간 .sealed 가 떨어지며 금액이 들어온다. */
+  .ht-bounty.sealed{
+    background:linear-gradient(180deg,#d8cbb2 0%,#b8a882 45%,#9d8d68 50%,#d2c5ac 100%);
+    color:#3b2f1a;letter-spacing:0;padding:0 9px}
+  .ht-pz-bty-h em{font-style:normal;margin-left:auto;padding-left:8px;
+    font-size:11px;font-weight:700;color:#f4dc8a}
   .ht-pz-bty-b{font-size:11px;line-height:1.7;color:var(--muted)}
   .ht-pz-bty-b b{color:#f4dc8a;font-weight:700}
+  /* 총액 아래 두 갈래 — 등수 상금 + 현상금. 머리의 총액이 어디서 왔는지를 한 줄로 잇는다. */
+  .ht-pz-split{display:flex;align-items:center;gap:8px;margin-top:6px;
+    font-size:11px;color:var(--muted)}
+  .ht-pz-split b{color:var(--text);font-variant-numeric:tabular-nums}
+  .ht-pz-split .bty b{color:#e8c86a}
+  .ht-pz-split .pz-plus{color:#5f5f68}
+  /* 내 몫 — 규칙 설명보다 위에 둔다. 받은 돈과 아직 아닌 돈을 두 줄로 나눈다. */
+  .ht-pz-mine{display:flex;flex-direction:column;gap:3px;margin-bottom:7px;
+    padding-bottom:7px;border-bottom:1px solid rgba(212,175,55,.2)}
+  .ht-pz-mine span{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11px;color:var(--muted)}
+  .ht-pz-mine b{font-size:12px;color:#f4dc8a;font-weight:800;font-variant-numeric:tabular-nums}
+  .ht-pz-mine i{font-style:normal;font-size:10px;color:#5f5f68;margin-left:6px}
   .ht-side .ht-back{margin:0 14px 14px;padding:8px 12px;font-size:12.5px}
   .ht-side .ht-back[hidden]{display:none}
 

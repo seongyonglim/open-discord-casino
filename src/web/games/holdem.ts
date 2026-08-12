@@ -13,7 +13,7 @@ import {
   advanceHoldem, registerHoldem, unregisterHoldem, holdemAction, holdemSitIn, touchHoldemPresence,
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords, type ShowWhich,
-  ACTION_SEC, actOpenAt, tuning, type HoldemStatus, isPko, prizePoolOf,
+  ACTION_SEC, actOpenAt, tuning, type HoldemStatus, isPko, isMystery, bountyPctOf, prizePoolOf,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -130,6 +130,20 @@ function statePayload(st: HoldemStatus, userId: string) {
          "0 이면 숨긴다" 같은 조건이 하나 더 생기고, 그 조건이 언젠가 빠진다.
          아예 없으면 실수로 그릴 수가 없다. */
       bountyPool: isPko(t) ? t.bounty_pool : undefined,
+      /* 내가 KO 로 받아 챙긴 현상금 누계와 지금 내 머리에 걸린 값.
+         상금 탭이 "내 돈이 어떻게 되고 있나"를 보는 곳이라 거기에 적는다 —
+         머리 위 명찰은 지금 값만 보여주고, 이미 받은 돈은 어디에도 없었다. */
+      myBountyWon: isPko(t)
+        ? (entries.find(e => e.user_id === userId)?.bounty_won ?? 0) : undefined,
+      /* 내 봉투도 감춘다 — 미스터리의 재미는 아무도, 본인조차 모른다는 것이다.
+         프로그레시브는 자기 머리 값을 늘 안다(자라는 것을 보는 것이 그 모드의 재미다). */
+      myBounty: isPko(t)
+        ? (isMystery(t) && entries.find(e => e.user_id === userId)?.bounty_revealed !== 1
+          ? null
+          : (entries.find(e => e.user_id === userId)?.bounty ?? 0))
+        : undefined,
+      /* 바운티 몫(%) — 상금 탭이 "1인당 금액의 몇 %가 바운티인가"를 적는 데 쓴다 */
+      bountyPct: isPko(t) ? bountyPctOf(t) : undefined,
       prizePool: pool,
       prizes: T.prizeAmounts(pool, entries.length),
       itm: T.itmCount(entries.length),
@@ -176,7 +190,12 @@ function statePayload(st: HoldemStatus, userId: string) {
   /* 바운티는 대회 단위 값이라 참가 행(holdem_entries)에 있고 좌석 행에는 없다.
      좌석마다 조회하지 않고 한 번에 읽어 맵으로 둔다 — 9인 테이블이면 폴링마다 9번이다. */
   const pkoOn = isPko(t);
-  const bountyBySeat = new Map(entries.map(e => [e.user_id, e.bounty]));
+  /* 미스터리는 봉투 금액을 열리기 전까지 내려보내지 않는다 — 응답에 들어 있으면 개발자
+     도구로 그대로 읽히고, 그러면 감춘 것이 아니다(홀 카드와 같은 규율이다).
+     감춘 자리는 null 로 준다: 0 으로 주면 "0원짜리 봉투"와 구분되지 않는다. */
+  const mysteryOn = isMystery(t);
+  const bountyBySeat = new Map<string, number | null>(entries.map(e =>
+    [e.user_id, (mysteryOn && e.bounty_revealed !== 1) ? null : e.bounty]));
   const hand = getCurrentHand(table.id);
   const profiles = getSeatAvatars(table.id);
   const avatarOf = (id: string) => profiles.get(id) ?? null;
@@ -329,7 +348,7 @@ function statePayload(st: HoldemStatus, userId: string) {
           committed: h?.committed ?? 0,
           /* 머리에 걸린 바운티. PKO 가 아니면 아예 넣지 않는다 — 일반 대회의 좌석에는
              이 칸이 없어서 화면이 그리려 해도 그릴 것이 없다. */
-          bounty: pkoOn ? (bountyBySeat.get(s.user_id) ?? 0) : undefined,
+          bounty: pkoOn ? (bountyBySeat.get(s.user_id) ?? null) : undefined,
           state: h?.state ?? 'out',
           won: h?.won ?? 0,
           // 마지막으로 한 행동 ("콜 300"처럼 자리 옆에 띄운다)

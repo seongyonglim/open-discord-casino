@@ -50,6 +50,15 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       if (!results.length) return;
       // 마지막 판의 팟이 승자에게 다 들어간 뒤에 축하한다
       if (st.table && st.table.tournamentOver && !settleDone(st.table)) return;
+      /* 바운티 대회는 그 뒤에 처형(총 3발)과 현상금 상승이 더 남아 있다. 팝업이 먼저
+         뜨면 화면을 덮어 마지막 KO 연출과 오른 현상금을 통째로 못 본다 — 실제로
+         처형과 팝업이 동시에 떴다(제보).
+
+         koBurstEndsAt 은 총격이 끝나는 시각이고(seats.ts 가 잡는다), 그 뒤에 오르는
+         현상금 숫자가 1.4초 떠 있다. 그것까지 지나고 나서 축하로 넘어간다.
+         조각들은 하나의 클로저를 공유하므로 여기서 그 값이 보인다. */
+      if (typeof koBurstEndsAt === 'number' && koBurstEndsAt > 0
+        && Date.now() < koBurstEndsAt + KO_GAIN_HOLD_MS) return;
       var key = celebrateKey(t);
       try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); }
       catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }

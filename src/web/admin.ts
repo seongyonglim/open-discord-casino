@@ -20,7 +20,7 @@ import {
   listTournaments, purgeTournament, openTestTournament, createTournament, revokePrizesAndPurge,
   cancelRunningTournament, searchUsers, grantPoints, userLedger,
 } from '../db/admin';
-import { prizePoolOf, isPko } from '../db/holdem';
+import { prizePoolOf, isPko, isMystery } from '../db/holdem';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason } from '../db/settings';
 import {
@@ -85,7 +85,8 @@ export function adminPage(user: WebUser): string {
         : `<span class="ad-tag free">프리롤</span>`}${
         /* 바운티 판은 목록에서 바로 구분돼야 한다. 상금 팟이 참가비의 절반으로만 잡히므로,
            모르고 보면 "상금이 왜 반이지"가 된다 — 그 답을 같은 줄에 둔다. */
-        isPko(t) ? ` <span class="ad-tag pko">PKO</span>` : ''}</td>
+        isMystery(t) ? ` <span class="ad-tag mystery">미스터리</span>`
+        : isPko(t) ? ` <span class="ad-tag pko">PKO ${t.bounty_pct}%</span>` : ''}</td>
       <td><span class="ad-st s-${st === '진행 중' ? 'run' : st === '종료' ? 'done' : st === '취소' ? 'cancel' : 'wait'}">${st}</span></td>
       <td class="r">${num(t.entries)}</td>
       <td class="r">${num(pool)}P</td>
@@ -242,8 +243,13 @@ export function adminPage(user: WebUser): string {
              참가비가 있어야 뜻이 있다 — 프리롤을 고르면 아래 스크립트가 잠근다. -->
         <label>대회 종류<select id="ncMode" ${canMake ? '' : 'disabled'}>
           <option value="CLASSIC" selected>일반 (상금만)</option>
-          <option value="PKO_BOUNTY">PKO 바운티 (상금 + 현상금)</option>
-        </select><i>바운티는 참가비의 절반이 현상금 · 참가비 대회에서만</i></label>
+          <option value="PKO_BOUNTY">PKO 바운티 (순위 상금 + 바운티)</option>
+          <option value="MYSTERY_BOUNTY">미스터리 바운티 (전액 바운티 · 금액 비공개)</option>
+        </select><i id="ncModeHint">바운티는 1인당 금액(참가비 또는 배수)에서 갈라 냅니다</i></label>
+        <!-- 바운티 몫. PKO 에서만 고른다 — 미스터리는 전액이라 고를 것이 없다. -->
+        <label id="ncPctWrap" hidden>바운티 몫<span class="ad-inx">
+          <input type="number" id="ncPct" min="10" max="100" step="5" value="50"><b>%</b>
+        </span><i id="ncPctHint">나머지가 순위 상금입니다</i></label>
         <label>등록 시작<input type="datetime-local" id="ncRegAt" value="${localInput(defaultRegAt)}" ${canMake ? '' : 'disabled'}><i>KST · 이때부터 신청을 받습니다</i></label>
         <label>대회 시작<input type="datetime-local" id="ncStartAt" value="${localInput(defaultStartAt)}" ${canMake ? '' : 'disabled'}><i>KST · 3명 이상이면 이때 시작</i></label>
       </div>
@@ -587,13 +593,52 @@ export function adminPage(user: WebUser): string {
       var buyin = ncKind.value === 'buyin';
       document.getElementById('ncFreeRow').hidden = buyin;
       document.getElementById('ncBuyRow').hidden = !buyin;
-      /* 프리롤에는 바운티를 걸 수 없다 — 걷은 참가비가 없으면 머리에 얹을 값도 없다.
-         잠그면서 CLASSIC 으로 되돌린다. 화면이 "바운티 대회"라고 적어 놓고 아무
-         바운티도 없는 판이 열리는 것이 문제라, 고를 수 없게 만드는 편이 낫다. */
-      ncMode.disabled = !buyin;
-      if (!buyin) ncMode.value = 'CLASSIC';
+      /* 바운티는 "1인당 금액의 절반"이라, 그 1인당 금액만 있으면 프리롤도 걸 수 있다 —
+         참가비 대회는 참가비, 프리롤은 상금 배수가 그 값이다. 예전에는 참가비만 보고
+         프리롤을 통째로 잠갔는데, 배수 10,000 인 프리롤이면 5,000 은 상금 5,000 은
+         머리 값으로 두면 되므로 막을 이유가 없었다.
+         배수도 참가비도 0 인 판(보장 상금만 있는 프리롤)에는 걸 수 없으니 그때만 잠근다 —
+         "바운티 대회"라고 적어 놓고 아무 바운티도 없는 판이 열리는 것이 문제다. */
+      var unit = buyin
+        ? Math.floor(Number(document.getElementById('ncBuyIn').value) || 0)
+        : Math.floor(Number(document.getElementById('ncMult').value) || 0);
+      ncMode.disabled = unit <= 0;
+      if (unit <= 0) ncMode.value = 'CLASSIC';
+      /* 바운티 몫은 PKO 에서만 고른다 — 미스터리는 전액이라 고를 것이 없다. */
+      var mystery = ncMode.value === 'MYSTERY_BOUNTY';
+      var pctEl = document.getElementById('ncPct');
+      var pctWrap = document.getElementById('ncPctWrap');
+      if (pctWrap) pctWrap.hidden = ncMode.value !== 'PKO_BOUNTY';
+      var pct = mystery ? 100
+        : Math.min(100, Math.max(10, Math.floor(Number(pctEl && pctEl.value) || 50)));
+      var bty = Math.floor(unit * pct / 100);
+      var hint = document.getElementById('ncModeHint');
+      if (hint) {
+        hint.textContent = unit <= 0
+          ? (buyin ? '참가비를 입력하면 바운티를 걸 수 있습니다'
+                   : '상금 배수가 있어야 바운티를 걸 수 있습니다')
+          : ncMode.value === 'CLASSIC'
+            ? '바운티 없이 순위 상금만 나눕니다'
+            : (buyin ? '참가비' : '배수') + ' ' + unit.toLocaleString('ko-KR') + 'P 중 '
+              + bty.toLocaleString('ko-KR') + 'P 가 바운티'
+              + (mystery ? ' · 금액은 잡히기 전까지 비공개'
+                         : ' · 나머지 ' + (unit - bty).toLocaleString('ko-KR') + 'P 가 순위 상금');
+      }
+      var pctHint = document.getElementById('ncPctHint');
+      if (pctHint) {
+        pctHint.textContent = unit > 0
+          ? '바운티 ' + bty.toLocaleString('ko-KR') + 'P · 순위 상금 '
+            + (unit - bty).toLocaleString('ko-KR') + 'P'
+          : '나머지가 순위 상금입니다';
+      }
     }
     ncKind.addEventListener('change', ncSyncRows);
+    /* 금액을 고치면 안내와 잠금이 따라와야 한다 — 안 그러면 배수를 0 에서 올려도
+       종류 선택이 잠긴 채로 남는다. */
+    ['ncBuyIn', 'ncMult', 'ncPct'].forEach(function(idv){
+      var el = document.getElementById(idv);
+      if (el) el.addEventListener('input', ncSyncRows);
+    });
     ncMode.addEventListener('change', ncSyncRows);
     ncSyncRows();
 
@@ -646,8 +691,11 @@ export function adminPage(user: WebUser): string {
         /* 참가 방식이 정한 쪽만 보낸다. 두 값을 다 보내면 서버가 어느 쪽을 믿어야 할지
            모호해지고, 화면에서 프리롤을 골라 놓고 참가비가 붙는 일이 생긴다. */
         buyIn: buyin ? Math.floor(Number(document.getElementById('ncBuyIn').value)) : 0,
-        // 프리롤이면 무조건 CLASSIC — 화면이 잠가 두지만 보내는 값도 여기서 못 박는다
-        mode: buyin ? ncMode.value : 'CLASSIC',
+        /* 1인당 금액이 0 이면 위에서 select 를 잠그며 CLASSIC 으로 되돌려 두었다 */
+        mode: ncMode.value,
+        /* 바운티 몫(%). 미스터리는 서버가 100 으로 못 박으므로 이 값은 PKO 에서만 쓰인다 */
+        bountyPct: Math.min(100, Math.max(10, Math.floor(
+          Number((document.getElementById('ncPct') || {}).value) || 50))),
         prizeMultiplier: buyin ? 0 : Math.floor(Number(document.getElementById('ncMult').value)),
         prizeFixed: buyin ? Math.floor(Number(document.getElementById('ncGtd').value)) : 0,
         /* 판의 모양은 늘 보낸다. 안 보내면 서버가 템플릿 값을 쓰는데, 그러면 화면에
@@ -1276,7 +1324,10 @@ export async function handleAdminTournamentCreate(
     prizeFixed: clampMoney(b?.prizeFixed),
     /* 대회 종류. 정확히 'PKO_BOUNTY' 일 때만 바운티 판이고 나머지는 전부 일반 판이다 —
        모르는 값이 바운티로 읽히면 걷은 돈이 갈 곳을 잃는다(db 쪽도 같은 판단을 한다). */
-    mode: b?.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY' : 'CLASSIC',
+    mode: b?.mode === 'PKO_BOUNTY' ? 'PKO_BOUNTY'
+      : b?.mode === 'MYSTERY_BOUNTY' ? 'MYSTERY_BOUNTY' : 'CLASSIC',
+    /* 바운티 몫(%). 범위 밖 값은 db 쪽이 다시 다듬는다 — 화면을 거치지 않는 경로가 있다 */
+    bountyPct: b?.bountyPct != null ? Math.floor(Number(b.bountyPct)) : undefined,
     /* 판의 모양은 안 보내면 템플릿을 쓴다(반복 개최가 그 길이다). 화면은 늘 채워 보내므로
        손으로 여는 판은 화면에 적힌 그대로 열린다 — 템플릿을 나중에 고쳐도 안 흔들린다. */
     ...ruleFields(b),
