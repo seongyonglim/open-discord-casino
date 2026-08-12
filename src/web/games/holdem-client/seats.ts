@@ -11,11 +11,15 @@
 export const SEATS = `    var seatXY = {};
     /* ── PKO 연출용 기억 ────────────────────────────────────────────
        좌석 번호를 키로 둔다.
-         bountyShown  마지막으로 그린 머리 값 — 오를 때만 번쩍이기 위해서다.
+         bountyShown  마지막으로 그린 머리 값 — 봉투가 열릴 때 번쩍이기 위해서다.
+         wonShown     마지막으로 본 확보 누계 — 늘어난 만큼을 +N P 로 띄우기 위해서다.
+                      머리 값이 자라지 않게 되면서(잡은 사람이 전액 독식) 명찰 숫자는
+                      대회 내내 고정된다. 그래서 "잡았다"는 보상 피드백을 명찰 상승이
+                      아니라 이쪽에서 만든다.
          koFired      그 자리의 KO 연출을 이미 터뜨렸나 — 폴링마다 다시 터지지 않게.
          koSeen       한 번이라도 그려 본 적이 있나 — 첫 프레임에는 터뜨리지 않는다.
                       이미 탈락자가 있는 판에 뒤늦게 들어오면 그 몫이 한꺼번에 터진다. */
-    var bountyShown = {}, koFired = {}, koSeen = false;
+    var bountyShown = {}, wonShown = {}, koFired = {}, koSeen = false;
     /* 총알이 박히는 시각. 음원(gunshot.mp3)의 실제 발사 시점을 그대로 읽어 쓴다 —
        간격을 우리가 정하면 소리와 그림이 어긋난다. 값은 app.js 의 소리 옆에 있다.
        음원을 못 읽는 환경(구형 브라우저 등)에서도 배열은 있으므로 연출은 그대로 돈다. */
@@ -526,25 +530,41 @@ export const SEATS = `    var seatXY = {};
                  다시 시작되지 않는다. 레이아웃을 한 번 읽어 강제로 끊는다. */
               void bEl.offsetWidth;
               bEl.classList.add('up');
-              if (casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
-              /* 오른 만큼을 명찰 위로 띄운다 — 명찰 숫자만 바뀌면 이전 값과 뺄셈해야
-                 얼마를 받았는지 알 수 있고, 그 순간에 그럴 사람은 없다. */
-              var gEl = seatEl.querySelector('.ht-bgain');
-              if (gEl) {
-                gEl.textContent = '+' + stackText(prev === null ? bv : bv - prev) + 'P';
-                gEl.hidden = false;
-                gEl.classList.remove('rise');
-                void gEl.offsetWidth;
-                gEl.classList.add('rise');
-                /* 떠오른 숫자는 남지 않는다 — 다음 판까지 붙어 있으면 지금 걸린 금액과
-                   헷갈린다. 애니메이션(1.4초)이 끝나면 치운다. */
-                (function(el){ setTimeout(function(){ el.hidden = true; }, 1400); })(gEl);
-              }
             }
           } else {
             bEl.hidden = true;
           }
           bountyShown[s.seat] = bv;
+        }
+        /* ── 잡아서 확보한 금액 (+N P) ────────────────────────────────
+           명찰 숫자는 대회 내내 고정이다(잡은 사람이 전액을 가져가고 자기 머리 값은
+           오르지 않는다). 그래서 "얼마를 벌었나"는 명찰이 아니라 이 숫자가 말한다.
+
+           명찰의 붙들기와 같은 규칙을 쓴다: 결과 연출과 처형(3발)이 끝날 때까지 기다린다.
+           순서가 [칩 이동 → 처형 → 확보 표시]라, 처형과 같은 순간에 터지면 무엇 때문에
+           들어온 돈인지가 안 읽힌다. */
+        var wv = s.bountyWon;
+        if (typeof wv === 'number') {
+          var wPrev = wonShown[s.seat];
+          var wWait = !settleDone(tb) || Date.now() < koBurstEndsAt;
+          if (wPrev !== undefined && wv !== wPrev && wWait) wv = wPrev;
+          /* 처음 본 값에는 띄우지 않는다 — 판 중간에 들어온 사람에게 남의 누계를
+             "방금 벌었다"로 보여줄 이유가 없다. 기다리는 것은 "증가"뿐이다. */
+          if (wPrev !== undefined && wv > wPrev) {
+            if (casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
+            var gEl = seatEl.querySelector('.ht-bgain');
+            if (gEl) {
+              gEl.textContent = '+' + stackText(wv - wPrev) + 'P';
+              gEl.hidden = false;
+              gEl.classList.remove('rise');
+              void gEl.offsetWidth;
+              gEl.classList.add('rise');
+              /* 떠오른 숫자는 남지 않는다 — 다음 판까지 붙어 있으면 지금 걸린 금액과
+                 헷갈린다. 애니메이션(1.4초)이 끝나면 치운다. */
+              (function(el){ setTimeout(function(){ el.hidden = true; }, 1400); })(gEl);
+            }
+          }
+          wonShown[s.seat] = wv;
         }
         /* 좌표는 골격이 아니라 여기서 넣는다. 등간격 계산이 실측한 가로세로 비율에
            의존하므로, 창 폭이 바뀌면 값도 바뀐다 — 골격에 구워 두면 좌석 구성이

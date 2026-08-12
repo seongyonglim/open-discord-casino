@@ -86,7 +86,7 @@ export function adminPage(user: WebUser): string {
         /* 바운티 판은 목록에서 바로 구분돼야 한다. 상금 팟이 참가비의 절반으로만 잡히므로,
            모르고 보면 "상금이 왜 반이지"가 된다 — 그 답을 같은 줄에 둔다. */
         isMystery(t) ? ` <span class="ad-tag mystery">미스터리</span>`
-        : isPko(t) ? ` <span class="ad-tag pko">PKO ${t.bounty_pct}%</span>` : ''}</td>
+        : isPko(t) ? ` <span class="ad-tag pko">바운티 ${t.bounty_pct}%</span>` : ''}</td>
       <td><span class="ad-st s-${st === '진행 중' ? 'run' : st === '종료' ? 'done' : st === '취소' ? 'cancel' : 'wait'}">${st}</span></td>
       <td class="r">${num(t.entries)}</td>
       <td class="r">${num(pool)}P</td>
@@ -243,10 +243,10 @@ export function adminPage(user: WebUser): string {
              참가비가 있어야 뜻이 있다 — 프리롤을 고르면 아래 스크립트가 잠근다. -->
         <label>대회 종류<select id="ncMode" ${canMake ? '' : 'disabled'}>
           <option value="CLASSIC" selected>일반 (상금만)</option>
-          <option value="PKO_BOUNTY">PKO 바운티 (순위 상금 + 바운티)</option>
-          <option value="MYSTERY_BOUNTY">미스터리 바운티 (전액 바운티 · 금액 비공개)</option>
+          <option value="PKO_BOUNTY">바운티 헌터 (순위 상금 + 바운티)</option>
+          <option value="MYSTERY_BOUNTY">미스터리 바운티 (금액 무작위 · 비공개)</option>
         </select><i id="ncModeHint">바운티는 1인당 금액(참가비 또는 배수)에서 갈라 냅니다</i></label>
-        <!-- 바운티 몫. PKO 에서만 고른다 — 미스터리는 전액이라 고를 것이 없다. -->
+        <!-- 바운티 몫. 두 바운티 모드가 함께 쓴다 — 일반 대회에서만 감춘다. -->
         <label id="ncPctWrap" hidden>바운티 몫<span class="ad-inx">
           <input type="number" id="ncPct" min="10" max="100" step="5" value="50"><b>%</b>
         </span><i id="ncPctHint">나머지가 순위 상금입니다</i></label>
@@ -604,7 +604,6 @@ export function adminPage(user: WebUser): string {
         : Math.floor(Number(document.getElementById('ncMult').value) || 0);
       ncMode.disabled = unit <= 0;
       if (unit <= 0) ncMode.value = 'CLASSIC';
-      /* 바운티 몫은 PKO 에서만 고른다 — 미스터리는 전액이라 고를 것이 없다. */
       var mystery = ncMode.value === 'MYSTERY_BOUNTY';
       var pctEl = document.getElementById('ncPct');
       var pctWrap = document.getElementById('ncPctWrap');
@@ -625,7 +624,8 @@ export function adminPage(user: WebUser): string {
               + (unit - bty > 0
                 ? ' · 나머지 ' + (unit - bty).toLocaleString('ko-KR') + 'P 가 순위 상금'
                 : ' (순위 상금 없음)')
-              + (mystery ? ' · 바운티 금액은 비공개' : '');
+              + (mystery ? ' · 금액은 사람마다 무작위, 잡힐 때까지 비공개'
+                         : ' · 잡은 사람이 그 사람 바운티를 전액 가져갑니다');
       }
       var pctHint = document.getElementById('ncPctHint');
       if (pctHint) {
@@ -696,7 +696,7 @@ export function adminPage(user: WebUser): string {
         buyIn: buyin ? Math.floor(Number(document.getElementById('ncBuyIn').value)) : 0,
         /* 1인당 금액이 0 이면 위에서 select 를 잠그며 CLASSIC 으로 되돌려 두었다 */
         mode: ncMode.value,
-        /* 바운티 몫(%). 미스터리는 서버가 100 으로 못 박으므로 이 값은 PKO 에서만 쓰인다 */
+        /* 바운티 몫(%). 두 바운티 모드가 함께 쓴다 */
         bountyPct: Math.min(100, Math.max(10, Math.floor(
           Number((document.getElementById('ncPct') || {}).value) || 50))),
         prizeMultiplier: buyin ? 0 : Math.floor(Number(document.getElementById('ncMult').value)),

@@ -1255,36 +1255,42 @@
   .ht-pz-pct{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none;width:42px;text-align:right}
   .ht-pz-row.out .ht-pz-pl,.ht-pz-row.out .ht-pz-amt{color:#7f8a83;font-weight:600}
   .ht-pz-note{margin-top:10px;font-size:11px;line-height:1.6;color:var(--muted)}
-  /* 현상금 펀드 안내 — 상금표 아래. 금색 테두리로 상금 쪽과 구분한다: 같은 톤이면
-     한 덩어리로 읽혀서 "상금이 반이다"라는 오해가 그대로 남는다. */
-  .ht-pz-bty{margin-top:12px;padding:9px 11px;border-radius:8px;
-    background:rgba(212,175,55,.07);border:1px solid rgba(212,175,55,.28)}
-  .ht-pz-bty-h{display:flex;justify-content:space-between;align-items:baseline;
-    font-size:12px;font-weight:700;color:#e8c86a;margin-bottom:6px}
-  .ht-pz-bty-h b{font-size:14px;font-variant-numeric:tabular-nums}
-  /* 총 현상금 옆의 내 획득분. 총액보다 작게 두어 "전체 중 내 몫"으로 읽히게 한다 */
   /* 아직 안 열린 봉투 — 금액 대신 물음표. 금빛은 유지하되 광택을 죽여
      "봉인된 판" 으로 읽히게 한다. 열리는 순간 .sealed 가 떨어지며 금액이 들어온다. */
   .ht-bounty.sealed{
     background:linear-gradient(180deg,#d8cbb2 0%,#b8a882 45%,#9d8d68 50%,#d2c5ac 100%);
     color:#3b2f1a;letter-spacing:0;padding:0 9px}
-  .ht-pz-bty-h em{font-style:normal;margin-left:auto;padding-left:8px;
-    font-size:11px;font-weight:700;color:#f4dc8a}
-  .ht-pz-bty-b{font-size:11px;line-height:1.7;color:var(--muted)}
-  .ht-pz-bty-b b{color:#f4dc8a;font-weight:700}
-  /* 총액 아래 두 갈래 — 등수 상금 + 현상금. 머리의 총액이 어디서 왔는지를 한 줄로 잇는다. */
-  .ht-pz-split{display:flex;align-items:center;gap:8px;margin-top:6px;
-    font-size:11px;color:var(--muted)}
-  .ht-pz-split b{color:var(--text);font-variant-numeric:tabular-nums}
+  /* 총액 아래 두 갈래 — 순위 상금 + 바운티. 머리의 총액이 어디서 왔는지를 한 줄로 잇는다.
+     한 줄에 다 들어가야 한다: 좁은 칸에서 라벨이 줄바꿈되면("바운티 상 / 금") 금액보다
+     글자가 먼저 눈에 들어와 표가 아니라 문단으로 읽힌다. 그래서 라벨을 짧게 두고
+     nowrap 을 건다. */
+  .ht-pz-split{display:flex;align-items:baseline;gap:7px;margin:2px 0 10px;
+    font-size:11px;color:var(--muted);white-space:nowrap}
+  .ht-pz-split b{color:var(--text);font-family:var(--mono);font-weight:800;margin-left:3px}
   .ht-pz-split .bty b{color:#e8c86a}
   .ht-pz-split .pz-plus{color:#5f5f68}
-  /* 내 몫 — 규칙 설명보다 위에 둔다. 받은 돈과 아직 아닌 돈을 두 줄로 나눈다. */
-  .ht-pz-mine{display:flex;flex-direction:column;gap:3px;margin-bottom:7px;
-    padding-bottom:7px;border-bottom:1px solid rgba(212,175,55,.2)}
-  .ht-pz-mine span{display:flex;justify-content:space-between;align-items:baseline;
-    font-size:11px;color:var(--muted)}
-  .ht-pz-mine b{font-size:12px;color:#f4dc8a;font-weight:800;font-variant-numeric:tabular-nums}
-  .ht-pz-mine i{font-style:normal;font-size:10px;color:#5f5f68;margin-left:6px}
+  /* 덩어리 제목 — 아래 표가 어느 갈래인지 못 박는다. 오른쪽 i 는 곁가지 정보라
+     작게 둔다(내 바운티 금액, "등수로 나눕니다" 같은 것). */
+  .ht-pz-bttl{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    font-size:11px;font-weight:800;color:#e8c86a;letter-spacing:.02em;
+    padding-bottom:5px;border-bottom:1px solid rgba(212,175,55,.22);margin-bottom:2px}
+  .ht-pz-bttl i{font-style:normal;font-weight:700;font-size:10.5px;color:#5f5f68;
+    white-space:nowrap}
+  .ht-pz-rsec{margin-top:13px}
+  .ht-pz-rsec .ht-pz-bttl{color:var(--muted);border-bottom-color:rgba(255,255,255,.07)}
+  /* 바운티 획득 현황 — 많이 번 순. 아직 못 번 사람은 0P 로 흐리게 둔다: 줄을 빼면
+     "표에 없는 사람"이 생겨서 몇 명이 남았는지가 안 읽힌다. */
+  .ht-pz-brows{display:flex;flex-direction:column}
+  .ht-pz-brow{display:flex;align-items:center;gap:8px;padding:5px 4px;
+    border-bottom:1px solid rgba(255,255,255,.035)}
+  .ht-pz-brow:last-child{border-bottom:0}
+  .ht-pz-brow .nm{flex:1;min-width:0;font-size:12px;font-weight:700;color:#7f8a83;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ht-pz-brow b{flex:none;font-family:var(--mono);font-size:12px;font-weight:800;
+    color:#7f8a83}
+  /* 한 푼이라도 번 줄만 밝게 — 훑을 때 눈이 위쪽 몇 줄에만 가면 된다 */
+  .ht-pz-brow.has .nm{color:var(--text)}
+  .ht-pz-brow.has b{color:#f4dc8a}
   .ht-side .ht-back{margin:0 14px 14px;padding:8px 12px;font-size:12.5px}
   .ht-side .ht-back[hidden]{display:none}
 

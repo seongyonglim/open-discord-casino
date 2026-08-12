@@ -144,6 +144,17 @@ function statePayload(st: HoldemStatus, userId: string) {
         : undefined,
       /* 바운티 몫(%) — 상금 탭이 "1인당 금액의 몇 %가 바운티인가"를 적는 데 쓴다 */
       bountyPct: isPko(t) ? bountyPctOf(t) : undefined,
+      /* 누가 얼마를 벌었나. 상금 탭이 규칙 설명 대신 이 표를 보여준다 — 규칙은 공지에
+         적어 두고, 화면은 "지금 누가 앞서 있나"만 말하는 편이 읽힌다.
+
+         많이 번 사람 순으로 준다. 동액이면 신청 순서를 유지한다(entries 순) — 폴링마다
+         순서가 뒤바뀌면 눈으로 따라갈 수 없다. 시작 전에는 전원 0 이고, 그 0 도 그린다:
+         "아직 아무도 못 벌었다"는 것과 "표가 없다"는 것은 다르다. */
+      bountyBoard: isPko(t)
+        ? entries.map((e, i) => ({ name: e.username, won: e.bounty_won, i }))
+          .sort((a, b) => b.won - a.won || a.i - b.i)
+          .map(x => ({ name: x.name, won: x.won }))
+        : undefined,
       prizePool: pool,
       prizes: T.prizeAmounts(pool, entries.length),
       itm: T.itmCount(entries.length),
@@ -171,6 +182,11 @@ function statePayload(st: HoldemStatus, userId: string) {
           .sort((a, b) => a.finish_place! - b.finish_place!)
           .map(e => ({
             place: e.finish_place, username: e.username, prize: e.prize,
+            /* 실제로 지급된 바운티. 결과 팝업이 순위 상금만 적으면 이 대회의 절반이
+               사라진다 — 3위로 끝났지만 바운티로 10,000P 를 번 사람이 "0P" 로 찍혔다.
+               예정액(bounty_won)이 아니라 지급액을 쓴다: 팝업은 "얼마 받았나"를 말하는
+               자리이고, 중간에 끊긴 판이면 그 값은 0 이어야 한다. */
+            bounty: e.bounty_paid,
             userId: e.user_id, avatar: av.get(e.user_id) ?? null,
           }));
       })()
@@ -196,6 +212,10 @@ function statePayload(st: HoldemStatus, userId: string) {
   const mysteryOn = isMystery(t);
   const bountyBySeat = new Map<string, number | null>(entries.map(e =>
     [e.user_id, (mysteryOn && e.bounty_revealed !== 1) ? null : e.bounty]));
+  /* 잡아서 확보한 누계. 머리 값이 자라지 않게 되면서 명찰 숫자가 영구히 고정됐고, 그래서
+     "잡았다"는 보상 피드백을 여기에 옮겼다 — 화면이 이 값의 증가를 보고 +N P 를 띄운다.
+     감출 것이 없다: 이미 열린 봉투에서 나온 돈이고, 누가 얼마 벌었는지는 보여야 한다. */
+  const wonBySeat = new Map<string, number>(entries.map(e => [e.user_id, e.bounty_won]));
   const hand = getCurrentHand(table.id);
   const profiles = getSeatAvatars(table.id);
   const avatarOf = (id: string) => profiles.get(id) ?? null;
@@ -349,6 +369,8 @@ function statePayload(st: HoldemStatus, userId: string) {
           /* 머리에 걸린 바운티. PKO 가 아니면 아예 넣지 않는다 — 일반 대회의 좌석에는
              이 칸이 없어서 화면이 그리려 해도 그릴 것이 없다. */
           bounty: pkoOn ? (bountyBySeat.get(s.user_id) ?? null) : undefined,
+          /* 잡아서 확보한 누계 — 화면이 이 값의 증가로 +N P 를 띄운다 */
+          bountyWon: pkoOn ? (wonBySeat.get(s.user_id) ?? 0) : undefined,
           state: h?.state ?? 'out',
           won: h?.won ?? 0,
           // 마지막으로 한 행동 ("콜 300"처럼 자리 옆에 띄운다)

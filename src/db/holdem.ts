@@ -1308,16 +1308,15 @@ function eliminateBusted(
 }
 
 /**
- * PKO 바운티 정산 — 떨어진 사람의 머리 값을 떨어뜨린 사람들에게 넘긴다.
+ * 바운티 정산 — 떨어진 사람의 머리 값을 떨어뜨린 사람에게 넘긴다.
  *
- * 한 사람의 머리 값 b 는 이 함수 안에서 정확히 b 만큼만 움직인다:
- *   · 여럿이 나눠 가지면 splitBounty 가 1P 도 남기지 않고 쪼갠다(공동 KO — 팟을 나눠 이긴 경우).
- *   · 각자의 몫은 다시 [머리에 얹을 몫 + 즉시 현금]으로 갈리고 그 둘의 합이 몫과 같다.
- * 그래서 "펀드에 있던 b 가 사라지고, 같은 b 가 머리와 잔액에 다시 나타난다"가 된다.
+ * 한 사람의 머리 값 b 는 이 함수 안에서 정확히 b 만큼만 움직인다: 머리를 0 으로 내리고,
+ * 같은 b 를 잡은 사람의 확보액에 얹는다. 여럿이 나눠 가지면(팟을 나눠 이겨 공동 KO 인
+ * 경우) splitBounty 가 1P 도 남기지 않고 쪼갠다.
+ *
  * 펀드 총액(bounty_pool)은 건드리지 않는다 — 그건 걷은 금액의 기록이고, 검산의 기준이다.
  *
- * 현금은 즉시 잔액에 넣는다. 요구서의 "확정 상금으로 즉시 정산"이고, 실제로도 그래야
- * 한다 — 나중에 몰아서 주면 대회가 중단됐을 때 이미 벌어진 KO 의 몫이 사라진다.
+ * 지갑은 여기서 움직이지 않는다. 확보액만 적고 마감 정산 한 곳에서 한 번에 나간다.
  *
  * 던지지 않는다. 부르는 자리가 팟이 이미 나뉜 뒤라 여기서 예외가 나가면 다음 판 예약이
  * 통째로 안 돈다. 대신 실패를 로그로 남긴다.
@@ -1339,27 +1338,19 @@ function settleBounty(t: HtRow, bustedUserId: string, killers: string[], now: nu
         WHERE tournament_id = ? AND user_id = ? AND bounty = ?`, t.id, bustedUserId, bounty);
   if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return;
 
-  /* 미스터리는 머리가 자라지 않는다 — 봉투 금액을 전액 현금으로 준다.
-     프로그레시브는 절반씩 갈린다. */
-  const headRatio = isMystery(t) ? 0 : T.PKO_HEAD_RATIO;
-  const shares = T.splitBounty(bounty, killers.length);
-  killers.forEach((uid, i) => {
-    const { head, cash } = T.bountySplit(shares[i] ?? 0, headRatio);
-    if (head > 0) {
-      run(`UPDATE holdem_entries SET bounty = bounty + ?
-            WHERE tournament_id = ? AND user_id = ?`, head, t.id, uid);
-    }
-    /* 여기서는 지갑을 건드리지 않는다 — 벌어 둔 금액만 적어 두고, 실제 지급은 마감
-       정산 한 곳에서 한 번에 한다(payBounties).
+  /* 잡은 사람이 전액을 가져가고, 자기 머리 값은 오르지 않는다(두 모드 공통).
+     프로그레시브를 걷어낸 근거는 tournament.ts 의 주석에 적어 뒀다 — 6 인이면 자랄
+     시간이 없고, 자란 값은 탈락할 때 도로 넘어가 우승자 쪽으로 다시 흐른다.
 
-       예전에는 이 자리에서 곧바로 지급했다. 그러면 "상금은 대회가 끝날 때만 나간다"는
-       전제가 깨지고, 그 전제로 짜인 자리들이 조용히 어긋난다 — 중단 환불이 이미 나간
-       현금을 회수하지 않아 발행되고(재시작마다 도는 자동 경로였다), 대회 삭제도 상금만
-       걷어 가 펀드가 남았다. 나가는 곳을 한 곳으로 모으면 그 부류가 생길 수 없다. */
-    if (cash > 0) {
-      run(`UPDATE holdem_entries SET bounty_won = bounty_won + ?
-            WHERE tournament_id = ? AND user_id = ?`, cash, t.id, uid);
-    }
+     여기서는 지갑을 건드리지 않는다 — 벌어 둔 금액만 적어 두고, 실제 지급은 마감 정산
+     한 곳에서 한 번에 한다(payBounties). 예전에는 이 자리에서 곧바로 지급했다. 그러면
+     "상금은 대회가 끝날 때만 나간다"는 전제가 깨지고, 그 전제로 짜인 자리들이 조용히
+     어긋난다 — 중단 환불이 이미 나간 현금을 회수하지 않아 발행되고(재시작마다 도는
+     자동 경로였다), 대회 삭제도 상금만 걷어 가 펀드가 남았다. */
+  T.splitBounty(bounty, killers.length).forEach((share, i) => {
+    if (share <= 0) return;
+    run(`UPDATE holdem_entries SET bounty_won = bounty_won + ?
+          WHERE tournament_id = ? AND user_id = ?`, share, t.id, killers[i]);
   });
   void now;
 }

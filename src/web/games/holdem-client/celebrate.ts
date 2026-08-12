@@ -63,24 +63,31 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); }
       catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }
 
+      /* 받은 돈은 순위 상금 + 바운티다. 순위 상금만 적으면 바운티 대회의 절반이
+         사라진다 — 3위로 끝났지만 바운티로 10,000P 를 번 사람이 "0P" 로 찍혔다(제보).
+         두 갈래를 나눠 적지 않고 합계 하나로 둔다: 이 팝업은 "얼마 받았나"를 말하는
+         자리이고, 갈래는 상금 탭이 이미 보여준다. */
+      function tookOf(r){ return (r.prize || 0) + (r.bounty || 0); }
       var first = results[0];
       document.getElementById('htWinAv').innerHTML =
         avatarHtml(first.userId, first.avatar, first.username, 'ht-win-av');
       document.getElementById('htWinWho').textContent = first.username;
       document.getElementById('htWinPrize').textContent =
-        first.prize > 0 ? num(first.prize) + 'P' : '';
+        tookOf(first) > 0 ? num(tookOf(first)) + 'P' : '';
       /* 상금을 받은 자리와 못 받은 자리를 눈으로 갈라 놓는다.
          예전에는 2~4위를 한 덩어리로 같은 톤에 늘어놓고 상금란에 '-'를 찍었다.
          입상 여부가 이 표의 유일한 의미인데 그게 표에서 안 보였고, '-'는 "정보가 없다"는
          뜻이라 "0원을 받았다"와 다르다. 이제 입상자는 카드로 세우고, 미입상자는
          가라앉혀 0P로 적는다. */
       document.getElementById('htWinRest').innerHTML = results.slice(1).map(function(r){
-        var itm = r.prize > 0;
+        /* 카드로 세울지 가라앉힐지도 합계로 가른다 — 순위 상금만 보면 바운티로만 번
+           사람이 "못 받은 자리" 톤으로 그려진다. */
+        var itm = tookOf(r) > 0;
         return '<div class="ht-win-row' + (itm ? ' itm' : ' out') + '">' +
           '<span class="ht-win-pl">' + r.place + '위</span>' +
           avatarHtml(r.userId, r.avatar, r.username, 'ht-win-av sm') +
           '<span class="ht-win-nm">' + esc(r.username) + '</span>' +
-          '<span class="ht-win-pz">' + num(r.prize) + 'P</span></div>';
+          '<span class="ht-win-pz">' + num(tookOf(r)) + 'P</span></div>';
       }).join('');
       winEl.hidden = false;
       if (window.casinoSfx && window.casinoSfx.victory) window.casinoSfx.victory();

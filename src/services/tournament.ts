@@ -343,8 +343,26 @@ export function clampBountyPct(v: number | null | undefined): number {
   return Math.min(BOUNTY_PCT_MAX, Math.max(BOUNTY_PCT_MIN, n));
 }
 
-/** KO 로 가져간 바운티 중 "떨어뜨린 사람 머리"에 얹을 비율. 나머지는 즉시 현금이다. */
-export const PKO_HEAD_RATIO = 0.5;
+/* 머리 값이 자라던 규칙(프로그레시브)을 걷어냈다. 잡은 사람이 잡힌 사람 바운티를 전액
+   가져가고, 자기 머리 값은 오르지 않는다.
+
+   왜: 프로그레시브는 인원이 많아야 뜻이 생긴다. 머리 값이 자라 사냥감이 되고, 그 사냥감을
+   잡으려는 판이 또 벌어지는 것이 재미인데 — 6 인이면 KO 가 다섯 번뿐이라 자랄 시간이
+   없다. 복잡도만 지불하고 효과는 못 받는다.
+
+   그리고 프로그레시브는 돈을 우승자 쪽으로 다시 흘려보낸다. 탈락할 때 그동안 머리에
+   쌓아 둔 몫을 잡은 사람에게 통째로 넘기기 때문이다. 6 인 100 회 실측:
+
+     프로그레시브  우승자가 바운티 갈래의 89.5% · 3 위 평균 538P
+     전액 독식      우승자가 바운티 갈래의 78.6% · 3 위 평균 1,800P
+
+   독식은 계산도 닫혀 있다 — 우승자 바운티 = 한 사람 몫 × (1 + 내 KO 수). 설명이 한 줄로
+   끝나고("5,000P 짜리 목이 여섯 개, 잡으면 5,000P"), 잡은 순간 확정이라 중간에 떨어진
+   사람도 자기가 잡은 만큼은 지킨다.
+
+   그래서 미스터리 바운티와 지급 규칙이 같아졌다 — 두 모드는 금액이 무작위인지(봉투)로만
+   갈린다. bountySplit(머리/현금 쪼개기)도 함께 지웠다: 쓰는 곳이 없어졌고, 남겨 두면
+   splitBounty(공동 KO 몫 나누기)와 이름이 비슷해 헷갈릴 뿐이다. */
 
 /* ── 미스터리 바운티 봉투 ──────────────────────────────────────────
    사람마다 머리에 걸린 금액이 다르고, 잡히기 전까지 아무도 모른다.
@@ -393,22 +411,6 @@ export function bountyShare(buyIn: number, pct: number = BOUNTY_PCT_DEFAULT): nu
 export function prizeShare(buyIn: number, pct: number = BOUNTY_PCT_DEFAULT): number {
   const b = Math.max(0, Math.floor(buyIn));
   return b - bountyShare(b, pct);
-}
-
-/**
- * 바운티 하나를 "머리에 얹을 몫"과 "즉시 현금" 으로 쪼갠다.
- * 머리 쪽만 내리고 현금은 나머지 전부다 — 그래서 head + cash 가 언제나 원래 값이고
- * 1P 도 사라지지 않는다. (둘 다 내리면 홀수마다 1P 가 증발한다.)
- */
-export function bountySplit(
-  bounty: number, headRatio: number = PKO_HEAD_RATIO
-): { head: number; cash: number } {
-  const b = Math.max(0, Math.floor(bounty));
-  /* 미스터리는 0 을 넘긴다 — 봉투 금액이 처음부터 정해져 있어 머리가 자라지 않는다.
-     범위를 여기서 좁힌다: 1 을 넘는 값이 들어오면 cash 가 음수가 되어 없는 돈이 나간다. */
-  const r = Math.min(1, Math.max(0, headRatio));
-  const head = Math.floor(b * r);
-  return { head, cash: b - head };
 }
 
 /**

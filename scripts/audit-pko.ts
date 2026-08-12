@@ -63,11 +63,12 @@ async function main(): Promise<void> {
   {
     /* 여기가 무너지면 총액이 무너진다. 홀수·1P·0 처럼 내림이 물리는 값을 특히 본다.
        "합이 원래 값"을 성질로 검사한다 — 기대값을 손으로 적으면 그 표가 곧 두 번째 구현이다. */
-    for (const b of [0, 1, 2, 3, 7, 99, 100, 101, 999, 1_000, 12_345, 1_000_001]) {
-      const s = T.bountySplit(b);
-      ck(`${b}: 머리+현금 = 원래 값`, s.head + s.cash === Math.floor(b), `${s.head}+${s.cash}`);
-      ck(`${b}: 음수가 없다`, s.head >= 0 && s.cash >= 0);
-    }
+    /* 머리/현금 쪼개기(bountySplit)는 없어졌다 — 잡은 사람이 전액을 가져가므로 쪼갤 것이
+       없다. 되살아나면 "머리 값이 자란다"가 함께 돌아온 것이라, 없다는 사실을 검사한다. */
+    ck('머리/현금 쪼개기가 남아 있지 않다',
+      (T as Record<string, unknown>).bountySplit === undefined);
+    ck('머리 비율 상수도 남아 있지 않다',
+      (T as Record<string, unknown>).PKO_HEAD_RATIO === undefined);
     for (const b of [0, 1, 5, 7, 100, 999, 12_345]) {
       for (const w of [1, 2, 3, 4, 7]) {
         const parts = T.splitBounty(b, w);
@@ -86,11 +87,7 @@ async function main(): Promise<void> {
         T.prizeShare(f) + T.bountyShare(f) === Math.floor(f),
         `${T.prizeShare(f)}+${T.bountyShare(f)}`);
     }
-    /* 비율 상수를 어떤 값으로 바꿔도 보존이 유지되는가 — 요구서의 "현금 100% + 머리 50%"
-       같은 합이 100% 가 아닌 설정이 들어올 수 없는 구조인지 본다. */
-    ck('머리 비율이 0~1 사이다', T.PKO_HEAD_RATIO >= 0 && T.PKO_HEAD_RATIO <= 1,
-      String(T.PKO_HEAD_RATIO));
-    /* 바운티 몫은 이제 대회마다 다르다 — 범위 밖 값이 들어와도 다듬어져야 한다.
+    /* 바운티 몫은 대회마다 다르다 — 범위 밖 값이 들어와도 다듬어져야 한다.
        0% 면 바운티가 없어 모드의 뜻이 사라지고, 100% 를 넘으면 순위 상금이 음수가 된다. */
     for (const v of [-50, 0, 5, 10, 50, 100, 150, NaN, null, undefined]) {
       const got = T.clampBountyPct(v as never);
@@ -108,9 +105,11 @@ async function main(): Promise<void> {
           `${T.bountyShare(unit, pct)}+${T.prizeShare(unit, pct)}`);
       }
     }
+    /* 상금 몫은 "나머지 전부" 로 계산해야 한다. 양쪽을 각각 비율로 내리면 홀수마다 1P 가
+       증발한다 — 한쪽만 정하고 다른 쪽을 나머지로 두는 것이 보존의 근거다. */
     const src = fsx.readFileSync('src/services/tournament.ts', 'utf8');
-    ck('현금은 "나머지 전부" 로 계산한다 (별도 비율 상수가 없다)',
-      /cash:\s*b\s*-\s*head/.test(src));
+    ck('상금 몫은 "나머지 전부" 로 계산한다',
+      /return b - bountyShare\(b, pct\)/.test(src));
   }
 
   /* ── 2. 참가비 쪼개기 ───────────────────────────────────────── */
@@ -289,14 +288,17 @@ async function main(): Promise<void> {
       /bEl\.textContent = '\?'/.test(seatsSrc2) && /classList\.add\('sealed'\)/.test(seatsSrc2));
     ck('물음표에서 금액으로 뒤집히는 것도 상승으로 본다',
       /prev !== undefined && \(prev === null \|\| bv > prev\)/.test(seatsSrc2));
-    /* 등수 표와 갈래 줄은 모드가 아니라 "순위 상금이 실제로 있는지"로 갈라야 한다 —
-       모드로 가르면 순위 상금을 남긴 미스터리에서 상금표가 사라진다. */
+    /* 등수 표는 모드가 아니라 "순위 상금이 실제로 있는지"로 갈라야 한다 — 모드로 가르면
+       순위 상금을 남긴 미스터리에서 상금표가 통째로 사라진다. */
     const sideSrc = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
     ck('등수 표는 순위 상금이 있을 때만 그린다',
       /var hasRank = t\.prizePool > 0/.test(sideSrc)
-      && /hasRank \? '<div class="ht-pz-list">/.test(sideSrc));
-    ck('갈래 줄도 순위 상금 유무로 가른다', /\(isPko && hasRank/.test(sideSrc));
+      && /hasRank\s*\n?\s*\? '<div class="ht-pz-rsec">/.test(sideSrc));
     ck('모드로 등수 표를 가르지 않는다', !/mystery \? '' : '<div class="ht-pz-list">/
+      .test(sideSrc));
+    /* 갈래 줄(순위 + 바운티)은 바운티 판이면 늘 그린다 — 전액 바운티일 때 "순위 상금 0P"
+       라고 적히는 것도 정보다. 등수 표와 달리 거짓이 되지 않는다. */
+    ck('갈래 줄은 바운티 판이면 그린다', /\(isPko\s*\n?\s*\? '<div class="ht-pz-split">/
       .test(sideSrc));
     // 어드민에서 고를 수 있고, 비율은 두 바운티 모드가 함께 쓴다
     const admSrc2 = fsx.readFileSync('src/web/admin.ts', 'utf8');
@@ -361,11 +363,17 @@ async function main(): Promise<void> {
         `${envs.reduce((a, b) => a + b, 0)} vs ${tr.bounty_pool}`);
       ck(`${pct}%: 봉투가 제각각이다`, new Set(envs).size > 1, envs.join(','));
     }
-    /* 독식 규칙은 몫과 무관하게 유지돼야 한다 — 잡으면 전액을 받고 내 머리는 그대로다.
-       (PKO 는 절반만 현금이고 절반이 머리로 옮겨간다.) */
+    /* 독식 규칙은 몫과 무관하고, 이제 두 모드가 함께 쓴다 — 잡으면 전액이고 내 머리는
+       오르지 않는다. 정산 함수에 머리를 올리는 UPDATE 가 남아 있으면 프로그레시브가
+       되살아난 것이다. */
     const hdSrc = fsx.readFileSync('src/db/holdem.ts', 'utf8');
-    ck('미스터리는 머리 몫이 0 이다 (잡은 사람이 독식한다)',
-      /isMystery\(t\) \? 0 : T\.PKO_HEAD_RATIO/.test(hdSrc));
+    const koBody = hdSrc.slice(hdSrc.indexOf('function settleBounty'),
+      hdSrc.indexOf('function finishTournament'));
+    ck('KO 정산이 잡은 사람 머리를 올리지 않는다',
+      !/SET bounty = bounty \+ \?/.test(koBody));
+    ck('KO 정산이 확보액에 전액을 얹는다',
+      /splitBounty\(bounty, killers\.length\)[\s\S]{0,200}?bounty_won = bounty_won \+ \?/
+        .test(koBody));
   }
 
   section('[3] 일반 대회 — 바운티 칸이 전부 0 이다');
@@ -389,7 +397,7 @@ async function main(): Promise<void> {
   }
 
   /* ── 4. 실제 KO 정산 ────────────────────────────────────────── */
-  section('[4] KO — 머리 값이 절반은 현금, 절반은 머리로 옮겨간다');
+  section('[4] KO — 잡은 사람이 전액을 확보하고, 자기 머리 값은 오르지 않는다');
   {
     wipe();
     for (const p of ['k1', 'k2', 'k3', 'k4']) mkUser(p, 100_000);
@@ -452,13 +460,14 @@ async function main(): Promise<void> {
       String(after.find(r => r.user_id === 'k4')!.bounty));
     ck('검사 전제: KO 가 둘이다', k1.ko_count === 2, String(k1.ko_count));
 
-    /* 머리 값 두 개(각 share)를 가져갔으니 절반씩 머리로 오고 절반씩 현금이다 */
-    const one = T.bountySplit(share);
-    ck('머리가 자기 몫 + 얻은 몫 만큼 늘었다',
-      k1.bounty === (before.get('k1') ?? 0) + one.head * 2,
-      `${k1.bounty} vs ${(before.get('k1') ?? 0) + one.head * 2}`);
-    ck('확보 누계가 맞다', k1.bounty_won === one.cash * 2,
-      `${k1.bounty_won} vs ${one.cash * 2}`);
+    /* 머리 값 두 개(각 share)를 전액 가져갔다. 잡은 사람 머리는 그대로여야 한다 —
+       여기가 오르면 프로그레시브가 되살아난 것이고, 그러면 우승자 쏠림이 다시 커진다
+       (6인 100회 실측: 우승자가 바운티 갈래의 78.6% → 89.5%). */
+    ck('잡은 사람 머리 값이 오르지 않았다',
+      k1.bounty === (before.get('k1') ?? 0),
+      `${k1.bounty} vs ${before.get('k1') ?? 0}`);
+    ck('확보 누계가 잡은 값 전액이다', k1.bounty_won === share * 2,
+      `${k1.bounty_won} vs ${share * 2}`);
     /* 판 도중에는 지갑이 움직이지 않아야 한다. 바운티가 나가는 자리는 마감 정산 한 곳뿐이다 —
        한동안 여기서 곧바로 지급했고, 그래서 "상금은 대회가 끝날 때만 나간다"를 전제로 짜인
        중단 환불과 대회 삭제가 조용히 새고 있었다([9]·[10]). 나가는 자리를 늘리지 않는 것이
@@ -853,10 +862,25 @@ async function main(): Promise<void> {
       ck('오른 바운티가 떠 있는 시간까지 기다린다',
         /KO_GAIN_HOLD_MS = \d+/.test(seatsSrc));
     }
-    ck('오른 만큼을 따로 띄운다', /\.ht-bgain\{/.test(cssSrc)
-      /* 봉투가 열릴 때(prev 가 null)는 차액이 아니라 열린 금액 전체를 띄운다 */
+    /* 명찰 숫자가 대회 내내 고정이 되면서(잡은 사람이 전액 독식) "얼마를 벌었나"를
+       명찰 상승으로 보여줄 수 없게 됐다. 그래서 확보 누계(bountyWon)의 증가분을 띄운다 —
+       이 연출이 없으면 잡아도 화면에 남는 것이 총자국뿐이다. */
+    ck('확보한 만큼을 따로 띄운다', /\.ht-bgain\{/.test(cssSrc)
       && /htBGain/.test(cssSrc)
-      && /stackText\(prev === null \? bv : bv - prev\)/.test(seatsSrc));
+      && /wonShown\[s\.seat\]/.test(seatsSrc)
+      && /stackText\(wv - wPrev\)/.test(seatsSrc));
+    ck('명찰 상승에 기대지 않는다 (숫자가 고정이라 안 오른다)',
+      !/stackText\(prev === null \? bv : bv - prev\)/.test(seatsSrc));
+    /* 처형이 끝날 때까지 기다리는 규칙은 명찰과 같아야 한다 — 처형과 같은 순간에 터지면
+       무엇 때문에 들어온 돈인지 안 읽힌다. */
+    ck('확보 표시도 처형이 끝날 때까지 기다린다',
+      /wWait = !settleDone\(tb\) \|\| Date\.now\(\) < koBurstEndsAt/.test(seatsSrc));
+    ck('처음 본 값에는 띄우지 않는다', /wPrev !== undefined && wv > wPrev/.test(seatsSrc));
+    // 서버가 좌석마다 확보 누계를 실어 줘야 화면이 증가를 볼 수 있다
+    const stSrc2 = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
+    ck('좌석에 확보 누계를 싣는다',
+      /bountyWon: pkoOn \? \(wonBySeat\.get\(s\.user_id\) \?\? 0\) : undefined/.test(stSrc2));
+    ck('일반 대회 좌석에는 싣지 않는다', /pkoOn \? \(wonBySeat/.test(stSrc2));
 
     /* (5-f) 명찰 자리는 카드 상태로 갈린다. 자리(hero)로 가르면 카드가 없는 동안에도
        떠 있어 "프레임에 물린 명찰"이라는 레퍼런스의 핵심을 잃는다. */
@@ -1196,12 +1220,56 @@ async function main(): Promise<void> {
     ck('회수가 예정액(bounty_won)을 걷지 않는다', !/SUM\(bounty_won\)/.test(admSrc3));
     ck('흔적 없는 판 판정도 bounty_paid 를 본다',
       /SUM\(bounty_paid\), 0\) AS bounty/.test(admSrc3));
-    // 화면은 "확보"라고 적는다 — 지갑에 아직 없는 돈이다
+    /* 상금 탭은 숫자만 보여준다. 규칙 문단을 좁은 칸에 넣었더니 라벨이 줄바꿈되고
+       ("바운티 상 / 금") 정작 금액이 안 보였다 — 규칙은 공지가 맡는다.
+       다만 "언제 들어오나"는 남긴다: 확보액이 지갑에 없으면 버그로 읽힌다. */
     const sideSrc3 = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
-    ck('화면이 "획득"이 아니라 "확보"라고 적는다',
-      /내가 확보/.test(sideSrc3) && !/내가 획득/.test(sideSrc3));
-    ck('언제 들어오는지도 적는다', /대회가 끝날 때 한 번에/.test(sideSrc3));
-    ck('"즉시 받습니다" 가 남아 있지 않다', !/즉시 받습니다/.test(sideSrc3));
+    ck('언제 지급되는지 한 줄로 적는다', /대회가 끝날 때 한 번에 지급됩니다/.test(sideSrc3));
+    ck('규칙 문단이 남아 있지 않다',
+      !/즉시 받습니다/.test(sideSrc3) && !/ht-pz-bty-b/.test(sideSrc3));
+    /* 프로그레시브 흔적이 문구에 남으면 화면이 거짓을 적는 것이 된다 */
+    ck('"절반" 설명이 남아 있지 않다', !/절반/.test(sideSrc3));
+    /* 누가 얼마 벌었나 — 이 표가 규칙 문단을 대신한다. 시작 전 0 도 그려야 한다:
+       줄을 빼면 "표에 없는 사람"이 생겨 몇 명이 남았는지가 안 읽힌다. */
+    ck('바운티 획득 표를 그린다', /class="ht-pz-brow/.test(sideSrc3)
+      && /바운티 획득/.test(sideSrc3));
+    ck('0 인 줄도 그린다 (0 을 걸러내지 않는다)',
+      !/board\.filter\([^)]*won\s*>\s*0/.test(sideSrc3));
+    ck('많이 번 순으로 서버가 정렬한다',
+      /sort\(\(a, b\) => b\.won - a\.won \|\| a\.i - b\.i\)/
+        .test(fsx.readFileSync('src/web/games/holdem.ts', 'utf8')));
+    ck('한 푼이라도 번 줄만 밝게 둔다', /r\.won > 0 \? ' has' : ''/.test(sideSrc3));
+    /* 표가 살아 있는 값이므로 탭이 열려 있는 동안 다시 그려야 한다. 예전에는 탭을 누를
+       때 한 번만 그렸고(등수 표는 고정이라 그래도 됐다) 그래서 KO 가 나도 끝까지 전원
+       0P 로 보였다(제보). 매 폴링마다 갈아 끼우면 글자가 튀므로 서명으로 가른다. */
+    ck('상금 탭이 값이 바뀔 때 다시 그려진다',
+      /if \(!prizeTabEl\.hidden\)/.test(sideSrc3)
+      && /sig !== prizeSig[\s\S]{0,60}?renderPrizeTab\(\)/.test(sideSrc3));
+    ck('서명에 바운티 획득 값이 들어간다',
+      /bountyBoard \|\| \[\]\)\.map\(function\(r\)\{ return r\.name \+ ':' \+ r\.won/
+        .test(sideSrc3));
+    ck('제목 옆 내 바운티 문구를 걷어냈다', !/내 봉투' : '내 바운티/.test(sideSrc3));
+
+    /* 결과 팝업은 순위 상금 + 바운티 합계를 적어야 한다. 순위 상금만 적으면 바운티로만
+       번 사람이 0P 로 찍히고, 이 대회의 절반이 사라진 것으로 보인다(제보). */
+    const celSrc2 = fsx.readFileSync('src/web/games/holdem-client/celebrate.ts', 'utf8');
+    ck('결과 팝업이 순위 상금 + 바운티를 합쳐 적는다',
+      /function tookOf\(r\)\{ return \(r\.prize \|\| 0\) \+ \(r\.bounty \|\| 0\); \}/.test(celSrc2));
+    ck('우승자 금액도 합계다', /tookOf\(first\)/.test(celSrc2));
+    ck('나머지 줄도 합계다', /num\(tookOf\(r\)\)/.test(celSrc2)
+      && !/num\(r\.prize\) \+ 'P'/.test(celSrc2));
+    ck('입상 여부도 합계로 가른다', /var itm = tookOf\(r\) > 0/.test(celSrc2));
+    ck('서버가 결과에 지급된 바운티를 싣는다',
+      /bounty: e\.bounty_paid/.test(fsx.readFileSync('src/web/games/holdem.ts', 'utf8')));
+
+    /* 이름. progressive 가 없어졌으므로 PKO 라는 표기가 화면에 남으면 안 된다 —
+       모드 값(PKO_BOUNTY)은 DB 에 이미 쓰인 값이라 그대로 두고 라벨만 바꿨다. */
+    const admSrc4 = fsx.readFileSync('src/web/admin.ts', 'utf8');
+    ck('대회 종류 라벨이 "바운티 헌터" 다', /바운티 헌터 \(순위 상금 \+ 바운티\)/.test(admSrc4));
+    ck('목록 태그에 PKO 표기가 없다', !/ad-tag pko">PKO/.test(admSrc4));
+    ck('모드 값 자체는 그대로다 (이미 저장된 행이 있다)',
+      /value="PKO_BOUNTY"/.test(admSrc4)
+      && /b\?\.mode === 'PKO_BOUNTY' \? 'PKO_BOUNTY'/.test(admSrc4));
 
     /* 프리롤 바운티 판은 상금 팟과 참가비가 모두 0 이라, 예전 기준으로는 "경제에 흔적이
        없는 판"으로 읽혀 그냥 지워졌다. 마감에서 펀드가 실제로 나갔으므로 거절해야 한다. */
