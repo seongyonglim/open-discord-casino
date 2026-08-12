@@ -816,25 +816,28 @@ async function main(): Promise<void> {
       const holdemSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
       ck('총성을 홀덤 화면이 미리 받는다',
         /__SFX_NEED__[\s\S]{0,700}?'gunshot'/.test(holdemSrc));
-      /* 개봉 소리도 함께 받는다 — 처형이 끝나자마자 이어지므로 그때 받으러 가면 늦다.
-         파일이 아직 없어도 등록은 해 둔다: playSample 이 실패하면 합성음이 대신 울리고,
-         파일을 넣는 순간 자동으로 그쪽이 쓰인다. */
-      ck('개봉 소리도 미리 받는다',
-        /__SFX_NEED__[\s\S]{0,900}?'boxshake', 'boxopen'/.test(holdemSrc));
+      /* 전광판이 멈추는 소리도 함께 받는다 — 처형이 끝나자마자 이어지므로 그때 받으러
+         가면 늦다. 파일이 아직 없어도 등록은 해 둔다: playSample 이 실패하면 합성음이
+         대신 울리고, 파일을 넣는 순간 자동으로 그쪽이 쓰인다. */
+      ck('멈추는 소리를 미리 받는다',
+        /__SFX_NEED__[\s\S]{0,900}?'reelstop'/.test(holdemSrc));
       /* named 는 SFX_SETS 의 키(부르는 이름)다. 파일명은 SFX_EXT 쪽에 있으므로 따로 본다 —
          한쪽만 올려 두면 playSample 이 조용히 실패한다(총성이 그렇게 안 나갔다). */
-      ck('개봉 소리가 SFX_SETS 에 있다', named.has('boxshake') && named.has('boxopen'));
-      ck('개봉 음원 파일명이 SFX_EXT 에 있다',
-        /'box-shake':'mp3'/.test(appSrc) && /'box-open':'mp3'/.test(appSrc));
-      ck('개봉 소리에 합성음 대체가 있다',
-        /boxShake: function\(\)\{[\s\S]{0,200}?playSample\('boxshake'/.test(appSrc)
-        && /boxOpen: function\(\)\{[\s\S]{0,200}?playSample\('boxopen'/.test(appSrc));
+      ck('멈추는 소리가 SFX_SETS 에 있다', named.has('reelstop'));
+      ck('멈추는 음원 파일명이 SFX_EXT 에 있다', /'reel-stop':'mp3'/.test(appSrc));
+      ck('멈추는 소리에 합성음 대체가 있다',
+        /reelStop: function\(\)\{[\s\S]{0,220}?playSample\('reelstop'/.test(appSrc));
+      /* 굴러가는 소리는 일부러 음원을 두지 않는다 — 숫자가 바뀌는 간격에 맞아야 하는
+         소리라 파일 길이가 그 간격을 모른다. 슬롯이 생기면 그 뜻이 흐려진다. */
+      ck('굴러가는 소리는 합성음뿐이다',
+        /reelTick: function\(\)/.test(appSrc) && !/playSample\('reeltick'/.test(appSrc));
+      ck('상자 소리가 남아 있지 않다',
+        !/boxShake|boxOpen|box-shake|box-open/.test(appSrc));
       /* 음원을 요구했다는 기록이 남아야 한다 — 사양(길이·성격)을 코드 주석에만 두면
          파일을 만들 사람에게 전달되지 않는다. */
       ck('요구 사양이 문서로 남아 있다',
         fsx.existsSync('docs/audio-requests.md')
-        && /box-shake\.mp3/.test(fsx.readFileSync('docs/audio-requests.md', 'utf8'))
-        && /box-open\.mp3/.test(fsx.readFileSync('docs/audio-requests.md', 'utf8')));
+        && /reel-stop\.mp3/.test(fsx.readFileSync('docs/audio-requests.md', 'utf8')));
     }
     ck('음원의 발사 시각이 app.js 에 있다', /gunfireShots: \[30, 305, 1335\]/.test(appSrc));
     ck('세 발이 한 번의 재생으로 나간다 (발마다 재생하지 않는다)',
@@ -1411,10 +1414,13 @@ async function main(): Promise<void> {
         .test(cssSrc));
 
     // 소리는 각 박자에 붙는다
-    ck('굴러갈 때 소리가 난다',
-      /'ht-mysbox in roll'[\s\S]{0,140}?casinoSfx\.boxShake\(\)/.test(seatsSrc));
+    /* 굴러가는 소리는 숫자를 바꾸는 그 타이머 안에서 낸다 — 따로 예약하면 눈은 55ms
+       마다 바뀌는데 소리는 제 리듬으로 가서 "소리 따로 그림 따로"가 된다. */
+    ck('굴러가는 소리가 숫자와 같은 타이머에서 난다',
+      /amtEl\.textContent = stackText\(pick\) \+ 'P';[\s\S]{0,120}?casinoSfx\.reelTick\(\)/
+        .test(seatsSrc));
     ck('멈출 때 소리가 난다',
-      /'ht-mysbox in land'[\s\S]{0,180}?casinoSfx\.boxOpen\(\)/.test(seatsSrc));
+      /'ht-mysbox in land'[\s\S]{0,180}?casinoSfx\.reelStop\(\)/.test(seatsSrc));
 
     /* ── 봉투마다 하나씩 ──────────────────────────────────────────
        이것이 이 절의 핵심이다. 예전에는 확보 누계의 증가분으로 연출을 걸었는데, 한 사람이

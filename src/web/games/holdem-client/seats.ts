@@ -119,11 +119,14 @@ export const SEATS = `    var seatXY = {};
          자릿수가 들쭉날쭉해서 폭이 흔들리고, 무엇보다 "있을 수 있는 금액"으로 안 보인다. */
       setTimeout(function(){
         box.className = 'ht-mysbox in roll';
-        if (window.casinoSfx && casinoSfx.boxShake) casinoSfx.boxShake();
         var pool = (job.pool && job.pool.length) ? job.pool : [job.amount];
+        /* 소리를 숫자와 같은 타이머에서 낸다 — 따로 예약하면 눈은 55ms 마다 바뀌는데
+           소리는 제 리듬으로 가서 "소리 따로 그림 따로"가 된다. 그래서 굴러가는 소리는
+           음원 파일을 두지 않는다(파일 길이는 이 간격을 모른다). */
         mysRollTimer = setInterval(function(){
           var pick = pool[Math.floor(Math.random() * pool.length)];
           amtEl.textContent = stackText(pick) + 'P';
+          if (window.casinoSfx && casinoSfx.reelTick) casinoSfx.reelTick();
         }, MYS_TICK_MS);
       }, MYS_IN_MS);
       // 멈춤 — 당첨 금액에서 딱 선다. 여기가 결과다
@@ -131,7 +134,7 @@ export const SEATS = `    var seatXY = {};
         if (mysRollTimer) { clearInterval(mysRollTimer); mysRollTimer = null; }
         box.className = 'ht-mysbox in land';
         amtEl.textContent = stackText(job.amount) + 'P';
-        if (window.casinoSfx && casinoSfx.boxOpen) casinoSfx.boxOpen();
+        if (window.casinoSfx && casinoSfx.reelStop) casinoSfx.reelStop();
         /* 마지막 판에서는 우승자가 자기 봉투도 함께 회수한다. 그때 "가져갔습니다"만
            적으면 그 몫이 어디서 왔는지 설명이 없다. */
         if (whoEl) {

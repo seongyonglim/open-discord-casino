@@ -169,7 +169,7 @@ async function main(): Promise<void> {
          "아직 안 만든 파일"을 가르기 위해서다: 목록을 두지 않으면 이 검사를 통째로
          느슨하게 만들어야 하고, 그러면 진짜 누락을 잡지 못한다.
          요구 사양은 docs/audio-requests.md 에 있다. 파일이 들어오면 이 줄에서 지운다. */
-      const pending = new Set(['box-shake.mp3', 'box-open.mp3']);
+      const pending = new Set(['reel-stop.mp3']);
       const missing = declared.filter(f => !onDisk.has(f) && !pending.has(f));
       check('app.js가 부르는 음원 파일이 전부 있다', missing.length === 0, missing.join(', '));
       /* 목록이 낡지 않게 지킨다 — 파일을 넣고 목록에서 지우는 것을 잊으면, 그 이름은
@@ -178,8 +178,11 @@ async function main(): Promise<void> {
       check('안 받은 음원 목록이 낡지 않았다 (들어온 파일은 목록에서 지운다)',
         stale.length === 0, stale.join(', '));
       check('안 받은 음원에는 합성음 대체가 있다',
-        /boxShake: function\(\)[\s\S]{0,200}?playSample\('boxshake'/.test(appSrc)
-        && /boxOpen: function\(\)[\s\S]{0,200}?playSample\('boxopen'/.test(appSrc));
+        /reelStop: function\(\)[\s\S]{0,200}?playSample\('reelstop'/.test(appSrc));
+      /* 굴러가는 소리는 일부러 음원을 두지 않는다 — 숫자가 바뀌는 간격에 맞아야 하는
+         소리라 파일 길이가 그 간격을 모른다. 슬롯이 생기면 그 뜻이 흐려진다. */
+      check('굴러가는 소리에는 음원 슬롯을 두지 않는다',
+        /reelTick: function\(\)/.test(appSrc) && !/playSample\('reeltick'/.test(appSrc));
       // 화이트리스트에 없으면 파일이 있어도 404가 된다 (서버가 이름으로만 받는다)
       const notServed: string[] = [];
       for (const f of declared) {
