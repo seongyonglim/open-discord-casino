@@ -460,16 +460,17 @@ async function main(): Promise<void> {
     ck('16개 과제가 등록된다', byId.size === SEEDED, String(byId.size));
     /* 게임을 해서 깨는 과제는 전부 1,000P 기준이다 — 1P 씩 수천 번 돌려 긁어내면
        과제가 "무엇을 해냈나"가 아니라 "얼마나 오래 눌렀나"의 기록이 된다. */
-    for (const id of ['bj-double-21', 'crash-x100', 'la-right-7',
+    /* 0.01초의 광기도 여기 들어온다. 손이 빠른가를 재는 과제이지만, 1P 로 수십 판을
+       갈아 가며 맞히는 것과 제 돈을 걸고 맞히는 것은 다르다. */
+    for (const id of ['bj-double-21', 'crash-x100', 'crash-x1-01', 'la-right-7',
       'mi-1-of-25', 'mi-24-of-24', 'bc-player-7']) {
       ck(`${id} 은 1,000P 기준`, byId.get(id)?.min_bet === 1_000, String(byId.get(id)?.min_bet));
     }
     /* 베팅이 없거나, 금액이 뜻을 갖지 않는 과제는 기준도 0 이어야 한다. 그대로 두면
        영영 판정되지 않거나(지원금·프리롤) 상관없는 문지기가 하나 서 있게 된다.
-       0.01초의 광기는 손 속도를 재는 과제라 얼마를 걸었는지가 아무 상관이 없고,
        그래프의 신은 한 판이 아니라 한 시즌의 합계를 재는 과제라 마지막 판의 금액이
        아무 뜻이 없다 — 문구를 읽은 사람이 실제로 "이게 왜 붙어 있냐"고 물었다. */
-    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-x1-01', 'crash-profit-1m',
+    for (const id of ['relief-10-day', 'ho-straight-flush', 'crash-profit-1m',
       'all-first-1', 'roller-coaster']) {
       ck(`${id} 은 최소 베팅 0`, byId.get(id)?.min_bet === 0, String(byId.get(id)?.min_bet));
     }
@@ -844,17 +845,23 @@ async function main(): Promise<void> {
       && !!byId2.get('bj-double-21')?.description.includes('21'));
 
     /* ── 0.01초의 광기 ────────────────────────────────────────────
-       1.01x 는 "이상"이 아니라 "정확히"다. >= 로 적으면 모든 캐시아웃이 여기 걸린다. */
+       "1.01 이하"다. 처음에는 "정확히 1.01"로 두었는데 사실상 불가능했다 — 1.01x 로
+       기록되는 구간이 라운드 시작 후 166~330ms(폭 164ms)뿐이고, 서버는 요청이 도착한
+       순간으로 배율을 다시 계산하므로 화면에 1.01 이 보여서 눌러도 왕복 지연만큼 지나간
+       값이 찍힌다(제보로 확인). 이하로 두면 1.00x 까지 들어와 창이 두 배가 된다.
+       위쪽은 여전히 막혀 있어야 한다 — >= 로 적으면 모든 캐시아웃이 여기 걸린다. */
     ck('1.01배 기준이 설명과 같다',
-      /CRASH_MIN_X = 1\.01/.test(cr) && !!byId2.get('crash-x1-01')?.description.includes('1.01배'),
+      /CRASH_MIN_X = 1\.01/.test(cr)
+      && !!byId2.get('crash-x1-01')?.description.includes('1.01배 이하'),
       byId2.get('crash-x1-01')?.description);
-    ck('1.01배를 정확히 본다 (이상이 아니다)',
-      /cashout_multiplier === CRASH_MIN_X/.test(cr));
+    ck('1.01배 이하를 본다 (이상이 아니다)',
+      /cashout_multiplier <= CRASH_MIN_X/.test(cr)
+      && !/cashout_multiplier >= CRASH_MIN_X/.test(cr));
     /* 자동 캐시아웃 하한이 1.01x 라(handleBet), 예약으로 얻는 길을 막지 않으면
        이 과제는 "예약 걸 줄 아는가"를 재는 것이 된다. */
     ck('자동 하한이 1.01배와 같다', /a < 1\.01/.test(cr));
     ck('예약으로 나간 판은 안 센다',
-      /byHand[\s\S]{0,160}cashout_multiplier === CRASH_MIN_X/.test(cr)
+      /byHand[\s\S]{0,160}cashout_multiplier <= CRASH_MIN_X/.test(cr)
       && /auto_cashout == null \|\| [^\n]*!== [^\n]*auto_cashout/.test(cr));
 
     /* ── 지뢰찾기 둘 ──────────────────────────────────────────────
@@ -989,16 +996,21 @@ async function main(): Promise<void> {
     };
 
     ck('1.01배에서 손으로 나가면 열린다', await madness('m1', 1_000, 1.01, null));
-    ck('1.02배는 안 열린다 (정확히 1.01이어야 한다)', !await madness('m2', 1_000, 1.02, null));
-    ck('1.00배도 안 열린다', !await madness('m3', 1_000, 1.00, null));
+    ck('1.02배는 안 열린다 (1.01 이하여야 한다)', !await madness('m2', 1_000, 1.02, null));
+    /* 1.00x 는 순이익이 0 이다 — 돈을 벌려고 누르는 것이 아니라 이 과제의 이름 그대로다.
+       창을 두 배로 넓히는 것이 여기 들인 이유이기도 하다(164ms → 330ms). */
+    ck('1.00배도 열린다 (이하 기준)', await madness('m3', 1_000, 1.00, null));
     ck('100배는 이 과제와 무관하다', !await madness('m4', 1_000, 100, null));
     /* 예약을 1.01x 로 걸어 두면 손을 안 대도 그 배율로 정산된다 — 그 길은 막혀 있다. */
     ck('1.01배 예약으로 나간 판은 안 열린다', !await madness('m5', 1_000, 1.01, 1.01));
     /* 예약은 걸어 뒀지만 그 전에 손으로 눌렀다 — 이건 손이 끝낸 판이다. */
     ck('다른 배율을 예약해 뒀어도 손으로 눌렀으면 열린다',
       await madness('m6', 1_000, 1.01, 5));
-    /* 금액과 상관없는 과제라 기준이 0 이다. 1P 로도 열려야 그 말이 참이 된다. */
-    ck('1P 로도 열린다 (금액을 안 본다)', await madness('m7', 1, 1.01, null));
+    /* 1,000P 기준이 붙었다. 손이 빠른가를 재는 과제이지만, 1P 로 수십 판을 갈아 가며
+       맞히는 것과 제 돈을 걸고 맞히는 것은 다르다. */
+    ck('1P 로는 안 열린다 (1,000P 기준)', !await madness('m7', 1, 1.01, null));
+    ck('999P 로도 안 열린다', !await madness('m8', 999, 1.01, null));
+    ck('1,000P 면 열린다', await madness('m9', 1_000, 1.01, null));
 
     /* 그래프의 신 — 시즌 순수익이 100만을 넘은 상태로 캐시아웃하면 열린다. */
     wipe();

@@ -87,6 +87,13 @@ const NEXT_HAND_GAP_SEC = 1.25; // 흡수 → 다음 판
    사라져 처형이 통째로 생략된다 — 실제로 그렇게 스킵됐다. 사이드 팟 판에서 특히
    잘 나온다: 층마다 시간이 붙어 정산이 늦게 끝나므로 남는 여유가 없다. */
 const KO_EXECUTION_SEC = 5.5;
+/* 미스터리 개봉 연출에 드는 시간 — 상자 하나당.
+     등장 0.42 + 덜커덩 1.5 + 열림 0.52 + 금액 체류 1.7 + 사라짐 0.26 = 4.4
+   여유를 두어 4.6 으로 둔다. 미스터리는 머리 위에 금액이 없어서 여기가 "얼마짜리를
+   잡았나"가 공개되는 유일한 자리다 — 다음 판이 먼저 시작되면 그 자리가 통째로 없어진다
+   (처형에서 이미 같은 방식으로 연출이 스킵됐다). 짧게 잡아 잘리는 쪽이 길게 잡아
+   기다리는 쪽보다 나쁘다. 화면 쪽 상수는 seats.ts 의 MYS_* 다. */
+const MYSTERY_REVEAL_SEC = 4.6;
 /* 사이드 팟 한 층을 더 보여주는 데 드는 시간.
    층마다 [WIN 배지 → 1.0초 대기 → 칩 이동 1.8초 → 더미 시차]를 재생한다. */
 const SIDE_POT_STEP_SEC = 2.9;
@@ -106,11 +113,16 @@ export function nextHandDelaySec(o: {
   showdown: boolean; boardAtEnd: number; liveCount: number; extraPots: number;
   /** 이 판에 PKO 처형이 있나 — 있으면 그 연출이 끝날 때까지 다음 판을 미룬다 */
   koExecution?: boolean;
+  /** 처형 뒤에 미스터리 개봉이 더 붙나. 잡힌 사람 수만큼 상자가 차례로 열린다 */
+  mysteryReveals?: number;
 }): number {
   const reveal = o.showdown && o.liveCount > 1 ? revealSec(o.boardAtEnd, o.liveCount) : 0;
   const sides = Math.max(0, o.extraPots) * SIDE_POT_STEP_SEC;
   const ko = o.koExecution ? KO_EXECUTION_SEC : 0;
-  return Math.round(reveal + SETTLE_TAIL_SEC + sides + NEXT_HAND_GAP_SEC + ko);
+  /* 상자는 겹쳐 열지 않고 줄을 세운다(같은 자리에 겹치면 둘 다 안 읽힌다).
+     그래서 잡힌 사람이 둘이면 시간도 두 배다. */
+  const mys = Math.max(0, o.mysteryReveals ?? 0) * MYSTERY_REVEAL_SEC;
+  return Math.round(reveal + SETTLE_TAIL_SEC + sides + NEXT_HAND_GAP_SEC + ko + mys);
 }
 /** 한 요청에서 처리할 진행 단계의 상한 — 무한 루프 방지용 안전장치 */
 const MAX_STEPS = 200;
@@ -211,6 +223,8 @@ export interface HtHandRow {
   last_raise_size: number; ended_at: number | null; result_json: string | null;
   started_at: number;
   last_actor_seat: number | null; last_actor_action: string | null; last_actor_amount: number;
+  /** 이 판에 열린 바운티 목록(JSON) — [{v: 탈락자, a: 금액, k: [가져간 사람]}] */
+  bounty_reveals: string | null;
 }
 export interface HtHandSeatRow {
   id: number; hand_id: number; seat: number; user_id: string;
@@ -737,8 +751,10 @@ function startTournament(t: HtRow, regs: HtEntryRow[], now: number): void {
       const tmp = envs[i]; envs[i] = envs[j]; envs[j] = tmp;
     }
     regs.forEach((r, i) => {
-      run(`UPDATE holdem_entries SET bounty = ?, bounty_revealed = 0
-            WHERE tournament_id = ? AND user_id = ?`, envs[i] ?? 0, t.id, r.user_id);
+      /* bounty_face 에 액면가를 함께 남긴다 — bounty 는 열리면 0 이 되어 금액이 사라지는데,
+         개봉 연출은 "누구 봉투가 얼마였나"를 보여줘야 한다. */
+      run(`UPDATE holdem_entries SET bounty = ?, bounty_face = ?, bounty_revealed = 0
+            WHERE tournament_id = ? AND user_id = ?`, envs[i] ?? 0, envs[i] ?? 0, t.id, r.user_id);
     });
   }
 
@@ -1211,7 +1227,12 @@ function endHand(
     boardAtEnd, liveCount: live.length, extraPots,
     /* 처형이 있으면 그 연출이 끝날 때까지 다음 판을 미룬다 — 안 그러면 탈락한 자리가
        화면에서 사라지면서 처형이 통째로 생략된다. */
-    koExecution: isPko(t) && bustedNow > 0,
+    koExecution: isPko(t) && bustedNow.busted > 0,
+    /* 미스터리는 처형 뒤에 봉투가 하나씩 열린다. 개수는 "열린 봉투 수"다 — 탈락자마다
+       한 개씩이고, 한 사람이 둘을 동시에 잡아도 봉투는 둘이므로 둘 다 보여준다.
+       (예전에는 확보 누계의 증가분 하나만 볼 수 있어서 금액이 합쳐졌다. 그러면 누구
+       봉투가 얼마였는지가 화면에서 사라진다.) */
+    mysteryReveals: isMystery(t) ? bustedNow.reveals : 0,
   });
   run(`UPDATE holdem_tables SET next_hand_at = ? WHERE id = ?`, now + delay, table.id);
 }
@@ -1226,9 +1247,17 @@ function eliminateBusted(
   t: HtRow, table: HtTableRow, hand: HtHandRow, views: G.SeatView[], now: number,
   potAwards: { index: number; winners: { seat: number }[] }[] = [],
   pots: { eligible: number[] }[] = []
-): number {
+): { busted: number; earners: number; reveals: number } {
   const busted = getSeats(table.id).filter(s => s.presence !== 'OUT' && s.stack <= 0);
-  if (!busted.length) return 0;
+  if (!busted.length) return { busted: 0, earners: 0, reveals: 0 };
+  /* 이 판에 바운티를 챙긴 사람들. 미스터리 개봉 연출이 사람당 하나씩 열리므로
+     "몇 개의 상자가 열리는가"가 곧 이 집합의 크기다 — 탈락자 수로 세면 어긋난다:
+     한 사람이 둘을 동시에 잡으면 상자는 하나이고 금액이 합쳐진다(화면은 확보 누계의
+     증가분 하나만 볼 수 있다). 탈락자 수로 시간을 예약하면 그만큼 빈 화면이 남는다. */
+  const earners = new Set<string>();
+  /* 이 판에 열린 봉투 목록 — 판 행에 붙여 둔다. 화면이 봉투마다 "누구 것이 얼마였고
+     누가 가져갔나"를 보여줘야 하고, 그 정보는 정산이 끝나면 어디에도 남지 않는다. */
+  const reveals: { v: string; a: number; k: string[] }[] = [];
   const ranked = busted.sort((a, b) => {
     const ca = views.find(v => v.seat === a.seat)?.committed ?? 0;
     const cb = views.find(v => v.seat === b.seat)?.committed ?? 0;
@@ -1297,14 +1326,23 @@ function eliminateBusted(
         run(`UPDATE holdem_entries SET ko_count = ko_count + 1
               WHERE tournament_id = ? AND user_id = ?`, t.id, uid);
       }
-      if (isPko(t) && killers.length) settleBounty(t, s.user_id, killers, now);
+      if (isPko(t) && killers.length) {
+        settleBounty(t, s.user_id, killers, now, reveals);
+        for (const uid of killers) earners.add(uid);
+      }
     } catch (e) {
       console.error('KO 기록 실패:', e);
     }
   }
-  void hand;
-  /* 이 판에 몇 명이 나갔나 — 부르는 쪽이 다음 판 지연(처형 연출 시간)을 정하는 데 쓴다 */
-  return busted.length;
+  /* 판 행에 붙인다. 연출이 필요한 범위가 정확히 "이 판"이라 따로 지울 필요가 없다 —
+     다음 판이 오면 그 행에는 없다. */
+  if (reveals.length) {
+    run(`UPDATE holdem_hands SET bounty_reveals = ? WHERE id = ?`,
+      JSON.stringify(reveals), hand.id);
+  }
+  /* busted  = 이 판에 나간 사람 수 — 처형 연출 시간을 붙일지 정하는 데 쓴다.
+     reveals = 열린 봉투 수 — 미스터리 개봉이 봉투마다 하나씩 돈다. */
+  return { busted: busted.length, earners: earners.size, reveals: reveals.length };
 }
 
 /**
@@ -1321,9 +1359,14 @@ function eliminateBusted(
  * 던지지 않는다. 부르는 자리가 팟이 이미 나뉜 뒤라 여기서 예외가 나가면 다음 판 예약이
  * 통째로 안 돈다. 대신 실패를 로그로 남긴다.
  */
-function settleBounty(t: HtRow, bustedUserId: string, killers: string[], now: number): void {
-  const victim = one<{ bounty: number }>(
-    `SELECT bounty FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+function settleBounty(
+  t: HtRow, bustedUserId: string, killers: string[], now: number,
+  /* 이 판에 열린 봉투를 여기에 모은다 — 화면이 봉투마다 "누구 것이 얼마였고 누가
+     가져갔나"를 보여줘야 하는데, 정산이 끝나면 그 정보가 어디에도 남지 않는다. */
+  reveals?: { v: string; a: number; k: string[] }[],
+): void {
+  const victim = one<{ bounty: number; username: string }>(
+    `SELECT bounty, username FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
     t.id, bustedUserId);
   const bounty = Math.max(0, Math.floor(victim?.bounty ?? 0));
   if (bounty <= 0 || !killers.length) return;
@@ -1352,6 +1395,14 @@ function settleBounty(t: HtRow, bustedUserId: string, killers: string[], now: nu
     run(`UPDATE holdem_entries SET bounty_won = bounty_won + ?
           WHERE tournament_id = ? AND user_id = ?`, share, t.id, killers[i]);
   });
+  /* 개봉 기록. 이름으로 남긴다 — 화면이 그대로 적으면 되고, 탈락자는 좌석 목록에서
+     사라질 수 있어서 id 로 두면 이름을 찾을 데가 없다. */
+  if (reveals) {
+    const names = killers.map(uid => one<{ username: string }>(
+      `SELECT username FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`, t.id, uid,
+    )?.username ?? uid);
+    reveals.push({ v: victim?.username ?? bustedUserId, a: bounty, k: names });
+  }
   void now;
 }
 
@@ -1624,8 +1675,9 @@ export function registerHoldem(userId: string, username: string):
     const myBounty = isPko(t) ? T.bountyShare(bountyUnitOf(t), bountyPctOf(t)) : 0;
     try {
       run(`INSERT INTO holdem_entries
-             (tournament_id, user_id, username, registered_at, paid_in, bounty)
-           VALUES (?, ?, ?, ?, ?, ?)`, t.id, userId, username, nowSec(), fee, myBounty);
+             (tournament_id, user_id, username, registered_at, paid_in, bounty, bounty_face)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        t.id, userId, username, nowSec(), fee, myBounty, myBounty);
     } catch {
       return { ok: false, error: 'already' };
     }

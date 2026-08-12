@@ -568,6 +568,11 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_seat INTEGER`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
+  /* 이 판에 열린 바운티 목록(JSON). 미스터리 개봉 연출이 "누구 봉투가 얼마였고 누가
+     가져갔나"를 봉투마다 보여줘야 하는데, 정산이 끝나면 그 정보가 어디에도 남지 않는다
+     (탈락자의 bounty 는 0 이 되고, 잡은 사람 쪽에는 합계만 쌓인다).
+     판에 붙이는 이유: 연출이 필요한 범위가 정확히 "이 판"이라 따로 지울 필요가 없다. */
+  try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN bounty_reveals TEXT`); } catch {}
   /* 알림 "치움". 읽음과 따로 둔다 — 읽은 것을 목록에서 빼는 것과 읽었다고 표시하는 것은
      다른 동작이고, 나중에 둘을 따로 되돌릴 수도 있어야 한다. */
   try { d.exec(`ALTER TABLE notification_reads ADD COLUMN dismissed_at INTEGER`); } catch { /* 이미 있다 */ }
@@ -642,6 +647,9 @@ function initSchema(): void {
     `bounty_won INTEGER NOT NULL DEFAULT 0`,
     `bounty_revealed INTEGER NOT NULL DEFAULT 0`,
     `bounty_paid INTEGER NOT NULL DEFAULT 0`,
+    /* 이 사람 머리에 걸렸던 금액. bounty 는 열리면 0 이 되어 금액이 사라지는데, 화면은
+       "누구 봉투가 얼마였나"를 보여줘야 한다 — 그래서 액면가를 따로 남긴다. */
+    `bounty_face INTEGER NOT NULL DEFAULT 0`,
   ]) {
     try { d.exec(`ALTER TABLE holdem_entries ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
   }

@@ -12,6 +12,11 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
     /* 상금 탭을 마지막으로 그렸을 때의 값 서명. 바운티 획득 표가 살아 있는 값이라
        폴링마다 다시 그려야 하는데, 매번 innerHTML 을 갈아 끼우면 글자가 튄다. */
     var prizeSig = null;
+    /* 화면에 그려도 되는 바운티 획득 표. 서버 값을 그대로 쓰지 않는 이유는 스포일러다 —
+       정산은 판이 끝나는 순간 확정되지만 화면은 그때부터 카드를 열고 봉투를 여는 중이고,
+       그 사이에 이 표가 갱신되면 결과가 오른쪽에서 먼저 새어 나간다. 연출이 끝날 때
+       비로소 갈아 끼운다(renderSide 가 정한다). */
+    var prizeBoard = null;
     function stackOf(tb, s){
       if (!tb.ended || !tb.result || !tb.result.awards) return s.stack;
       var owed = 0;
@@ -121,7 +126,10 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
       /* 순위 상금이 없으면(전액 바운티) 등수 표를 그리지 않는다 — 0P 짜리 표는
          "1위 0P" 라고 적힌 거짓말이 된다. */
       var hasRank = t.prizePool > 0;
-      var board = t.bountyBoard || [];
+      /* 서버 값이 아니라 renderSide 가 걸러 준 값을 쓴다 — 연출이 끝나기 전에 그리면
+         결과가 이 표에서 먼저 새어 나간다. 아직 한 번도 안 걸러졌으면(탭을 처음 열었다)
+         서버 값을 그대로 쓴다: 그 시점에는 붙들 이전 값이 없다. */
+      var board = prizeBoard || t.bountyBoard || [];
       prizeTabEl.innerHTML =
         '<div class="ht-pz-head">' +
           '<span>' + (isPko ? '총 상금' : '상금 풀') + ' <b>'
@@ -178,9 +186,18 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
 
          매 폴링마다 innerHTML 을 갈아 끼우면 1초마다 글자가 튀므로, 실제로 달라졌을
          때만 그린다. 서명은 금액·순서·인원처럼 표에 그려지는 값 전부다. */
+      /* ── 스포일러 막기 ────────────────────────────────────────────
+         서버는 판이 끝나는 순간 바운티 정산을 확정한다. 화면은 그때부터 보드를 한 장씩
+         열고 팟을 옮기고 처형을 하고 봉투를 여는 중이다 — 그 사이에 이 표가 갱신되면
+         "카드도 안 열렸는데 누가 이겼는지"가 오른쪽에서 먼저 새어 나간다(제보).
+         명찰·확보 표시가 이미 쓰는 것과 같은 규칙을 여기에도 건다: 결과 연출과 처형,
+         그리고 미스터리 개봉이 끝날 때까지 직전 값을 그대로 붙들고 있는다. */
+      var showBty = settleDone(tb) && Date.now() >= koBurstEndsAt
+        && Date.now() >= mysBoxEndsAt;
+      if (showBty) prizeBoard = t.bountyBoard || null;
       if (!prizeTabEl.hidden) {
         var sig = [t.prizePool, t.bountyPool, t.registered, t.itm, t.myBounty,
-          (t.bountyBoard || []).map(function(r){ return r.name + ':' + r.won; }).join(',')
+          (prizeBoard || []).map(function(r){ return r.name + ':' + r.won; }).join(',')
         ].join('|');
         if (sig !== prizeSig) { prizeSig = sig; renderPrizeTab(); }
       }

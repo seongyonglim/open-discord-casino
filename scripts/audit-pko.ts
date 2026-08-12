@@ -281,13 +281,19 @@ async function main(): Promise<void> {
       /isMystery\(t\) && entries\.find\([\s\S]{0,80}?bounty_revealed !== 1/.test(stSrc));
     ck('0 이 아니라 null 로 준다 (빈 봉투와 구분된다)',
       /\? null : e\.bounty/.test(stSrc));
-    /* 화면은 null 을 물음표로 그린다. seatsSrc 는 뒤쪽 [8] 절에서 다시 읽으므로
-       여기서는 지역 변수로 따로 읽는다 — 절 사이에 변수를 공유하면 순서를 바꿀 수 없다. */
+    /* 미스터리는 머리 위 명찰을 아예 그리지 않는다. 한동안 물음표를 띄워 뒀는데, 다섯
+       자리에 똑같은 "?" 가 걸린 화면은 정보가 0 이면서 자리만 차지했다 — 금액이 공개되는
+       자리는 상자 개봉 하나로 모았다.
+       seatsSrc 는 뒤쪽 [8] 절에서 다시 읽으므로 여기서는 지역 변수로 따로 읽는다 —
+       절 사이에 변수를 공유하면 순서를 바꿀 수 없다. */
     const seatsSrc2 = fsx.readFileSync('src/web/games/holdem-client/seats.ts', 'utf8');
-    ck('감춘 봉투는 물음표로 그린다',
-      /bEl\.textContent = '\?'/.test(seatsSrc2) && /classList\.add\('sealed'\)/.test(seatsSrc2));
-    ck('물음표에서 금액으로 뒤집히는 것도 상승으로 본다',
-      /prev !== undefined && \(prev === null \|\| bv > prev\)/.test(seatsSrc2));
+    ck('미스터리는 명찰을 만들지 않는다',
+      /var badgeOn = pko && !mystery/.test(seatsSrc2)
+      && /\(badgeOn \? '<span class="ht-bounty" hidden><\/span>' : ''\)/.test(seatsSrc2));
+    ck('물음표 명찰이 남아 있지 않다',
+      !/bEl\.textContent = '\?'/.test(seatsSrc2) && !/classList\.add\('sealed'\)/.test(seatsSrc2));
+    ck('물음표 명찰 CSS 도 걷어냈다',
+      !/\.ht-bounty\.sealed\{/.test(fsx.readFileSync('src/web/assets/css/09-holdem.css', 'utf8')));
     /* 등수 표는 모드가 아니라 "순위 상금이 실제로 있는지"로 갈라야 한다 — 모드로 가르면
        순위 상금을 남긴 미스터리에서 상금표가 통째로 사라진다. */
     const sideSrc = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
@@ -680,7 +686,10 @@ async function main(): Promise<void> {
       const lines = seatsSrc.split(/\r?\n/);
       const at = lines.findIndex(l => l.includes(`class="${cls}`) && l.includes('span'));
       const block = at < 0 ? '' : lines.slice(Math.max(0, at - 3), at + 1).join(' ');
-      ck(`${cls} 는 pko 일 때만 만들어진다`, at >= 0 && /\(pko \?/.test(block),
+      /* 명찰만 badgeOn(= pko && !mystery)으로 한 겹 더 좁다 — 미스터리에는 적을 숫자가
+         없다. 나머지(확보 표시·총자국·섬광)는 두 모드 공통이라 pko 그대로다. */
+      ck(`${cls} 는 바운티 판에서만 만들어진다`,
+        at >= 0 && /\((pko|badgeOn) \?/.test(block),
         at < 0 ? '(줄을 못 찾았다)' : lines[at].trim().slice(0, 70));
     }
     // (2) 골격 서명에 pko 가 들어가야 한다 — 안 들어가면 모드가 바뀌어도 DOM 이 재사용된다
@@ -703,7 +712,7 @@ async function main(): Promise<void> {
       /gunshot: function\(\)\{/.test(appSrc) && /noiseBurst\(c,/.test(appSrc));
     ck('바운티 상향 소리가 있다', /bountyUp: function\(\)\{/.test(appSrc));
     const cssSrc = fsx.readFileSync('src/web/assets/css/09-holdem.css', 'utf8');
-    for (const need of ['.ht-bounty', 'htBountyUp', '.ht-hole-shot', 'htShot',
+    for (const need of ['.ht-bounty', '.ht-hole-shot', 'htShot',
       '.ht-seat.koed', 'htKoShake']) {
       ck(`CSS 에 ${need} 가 있다`, cssSrc.includes(need));
     }
@@ -728,20 +737,13 @@ async function main(): Promise<void> {
       /* 단위는 붙여 쓴다 — 숫자만 있으면 칩인지 포인트인지 알 수 없다 */
       ck('금액에 P 단위를 붙인다', /stackText\(bv\) \+ 'P'/.test(seatsSrc));
 
-      // 상승 펄스: 1.2배 · 0.5초 · 황금 글로우
-      const kf = /@keyframes htBountyUp\{([\s\S]*?)\n  \}/.exec(cssSrc)?.[1] ?? '';
-      ck('펄스가 0.5초다', /\.ht-bounty\.up\{animation:htBountyUp \.5s/.test(cssSrc));
-      ck('펄스가 1.2배까지 커진다', /scale\(1\.2\)/.test(kf));
-      ck('황금 글로우가 있다', /0 0 16px rgba\(255,215,80,\.9\)/.test(kf));
-      /* transform 은 통째로 대체된다. keyframes 의 모든 프레임에 translate 를 같이
-         적지 않으면 펄스가 도는 동안 명찰이 오른쪽 아래로 튄다 — 눈에 바로 띄는 버그다. */
-      const frames = kf.match(/\d+%\{[^}]*/g) ?? [];
-      const withTransform = frames.filter(f => /transform:/.test(f));
-      ck('펄스 프레임을 찾았다', frames.length >= 3, String(frames.length));
-      ck('모든 프레임이 translate 를 함께 적는다 (명찰이 튀지 않게)',
-        withTransform.length === frames.length
-        && withTransform.every(f => /translateX\(-50%\)/.test(f)),
-        `${withTransform.length}/${frames.length}`);
+      /* 상승 펄스(.ht-bounty.up · @keyframes htBountyUp)는 없앴다. 잡은 사람이 전액을
+         가져가고 자기 머리는 오르지 않으므로 명찰 숫자가 대회 내내 고정이다 — 올라가는
+         일이 없으니 올라갈 때의 연출도 없다. 절대 실행되지 않는 애니메이션을 남겨 두면
+         다음에 읽는 사람이 "왜 안 보이나"를 쫓게 된다. */
+      ck('명찰에 상승 펄스가 남아 있지 않다',
+        !/\.ht-bounty\.up\{/.test(cssSrc) && !/@keyframes htBountyUp\{/.test(cssSrc));
+      ck('화면도 up 클래스를 붙이지 않는다', !/bEl\.classList\.add\('up'\)/.test(seatsSrc));
     }
 
     /* 흔들림을 펠트에 걸어야 한다. #htTable 에 걸면 그 안의 .chip-fly-layer 가
@@ -813,7 +815,26 @@ async function main(): Promise<void> {
       // 미리 받아 두지 않으면 첫 KO 는 파일이 아니라 합성음으로 나간다
       const holdemSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
       ck('총성을 홀덤 화면이 미리 받는다',
-        /__SFX_NEED__[\s\S]{0,400}?'gunshot'/.test(holdemSrc));
+        /__SFX_NEED__[\s\S]{0,700}?'gunshot'/.test(holdemSrc));
+      /* 개봉 소리도 함께 받는다 — 처형이 끝나자마자 이어지므로 그때 받으러 가면 늦다.
+         파일이 아직 없어도 등록은 해 둔다: playSample 이 실패하면 합성음이 대신 울리고,
+         파일을 넣는 순간 자동으로 그쪽이 쓰인다. */
+      ck('개봉 소리도 미리 받는다',
+        /__SFX_NEED__[\s\S]{0,900}?'boxshake', 'boxopen'/.test(holdemSrc));
+      /* named 는 SFX_SETS 의 키(부르는 이름)다. 파일명은 SFX_EXT 쪽에 있으므로 따로 본다 —
+         한쪽만 올려 두면 playSample 이 조용히 실패한다(총성이 그렇게 안 나갔다). */
+      ck('개봉 소리가 SFX_SETS 에 있다', named.has('boxshake') && named.has('boxopen'));
+      ck('개봉 음원 파일명이 SFX_EXT 에 있다',
+        /'box-shake':'mp3'/.test(appSrc) && /'box-open':'mp3'/.test(appSrc));
+      ck('개봉 소리에 합성음 대체가 있다',
+        /boxShake: function\(\)\{[\s\S]{0,200}?playSample\('boxshake'/.test(appSrc)
+        && /boxOpen: function\(\)\{[\s\S]{0,200}?playSample\('boxopen'/.test(appSrc));
+      /* 음원을 요구했다는 기록이 남아야 한다 — 사양(길이·성격)을 코드 주석에만 두면
+         파일을 만들 사람에게 전달되지 않는다. */
+      ck('요구 사양이 문서로 남아 있다',
+        fsx.existsSync('docs/audio-requests.md')
+        && /box-shake\.mp3/.test(fsx.readFileSync('docs/audio-requests.md', 'utf8'))
+        && /box-open\.mp3/.test(fsx.readFileSync('docs/audio-requests.md', 'utf8')));
     }
     ck('음원의 발사 시각이 app.js 에 있다', /gunfireShots: \[30, 305, 1335\]/.test(appSrc));
     ck('세 발이 한 번의 재생으로 나간다 (발마다 재생하지 않는다)',
@@ -852,7 +873,8 @@ async function main(): Promise<void> {
       ck('미루는 시간이 연출 길이를 덮는다', withKo - noKo >= 5, String(withKo - noKo));
       ck('처형이 없으면 예전과 같다', HD.nextHandDelaySec(base) === noKo);
       const hdSrc = fsx.readFileSync('src/db/holdem.ts', 'utf8');
-      ck('탈락이 있을 때만 미룬다', /koExecution: isPko\(t\) && bustedNow > 0/.test(hdSrc));
+      ck('탈락이 있을 때만 미룬다',
+        /koExecution: isPko\(t\) && bustedNow\.busted > 0/.test(hdSrc));
     }
     /* (5-h) 우승 팝업이 처형·바운티 상승보다 먼저 뜨면 화면을 덮어 마지막 연출을 못 본다 */
     {
@@ -868,14 +890,19 @@ async function main(): Promise<void> {
     ck('확보한 만큼을 따로 띄운다', /\.ht-bgain\{/.test(cssSrc)
       && /htBGain/.test(cssSrc)
       && /wonShown\[s\.seat\]/.test(seatsSrc)
-      && /stackText\(wv - wPrev\)/.test(seatsSrc));
+      /* 두 모드가 같은 함수를 쓴다 — 미스터리는 상자가 닫힌 뒤, 프로그레시브는 처형이
+         끝난 뒤 곧바로. 부르는 자리만 다르고 연출은 같아야 한다(갈라 두면 한쪽만
+         고쳐진다). */
+      && /function floatBGain\(seatEl, amount\)/.test(seatsSrc)
+      && /'\+' \+ stackText\(amount\) \+ 'P'/.test(seatsSrc));
     ck('명찰 상승에 기대지 않는다 (숫자가 고정이라 안 오른다)',
       !/stackText\(prev === null \? bv : bv - prev\)/.test(seatsSrc));
     /* 처형이 끝날 때까지 기다리는 규칙은 명찰과 같아야 한다 — 처형과 같은 순간에 터지면
        무엇 때문에 들어온 돈인지 안 읽힌다. */
     ck('확보 표시도 처형이 끝날 때까지 기다린다',
-      /wWait = !settleDone\(tb\) \|\| Date\.now\(\) < koBurstEndsAt/.test(seatsSrc));
-    ck('처음 본 값에는 띄우지 않는다', /wPrev !== undefined && wv > wPrev/.test(seatsSrc));
+      /settleDone\(tb\) && Date\.now\(\) >= koBurstEndsAt/.test(seatsSrc));
+    ck('처음 본 값에는 띄우지 않는다',
+      /if \(wPrev === undefined\) wonShown\[s\.seat\] = wv;/.test(seatsSrc));
     // 서버가 좌석마다 확보 누계를 실어 줘야 화면이 증가를 볼 수 있다
     const stSrc2 = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
     ck('좌석에 확보 누계를 싣는다',
@@ -1245,8 +1272,10 @@ async function main(): Promise<void> {
     ck('상금 탭이 값이 바뀔 때 다시 그려진다',
       /if \(!prizeTabEl\.hidden\)/.test(sideSrc3)
       && /sig !== prizeSig[\s\S]{0,60}?renderPrizeTab\(\)/.test(sideSrc3));
-    ck('서명에 바운티 획득 값이 들어간다',
-      /bountyBoard \|\| \[\]\)\.map\(function\(r\)\{ return r\.name \+ ':' \+ r\.won/
+    /* 서명은 서버 값이 아니라 스포일러를 걸러 낸 값으로 만들어야 한다 — 서버 값으로
+       만들면 표를 붙들어 놓고도 서명이 먼저 바뀌어 다시 그려진다(자세한 검사는 [12]). */
+    ck('서명에 걸러진 바운티 획득 값이 들어간다',
+      /\(prizeBoard \|\| \[\]\)\.map\(function\(r\)\{ return r\.name \+ ':' \+ r\.won/
         .test(sideSrc3));
     ck('제목 옆 내 바운티 문구를 걷어냈다', !/내 봉투' : '내 바운티/.test(sideSrc3));
 
@@ -1261,6 +1290,11 @@ async function main(): Promise<void> {
     ck('입상 여부도 합계로 가른다', /var itm = tookOf\(r\) > 0/.test(celSrc2));
     ck('서버가 결과에 지급된 바운티를 싣는다',
       /bounty: e\.bounty_paid/.test(fsx.readFileSync('src/web/games/holdem.ts', 'utf8')));
+    /* 로비의 대회 결과 표도 같은 규칙이어야 한다 — 두 곳이 같은 사람에게 다른 금액을
+       적으면 어느 쪽이 맞는지 알 방법이 없다. */
+    ck('로비 결과 표도 순위 상금 + 바운티를 합쳐 적는다',
+      /res \? \(res\.prize \|\| 0\) \+ \(res\.bounty \|\| 0\) : \(prizeList\[pi\] \|\| 0\)/
+        .test(fsx.readFileSync('src/web/games/holdem-client/lobby.ts', 'utf8')));
 
     /* 이름. progressive 가 없어졌으므로 PKO 라는 표기가 화면에 남으면 안 된다 —
        모드 값(PKO_BOUNTY)은 DB 에 이미 쓰인 값이라 그대로 두고 라벨만 바꿨다. */
@@ -1307,6 +1341,208 @@ async function main(): Promise<void> {
       ck('상금 0 · 참가비 0 이라도 바운티가 나간 판은 그냥 지울 수 없다',
         AD.purgeTournament(mkz.id).ok === false);
     } else ck('프리롤 바운티 대회가 열린다', false, mkz.error);
+  }
+
+  /* ── 12. 미스터리 개봉 ───────────────────────────────────────────
+     미스터리는 머리 위에 금액이 없다. 그래서 "얼마짜리를 잡았나"가 공개되는 자리가
+     화면에 상자 하나뿐이고, 그 하나가 없어지면 모드가 성립하지 않는다. 여기서 보는 것은
+     그 자리가 실제로 열리는가와, 다른 연출이 그것을 덮지 않는가다. */
+  section('[12] 미스터리 개봉 — 상자가 열리고, 아무것도 그것을 덮지 않는다');
+  {
+    const seatsSrc = fsx.readFileSync('src/web/games/holdem-client/seats.ts', 'utf8');
+    const cssSrc = fsx.readFileSync('src/web/assets/css/09-holdem.css', 'utf8');
+    const htmlSrc = fsx.readFileSync('src/web/games/holdem.ts', 'utf8');
+    const stateSrc2 = htmlSrc;        // 골격과 상태 응답이 같은 파일에 있다
+    const hdSrcAll = fsx.readFileSync('src/db/holdem.ts', 'utf8');
+
+    // 골격이 미리 있어야 한다 — 그때 만들면 레이아웃이 없어 첫 프레임이 튄다
+    ck('상자 골격이 화면에 미리 있다', /id="htMysBox"/.test(htmlSrc)
+      && /id="htMysAmt"/.test(htmlSrc) && /id="htMysWho"/.test(htmlSrc));
+    ck('세 줄로 읽힌다 (누구 봉투 → 얼마 → 누가 가져갔나)',
+      /id="htMysOf"/.test(htmlSrc) && /id="htMysAmt"/.test(htmlSrc)
+      && /id="htMysWho"/.test(htmlSrc));
+    ck('숫자가 굴러가는 창이 따로 있다', /class="ht-mysbox-reel"/.test(htmlSrc));
+    ck('좌석보다 앞에 둔다 (좌석이 전광판을 덮지 않게)',
+      htmlSrc.indexOf('id="htMysBox"') < htmlSrc.indexOf('id="htSeats"'));
+    /* 상자 그림은 걷어냈다. CSS 로 그린 뚜껑·몸통이 조악했고, 연출의 내용은 "숫자가
+       굴러가다 멈춘다"이지 상자가 아니다 — 그림 솜씨에 기대는 틀을 남겨 두면 다시 쓰인다. */
+    ck('상자 그림이 남아 있지 않다',
+      !/ht-mysbox-chest/.test(htmlSrc) && !/ht-mysbox-lid/.test(htmlSrc)
+      && !/ht-mysbox-chest/.test(cssSrc) && !/mysShake/.test(cssSrc));
+
+    /* 네 박자. 등장 → 굴림 → 멈춤 → 내려감. 굴리는 구간이 가장 길어야 한다 —
+       기다리게 하는 것이 이 연출의 목적이고, 멈춤은 짧고 세게 지나가야 한다. */
+    const num1 = (re: RegExp): number => Number(re.exec(seatsSrc)?.[1] ?? -1);
+    const inMs = num1(/MYS_IN_MS = (\d+)/);
+    const roll = num1(/MYS_ROLL_MS = (\d+)/);
+    const land = num1(/MYS_LAND_MS = (\d+)/);
+    const outMs = num1(/MYS_OUT_MS = (\d+)/);
+    const tick = num1(/MYS_TICK_MS = (\d+)/);
+    ck('네 박자가 모두 있다', inMs > 0 && roll > 0 && land > 0 && outMs > 0,
+      `${inMs}/${roll}/${land}/${outMs}`);
+    ck('굴리는 구간이 가장 길다 (긴장을 만드는 자리다)',
+      roll > inMs && roll > land, `${roll} vs ${inMs}·${land}`);
+    ck('금액을 읽을 시간이 등장보다 길다', land > inMs, `${land} vs ${inMs}`);
+    /* 숫자가 바뀌는 간격이 너무 느리면 "굴러간다"가 아니라 "하나씩 바뀐다"로 보이고,
+       너무 빠르면 잔상만 남아 아무것도 안 읽힌다. */
+    ck('숫자가 바뀌는 간격이 30~90ms 다', tick >= 30 && tick <= 90, String(tick));
+    ck('구간마다 클래스를 갈아 끼운다 (좌표를 손으로 옮기지 않는다)',
+      /'ht-mysbox in'/.test(seatsSrc) && /'ht-mysbox in roll'/.test(seatsSrc)
+      && /'ht-mysbox in land'/.test(seatsSrc) && /'ht-mysbox out'/.test(seatsSrc));
+    for (const need of ['.ht-mysbox{', '.ht-mysbox-glow{', '.ht-mysbox-panel{',
+      '.ht-mysbox-reel{', '.ht-mysbox-amt{', 'mysRoll', 'mysHit', 'mysLand']) {
+      ck(`CSS 에 ${need} 가 있다`, cssSrc.includes(need));
+    }
+    /* 굴러가는 동안 숫자 폭이 흔들리면 판이 좌우로 떨려서 "덜컹거린다"로 보인다 */
+    ck('숫자 창 폭이 고정이다', /\.ht-mysbox-reel\{[^}]*min-width:/.test(cssSrc));
+    ck('등폭 숫자를 쓴다', /\.ht-mysbox-amt\{[^}]*font-variant-numeric:tabular-nums/.test(cssSrc));
+    ck('굴러가는 동안은 읽히지 않게 둔다',
+      /\.ht-mysbox\.roll \.ht-mysbox-amt\{[^}]*filter:blur/.test(cssSrc));
+    ck('멈추는 순간 한 번 튄다', /\.ht-mysbox\.land \.ht-mysbox-panel\{animation:mysLand/
+      .test(cssSrc));
+    ck('멈출 때 빛이 커진다', /\.ht-mysbox\.land \.ht-mysbox-glow\{opacity:1/.test(cssSrc));
+    /* z-index 는 레벨업 알림(60)보다 위여야 한다 — 개봉 중에 레벨이 오르는 일이
+       실제로 있고, 그때 알림이 덮으면 이 모드의 유일한 공개 장면이 사라진다. */
+    const zBox = Number(/\.ht-mysbox\{[^}]*z-index:(\d+)/.exec(cssSrc)?.[1] ?? -1);
+    const zLv = Number(/\.ht-lvup\{[^}]*z-index:(\d+)/.exec(cssSrc)?.[1] ?? -1);
+    ck('전광판이 레벨업 알림보다 위에 온다', zBox > zLv && zLv > 0, `${zBox} vs ${zLv}`);
+    ck('움직임을 원치 않는 사람에게는 흔들림만 뺀다 (숫자는 남는다)',
+      /prefers-reduced-motion[\s\S]{0,300}?\.ht-mysbox\.roll \.ht-mysbox-amt\{animation:none/
+        .test(cssSrc));
+
+    // 소리는 각 박자에 붙는다
+    ck('굴러갈 때 소리가 난다',
+      /'ht-mysbox in roll'[\s\S]{0,140}?casinoSfx\.boxShake\(\)/.test(seatsSrc));
+    ck('멈출 때 소리가 난다',
+      /'ht-mysbox in land'[\s\S]{0,180}?casinoSfx\.boxOpen\(\)/.test(seatsSrc));
+
+    /* ── 봉투마다 하나씩 ──────────────────────────────────────────
+       이것이 이 절의 핵심이다. 예전에는 확보 누계의 증가분으로 연출을 걸었는데, 한 사람이
+       둘을 동시에 잡으면 두 봉투가 한 숫자로 합쳐져서 "누구 봉투가 얼마였나"가 화면에서
+       사라졌다(제보). 그래서 서버가 판마다 [탈락자 · 금액 · 가져간 사람] 목록을 준다. */
+    ck('서버가 봉투별 개봉 기록을 남긴다',
+      /reveals\.push\(\{ v: victim\?\.username \?\? bustedUserId, a: bounty, k: names \}\)/
+        .test(hdSrcAll)
+      && /UPDATE holdem_hands SET bounty_reveals = \?/.test(hdSrcAll));
+    ck('개봉 기록을 판에 붙인다 (연출이 필요한 범위가 그 판이다)',
+      /ALTER TABLE holdem_hands ADD COLUMN bounty_reveals TEXT/
+        .test(fsx.readFileSync('src/db/schema.ts', 'utf8')));
+    ck('액면가를 따로 남긴다 (bounty 는 열리면 0 이 된다)',
+      /bounty_face INTEGER NOT NULL DEFAULT 0/
+        .test(fsx.readFileSync('src/db/schema.ts', 'utf8')));
+    ck('미스터리에서만 목록을 내려보낸다',
+      /bountyReveals: isMystery\(t\) && hand\?\.bounty_reveals/.test(stateSrc2));
+    ck('깨진 JSON 이 연출을 멈추게 하지 않는다',
+      /try \{ return JSON\.parse\(hand\.bounty_reveals\)[\s\S]{0,80}?catch \{ return null; \}/
+        .test(stateSrc2));
+    ck('화면이 목록으로 연출을 건다 (증가분이 아니다)',
+      /tb\.bountyReveals && tb\.bountyReveals\.length/.test(seatsSrc)
+      && /!mysPlayed\[tb\.handNo\]/.test(seatsSrc));
+    ck('미스터리는 증가분 경로를 쓰지 않는다',
+      /else if \(mystery\) wonShown\[s\.seat\] = wv;/.test(seatsSrc));
+    ck('봉투마다 큐에 하나씩 넣는다',
+      /rv\.forEach\(function\(r, i\)\{[\s\S]{0,220}?mysQueue\.push/.test(seatsSrc));
+    ck('몇 번째 봉투인지 점으로 알려준다',
+      /id="htMysDots"/.test(htmlSrc) && /job\.total > 1/.test(seatsSrc)
+      && /\.ht-mysbox-dots i\.on\{/.test(cssSrc));
+    ck('굴러가는 숫자를 실제 봉투 금액에서 뽑는다',
+      /var pool = \(job\.pool && job\.pool\.length\) \? job\.pool : \[job\.amount\]/.test(seatsSrc));
+    /* 판에 한 번만 재생해야 한다 — 폴링마다 같은 목록이 오고, 창을 다시 열어도 온다 */
+    ck('같은 판을 두 번 재생하지 않는다',
+      /mysPlayed\[tb\.handNo\] = 1;/.test(seatsSrc));
+    ck('전광판은 한 번에 하나만 돈다 (줄을 세운다)',
+      /if \(mysBusy \|\| !mysQueue\.length\) return;/.test(seatsSrc)
+      && /mysBusy = false;\s*\n\s*mysPump\(\);/.test(seatsSrc));
+    /* 공동 KO 면 몫을 나눠 각자에게 띄운다. 남는 1P 는 서버의 splitBounty 와 같은 방향으로
+       앞사람에게 — 반대로 두면 화면 합계가 실제 지급액과 1P 어긋난다. */
+    ck('공동 KO 면 몫을 나눠 각자에게 띄운다',
+      /var each = Math\.floor\(job\.amount \/ n\)/.test(seatsSrc)
+      && /i < job\.amount - each \* n \? 1 : 0/.test(seatsSrc));
+    ck('전광판이 내려간 뒤에 +N P 가 뜬다',
+      /function mysFinish\(job\)[\s\S]{0,700}?floatBGain\(seatEl, each/.test(seatsSrc));
+    ck('이름으로 자리를 찾는다 (탈락자는 좌석 목록에서 사라진다)',
+      /function mysSeatOf\(name\)/.test(seatsSrc));
+
+    // 우승 팝업이 개봉을 덮지 않아야 한다
+    const celSrc = fsx.readFileSync('src/web/games/holdem-client/celebrate.ts', 'utf8');
+    ck('우승 팝업이 개봉이 끝날 때까지 기다린다',
+      /mysBoxEndsAt[\s\S]{0,80}?Date\.now\(\) < mysBoxEndsAt \+ KO_GAIN_HOLD_MS\) return/
+        .test(celSrc));
+    ck('개봉 끝 시각을 첫 봉투가 돌기 전에 잡는다 (좌석 순서에 걸리지 않게)',
+      /mEnds > mysBoxEndsAt\) mysBoxEndsAt = mEnds;[\s\S]{0,60}?mysPump\(\)/.test(seatsSrc));
+    /* ── 스포일러 ──────────────────────────────────────────────────
+       상금 탭의 바운티 획득 표가 서버 값을 그대로 그리면, 카드가 열리기도 전에 누가
+       이겼는지가 오른쪽에서 새어 나간다(제보). 명찰·확보 표시가 쓰는 것과 같은 규칙을
+       걸어야 한다. */
+    const sideSrc4 = fsx.readFileSync('src/web/games/holdem-client/side.ts', 'utf8');
+    ck('상금 탭이 연출이 끝날 때까지 직전 값을 붙든다',
+      /var showBty = settleDone\(tb\) && Date\.now\(\) >= koBurstEndsAt[\s\S]{0,60}?mysBoxEndsAt/
+        .test(sideSrc4)
+      && /if \(showBty\) prizeBoard = t\.bountyBoard \|\| null;/.test(sideSrc4));
+    ck('표를 그릴 때 서버 값이 아니라 걸러진 값을 쓴다',
+      /var board = prizeBoard \|\| t\.bountyBoard \|\| \[\]/.test(sideSrc4));
+    ck('서명도 걸러진 값으로 만든다 (안 그러면 붙들어도 다시 그린다)',
+      /\(prizeBoard \|\| \[\]\)\.map\(function\(r\)\{ return r\.name \+ ':' \+ r\.won/
+        .test(sideSrc4));
+
+    /* 서버도 개봉 길이를 알아야 한다. 모르면 다음 판이 먼저 시작되면서 탈락한 자리가
+       화면에서 사라지고, 그러면 개봉이 통째로 생략된다(처형에서 실제로 그랬다). */
+    ck('다음 판이 개봉이 끝날 때까지 미뤄진다',
+      /MYSTERY_REVEAL_SEC = 4\.6/.test(hdSrcAll)
+      && /mysteryReveals: isMystery\(t\) \? bustedNow\.reveals : 0/.test(hdSrcAll));
+    ck('개봉 개수를 열린 봉투 수로 센다',
+      /return \{ busted: busted\.length, earners: earners\.size, reveals: reveals\.length \}/
+        .test(hdSrcAll));
+    ck('처형 시간은 탈락자 유무로 가른다 (개봉과 별개다)',
+      /koExecution: isPko\(t\) && bustedNow\.busted > 0/.test(hdSrcAll));
+    /* 화면 구간의 합과 서버 상수가 어긋나면 한쪽이 먼저 끝난다. 내려가는 시간까지 세야
+       한다 — 다음 봉투는 그것이 끝난 뒤에 시작한다. */
+    ck('서버 상수가 화면 구간의 합을 덮는다',
+      4.6 * 1000 >= inMs + roll + land + outMs,
+      `4600 vs ${inMs + roll + land + outMs}`);
+    /* 정리가 끝난 뒤에 다음 봉투로 넘겨야 한다. 요소가 하나뿐이라, 겹쳐 시작하면 앞
+       봉투의 정리 타이머가 새 전광판을 감춘다 — 실측으로 두 번째가 사라졌다. */
+    ck('정리가 끝난 뒤에 다음 봉투로 넘긴다',
+      /box\.className = 'ht-mysbox';\s*\n\s*mysFinish\(job\);/.test(seatsSrc));
+    ck('대기 시각도 내려가는 시간을 센다', /mysBoxTotal\(\) \* mysQueue\.length/.test(seatsSrc));
+    /* 봉투 단위로 재생하게 되면서 "합쳐진 금액"이라는 문제가 사라졌다 — 각 봉투는
+       탈락자 한 명의 액면가이고, 우승자가 회수하는 자기 봉투는 개봉 대상이 아니다.
+       그래서 마지막 판 예외 문구(job.over)도 필요 없어졌다. */
+    ck('합쳐진 금액을 위한 예외 문구가 남아 있지 않다',
+      !/최종 정산/.test(seatsSrc) && !/over: !!tb\.tournamentOver/.test(seatsSrc));
+    ck('전광판이 탈락자 이름을 적는다',
+      /job\.victim \+ ' 님의 바운티'/.test(seatsSrc));
+    const delayMys = HD.nextHandDelaySec({
+      showdown: false, boardAtEnd: 5, liveCount: 1, extraPots: 0,
+      koExecution: true, mysteryReveals: 1,
+    });
+    const delayPko = HD.nextHandDelaySec({
+      showdown: false, boardAtEnd: 5, liveCount: 1, extraPots: 0, koExecution: true,
+    });
+    ck('미스터리가 프로그레시브보다 더 미뤄진다', delayMys > delayPko,
+      `${delayMys} vs ${delayPko}`);
+    /* 총합을 한 번만 초 단위로 반올림하므로 4.6 이 4 초나 5 초로 잡힐 수 있다 —
+       정확한 값이 아니라 "상자 하나를 덮는다"를 본다. */
+    ck('상자 하나 길이(4.6초)를 덮는다',
+      delayMys - delayPko >= 4 && delayMys - delayPko <= 5,
+      String(delayMys - delayPko));
+    // 둘이 동시에 털리면 상자도 둘이라 시간도 두 배다
+    const delayTwo = HD.nextHandDelaySec({
+      showdown: false, boardAtEnd: 5, liveCount: 1, extraPots: 0,
+      koExecution: true, mysteryReveals: 2,
+    });
+    /* 총합을 한 번만 반올림하므로(초 단위 정수) 4.2 × 2 = 8.4 가 9 로 올라갈 수 있다.
+       그래서 정확한 값이 아니라 "상자 하나만큼 더 미뤄졌다"를 본다. */
+    ck('두 명이 털리면 상자 하나만큼 더 미뤄진다',
+      delayTwo - delayMys >= 4 && delayTwo - delayMys <= 5,
+      `${delayTwo} - ${delayMys}`);
+    ck('두 상자 길이(8.4초)를 덮는다', delayTwo - delayPko >= 8,
+      String(delayTwo - delayPko));
+    ck('미스터리가 아니면 예전과 같다',
+      HD.nextHandDelaySec({
+        showdown: false, boardAtEnd: 5, liveCount: 1, extraPots: 0,
+        koExecution: true, mysteryReveals: 0,
+      }) === delayPko);
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

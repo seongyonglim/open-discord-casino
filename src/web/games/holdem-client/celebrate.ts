@@ -59,6 +59,11 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
          조각들은 하나의 클로저를 공유하므로 여기서 그 값이 보인다. */
       if (typeof koBurstEndsAt === 'number' && koBurstEndsAt > 0
         && Date.now() < koBurstEndsAt + KO_GAIN_HOLD_MS) return;
+      /* 미스터리는 처형 다음에 상자 개봉이 더 남아 있다. 마지막 KO 가 곧 우승이라
+         팝업과 상자가 정확히 같은 순간에 겹친다 — 그러면 이 모드에서 금액이 공개되는
+         유일한 자리를 통째로 못 본다(머리 위에는 숫자가 없다). */
+      if (typeof mysBoxEndsAt === 'number' && mysBoxEndsAt > 0
+        && Date.now() < mysBoxEndsAt + KO_GAIN_HOLD_MS) return;
       var key = celebrateKey(t);
       try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); }
       catch (e) { /* 저장을 못 쓰는 환경이면 매번 뜬다 — 축하가 안 뜨는 것보다 낫다 */ }

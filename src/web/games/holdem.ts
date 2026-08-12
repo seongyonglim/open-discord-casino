@@ -284,6 +284,19 @@ function statePayload(st: HoldemStatus, userId: string) {
     ...base,
     table: {
       handNo: hand?.hand_no ?? 0,
+      /* 이 판에 열린 봉투들 — 개봉 연출이 봉투마다 "누구 것이 얼마였고 누가 가져갔나"를
+         보여준다. 미스터리에서만 내려보낸다: 프로그레시브는 금액이 머리 위에 이미 적혀
+         있어서 개봉이라는 사건이 없다.
+
+         이 값이 결과보다 먼저 도착하는 것은 문제가 되지 않는다 — 화면이 처형이 끝날
+         때까지 붙들고 있다가 그때 재생한다. 반대로 이 값 없이 확보 누계의 증가분만
+         보면 봉투 여러 개가 한 숫자로 합쳐져 누구 것인지 알 수 없다. */
+      bountyReveals: isMystery(t) && hand?.bounty_reveals
+        ? (() => {
+          try { return JSON.parse(hand.bounty_reveals) as unknown; }
+          catch { return null; }   // 깨진 JSON 이 연출을 멈추게 하지 않는다
+        })()
+        : undefined,
       street: hand?.street ?? 'preflop',
       board: G.cardsToStrings(boardCards),
       buttonSeat: hand?.button_seat ?? table.button_seat,
@@ -672,6 +685,30 @@ export function holdemPage(user: WebUser): string {
                 </div>
               </div>
 
+              <!-- 미스터리 바운티 개봉 — 처형(3발)이 끝난 뒤 펠트 한가운데에서 돈다.
+                   미스터리에서는 머리 위 명찰을 아예 그리지 않으므로, 금액이 공개되는
+                   자리가 화면에 여기 하나뿐이다. 그래서 중앙에 크게 둔다.
+
+                   카지노 전광판 모양이다. 상자 그림을 CSS 로 만들어 봤는데 조악했다 —
+                   숫자가 굴러가다 멈추는 것이 이 연출의 내용이고, 전광판은 그 내용을
+                   그대로 담는 틀이다(그림 솜씨에 기대지 않는다).
+
+                   세 줄로 읽힌다: 누구 봉투인가 → 얼마인가 → 누가 가져갔나.
+                   여러 명이 동시에 털리면 봉투마다 한 번씩 돈다.
+
+                   골격에 만들어 두고 감췄다 켠다 — 요소를 그때 만들면 첫 프레임에
+                   애니메이션이 시작되지 않는다(레이아웃이 아직 없다).
+                   ht-seats 보다 앞에 두어 좌석이 전광판 위에 오지 않게 한다. -->
+              <div class="ht-mysbox" id="htMysBox" hidden aria-hidden="true">
+                <div class="ht-mysbox-glow"></div>
+                <div class="ht-mysbox-panel">
+                  <div class="ht-mysbox-cap">MYSTERY BOUNTY</div>
+                  <div class="ht-mysbox-of" id="htMysOf"></div>
+                  <div class="ht-mysbox-reel"><span class="ht-mysbox-amt" id="htMysAmt">?</span></div>
+                  <div class="ht-mysbox-who" id="htMysWho"></div>
+                  <div class="ht-mysbox-dots" id="htMysDots"></div>
+                </div>
+              </div>
               <!-- 자리 비움 배너는 없앴다. 상태는 좌석 위 회색 태그가,
                    복귀는 액션 버튼 줄의 [게임 복귀]가 맡는다(htBack3). -->
               <div id="htSeats" class="ht-seats"></div>
@@ -791,8 +828,10 @@ export function holdemPage(user: WebUser): string {
       'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide','myturn',
       'potwin','clockwarn','allinbgm',
       /* 처형 총성 — 미리 받아 둔다. 탈락은 판이 끝나는 순간에 터지는데 그때 받으러
-         가면 소리가 총자국보다 늦게 도착하고, 첫 KO 는 합성음으로 대체된다. */
-      'gunshot'];</script>
+         가면 소리가 총자국보다 늦게 도착하고, 첫 KO 는 합성음으로 대체된다.
+         미스터리 개봉 소리도 같은 이유로 함께 받는다 — 처형이 끝나자마자 이어진다.
+         (두 파일은 아직 없다. 없으면 아무 일도 일어나지 않고 합성음이 쓰인다.) */
+      'gunshot', 'boxshake', 'boxopen'];</script>
   <script>
   (function(){
 ${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY_EMPTY}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}

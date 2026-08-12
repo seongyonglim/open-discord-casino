@@ -129,7 +129,18 @@ const CRASH_PROFIT_GOAL = 1_000_000;
    그래서 "자동으로 나간 판"은 세지 않는다 — 자동 정산은 배율을 예약값 그대로 적으므로
    (settleAutoCashouts) 두 값이 정확히 같으면 손이 아니라 예약이 판을 끝낸 것이다.
    1.01x 예약을 걸어 둔 사람이 그 순간 손으로 눌러도 안 열리지만, 그 판은 애초에
-   "예약이 잡아 줄 판"이라 손으로 해냈다고 하기 어렵다. */
+   "예약이 잡아 줄 판"이라 손으로 해냈다고 하기 어렵다.
+
+   "정확히 1.01" 이 아니라 "1.01 이하" 다. 정확히로 두었더니 사실상 불가능했다 —
+   배율 곡선(GROWTH_K1)으로 재면 1.01x 로 기록되는 구간이 라운드 시작 후 166~330ms,
+   즉 폭이 164ms 뿐이다. 게다가 서버는 요청이 도착한 순간으로 배율을 다시 계산하므로
+   (handleCashout) 화면에 1.01 이 보여서 눌러도 왕복 지연만큼 지나간 값이 찍힌다.
+   실제로 1.01 을 보고 눌렀는데 안 열렸다는 제보가 왔다.
+
+   이하로 두면 1.00x 까지 포함되어 창이 330ms 로 두 배가 된다. 1.00x 캐시아웃은 순이익이
+   0 이라 오히려 이 과제의 이름에 더 맞는다 — 돈을 벌려고 누르는 것이 아니다.
+   위쪽은 여전히 막혀 있다: 1.02 부터는 열리지 않으므로 "모든 캐시아웃이 걸린다"가 되지
+   않는다(>= 로 적었다면 그렇게 됐을 것이다). */
 const CRASH_MIN_X = 1.01;
 
 function crashAwards(
@@ -142,7 +153,7 @@ function crashAwards(
   const byHand = myBet.auto_cashout == null || myBet.cashout_multiplier !== myBet.auto_cashout;
   const checks: [string, () => boolean][] = [];
   if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);
-  if (byHand && myBet.cashout_multiplier === CRASH_MIN_X) checks.push(['crash-x1-01', () => true]);
+  if (byHand && myBet.cashout_multiplier <= CRASH_MIN_X) checks.push(['crash-x1-01', () => true]);
   /* 순수익은 캐시아웃한 판에만 오를 수 있다 — 잃어서 100만을 넘길 수는 없으므로
      여기서만 재면 된다.
      통산이 아니라 이번 시즌 값을 본다. 화면의 랭킹이 시즌 장부를 쓰기 때문이다 —

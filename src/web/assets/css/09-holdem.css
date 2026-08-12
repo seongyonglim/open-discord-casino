@@ -693,6 +693,95 @@
 
   /* ── 블라인드 상승 알림 ───────────────────────────────────────────
      중앙 블록과 같은 자리에 뜬다. 38%로 두면 중앙이 50%로 옮겨진 뒤에도 옛 자리에 뜬다. */
+  /* ── 미스터리 바운티 개봉 ──────────────────────────────────────────
+     미스터리는 머리 위에 금액이 없다. 그래서 "얼마짜리를 잡았나"가 공개되는 자리가
+     화면에 여기 하나뿐이고, 그만큼 크고 중앙에 둔다.
+
+     카지노 전광판이다. 처음에는 상자를 CSS 로 그렸는데 조악했다 — 연출의 내용은
+     "숫자가 굴러가다 멈춘다"이지 상자가 아니라서, 그림 솜씨에 기대지 않는 틀로 바꿨다.
+
+     세 줄로 읽힌다: 누구 봉투인가 → 얼마인가 → 누가 가져갔나.
+     굴러가는 동안에는 첫 줄만 보이고, 멈출 때 나머지가 온다 — 셋을 한꺼번에 띄우면
+     굴러가는 숫자를 볼 이유가 없어진다.
+
+     구간을 클래스로 가른다(.in → .roll → .land → .out). 자바스크립트가 좌표를 옮기지
+     않고 클래스만 갈아 끼우는 이유는 폴링이 매초 돌기 때문이다 — 프레임을 손으로
+     그리면 갱신 루프와 다투게 된다. 숫자 글자만 예외로 JS 가 갈아 끼운다(그것이 내용이다).
+
+     z-index 는 레벨업 알림(60)보다 위에 둔다. 개봉 중에 레벨이 오르는 일이 실제로
+     있고, 그때 알림이 전광판을 덮으면 이 모드의 유일한 공개 장면이 사라진다. */
+  .ht-mysbox{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);
+    z-index:64;display:flex;flex-direction:column;align-items:center;
+    pointer-events:none}
+  .ht-mysbox[hidden]{display:none}
+  /* 뒤에서 뿜어져 나오는 빛. 굴러가는 동안 약하게 깔려 있다가 멈추는 순간 확 커진다 */
+  .ht-mysbox-glow{position:absolute;left:50%;top:50%;width:260px;height:260px;
+    transform:translate(-50%,-50%) scale(.3);opacity:0;
+    background:radial-gradient(circle,rgba(255,238,170,.9) 0%,rgba(232,200,106,.42) 34%,
+      rgba(212,175,55,0) 70%);
+    transition:opacity .3s ease-out,transform .5s cubic-bezier(.2,1.5,.4,1)}
+  .ht-mysbox.roll .ht-mysbox-glow{opacity:.3;transform:translate(-50%,-50%) scale(.75)}
+  .ht-mysbox.land .ht-mysbox-glow{opacity:1;transform:translate(-50%,-50%) scale(1.45)}
+  /* 전광판 — 위에서 내려온다. 금테 두 겹(짙은 테 + 안쪽 밝은 선)이 두께감을 만든다 */
+  .ht-mysbox-panel{position:relative;min-width:230px;padding:12px 24px 11px;
+    border-radius:14px;text-align:center;
+    background:linear-gradient(180deg,rgba(30,26,16,.98),rgba(14,12,8,.98));
+    border:2px solid #d4af37;
+    box-shadow:inset 0 0 0 1px rgba(255,241,208,.32),0 14px 40px rgba(0,0,0,.75),
+      0 0 26px rgba(212,175,55,.24);
+    transform:translateY(-16px) scale(.9);opacity:0;
+    transition:transform .34s cubic-bezier(.2,1.5,.4,1),opacity .24s ease-out}
+  .ht-mysbox.in .ht-mysbox-panel{transform:translateY(0) scale(1);opacity:1}
+  .ht-mysbox.out .ht-mysbox-panel{transform:translateY(-10px) scale(.96);opacity:0;
+    transition:all .3s ease-in}
+  /* 멈추는 순간 한 번 튄다 — 그 한 박자가 "결과가 나왔다"를 만든다 */
+  .ht-mysbox.land .ht-mysbox-panel{animation:mysLand .42s cubic-bezier(.2,1.7,.35,1) both}
+  @keyframes mysLand{
+    0%{transform:translateY(0) scale(1)}
+    40%{transform:translateY(0) scale(1.06);border-color:#fff1d0}
+    100%{transform:translateY(0) scale(1);border-color:#d4af37}}
+  /* 머리 글자 — 무슨 판인지 한 줄. 작고 넓게 띄워 전광판 느낌을 만든다 */
+  .ht-mysbox-cap{font-family:var(--mono);font-size:9.5px;font-weight:800;
+    letter-spacing:.26em;color:#8a7a4e;margin-bottom:5px}
+  /* 누구 봉투인가 — 굴러가는 동안 이것만 보인다 */
+  .ht-mysbox-of{font-size:12.5px;font-weight:800;color:#e8c86a;margin-bottom:3px;
+    max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 숫자가 굴러가는 창. 폭을 고정해 두는 것이 중요하다 — 자릿수가 바뀔 때마다 폭이
+     달라지면 판이 좌우로 떨려서 "굴러간다"가 아니라 "덜컹거린다"로 보인다. */
+  .ht-mysbox-reel{display:flex;align-items:center;justify-content:center;
+    height:44px;min-width:200px;border-radius:8px;
+    background:linear-gradient(180deg,#0a0906 0%,#171308 48%,#0a0906 100%);
+    box-shadow:inset 0 2px 10px rgba(0,0,0,.9),inset 0 0 0 1px rgba(212,175,55,.28)}
+  .ht-mysbox-amt{font-family:var(--mono);font-size:30px;font-weight:900;
+    color:#fff3c4;letter-spacing:.01em;
+    text-shadow:0 0 16px rgba(255,220,120,.85),0 2px 8px rgba(0,0,0,.9);
+    font-variant-numeric:tabular-nums}
+  /* 굴러가는 동안은 살짝 흐리게 — 읽으려 해도 안 읽히는 것이 이 구간의 뜻이다 */
+  .ht-mysbox.roll .ht-mysbox-amt{filter:blur(.6px);opacity:.9;
+    animation:mysRoll .11s steps(2) infinite}
+  @keyframes mysRoll{0%{transform:translateY(-1px)}100%{transform:translateY(1px)}}
+  .ht-mysbox.land .ht-mysbox-amt{animation:mysHit .4s cubic-bezier(.2,1.8,.3,1) both}
+  @keyframes mysHit{0%{transform:scale(.82)}55%{transform:scale(1.14)}100%{transform:scale(1)}}
+  /* 누가 가져갔나 — 멈춘 뒤에 온다. 금액보다 작게 두어 숫자를 먼저 읽게 한다 */
+  .ht-mysbox-who{min-height:15px;margin-top:6px;font-size:12px;font-weight:800;
+    color:#f4dc8a;text-shadow:0 2px 6px rgba(0,0,0,.8);
+    max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 봉투가 여럿이면 몇 번째인지 점으로 알려준다 — 안 그러면 두 번 도는 것이
+     "버그로 다시 돌았다"로 읽힌다 */
+  .ht-mysbox-dots{display:flex;justify-content:center;gap:5px;margin-top:6px;min-height:5px}
+  .ht-mysbox-dots i{width:5px;height:5px;border-radius:50%;background:#4a4230}
+  .ht-mysbox-dots i.on{background:#e8c86a;box-shadow:0 0 6px rgba(232,200,106,.8)}
+  /* 움직임을 원치 않는 사람에게는 흔들림만 뺀다 — 숫자와 결과는 그대로 보여야 한다 */
+  @media (prefers-reduced-motion:reduce){
+    .ht-mysbox.roll .ht-mysbox-amt{animation:none;filter:none}
+    .ht-mysbox.land .ht-mysbox-panel{animation:none}
+    .ht-mysbox.land .ht-mysbox-amt{animation:none}}
+  /* 좁은 화면에서는 판과 숫자를 줄인다 — 펠트 폭을 넘으면 잘린다 */
+  @media (max-width:520px){
+    .ht-mysbox-panel{min-width:180px;padding:10px 16px 9px}
+    .ht-mysbox-reel{min-width:154px;height:36px}
+    .ht-mysbox-amt{font-size:23px}}
+
   .ht-lvup{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     z-index:60;text-align:center;padding:16px 26px;border-radius:16px;
     background:linear-gradient(180deg,rgba(28,34,30,.97),rgba(14,18,16,.97));
@@ -1255,11 +1344,8 @@
   .ht-pz-pct{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none;width:42px;text-align:right}
   .ht-pz-row.out .ht-pz-pl,.ht-pz-row.out .ht-pz-amt{color:#7f8a83;font-weight:600}
   .ht-pz-note{margin-top:10px;font-size:11px;line-height:1.6;color:var(--muted)}
-  /* 아직 안 열린 봉투 — 금액 대신 물음표. 금빛은 유지하되 광택을 죽여
-     "봉인된 판" 으로 읽히게 한다. 열리는 순간 .sealed 가 떨어지며 금액이 들어온다. */
-  .ht-bounty.sealed{
-    background:linear-gradient(180deg,#d8cbb2 0%,#b8a882 45%,#9d8d68 50%,#d2c5ac 100%);
-    color:#3b2f1a;letter-spacing:0;padding:0 9px}
+  /* .ht-bounty.sealed(물음표 명찰)은 없앴다. 미스터리에서는 명찰 자체를 그리지 않으므로
+     이 상태에 닿을 수가 없다 — 금액은 상자 개봉 한 곳에서만 나온다. */
   /* 총액 아래 두 갈래 — 순위 상금 + 바운티. 머리의 총액이 어디서 왔는지를 한 줄로 잇는다.
      한 줄에 다 들어가야 한다: 좁은 칸에서 라벨이 줄바꿈되면("바운티 상 / 금") 금액보다
      글자가 먼저 눈에 들어와 표가 아니라 문단으로 읽힌다. 그래서 라벨을 짧게 두고
@@ -1619,23 +1705,10 @@
      화면 폭에 따라 카드 크기(--htUpH)가 달라지므로 픽셀로 박지 않는다. */
   .ht-seat.hero:hover .ht-hole.up.folded:not(:empty) + .ht-avbox .ht-bounty{
     top:calc(-0.44 * var(--htAv) + 18px + 0.22 * var(--htUpH))}
-  /* 값이 오르는 순간 — 살짝 커졌다 돌아오며 황금빛이 번진다.
-     0.5초. 다음 폴링(1초)보다 짧아야 연출이 겹치지 않는다.
-     transform-origin 을 아래 가운데로 둔다 — 위로만 자라야 아바타에 맞물린 아래 변이
-     떨어지지 않는다(기본값 center 로 두면 판이 아바타 속으로 파고든다). */
-  .ht-bounty.up{animation:htBountyUp .5s ease-out;transform-origin:50% 100%}
-  @keyframes htBountyUp{
-    0%{transform:translateX(-50%) scale(1)}
-    35%{transform:translateX(-50%) scale(1.2);
-      background:linear-gradient(180deg,#fffaf0 0%,#f0dcb2 45%,#dcc088 50%,#fff6e4 100%);
-      border-color:#c9a35c;
-      box-shadow:inset 0 0 0 1px #fffdf5, 0 2px 4px rgba(0,0,0,.55),
-        0 0 16px rgba(255,215,80,.9)}
-    70%{transform:translateX(-50%) scale(1.06);
-      box-shadow:inset 0 0 0 1px #fff1d0, 0 2px 4px rgba(0,0,0,.55),
-        0 0 9px rgba(255,215,80,.45)}
-    100%{transform:translateX(-50%) scale(1)}
-  }
+  /* 값이 오를 때의 펄스(.ht-bounty.up · @keyframes htBountyUp)는 없앴다. 잡은 사람이
+     전액을 가져가고 자기 머리 값은 오르지 않으므로 명찰 숫자가 대회 내내 고정이다 —
+     올라가는 일이 없으니 올라갈 때의 연출도 없다. 보상 피드백은 아바타 위로 떠오르는
+     .ht-bgain(+N P)이 맡는다. */
   /* 총자국 — 방사형 그라디언트 둘을 겹쳐 그린다: 안쪽의 검은 구멍과 그 주변에 번지는
      갈라진 자리다. 이미지 파일을 쓰지 않는 이유는 아바타 크기가 화면 폭에 따라
      달라져서(--htAv) 어떤 크기에서도 선명해야 하기 때문이다.
@@ -1717,7 +1790,6 @@
     .ht-felt.koshake{animation:none}
     .ht-hole-shot.hit{animation:none}
     .ht-muzzle.flash{animation:none}
-    .ht-bounty.up{animation:none}
   }
   /* 명찰 글자 크기는 13px 고정이다(명찰이 작아지면 금액을 읽는 목적을 잃는다). 다만
      아바타는 화면이 좁아지면 66px → 58px → 그 아래로 줄어드는데, 그때도 13px 이면

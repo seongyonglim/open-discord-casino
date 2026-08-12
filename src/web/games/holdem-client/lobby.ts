@@ -179,7 +179,12 @@ export const LOBBY = `    function renderLobby(){
         for (var pi = 0; pi < rowCount; pi++) {
           var res = resList[pi];
           var place = res ? res.place : pi + 1;
-          var amt = res ? res.prize : (prizeList[pi] || 0);
+          /* 받은 돈은 순위 상금 + 바운티다. 순위 상금만 적으면 바운티 대회의 절반이
+             사라진다 — 3위로 끝났지만 바운티로 10,000P 를 번 사람이 "0P" 로 찍힌다.
+             (우승 팝업도 같은 이유로 합계를 적는다.)
+             아직 안 끝난 대회에서는 res 가 없어 상금 구조표를 그리는데, 그때는 바운티가
+             누구에게 갈지 정해지지 않았으므로 등수별 상금만 적는 것이 맞다. */
+          var amt = res ? (res.prize || 0) + (res.bounty || 0) : (prizeList[pi] || 0);
           // 상금을 받는 자리만 밝게. 나머지는 가라앉히고 금액도 0P로 적는다("-"는 정보가 없다)
           var itm = amt > 0;
           rows += '<tr class="' + (itm ? 'itm' : 'out') + '">' +

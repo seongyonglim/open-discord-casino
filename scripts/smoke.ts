@@ -164,8 +164,22 @@ async function main(): Promise<void> {
         .map(m => `${m[1]}.${m[2]}`);
       check(`SFX_EXT에 ${declared.length}종이 선언돼 있다`, declared.length >= 18, String(declared.length));
       const onDisk = new Set(readdirSync(join(ROOT, 'public', 'sfx')));
-      const missing = declared.filter(f => !onDisk.has(f));
+      /* 아직 안 받은 음원. 없어도 화면은 그대로 동작한다 — playSample 이 false 를 돌려주고
+         app.js 의 합성음이 대신 울린다. 여기 적어 두는 이유는 "실수로 빠진 파일"과
+         "아직 안 만든 파일"을 가르기 위해서다: 목록을 두지 않으면 이 검사를 통째로
+         느슨하게 만들어야 하고, 그러면 진짜 누락을 잡지 못한다.
+         요구 사양은 docs/audio-requests.md 에 있다. 파일이 들어오면 이 줄에서 지운다. */
+      const pending = new Set(['box-shake.mp3', 'box-open.mp3']);
+      const missing = declared.filter(f => !onDisk.has(f) && !pending.has(f));
       check('app.js가 부르는 음원 파일이 전부 있다', missing.length === 0, missing.join(', '));
+      /* 목록이 낡지 않게 지킨다 — 파일을 넣고 목록에서 지우는 것을 잊으면, 그 이름은
+         이후로 영영 검사되지 않는다. */
+      const stale = [...pending].filter(f => onDisk.has(f));
+      check('안 받은 음원 목록이 낡지 않았다 (들어온 파일은 목록에서 지운다)',
+        stale.length === 0, stale.join(', '));
+      check('안 받은 음원에는 합성음 대체가 있다',
+        /boxShake: function\(\)[\s\S]{0,200}?playSample\('boxshake'/.test(appSrc)
+        && /boxOpen: function\(\)[\s\S]{0,200}?playSample\('boxopen'/.test(appSrc));
       // 화이트리스트에 없으면 파일이 있어도 404가 된다 (서버가 이름으로만 받는다)
       const notServed: string[] = [];
       for (const f of declared) {

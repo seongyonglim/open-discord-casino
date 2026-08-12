@@ -51,6 +51,149 @@ export const SEATS = `    var seatXY = {};
        "정리했다"가 안 읽히고 그냥 화면이 바뀐 것으로 보인다. 빈 테이블을 한 번
        보여 주고 쏜다. */
     var KO_LEAD_MS = 600;
+    /* ── 미스터리 바운티 개봉 ────────────────────────────────────────
+       미스터리는 머리 위에 금액이 없다. 그래서 "얼마짜리를 잡았나"가 공개되는 자리가
+       화면에 이 연출 하나뿐이고, 그만큼 이 순간이 모드의 전부다.
+
+       카지노 전광판이다. 숫자가 빠르게 굴러가다 당첨 금액에서 딱 멈춘다 — 굴러가는
+       동안이 긴장이고, 멈추는 순간이 결과다. (상자 그림을 CSS 로 만들어 봤는데 조악했다.
+       연출의 내용은 "숫자가 굴러가다 멈춘다"이지 상자가 아니다.)
+
+       봉투마다 한 번씩 돈다. 여러 명이 동시에 털리면 누구 봉투가 얼마였는지가 각각
+       보여야 한다 — 합쳐서 한 숫자로 적으면 그 정보가 사라진다. 서버가 판마다
+       [탈락자 · 금액 · 가져간 사람] 목록을 내려준다(table.bountyReveals).
+
+       처형(총 3발) 다음에 온다. 순서는
+         칩 이동 → 카드 정리 → 처형 → 개봉(봉투마다) → 확보 표시(+N P) → 다음 판 / 우승 팝업
+       서버의 nextHandDelaySec 이 이 길이를 알고 다음 판을 미룬다(mysteryReveals). */
+    var MYS_IN_MS = 340;        // 전광판이 올라온다
+    var MYS_ROLL_MS = 1600;     // 숫자가 굴러간다 (긴장을 만드는 구간)
+    var MYS_LAND_MS = 1500;     // 당첨 금액에서 멈추고 읽는 시간
+    var MYS_OUT_MS = 300;       // 내려간다. 다음 봉투는 이것이 끝난 뒤에 시작한다
+    var MYS_TICK_MS = 55;       // 굴러가는 숫자가 바뀌는 간격
+    function mysBoxLen(){ return MYS_IN_MS + MYS_ROLL_MS + MYS_LAND_MS; }
+    function mysBoxTotal(){ return mysBoxLen() + MYS_OUT_MS; }
+    /* 개봉이 끝나는 시각. 우승 팝업과 상금 탭이 이 뒤까지 기다린다 — 먼저 갱신되면
+       결과가 그쪽에서 새어 나간다(처형에서 똑같은 제보를 받았다).
+       celebrate.ts 와 side.ts 가 이 값을 읽는다. */
+    var mysBoxEndsAt = 0;
+    /* 한 번에 하나만 돈다. 전광판이 하나뿐이라 겹쳐 돌리면 둘 다 안 읽힌다 —
+       줄을 세워 차례로 돌린다. */
+    var mysQueue = [], mysBusy = false;
+    /* 이미 재생한 판 — 폴링마다 같은 목록이 다시 오므로 판 번호로 한 번만 잡는다.
+       창을 다시 열어도 같은 판이 또 재생되지 않게 여기서 기억한다. */
+    var mysPlayed = {};
+    var mysRollTimer = null;
+    /* 봉투 하나를 돌린다. 끝나면 가져간 사람 아바타 위로 +N P 를 띄우고 다음 봉투로 넘어간다. */
+    function mysPump(){
+      if (mysBusy || !mysQueue.length) return;
+      var job = mysQueue.shift();
+      mysBusy = true;
+      var box = document.getElementById('htMysBox');
+      var amtEl = document.getElementById('htMysAmt');
+      var ofEl = document.getElementById('htMysOf');
+      var whoEl = document.getElementById('htMysWho');
+      var dotsEl = document.getElementById('htMysDots');
+      if (!box || !amtEl) {             // 골격이 없으면 연출을 건너뛰고 숫자만 띄운다
+        mysFinish(job);
+        return;
+      }
+      /* 누구 봉투인가 — 굴러가는 동안 이것만 보인다. 금액과 가져간 사람은 멈춘 뒤에 온다.
+         셋을 한꺼번에 띄우면 굴러가는 숫자를 볼 이유가 없어진다. */
+      if (ofEl) ofEl.textContent = job.victim ? job.victim + ' 님의 바운티' : '바운티';
+      if (whoEl) whoEl.textContent = '';
+      /* 봉투가 여럿이면 몇 번째인지 점으로 알려준다 — 안 그러면 두 번 도는 것이
+         "버그로 다시 돌았다"로 읽힌다. */
+      if (dotsEl) {
+        dotsEl.innerHTML = job.total > 1
+          ? Array.apply(null, Array(job.total)).map(function(_, i){
+            return '<i class="' + (i === job.idx ? 'on' : '') + '"><\\/i>';
+          }).join('')
+          : '';
+      }
+      amtEl.textContent = '?';
+      box.hidden = false;
+      box.className = 'ht-mysbox in';
+      void box.offsetWidth;
+      /* 굴리기. 실제 봉투 금액들에서 무작위로 뽑아 보여준다 — 아무 숫자나 굴리면
+         자릿수가 들쭉날쭉해서 폭이 흔들리고, 무엇보다 "있을 수 있는 금액"으로 안 보인다. */
+      setTimeout(function(){
+        box.className = 'ht-mysbox in roll';
+        if (window.casinoSfx && casinoSfx.boxShake) casinoSfx.boxShake();
+        var pool = (job.pool && job.pool.length) ? job.pool : [job.amount];
+        mysRollTimer = setInterval(function(){
+          var pick = pool[Math.floor(Math.random() * pool.length)];
+          amtEl.textContent = stackText(pick) + 'P';
+        }, MYS_TICK_MS);
+      }, MYS_IN_MS);
+      // 멈춤 — 당첨 금액에서 딱 선다. 여기가 결과다
+      setTimeout(function(){
+        if (mysRollTimer) { clearInterval(mysRollTimer); mysRollTimer = null; }
+        box.className = 'ht-mysbox in land';
+        amtEl.textContent = stackText(job.amount) + 'P';
+        if (window.casinoSfx && casinoSfx.boxOpen) casinoSfx.boxOpen();
+        /* 마지막 판에서는 우승자가 자기 봉투도 함께 회수한다. 그때 "가져갔습니다"만
+           적으면 그 몫이 어디서 왔는지 설명이 없다. */
+        if (whoEl) {
+          whoEl.textContent = !job.takers.length ? ''
+            : job.takers.join(' · ') + (job.takers.length > 1 ? ' 나눠 가집니다' : ' 획득');
+        }
+      }, MYS_IN_MS + MYS_ROLL_MS);
+      /* 정리가 끝난 뒤에 다음 봉투로 넘긴다. mysFinish 를 여기서 부르면 다음 봉투가
+         곧바로 시작되고, 그 뒤에 이 정리 타이머가 돌면서 새로 올라온 전광판을 감춘다 —
+         요소를 하나만 두었기 때문에 생기는 함정이고, 실측으로 두 번째가 사라졌다. */
+      setTimeout(function(){
+        box.className = 'ht-mysbox out';
+        setTimeout(function(){
+          box.hidden = true;
+          box.className = 'ht-mysbox';
+          mysFinish(job);
+        }, MYS_OUT_MS);
+      }, mysBoxLen());
+    }
+    /* 전광판이 내려간 뒤 상금이 프로필로 들어간다 — 전광판에서 본 금액과 같은 숫자가
+       아바타 위로 떠오르며 "저게 저 사람 것이 됐다"를 잇는다. 순서가 뒤집히면 두 숫자가
+       무슨 관계인지 읽히지 않는다. 공동 KO 면 나눠 가진 몫을 각자에게 띄운다. */
+    function mysFinish(job){
+      var n = job.takers.length || 1;
+      var each = Math.floor(job.amount / n);
+      job.takers.forEach(function(name, i){
+        var seat = mysSeatOf(name);
+        if (seat == null) return;
+        var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + seat + '"]');
+        /* 나눠 가질 때 남는 1P 는 앞사람에게 — 서버의 splitBounty 와 같은 방향이다.
+           반대로 두면 화면 합계가 실제 지급액과 1P 어긋난다. */
+        if (seatEl) floatBGain(seatEl, each + (i < job.amount - each * n ? 1 : 0));
+      });
+      mysBusy = false;
+      mysPump();
+    }
+    /* 이름으로 자리를 찾는다. 서버가 개봉 목록을 이름으로 주기 때문이다 — 탈락자는 좌석
+       목록에서 사라질 수 있어서 id 로 두면 이름을 찾을 데가 없다. 한 테이블에 같은 이름이
+       둘일 수는 없다(디스코드 계정 하나가 자리 하나다). */
+    function mysSeatOf(name){
+      var seats = (st.table || {}).seats || [];
+      for (var i = 0; i < seats.length; i++) {
+        if (seats[i].username === name) return seats[i].seat;
+      }
+      return null;
+    }
+    /* 확보한 만큼을 아바타 위로 띄운다. 미스터리는 상자가 닫힌 뒤, 프로그레시브는
+       처형이 끝난 뒤 곧바로 — 부르는 자리만 다르고 연출은 같다. */
+    function floatBGain(seatEl, amount){
+      if (amount <= 0) return;
+      if (window.casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
+      var gEl = seatEl.querySelector('.ht-bgain');
+      if (!gEl) return;
+      gEl.textContent = '+' + stackText(amount) + 'P';
+      gEl.hidden = false;
+      gEl.classList.remove('rise');
+      void gEl.offsetWidth;
+      gEl.classList.add('rise');
+      /* 떠오른 숫자는 남지 않는다 — 다음 판까지 붙어 있으면 지금 걸린 금액과
+         헷갈린다. 애니메이션(1.4초)이 끝나면 치운다. */
+      setTimeout(function(){ gEl.hidden = true; }, 1400);
+    }
     /* 처형을 위해 판을 비운 판 번호. board.ts·reveal.ts 가 이 값을 보고 카드를 다시
        그리지 않는다(조각들은 하나의 클로저를 공유한다). 다음 판이 오면 번호가 달라져
        저절로 풀리므로 되돌리는 코드가 따로 없다. */
@@ -273,11 +416,15 @@ export const SEATS = `    var seatXY = {};
       var blindSeats = blindSeatsOf(tb);
       /* 바운티 대회인가. 좌석 골격에 바운티·KO 요소를 넣을지 여부를 이 값 하나가 정한다.
          서버가 PKO 가 아니면 mode 를 CLASSIC 으로 주고 좌석에 bounty 칸 자체를 안 싣는다. */
-      /* 바운티가 걸린 판이면 켠다 — 프로그레시브든 미스터리든 명찰과 처형 연출은 같다.
-         모드 이름 하나만 보면 미스터리에서 명찰 요소가 아예 안 만들어진다(실측: 물음표도
-         안 나왔다). 서버의 isPko 와 같은 뜻을 여기서도 유지해야 한다. */
+      /* 바운티가 걸린 판이면 켠다 — 두 모드 모두 처형 연출과 확보 표시가 같다.
+         서버의 isPko 와 같은 뜻을 여기서도 유지해야 한다. */
       var tmode = (st.tournament || {}).mode;
-      var pko = tmode === 'PKO_BOUNTY' || tmode === 'MYSTERY_BOUNTY';
+      var mystery = tmode === 'MYSTERY_BOUNTY';
+      var pko = tmode === 'PKO_BOUNTY' || mystery;
+      /* 머리 위 명찰은 미스터리에서 그리지 않는다. 금액이 비공개인 모드라 명찰에 적을
+         숫자가 없다 — 한동안 물음표를 띄워 뒀는데, 다섯 자리에 똑같은 "?" 가 걸린 화면은
+         정보가 0 이면서 자리만 차지했다. 미스터리의 금액은 개봉 연출 한 곳에서만 나온다. */
+      var badgeOn = pko && !mystery;
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
@@ -335,11 +482,11 @@ export const SEATS = `    var seatXY = {};
               /* 방금 한 행동 — 프로필 사진 위에 잠깐 떴다 사라진다.
                  "누가"와 "무엇을"이 한 점에서 읽힌다. */
               '<span class="ht-abadge" hidden></span>' +
-              /* 머리 위 바운티 — PKO 대회에서만 그린다. 일반 대회에서는 이 요소가
-                 아예 만들어지지 않는다: 숨기는 것으로 두면 언젠가 조건이 빠지면서
-                 일반 판에 바운티가 뜨고, 그건 "같은 베이스지만 다른 게임"이라는 약속을
-                 깨는 종류의 실수다. 없으면 실수로 보일 수가 없다. */
-              (pko ? '<span class="ht-bounty" hidden></span>' : '') +
+              /* 머리 위 바운티 — 금액이 공개된 바운티 판에서만 그린다. 일반 대회와
+                 미스터리에서는 이 요소가 아예 만들어지지 않는다: 숨기는 것으로 두면
+                 언젠가 조건이 빠지면서 엉뚱한 판에 바운티가 뜨고, 그건 "같은 베이스지만
+                 다른 게임"이라는 약속을 깨는 종류의 실수다. 없으면 실수로 보일 수가 없다. */
+              (badgeOn ? '<span class="ht-bounty" hidden></span>' : '') +
               /* 오른 만큼을 명찰 위로 띄운다. 명찰 숫자만 바뀌면 "얼마를 받았나"를
                  이전 값과 비교해서 뺄셈해야 알 수 있다 — 그 순간에 그럴 사람은 없다.
                  증가액을 따로, 크게, 위로 떠오르며 보여 준다. */
@@ -480,57 +627,28 @@ export const SEATS = `    var seatXY = {};
         }
         var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
         if (!seatEl) return;
-        /* ── 머리 위 바운티 (PKO 전용) ────────────────────────────────
-           서버가 PKO 일 때만 좌석에 bounty 를 싣고, 골격에도 그때만 뱃지가 있다.
-           그래서 여기서 조건을 한 번 더 걸지 않는다 — 요소가 없으면 아무 일도 없다.
+        /* ── 머리 위 바운티 (금액이 공개된 바운티 판 전용) ─────────────
+           골격에 뱃지가 있을 때만 그린다 — 미스터리와 일반 판에는 요소가 아예 없으므로
+           여기서 조건을 한 번 더 걸지 않는다.
 
-           값이 오를 때만 번쩍인다. 매 폴링마다 반짝이면 연출이 아니라 노이즈가 되고,
-           내려가는 일은 KO 당해 0 이 되는 순간뿐인데 그때는 총자국이 이미 말하고 있다. */
+           숫자는 대회 내내 고정이다(잡은 사람이 전액 가져가고 자기 머리는 안 오른다).
+           그래서 올라갈 때 번쩍이는 연출이 없다 — 올라가는 일이 없다. 한때 있었는데,
+           절대 실행되지 않는 애니메이션이 코드에 남아 있으면 다음에 읽는 사람이
+           "왜 안 보이나"를 쫓게 된다.
+
+           대신 KO 당해 0 이 되는 순간은 붙들고 있는다. 서버는 판이 끝나는 순간 정산을
+           확정하지만 화면은 그때부터 보드를 한 장씩 열고 팟을 옮기는 중이다. 털린 사람의
+           뱃지가 그 사이에 사라지면 이 판에 무엇이 걸려 있었는지 읽을 수 없다.
+           처형(3발)이 끝날 때까지 기다린다. */
         var bEl = seatEl.querySelector('.ht-bounty');
         if (bEl) {
-          /* 미스터리는 서버가 금액 대신 null 을 준다 — 열리기 전까지 아무도, 본인조차
-             모른다. 그때는 물음표를 그린다. null 과 0 을 구분해야 한다: 0 으로 합치면
-             "봉투가 비었다"와 "아직 안 열렸다"가 같아진다. */
-          var hidden = s.bounty === null || s.bounty === undefined;
-          var bv = hidden ? null : (s.bounty || 0);
+          var bv = s.bounty || 0;
           var prev = bountyShown[s.seat];
-          /* 결과 연출이 끝나기 전에는 값을 붙들고 있는다.
-             서버는 판이 끝나는 순간 정산을 확정하지만, 화면은 그때부터 보드를 한 장씩
-             열고 팟을 옮기는 중이다. 그 사이에 숫자를 올리면 "카드도 안 열렸는데 남의
-             바운티를 이미 가져갔다"로 보인다 — 실제로 플랍만 깔린 화면에서 뱃지가
-             먼저 올라갔다.
-
-             내려가는 쪽도 같이 붙든다: 털린 사람의 뱃지가 결과 전에 사라지면 그 판에서
-             무엇이 걸려 있었는지 읽을 수 없다.
-
-             처음 그리는 값(prev 가 없다)은 기다리지 않는다 — 판 중간에 들어온 사람에게
-             빈 자리만 보여줄 이유가 없다. 기다리는 것은 "변화"뿐이다. */
-          /* 처형(3발)이 끝날 때까지도 붙들고 있는다. 순서가 [칩 이동 → 처형 → 현상금
-             상승]이라, 처형과 상승이 같은 순간에 터지면 무엇 때문에 올랐는지가 안 읽힌다. */
           var waiting = !settleDone(tb) || Date.now() < koBurstEndsAt;
           if (prev !== undefined && bv !== prev && waiting) bv = prev;
-          if (bv === null) {
-            /* 아직 안 열린 봉투 — 물음표만 그린다. 금액은 서버에도 안 실려 있다.
-               "?" 자체가 이 모드의 재미라 명찰을 감추지 않는다: 저 사람이 얼마를 들고
-               있는지 모른다는 사실이 보여야 한다. */
-            bEl.textContent = '?';
-            bEl.classList.add('sealed');
-            bEl.hidden = false;
-          } else if (bv > 0) {
+          if (bv > 0) {
             bEl.textContent = stackText(bv) + 'P';
-            bEl.classList.remove('sealed');
             bEl.hidden = false;
-            /* 처음 본 값(prev 가 undefined)에는 번쩍이지 않는다 — 화면에 들어온 것을
-               "올랐다"로 읽으면 새로고침마다 전 좌석이 한꺼번에 반짝인다. */
-            /* 물음표에서 금액으로 뒤집히는 것도 "올랐다"로 본다(prev 가 null 이었다) —
-               미스터리에서는 그 순간이 봉투가 열리는 클라이맥스다. */
-            if (prev !== undefined && (prev === null || bv > prev)) {
-              bEl.classList.remove('up');
-              /* 클래스를 떼고 바로 붙이면 브라우저가 같은 프레임으로 묶어 애니메이션이
-                 다시 시작되지 않는다. 레이아웃을 한 번 읽어 강제로 끊는다. */
-              void bEl.offsetWidth;
-              bEl.classList.add('up');
-            }
           } else {
             bEl.hidden = true;
           }
@@ -546,25 +664,17 @@ export const SEATS = `    var seatXY = {};
         var wv = s.bountyWon;
         if (typeof wv === 'number') {
           var wPrev = wonShown[s.seat];
-          var wWait = !settleDone(tb) || Date.now() < koBurstEndsAt;
-          if (wPrev !== undefined && wv !== wPrev && wWait) wv = wPrev;
-          /* 처음 본 값에는 띄우지 않는다 — 판 중간에 들어온 사람에게 남의 누계를
+          /* 처음 본 값은 그대로 받아 둔다 — 판 중간에 들어온 사람에게 남의 누계를
              "방금 벌었다"로 보여줄 이유가 없다. 기다리는 것은 "증가"뿐이다. */
-          if (wPrev !== undefined && wv > wPrev) {
-            if (casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
-            var gEl = seatEl.querySelector('.ht-bgain');
-            if (gEl) {
-              gEl.textContent = '+' + stackText(wv - wPrev) + 'P';
-              gEl.hidden = false;
-              gEl.classList.remove('rise');
-              void gEl.offsetWidth;
-              gEl.classList.add('rise');
-              /* 떠오른 숫자는 남지 않는다 — 다음 판까지 붙어 있으면 지금 걸린 금액과
-                 헷갈린다. 애니메이션(1.4초)이 끝나면 치운다. */
-              (function(el){ setTimeout(function(){ el.hidden = true; }, 1400); })(gEl);
-            }
+          if (wPrev === undefined) wonShown[s.seat] = wv;
+          /* 미스터리는 이 경로를 쓰지 않는다. 확보 누계의 증가분은 봉투 여러 개가 합쳐진
+             값이라 "누구 봉투가 얼마였나"를 알 수 없다 — 개봉은 서버가 주는 봉투 목록으로
+             따로 돌린다(아래 mysQueue). 여기서는 다음 증가를 재기 위해 값만 따라간다. */
+          else if (mystery) wonShown[s.seat] = wv;
+          else if (wv > wPrev && settleDone(tb) && Date.now() >= koBurstEndsAt) {
+            floatBGain(seatEl, wv - wPrev);
+            wonShown[s.seat] = wv;
           }
-          wonShown[s.seat] = wv;
         }
         /* 좌표는 골격이 아니라 여기서 넣는다. 등간격 계산이 실측한 가로세로 비율에
            의존하므로, 창 폭이 바뀌면 값도 바뀐다 — 골격에 구워 두면 좌석 구성이
@@ -645,6 +755,29 @@ export const SEATS = `    var seatXY = {};
       });
       syncActBadges(tb, actNow);
       syncEquity(tb);
+      /* ── 미스터리 개봉 걸기 ──────────────────────────────────────
+         좌석 루프 밖에서 한 번만 판단한다. 개봉은 좌석이 아니라 판에 붙은 사건이고
+         (봉투 여러 개가 한 판에 열린다), 루프 안에서 걸면 좌석 순서에 따라 순서가
+         바뀐다 — 처형에서 그 함정에 한 번 빠졌다.
+
+         처형(3발)이 끝난 뒤에 시작한다. 그 전에 돌리면 총성과 숫자가 겹쳐 둘 다 안 읽힌다. */
+      if (mystery && koSeen && tb.bountyReveals && tb.bountyReveals.length
+        && !mysPlayed[tb.handNo] && settleDone(tb) && Date.now() >= koBurstEndsAt) {
+        mysPlayed[tb.handNo] = 1;
+        var rv = tb.bountyReveals;
+        /* 굴러가는 숫자로 쓸 후보들 — 이 판에 실제로 열린 금액들이다. 아무 숫자나 굴리면
+           자릿수가 들쭉날쭉해서 폭이 흔들리고, "있을 수 있는 금액"으로 보이지 않는다. */
+        var pool = rv.map(function(r){ return r.a; });
+        rv.forEach(function(r, i){
+          mysQueue.push({ victim: r.v, amount: r.a, takers: r.k || [],
+            idx: i, total: rv.length, pool: pool });
+        });
+        /* 이 묶음이 끝나는 시각을 여기서 잡아 둔다 — 우승 팝업과 상금 탭이 이 값을 보고
+           기다리므로, 첫 봉투가 돌기 전에 세워져 있어야 한다. */
+        var mEnds = Date.now() + mysBoxTotal() * mysQueue.length;
+        if (mEnds > mysBoxEndsAt) mysBoxEndsAt = mEnds;
+        mysPump();
+      }
       /* 여기까지 한 번 돌았으면 다음부터는 "방금 바뀐 것"을 믿을 수 있다.
          맨 끝에 세우는 것이 요점이다 — 위에서 세우면 첫 프레임의 탈락자들이 그대로 터진다. */
       koSeen = true;

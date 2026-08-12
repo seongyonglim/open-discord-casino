@@ -141,7 +141,7 @@
                   'act-check':'mp3', 'act-raise':'mp3', 'act-fold':'mp3', 'fold-slide':'mp3',
                   'my-turn':'mp3',
                   'win-pot':'mp3', 'clock-warn':'mp3', 'allin-bgm':'mp3',
-                  'gunshot':'mp3' };
+                  'gunshot':'mp3', 'box-shake':'mp3', 'box-open':'mp3' };
   // 원본이 길어서 그대로 쓰면 연달아 울릴 때 겹쳐 뭉개지는 음원은 최대 길이를 정해 잘라 쓴다
   var SFX_MAX = { 'explode': 0.4, 'mine-coin': 0.6, 'card-flip': 0.5, 'card-deal': 0.35 };
   // 파일마다 녹음 레벨이 제각각이다. 브라우저에서 실측하니 체감 음량(RMS) 편차가 29.4dB로,
@@ -296,6 +296,14 @@
        이 줄이 없으면 playSample 이 이름을 못 찾아 늘 실패하고 합성음으로 떨어진다 —
        파일을 넣고 화이트리스트에 올려도 소리가 한 번도 안 나갔던 이유가 이것이다. */
     gunshot: ['gunshot'],
+    /* 미스터리 바운티 개봉 — 두 자리 모두 음원 파일이 아직 없다.
+       없으면 playSample 이 false 를 돌려주고 아래 합성음이 대신 울린다(우승 음원과 같은
+       방식이다). 파일을 넣는 순간 자동으로 그쪽이 쓰인다 — SFX_NORM 에 보정값만 재서
+       넣으면 된다. 요구 사양은 docs/audio-requests.md 에 적어 뒀다.
+         box-shake  상자가 덜커덩거리는 소리 (약 1.5초, 반복 재생 아님)
+         box-open   상자가 열리는 팡파르 / 잭팟 (약 1.2초) */
+    boxshake: ['box-shake'],
+    boxopen: ['box-open'],
     /* 토너먼트 우승 — 음원 파일(public/sfx/tournament-win.mp3)은 아직 없다.
        없으면 playSample이 false를 돌려주고 기존 팡파레로 대체되므로 지금도 동작한다.
        파일을 넣는 순간 자동으로 그쪽이 쓰인다(SFX_NORM에 보정값만 재서 넣으면 된다). */
@@ -584,6 +592,36 @@
         if (i === 0) self.gunshot();
         else setTimeout(function(){ self.gunshot(); }, ms - self.gunfireShots[0]);
       });
+    },
+    /* ── 미스터리 바운티 개봉 ────────────────────────────────────────
+       두 소리 모두 음원이 오면 그것을 쓰고, 없으면 합성음이 대신 울린다.
+       합성으로 둔 이유는 총성과 같다 — 개봉은 처형이 끝나는 순간 곧바로 시작되므로,
+       그때 파일을 받으러 가면 소리가 그림보다 늦게 도착한다. */
+    /* 상자가 덜커덩거리는 소리. 저역 노이즈 "툭"을 불규칙한 간격으로 여섯 번 —
+       고르게 놓으면 기계 소리가 되고, 흔들리는 물건으로 안 들린다.
+       화면 흔들림(1.5초)과 같은 길이에 맞춘다. */
+    boxShake: function(){
+      if (playSample('boxshake', 1)) return;
+      var c = ac(); if (!c) return;
+      var t = c.currentTime;
+      [0, 0.21, 0.44, 0.72, 0.98, 1.29].forEach(function(d, i){
+        // 뒤로 갈수록 조금 크게 — 긴장이 올라가는 방향이다
+        noiseBurst(c, t + d, 0.07, 0.055 + i * 0.006, 'lowpass', 420, 150);
+      });
+    },
+    /* 상자가 열리는 순간. 아래에서 위로 훑는 화음 + 끝에 남는 반짝임.
+       열림과 금액 팝업이 같은 박자에 와야 "이게 나왔다"로 읽힌다. */
+    boxOpen: function(){
+      if (playSample('boxopen', 1)) return;
+      var c = ac(); if (!c) return;
+      var t = c.currentTime;
+      // 열리는 "쉭" — 짧은 고역 노이즈
+      noiseBurst(c, t, 0.10, 0.10, 'highpass', 2400, 2400);
+      // C6 · E6 · G6 · C7 을 40ms 간격으로 훑는다
+      [1046.5, 1318.5, 1568.0, 2093.0].forEach(function(hz, i){
+        tone(c, hz, t + 0.04 + i * 0.04, 0.30, 0.032, 'triangle');
+      });
+      tone(c, 2637.0, t + 0.26, 0.55, 0.024, 'sine');   // 끝에 남는 반짝임 (E7)
     },
     /* 바운티가 올랐을 때. 아주 짧은 2음 상승 — 금색 반짝임과 같은 박자다.
        총성과 반대 방향(올라가는 음)이라 "받았다"로 읽힌다. */
