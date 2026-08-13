@@ -69,6 +69,14 @@ export const FORMAT = `    var ctrlEl = document.getElementById('htControls');
       var v = chips / bb;
       return (v >= 10 ? Math.floor(v) : Math.floor(v * 10) / 10) + 'BB';
     }
+    /* 바운티 표기 — 칩/BB 토글과 무관하게 언제나 절대 포인트다.
+       스택은 대회용 가짜 칩이라 BB 로 환산하는 것이 읽기에 낫지만, 바운티는 대회가 끝나면
+       그대로 계좌에 들어오는 진짜 포인트다. 여기에 BB 를 씌우면 두 가지가 동시에 깨진다:
+        · 뜻이 깨진다 — 10,000P 짜리 봉투가 블라인드가 오를 때마다 다른 숫자로 보인다.
+        · 글자가 깨진다 — 붙이는 쪽에서 'P' 를 덧붙이므로 "12.5BBP" 가 그대로 찍힌다
+          (실제로 BB 표기를 켜 둔 사람 화면에 그렇게 나왔다).
+       그래서 바운티를 그리는 자리는 stackText 가 아니라 이 함수를 쓴다. */
+    function pointText(p){ return num(p) + 'P'; }
     /* avatar 는 이미 완성된 이미지 주소다 — 해시가 아니다.
        users.avatar 에는 로그인할 때(web/auth.ts) CDN 주소를 통째로 만들어 넣는다.
        여기서 그 값을 해시로 보고 주소를 한 번 더 조립하고 있었다:

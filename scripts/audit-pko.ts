@@ -814,8 +814,13 @@ async function main(): Promise<void> {
         && /color:#1f1406/i.test(rule));
       ck('글자 하이라이트가 있다', /text-shadow:0 1px 0 rgba\(255,255,255,\.6\)/.test(rule));
       ck('얇고 다부진 높이 (18~20px)', /height:19px/.test(rule));
-      /* 단위는 붙여 쓴다 — 숫자만 있으면 칩인지 포인트인지 알 수 없다 */
-      ck('금액에 P 단위를 붙인다', /stackText\(bv\) \+ 'P'/.test(seatsSrc));
+      /* 단위는 붙여 쓴다 — 숫자만 있으면 칩인지 포인트인지 알 수 없다.
+         그리고 그 단위는 표기 토글(칩/BB)과 무관하게 언제나 P 다. 예전에는 stackText 로
+         그려서 BB 표기를 켠 사람 화면에 "12.5BBP" 가 찍혔다 — stackText 가 'BB' 를 붙이는데
+         여기서 'P' 를 한 번 더 붙였기 때문이다. 바운티는 대회가 끝나면 그대로 계좌에
+         들어오는 진짜 포인트라 애초에 환산 대상이 아니다. */
+      ck('금액에 P 단위를 붙인다', /bEl\.textContent = pointText\(bv\);/.test(seatsSrc));
+      ck('명찰이 BB 로 환산되지 않는다', !/bEl\.textContent = stackText/.test(seatsSrc));
 
       /* 상승 펄스(.ht-bounty.up · @keyframes htBountyUp)는 없앴다. 잡은 사람이 전액을
          가져가고 자기 머리는 오르지 않으므로 명찰 숫자가 대회 내내 고정이다 — 올라가는
@@ -997,7 +1002,8 @@ async function main(): Promise<void> {
          끝난 뒤 곧바로. 부르는 자리만 다르고 연출은 같아야 한다(갈라 두면 한쪽만
          고쳐진다). */
       && /function floatBGain\(seatEl, amount\)/.test(seatsSrc)
-      && /'\+' \+ stackText\(amount\) \+ 'P'/.test(seatsSrc));
+      /* 명찰과 같은 이유로 여기도 pointText 다 — BB 표기를 켜면 "+12.5BBP" 가 떠올랐다. */
+      && /'\+' \+ pointText\(amount\)/.test(seatsSrc));
     ck('명찰 상승에 기대지 않는다 (숫자가 고정이라 안 오른다)',
       !/stackText\(prev === null \? bv : bv - prev\)/.test(seatsSrc));
     /* 처형이 끝날 때까지 기다리는 규칙은 명찰과 같아야 한다 — 처형과 같은 순간에 터지면

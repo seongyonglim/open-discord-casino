@@ -143,14 +143,14 @@ export const SEATS = `    var seatXY = {};
             s += String(d === 0 ? 1 + Math.floor(Math.random() * 9)
               : Math.floor(Math.random() * 10));
           }
-          amtEl.textContent = Number(s).toLocaleString('ko-KR') + 'P';
+          amtEl.textContent = pointText(Number(s));
         }, MYS_TICK_MS);
       }, MYS_IN_MS);
       // 멈춤 — 당첨 금액에서 딱 선다. 여기가 결과다
       setTimeout(function(){
         if (mysRollTimer) { clearInterval(mysRollTimer); mysRollTimer = null; }
         box.className = 'ht-mysbox in land';
-        amtEl.textContent = stackText(job.amount) + 'P';
+        amtEl.textContent = pointText(job.amount);
         if (window.casinoSfx && casinoSfx.reelStop) casinoSfx.reelStop();
         /* 마지막 판에서는 우승자가 자기 봉투도 함께 회수한다. 그때 "가져갔습니다"만
            적으면 그 몫이 어디서 왔는지 설명이 없다. */
@@ -205,7 +205,7 @@ export const SEATS = `    var seatXY = {};
       if (window.casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
       var gEl = seatEl.querySelector('.ht-bgain');
       if (!gEl) return;
-      gEl.textContent = '+' + stackText(amount) + 'P';
+      gEl.textContent = '+' + pointText(amount);
       gEl.hidden = false;
       gEl.classList.remove('rise');
       void gEl.offsetWidth;
@@ -667,7 +667,7 @@ export const SEATS = `    var seatXY = {};
           var waiting = !settleDone(tb) || Date.now() < koBurstEndsAt;
           if (prev !== undefined && bv !== prev && waiting) bv = prev;
           if (bv > 0) {
-            bEl.textContent = stackText(bv) + 'P';
+            bEl.textContent = pointText(bv);
             bEl.hidden = false;
           } else {
             bEl.hidden = true;

@@ -53,6 +53,23 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
         postBtns.forEach(function(b){ b.hidden = true; });
         rnoteEl.hidden = true;
       }
+      /* ── 예약의 수명 ─────────────────────────────────────────────────
+         예약은 "이 판, 이 차례"에만 유효하다. 그런데 비우는 코드가 runPreAction 안에만
+         있어서, 실행되지 않은 예약은 아무도 치우지 않았다 — 폴드하고 나가도, 판이
+         넘어가도 체크가 그대로 남아 다음 판 첫 차례에 그대로 실행됐다. 다음 판의
+         AA 를 지난 판에 걸어 둔 [체크/폴드]가 버리는 모양이다.
+
+         두 갈래로 비운다.
+          · 판이 바뀌면 — 판 번호가 열쇠다. 스트리트가 넘어가는 것과는 다르다
+            (같은 판 안에서는 예약이 살아 있어야 프리플랍에 걸어 둔 것이 플랍에도 쓰인다).
+          · 행동할 수 없게 되면 — 서버의 legal(내 차례)도 pre(내 차례가 아님)도 없는
+            상태는 "이 판에서 내가 더 행동하지 않는다"는 뜻뿐이다: 폴드했거나, 올인이거나,
+            판이 끝났거나, 자리에 없다. 그때 예약을 남겨 둘 이유가 하나도 없다.
+            내 차례에는 legal 이 있으므로 여기 걸리지 않는다 — 실행 전에 비워지지 않는다.
+         자리 비움도 같이 비운다. 서버가 대신 체크·폴드하는 중이라 예약이 닿을 자리가 없고,
+         [게임 복귀]를 누른 사람에게 언제 걸었는지도 모를 예약이 살아 있으면 사고가 된다. */
+      if (st.table.handNo !== preHandNo) { preHandNo = st.table.handNo; clearPre(); }
+      else if (away || (!st.table.pre && !st.table.legal)) clearPre();
       /* 사전 액션 상자는 내 차례가 "아닐 때" 액션 버튼 자리에 뜬다. 예전에는 la(내 차례)를
          조건으로 두어 내 차례에만 보였는데, 그러면 미리 정해 둘 이유가 없다.
          근거는 서버가 주는 pre 다 — 내 차례가 되면 서버가 그것을 비우고 진짜 버튼이 뜬다. */
@@ -260,6 +277,15 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
     var preCall = document.getElementById('htPreCall');
     var preCallAmount = null;
     var PRE_BOXES = [preCF, preC, preF, preCall];
+    /* 예약이 살아 있는 판. renderControls 가 이 값과 지금 판 번호를 견줘 비운다. */
+    var preHandNo = null;
+    /* 예약을 통째로 비운다. 체크와 preCallAmount 는 반드시 같이 움직여야 한다 —
+       한쪽만 비우면 "체크는 풀렸는데 걸어 둔 금액은 남은" 상태가 되고, 그 다음 예약이
+       지난 차례의 금액으로 검사된다(콜 5,000 을 200 이하로 착각한다). */
+    function clearPre(){
+      PRE_BOXES.forEach(function(b){ b.checked = false; });
+      preCallAmount = null;
+    }
     PRE_BOXES.forEach(function(box){
       box.addEventListener('change', function(){
         if (box.checked) PRE_BOXES.forEach(function(o){ if (o !== box) o.checked = false; });
@@ -277,21 +303,27 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
          아래 코드는 보내기 전에 체크박스를 먼저 끄므로, 거절당하면 미리 지정한 액션이
          사라진 채로 제한 시간까지 흘러 자동 폴드된다. 다음 폴링에서 다시 본다. */
       if (st.table.actOpenIn > 0) return;
+      /* 실행하기로 정한 순간 체크를 먼저 끈다 — 성공이든 거절이든, 예약은 한 번 쓰면
+         끝이다. 체크를 남기면 다음 차례에 또 실행되고, 그건 사용자가 정한 것이 아니다.
+         예전에는 [체크]만 이 처리가 빠져 있었다(아래 preC): 체크가 나간 뒤에도 상자가
+         켜진 채로 남아 다음 스트리트·다음 판까지 따라다녔다. */
       if (preCF.checked) { preCF.checked = false; act(la.canCheck ? 'check' : 'fold'); return; }
       if (preF.checked) { preF.checked = false; act('fold'); return; }
       if (preC.checked) {
+        preC.checked = false;
         if (la.canCheck) { act('check'); return; }
-        preC.checked = false;                 // 베팅이 들어왔다 — 자동 체크 해제
-        return;
+        return;                               // 베팅이 들어왔다 — 자동 체크 해제
       }
       if (preCall.checked) {
-        if (la.canCall && (preCallAmount == null || la.callAmount <= preCallAmount)) {
+        var maxCall = preCallAmount;
+        clearPre();
+        if (la.canCall && (maxCall == null || la.callAmount <= maxCall)) {
           /* 걸어 둘 때 본 금액을 함께 보낸다. 화면의 자동 해제는 폴링 사이에 상황이
              바뀌면 늦을 수 있고, 그 틈에 내 차례가 오면 의도하지 않은 금액을 콜하게 된다.
              서버가 같은 값을 다시 확인하고 다르면 거절한다 — 마지막 문은 서버다. */
-          preCall.checked = false; act('call', 0, preCallAmount); return;
+          act('call', 0, maxCall); return;
         }
-        preCall.checked = false;              // 레이즈가 들어왔다 — 자동 콜 해제
+                                              // 레이즈가 들어왔다 — 자동 콜 해제
       }
     }
     /* 상황에 맞는 둘만 보여준다. 베팅이 없으면 [체크/폴드][체크], 있으면 [폴드][콜 N].
@@ -306,8 +338,18 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       document.getElementById('htPreCallBox').hidden = canCheck;
       /* 안 보이게 된 칸의 체크는 푼다. 남겨 두면 상황이 바뀐 뒤에도 예전 선택이
          살아 있다가 내 차례에 그대로 실행된다. */
-      if (canCheck) { preF.checked = false; preCall.checked = false; }
+      if (canCheck) { preF.checked = false; preCall.checked = false; preCallAmount = null; }
       else { preCF.checked = false; preC.checked = false; }
+      /* 콜 금액이 걸어 둘 때보다 커졌으면 그 자리에서 푼다. runPreAction 도 같은 검사를
+         하고 서버가 maxCall 로 한 번 더 막지만, 그 둘은 내 차례가 와야 도는 문이다 —
+         그때까지 화면에는 "콜 200" 이 체크된 채로 남아 있고, 앞에서 5,000 이 나온 것을
+         본 사람은 그 체크가 아직 유효하다고 읽는다. 조건이 깨진 즉시 상자를 비워서
+         직접 다시 고르게 한다. 반대로 금액이 줄어드는 일은 없으므로(콜액은 커지기만 한다)
+         한쪽만 본다. */
+      if (preCall.checked && preCallAmount != null && (pre.callAmount || 0) > preCallAmount) {
+        preCall.checked = false;
+        preCallAmount = null;
+      }
       document.getElementById('htPreCallLabel').textContent =
         pre && pre.callAmount ? '콜 ' + stackText(pre.callAmount) : '콜';
     }
