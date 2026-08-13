@@ -202,7 +202,7 @@ const DRAFTS: Draft[] = [
         paras: [`2026년 8월 10일 (KST) — 적용 완료`],
       },
       {
-        heading: '1. 🏆 도전과제 보상 버프',
+        heading: '1. 도전과제 보상 버프',
         paras: [
           `달성한 도전과제 <b>하나당 ${buffPct}%</b>씩, 받으시는 보상이 늘어납니다. `
             + '도전과제를 깨 둘수록 매일 받는 보상이 계속 커집니다.',
@@ -220,7 +220,7 @@ const DRAFTS: Draft[] = [
         ],
       },
       {
-        heading: `2. 📅 개근상 기준 ${STREAK_FULL_DAYS}일로 완화`,
+        heading: `2. 개근상 기준 ${STREAK_FULL_DAYS}일로 완화`,
         paras: [
           `개근상 달성 기준을 <b>30일에서 ${STREAK_FULL_DAYS}일로</b> 완화했습니다. `
             + `${STREAK_FULL_DAYS}일은 정확히 ${STREAK_FULL_DAYS / STREAK_WEEK_DAYS}주라, `
@@ -236,7 +236,7 @@ const DRAFTS: Draft[] = [
         ],
       },
       {
-        heading: '3. 🐛 버그·개선 제보 보상 5배 상향',
+        heading: '3. 버그·개선 제보 보상 5배 상향',
         paras: [
           `OD CASINO 를 함께 고쳐 주시는 분들을 위해, 버그와 개선 의견 제보 보상을 `
             + `기존 2,000P 에서 <b>${p(BUG_REPORT_BOUNTY)}</b> 로 다섯 배 올립니다.`,

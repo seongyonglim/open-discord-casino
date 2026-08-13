@@ -113,8 +113,17 @@ function settleBaccaratBets(roundId: number, o: BaccOutcome): void {
      올리면 안 이긴 판으로 연승이 오른다 — 둘 다 설명과 다른 말이 된다.
 
    문지기(1,000P)는 여기 있다. 연승을 쌓는 자리에서 막지 않으면 1P 로 쌓아 놓고
-   마지막 한 판만 크게 걸어 열 수 있다(사다리와 같은 규칙이다). */
-const BACC_STREAK_MIN_BET = 1_000;
+   마지막 한 판만 크게 걸어 열 수 있다(사다리와 같은 규칙이다).
+
+   소액 판정 순서가 중요하다. 예전에는 "플레이어가 안 이겼다 → 끊는다"가 소액 검사보다
+   앞에 있어서, **연승에 넣을 수도 없는 금액인데 부술 수는 있는** 상태였다(실측: 500P
+   플레이어 패배 → streak 3 → 0. 같은 상황에서 사다리는 3 을 유지한다).
+   소액은 "없던 판"이므로 올리지도 끊지도 않는 것이 맞고, 그것이 사다리와 이 파일 위쪽
+   주석이 이미 말하고 있는 규칙이다.
+
+   단 **양다리 reset 은 소액 검사 앞에 그대로 둔다.** 500P 로 플레이어와 뱅커에 동시에
+   걸어 끊김을 피하는 길을 열어 주면 안 된다 — 그건 "없던 판"이 아니라 조건을 회피한 판이다. */
+export const BACC_STREAK_MIN_BET = 1_000;
 
 function trackPlayerStreak(
   bets: { user_id: string; market: string; amount: number }[], o: BaccOutcome
@@ -127,22 +136,22 @@ function trackPlayerStreak(
     byUser.set(b.user_id, list);
   }
   for (const [uid, list] of byUser) {
+    /* 양다리는 금액과 무관하게 끊는다 — 소액으로 양쪽에 걸어 끊김을 피하는 길을
+       만들면 안 된다. 그래서 이 검사만 소액 검사보다 앞에 둔다. */
     const only = list.length === 1 && list[0].market === 'player' ? list[0] : null;
     if (!only) { resetStreak(uid, 'bacc_player_win'); continue; }
     if (o.winner === 'tie') continue;                       // 무승부 — 쉬어간 판으로 본다
+    // 소액은 없던 판이다 — 올리지도, 끊지도 않는다(사다리와 같은 규칙)
+    if (only.amount < BACC_STREAK_MIN_BET) continue;
     if (o.winner !== 'player') { resetStreak(uid, 'bacc_player_win'); continue; }
-    if (only.amount < BACC_STREAK_MIN_BET) continue;        // 소액은 연승에 넣지 않는다
     bumpStreak(uid, 'bacc_player_win');
   }
 }
 
-/** 연승을 이어 온 마지막 «플레이어» 승리 판의 베팅액. 화면에 적힌 기준과 코드를 맞추는 데 쓴다. */
-export function lastPlayerWinBet(userId: string): number {
-  return one<{ amount: number }>(
-    `SELECT amount FROM baccarat_bets
-      WHERE user_id = ? AND market = 'player' AND won = 1
-      ORDER BY id DESC LIMIT 1`, userId)?.amount ?? 0;
-}
+/* lastPlayerWinBet() 은 없앴다 — 사다리의 lastRightWinBet 과 같은 이유다.
+   정산 자리가 금액과 무관하게 won=1 을 박으므로, 7연승 뒤 500P 로 한 번 더 이기면
+   "가장 최근 승리"가 그 판이 되어 과제 문지기에 막혔다(실측 streak=7, rows=0).
+   진짜 문은 위 trackPlayerStreak 에 있고, 과제 쪽에는 기준 상수를 그대로 넘긴다. */
 
 function pruneBaccaratRounds(): void {
   const cutoff = one<{ id: number }>(

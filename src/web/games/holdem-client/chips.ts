@@ -203,6 +203,15 @@ export const CHIPS = `    function actLabel(kind, amount){
          기준으로 통째로 다시 그렸다 — 서버 pot은 다음 판이 열릴 때까지 그대로라서
          칩과 금액 배지가 1초 뒤에 되살아났다. 상단 Total Pot만 남기는 것이 맞다. */
       if (potClearedHand === tb.handNo) return;
+      /* 정산이 **시작된** 판에서도 다시 그리지 않는다.
+         위 자물쇠는 마지막 층까지 다 보낸 뒤에만 선다(potClearedHand). 그래서 첫 층이
+         날아가고 마지막 층이 남은 8초 남짓 동안, 표시 단위를 토글하면 아래 sig 가 달라져
+         innerHTML 이 통째로 새로 그려지고 — 이미 보낸 층의 .paid 표시와 removeChild 로
+         비워 둔 자리가 함께 되살아났다. 그 되살아난 더미를 다음 층이 집어 같은 칩이
+         두 번 날았다(실측 4층 팟 20,025P 에서 표시 합 24,500P).
+         정산 중에는 중앙 더미가 옛 단위로 남는다 — 스택과 Total Pot 은 곧바로 바뀌므로
+         읽을 값은 화면에 있고, 그 짧은 어긋남이 칩이 두 번 나는 것보다 낫다. */
+      if (potPaidHand === tb.handNo) return;
       // 콜되지 않은 초과 베팅을 돌려주면 팟이 줄어든다 — 그때는 연출 없이 다시 그린다
       if (settled < potPile.total) return resetPotPile(tb, settled);
       /* 시그니처에 표시 단위를 함께 넣는다. 층 금액만 보면 칩↔BB 토글이 아무것도

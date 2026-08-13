@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomInt } from 'node:crypto';
 import { placeBet, getActiveRound, updateRoundState, settleGameRound, type GameRound } from '../../db/queries';
 import { readJson, sendJson } from '../http';
-import { award, withUnlocked } from '../achieve-hook';
+import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { layout, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 import { bombIcon, coinIcon, mysteryMark } from '../icons';
@@ -134,9 +134,14 @@ export async function handleReveal(req: IncomingMessage, res: ServerResponse, us
       ['mi-1-of-25', () => maxSafe === 1],
       ['mi-24-of-24', () => state.mineCount === 1 && newState.revealed.length === TILE_COUNT - 1],
     ]);
+    /* 공통 과제(롤러코스터 등)도 여기서 함께 본다. 지뢰찾기에는 폴링하는 상태
+       엔드포인트가 없어서(라우트가 page·start·reveal·cashout 넷뿐이다) 이 자리를
+       빼먹으면 "화면을 열어 두면 언젠가 열린다"가 성립하지 않는다.
+       그리고 롤러코스터는 그 날만 유효하다 — 지뢰찾기로 되살아난 사람이 다른 게임을
+       열기 전에 자정을 넘기면 그 날의 달성이 영구히 사라졌다(실측). */
     return sendJson(res, 200, {
       ok: true, autoCashedOut: true, balance,
-      round: publicRound(settled, newState, true), ...withUnlocked(got),
+      round: publicRound(settled, newState, true), ...withCommon(userId, got),
     });
   }
 
@@ -156,10 +161,17 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
   const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`,
     state.revealed.length > 0);
   const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
-  /* 중간에 나오는 자리에는 판정할 과제가 없다. 안전불감증은 "끝까지 다 열었다"로 바뀌면서
-     handleReveal 의 자동 정산 쪽으로 옮겼다 — 다 열면 여기까지 오지 않기 때문이다. */
+  /* 이 자리에는 지뢰찾기 고유 과제가 없다. 안전불감증은 "끝까지 다 열었다"로 바뀌면서
+     handleReveal 의 자동 정산 쪽으로 옮겼다 — 다 열면 여기까지 오지 않기 때문이다.
+
+     다만 공통 과제(롤러코스터 등)는 봐야 한다. 캐시아웃이 이 게임에서 잔액이 크게
+     오르는 자리이고, 지뢰찾기에는 폴링하는 상태 엔드포인트가 없어서 여기서 안 보면
+     다른 게임을 열 때까지 판정이 미뤄진다. 롤러코스터는 그 날만 유효하므로 그 사이
+     자정을 넘기면 달성이 영구히 사라진다. 잔액 게이트가 앞에 있어 비용은 색인 조회
+     한 번이다(achieve-hook 의 commonAwards). */
   return sendJson(res, 200, {
     ok: true, balance, round: publicRound(settled, state, true),
+    ...withUnlocked(commonAwards(userId)),
   });
 }
 

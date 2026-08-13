@@ -89,10 +89,20 @@ export function seasonGames(seasonId: number): { game: string; rounds: number; p
  * 두 시즌에 들어갈 일이 없다는 뜻이다. 둘째 시즌부터는 앞 시즌이 끝난 시각이 곧 시작이고
  * 그 경계는 반드시 지켜야 한다.
  */
+/* 경계를 «시작 초과 · 마감 이하» 로 둔다.
+   예전에는 «시작 이상 · 마감 미만» 이었다. closeSeason 이 닫는 시각과 다음 시즌의 시작
+   시각을 같은 now 로 쓰기 때문에, 마감과 **같은 초**에 끝난 대회가 닫힌 시즌에서는 빠지고
+   다음 시즌으로 밀렸다(실측: 랭킹 2줄 → 0줄, 그 대회가 유일했으면 홀덤 탭이 통째로
+   사라진다). 그 대회를 근거로 all-first-1 은 이미 지급된 상태라 판정과 표시가 어긋난다.
+
+   상한만 «이하» 로 바꾸면 안 된다 — closed_at == 다음 시즌 started_at 이라 같은 대회가
+   두 시즌에 동시에 들어간다(실측 시즌 = [1, 2]). 하한을 «초과» 로 함께 옮겨야 한 시즌에만
+   속한다. 첫 시즌은 하한이 없으므로(isFirstSeason) 영향이 없고, 진행 중 시즌은
+   closed_at 이 NULL 이라 상한이 걸리지 않아 그대로다. */
 function holdemWindow(s: SeasonRow): string {
-  const lower = isFirstSeason(s) ? `(? IS NOT NULL OR 1)` : `t.finished_at >= ?`;
+  const lower = isFirstSeason(s) ? `(? IS NOT NULL OR 1)` : `t.finished_at > ?`;
   return `t.finished_at IS NOT NULL AND ${lower}
-          AND (? IS NULL OR t.finished_at < ?)`;
+          AND (? IS NULL OR t.finished_at <= ?)`;
 }
 
 /** 이 시즌보다 앞선 시즌이 있는가. 없으면 그 전의 기록은 전부 이 시즌 몫이다. */
@@ -390,19 +400,25 @@ export function closeSeason(opts: { seed: number; nextName?: string }):
       `SELECT u.id, u.balance FROM users u
         WHERE ${ACTIVE_IN_SEASON}
         ORDER BY u.balance DESC, u.id ASC`, s.started_at, FAR_FUTURE);
-    /* ── 도전과제: 나 혼자만 1등 ─────────────────────────────────────
-       이 시즌의 모든 게임 카테고리에서 같은 사람이 1위인가. 시즌이 닫히는 이 순간에만
-       판정할 수 있다 — 그 뒤에는 전적이 0에서 다시 시작하므로 되짚을 방법이 없다.
-
-       성적표를 찍은 다음, 잔액을 초기화하기 전에 본다. 게임 순위는 잔액과 무관하지만
-       순서를 여기로 못 박아 두면 "정산 중간 상태에서 판정한다"는 애매함이 없다. */
-    awardSeasonSweep(s.id);
-
     players.forEach((p, i) => {
       run(`INSERT INTO season_results (season_id, user_id, balance, rank) VALUES (?, ?, ?, ?)
            ON CONFLICT(season_id, user_id) DO UPDATE SET balance = excluded.balance, rank = excluded.rank`,
         s.id, p.id, p.balance, i + 1);
     });
+    /* ── 도전과제: 나 혼자만 1등 ─────────────────────────────────────
+       이 시즌의 모든 게임 카테고리에서 같은 사람이 1위인가. 시즌이 닫히는 이 순간에만
+       판정할 수 있다 — 그 뒤에는 전적이 0에서 다시 시작하므로 되짚을 방법이 없다.
+
+       자리가 중요하다. 성적표(season_results)를 **찍은 다음**, 잔액을 초기화하기 **전에**,
+       그리고 closed_at 을 세우기 **전에** 본다.
+         · 성적표 뒤 — 예전에는 이 호출이 INSERT 앞에 있어서 주석이 말하는 것과 순서가
+           반대였다. 지금 판정은 season_stats·holdem_entries 만 보므로 결과는 같지만,
+           이 주석을 믿고 "성적표에서 1위를 읽는" 판정을 나중에 붙이면 빈 표를 보고
+           아무도 못 받는다.
+         · 초기화 전 — 잔액을 근거로 쓰는 판정이 붙어도 시즌 값을 본다.
+         · closed_at 전 — 세운 뒤에 부르면 홀덤 창 상한(holdemWindow)이 닫히면서 마감과
+           같은 초에 끝난 대회가 집계에서 빠진다. */
+    awardSeasonSweep(s.id);
 
     // 잔액 초기화 — 전원을 같은 시작점으로. 원장에 남겨야 불변식이 유지된다.
     const everyone = all<{ id: string; balance: number }>(`SELECT id, balance FROM users`);

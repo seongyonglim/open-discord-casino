@@ -436,10 +436,16 @@ export function envelopeRange(n: number): { lo: number; hi: number } {
   if (fixed) return fixed;
   if (count === 1) return { lo: ENVELOPE_UNITS, hi: ENVELOPE_UNITS };
   const avg = ENVELOPE_UNITS / count;
+  const lo = Math.max(1, Math.floor(avg * 0.45));
+  /* 상한은 두 조건 사이에 있어야 한다.
+       아래로: 평균보다 커야 100 칸을 다 놓을 수 있다.
+       위로:   나머지 전원이 하한을 받을 자리를 남겨야 한다 — 안 그러면 한 봉투가
+               상한까지 갔을 때 누군가는 하한 아래로 내려간다. 2 인에서 실제로 그랬다
+               (lo 22% · hi 135% → 78/22 로 갈려 하한이 깨졌다). */
+  const room = ENVELOPE_UNITS - lo * (count - 1);
   return {
-    lo: Math.max(1, Math.floor(avg * 0.45)),
-    // 채울 수 있는 최소값(평균)보다는 커야 한다 — 작으면 100 칸을 다 놓을 수 없다
-    hi: Math.max(Math.ceil(avg), Math.floor(avg * 2.7)),
+    lo,
+    hi: Math.max(Math.ceil(avg), Math.min(Math.floor(avg * 2.7), room)),
   };
 }
 
@@ -500,12 +506,40 @@ export function mysteryEnvelopes(
   for (let i = 0; left > 0; i = (i + 1) % count) { units[i]++; left--; }
 
   /* 칸 → 금액. 1 칸이 펀드의 1% 인데 그 값이 정수가 아닐 수 있으므로(펀드 3P) 여기서도
-     내림하고 남는 1P 들을 가장 큰 봉투에 얹는다. 합이 정확히 펀드여야 한다 —
-     이 대회의 유일한 불변식이 "걷은 펀드가 1P 도 남지 않고 나간다"다. */
-  let top = 0;
-  for (let i = 1; i < units.length; i++) if (units[i] > units[top]) top = i;
+     내림한다. 합이 정확히 펀드여야 한다 — 이 대회의 유일한 불변식이 "걷은 펀드가 1P 도
+     남지 않고 나간다"다. */
   const out = units.map(x => Math.floor(total * x / ENVELOPE_UNITS));
-  out[top] += total - out.reduce((a, b) => a + b, 0);
+
+  /* 남는 1P 들을 얹는다. 한 봉투에 몰지 않고 **상한 안에서 큰 것부터 하나씩** 돌린다.
+     예전에는 가장 큰 봉투에 전부 얹었는데, 펀드가 아주 작으면 그 한 봉투가 범위표를
+     훌쩍 넘었다 — 3인 15P 에서 60%(표는 15~50%), 9인 15P 에서 73%까지 나왔다.
+     상한이 다 차면(아주 작은 펀드) 남은 것은 순서대로 넣는다. 합을 지키는 것이 먼저다. */
+  const cap = units.map((_, i) => Math.max(out[i], Math.floor(total * hi / ENVELOPE_UNITS)));
+  const bySize = out.map((v, i) => ({ i, v })).sort((a, b) => b.v - a.v || a.i - b.i);
+  let rest = total - out.reduce((a, b) => a + b, 0);
+  for (let pass = 0; rest > 0 && pass < 4; pass++) {
+    for (const s of bySize) {
+      if (rest <= 0) break;
+      if (out[s.i] >= cap[s.i]) continue;
+      out[s.i]++; rest--;
+    }
+    if (pass === 3 || !bySize.some(s => out[s.i] < cap[s.i])) break;
+  }
+  for (let i = 0; rest > 0; i = (i + 1) % count) { out[i]++; rest--; }
+
+  /* 빈 봉투를 되살린다. 0P 짜리 봉투는 열리는 순간이 허탕이고, 그보다 나쁘게는 정산이
+     bounty<=0 에서 조기 반환해 개봉 연출이 통째로 생략된다(실측: 펀드 3P·3인 → [2,1,0]).
+     펀드가 인원보다 크면 [1,1,1] 이 가능한데 그 배분이 안 나오고 있었다.
+     가장 큰 봉투에서 1P 씩 옮긴다 — 옮기기만 하므로 합은 변하지 않는다. */
+  if (total >= count) {
+    for (let i = 0; i < count; i++) {
+      if (out[i] > 0) continue;
+      let big = 0;
+      for (let k = 1; k < count; k++) if (out[k] > out[big]) big = k;
+      if (out[big] <= 1) break;                 // 더 뺄 데가 없다
+      out[big]--; out[i]++;
+    }
+  }
   return out;
 }
 

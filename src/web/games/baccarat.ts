@@ -20,7 +20,7 @@ import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { getStreak } from '../../db/streaks';
-import { lastPlayerWinBet } from '../../db/queries/bacc';
+import { BACC_STREAK_MIN_BET } from '../../db/queries/bacc';
 import { layout, jsonForScript, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { ASSET_V } from '../assets';
 import { gameSwitcher } from '../pages';
@@ -172,7 +172,7 @@ function baccAwards(userId: string): { unlocked?: { id: string; title: string; d
   if (getStreak(userId, 'bacc_player_win') < PLAYER_STREAK_GOAL) {
     return withUnlocked(commonAwards(userId));
   }
-  return withCommon(userId, award(userId, lastPlayerWinBet(userId), [['bc-player-7', () => true]]));
+  return withCommon(userId, award(userId, BACC_STREAK_MIN_BET, [['bc-player-7', () => true]]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {

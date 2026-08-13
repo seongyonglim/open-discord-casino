@@ -299,6 +299,25 @@ export function kstMidnightSec(now = Date.now()): number {
  * 원장만 본다. 잔액의 모든 변화는 balance_after 로 한 줄씩 남으므로, 따로 기록해 둘 표가
  * 없어도 "그 순간 얼마였나"를 순서대로 되짚을 수 있다. 파산 지원금으로 올라온 것도
  * 원장의 한 줄이라 자연히 인정된다(요청 사항이다).
+ *
+ * ── 베팅 차감은 바닥으로 세지 않는다 ────────────────────────────────
+ * 베팅은 손실이 아니라 에스크로다. 걸 때 잔액에서 빠지고, 취소하거나 이기면 그대로
+ * 돌아온다 — 그 사이의 한 줄이 balance_after ≤ LOW 를 만족한다. 그래서 전 재산을
+ * 걸었다가 곧바로 취소하기만 해도 "바닥을 찍고 되살아났다"로 읽혔다: 실측에서
+ * 잔액 150,000 → 전액 베팅(0) → 취소(150,000) 로 **손실 0P 에 과제가 열렸다.**
+ * 이긴 판도 같은 궤적이고(순이익인데 열린다), 그래프뿐 아니라 블랙잭 등 걸었다
+ * 되돌려받는 모든 게임이 같았다. 과제 하나가 출석·지원금에 영구히 +5% 를 얹으므로
+ * (services/buff.ts) 그냥 두면 "일부러 잃는 것이 최적"보다 나쁜, "아무것도 안 잃는
+ * 것이 최적"이 된다.
+ *
+ * 그래서 바닥 후보에서 **베팅 차감 줄(`game:*:bet`)을 뺀다.** 그 줄의 낮은 잔액은
+ * 아직 결과가 아니다.
+ *
+ * 이렇게 해도 진짜로 잃은 판은 그대로 잡힌다 — settleGameRound 가 **패배한 판에도
+ * 원장 줄을 남기기 때문이다**(delta 0 · balance_after 는 잃은 뒤의 잔액). 즉 잃으면
+ * `game:graph` 같은 정산 줄이 바닥을 증언하고, 취소·승리는 그 줄의 잔액이 이미 회복돼
+ * 있어 후보가 되지 않는다. 잔액의 모양만으로 가르려 해 봤지만 불가능했다: "바닥 다음
+ * 줄이 회복시켰으면 건너뛴다"로 두면 진짜 회복(파산 지원금)도 함께 걸러진다.
  */
 export function rollerCoasterToday(
   userId: string, low: number, high: number, now = Date.now()
@@ -309,10 +328,12 @@ export function rollerCoasterToday(
       WHERE user_id = ? AND reason = 'attendance' AND created_at >= ? AND created_at < ?
       ORDER BY id ASC LIMIT 1`, userId, from, to);
   if (!att) return false;
-  // 출석 뒤에 처음으로 바닥을 찍은 줄
+  /* 출석 뒤에 처음으로 바닥을 찍은 줄. 베팅 차감 줄은 제외한다(위 주석) —
+     `game:<종목>:bet` 이 그 형태이고, 정산 줄은 `game:<종목>` 이라 걸리지 않는다. */
   const bottom = one<{ id: number }>(
     `SELECT id FROM points_ledger
       WHERE user_id = ? AND id > ? AND created_at < ? AND balance_after <= ?
+        AND reason NOT LIKE 'game:%:bet'
       ORDER BY id ASC LIMIT 1`, userId, att.id, to, Math.floor(low));
   if (!bottom) return false;
   // 그 뒤에 되살아난 줄

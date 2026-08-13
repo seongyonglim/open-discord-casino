@@ -806,6 +806,101 @@ async function main(): Promise<void> {
       /if \(el\.childElementCount !== pile\.list\.length\) paintPile\(el, pile\)/.test(ch));
   }
 
+  console.log('\n[10] 홀덤 사이드 팟 — 층을 묶어도 배지와 상자가 어긋나지 않는다');
+  {
+    /* 정밀 오딧에서 나온 세 결함을 못 박는다. 셋 다 "돈은 정확한데 화면만 틀린" 부류이고,
+       무작위 6,000판 실측에서 각각 43.9% · 9.9% · 사이드팟 판 전부에서 나왔다. */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const se3 = readFileSync('src/web/games/holdem-client/settle.ts', 'utf8') as string;
+    const ch3 = readFileSync('src/web/games/holdem-client/chips.ts', 'utf8') as string;
+
+    /* (1) 분할 팟이 걸린 층은 합치지 않는다. 배지는 분할 팟에서 "이 층 총액"을 각 승자에게
+       각각 적으므로(한 명이 얼마 받는지 보이게), 두 층을 묶으면 표시 합이 정확히 두 배가
+       된다 — 층 [2000,1400] 을 둘이 나눠 이긴 판에서 6,800P 로 찍혔다(실제 팟 3,400P). */
+    ck('분할 팟이 걸린 층은 묶지 않는다',
+      /prev\.__key === key && pa\.winners\.length === 1/.test(se3));
+
+    /* (2) 묶음의 index 는 최솟값이어야 한다. 서버가 층을 내림차순으로 주므로 첫 원소의
+       index 가 가장 크고, payLayer 는 그것을 범위의 시작으로 읽는다 — 그대로 두면 뒤 묶음의
+       상자를 미리 집고, 뒤 묶음은 남은 것을 통째로 쓸어 가 같은 칩이 두 번 날았다. */
+    ck('묶음 index 를 최솟값으로 남긴다',
+      /prev\.index = Math\.min\(prev\.index, pa\.index\);/.test(se3));
+    /* (3) 중간 층에서 빈손이면 "남은 게 다 내 것"이 아니다 — 마지막 층에서만 그렇게 본다. */
+    ck('빈손 폴백은 마지막 층에서만 쓴다', /if \(!mine\.length && last\) mine = boxes;/.test(se3));
+    ck('예전의 무조건 폴백이 남아 있지 않다', !/if \(!mine\.length\) mine = boxes;/.test(se3));
+
+    /* (4) 정산이 시작된 판에서는 중앙 더미를 다시 그리지 않는다. 표시 단위(칩/BB) 토글이
+       시그니처를 바꿔 innerHTML 을 통째로 갈아 끼우면서, 이미 보낸 층의 .paid 표시와
+       비워 둔 자리가 함께 되살아났다(4층 팟 20,025P 에서 표시 합 24,500P). */
+    ck('정산 중에는 중앙 더미를 다시 그리지 않는다',
+      /if \(potPaidHand === tb\.handNo\) return;/.test(ch3));
+    ck('그 자물쇠가 시그니처 계산보다 앞에 있다',
+      ch3.indexOf('potPaidHand === tb.handNo') < ch3.indexOf("var sig = pileLayers(tb)"));
+  }
+
+  console.log('\n[11] 연승 과제 문지기 — 7연승을 유지한 채로 막히지 않는다');
+  {
+    /* 문지기에 "가장 최근 승리 판의 베팅액"을 넘기고 있었다. 정산 자리는 금액과 무관하게
+       won=1 을 박으므로, 7연승 뒤 소액으로 한 번 더 이기면 그 값이 기준 아래로 내려가
+       과제가 막혔다(실측 streak=7 · rows=0). 오래된 라운드가 정리되면 0 이 되는 경로도 있었다.
+       진짜 문은 연승을 쌓는 자리에 있으므로 표시용 상수만 넘긴다. */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const ld = readFileSync('src/web/games/ladder.ts', 'utf8') as string;
+    const bc = readFileSync('src/web/games/baccarat.ts', 'utf8') as string;
+    const bcq = readFileSync('src/db/queries/bacc.ts', 'utf8') as string;
+    ck('사다리가 기준 상수를 넘긴다',
+      /award\(userId, LADDER_STREAK_MIN_BET, \[\['la-right-7'/.test(ld));
+    ck('바카라가 기준 상수를 넘긴다',
+      /award\(userId, BACC_STREAK_MIN_BET, \[\['bc-player-7'/.test(bc));
+    ck('마지막 승리 판 조회를 쓰지 않는다',
+      !/lastRightWinBet/.test(ld) && !/lastPlayerWinBet/.test(bc));
+
+    /* 바카라만 소액 '패배'가 연승을 끊고 있었다 — 연승에 넣을 수도 없는 금액인데
+       부술 수는 있는 상태였다(500P 패배 → streak 3 → 0. 사다리는 3 을 유지한다).
+       소액 continue 가 "안 이겼다 reset" 보다 앞에 와야 한다.
+       단 양다리 reset 은 금액 앞에 그대로 둔다 — 소액으로 양쪽에 걸어 끊김을 피하면 안 된다. */
+    const iSmall = bcq.indexOf('only.amount < BACC_STREAK_MIN_BET');
+    const iLose = bcq.indexOf("o.winner !== 'player'");
+    const iBoth = bcq.indexOf("if (!only) { resetStreak");
+    ck('소액 검사가 패배 reset 보다 앞에 있다', iSmall > 0 && iLose > 0 && iSmall < iLose,
+      `small@${iSmall} lose@${iLose}`);
+    ck('양다리 reset 은 소액 검사보다 앞에 있다', iBoth > 0 && iBoth < iSmall,
+      `both@${iBoth} small@${iSmall}`);
+  }
+
+  console.log('\n[12] 시즌 경계 — 마감과 같은 초에 끝난 대회가 밀리지 않는다');
+  {
+    /* closeSeason 이 닫는 시각과 다음 시즌 시작을 같은 now 로 쓴다. 창이 «시작 이상 ·
+       마감 미만» 이면 마감과 같은 초에 끝난 대회가 닫힌 시즌에서 빠져 다음 시즌으로
+       밀렸다(실측: 랭킹 2줄 → 0줄). 상한만 «이하» 로 바꾸면 같은 대회가 두 시즌에
+       동시에 들어가므로 하한도 «초과» 로 함께 옮겨야 한다. */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const sn = readFileSync('src/db/queries/season.ts', 'utf8') as string;
+    ck('하한이 «초과» 다', /t\.finished_at > \?/.test(sn) && !/t\.finished_at >= \?/.test(sn));
+    ck('상한이 «이하» 다', /t\.finished_at <= \?/.test(sn) && !/t\.finished_at < \?\)/.test(sn));
+    /* 성적표를 찍은 뒤에 판정해야 한다 — 주석이 그렇게 말하는데 호출이 앞에 있었다.
+       그리고 closed_at 을 세우기 전이어야 위 창 상한이 닫히지 않는다. */
+    const iIns = sn.indexOf('INSERT INTO season_results');
+    const iSweep = sn.indexOf('awardSeasonSweep(s.id)');
+    const iClosed = sn.indexOf('UPDATE seasons SET closed_at');
+    ck('성적표를 찍은 뒤에 판정한다', iIns > 0 && iSweep > iIns, `ins@${iIns} sweep@${iSweep}`);
+    ck('closed_at 을 세우기 전에 판정한다', iClosed > 0 && iSweep < iClosed,
+      `sweep@${iSweep} closed@${iClosed}`);
+  }
+
+  console.log('\n[13] 지뢰찾기도 공통 과제를 본다');
+  {
+    /* 지뢰찾기에는 폴링하는 상태 엔드포인트가 없다(라우트가 page·start·reveal·cashout
+       넷뿐이다). 그래서 여기서 공통 과제를 안 보면 다른 게임을 열 때까지 판정이 미뤄지고,
+       롤러코스터는 그 날만 유효하므로 자정을 넘기면 달성이 영구히 사라졌다(실측). */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const mn = readFileSync('src/web/games/mines.ts', 'utf8') as string;
+    ck('자동 정산이 공통 과제를 함께 본다', /\.\.\.withCommon\(userId, got\)/.test(mn));
+    ck('캐시아웃도 공통 과제를 본다',
+      /\.\.\.withUnlocked\(commonAwards\(userId\)\)/.test(mn));
+    ck('"판정할 과제가 없다" 주석이 남아 있지 않다', !/판정할 과제가 없다/.test(mn));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

@@ -1657,6 +1657,63 @@ async function main(): Promise<void> {
       }) === delayPko);
   }
 
+  /* ── 13. 봉투 배분의 성질 ────────────────────────────────────────
+     정밀 오딧에서 나온 두 결함을 못 박는다. 둘 다 아주 작은 펀드에서만 나왔지만,
+     그 구간에서 연출이 통째로 생략되거나(0P 봉투) 범위표가 거짓이 됐다. */
+  section('[13] 봉투 배분 — 빈 봉투도 없고 범위표도 지킨다');
+  {
+    const mkRand2 = (seed: number): (() => number) => {
+      let s = seed >>> 0;
+      return () => { s = (s * 1103515245 + 12345) >>> 0; return s / 4294967296; };
+    };
+    let sumBad = 0, zeroBad = 0, overBad = 0, underBad = 0, n = 0;
+    const bad: string[] = [];
+    for (const fund of [1, 3, 6, 8, 9, 12, 15, 19, 33, 99, 199, 499, 699, 1_001, 25_000, 100_000]) {
+      for (const cnt of [2, 3, 4, 5, 6, 7, 8, 9, 12, 20]) {
+        const r = T.envelopeRange(cnt);
+        const loP = Math.floor(fund * r.lo / 100), hiP = Math.floor(fund * r.hi / 100);
+        for (let seed = 1; seed <= 60; seed++) {
+          const e = T.mysteryEnvelopes(fund, cnt, mkRand2(seed * 6151 + fund));
+          n++;
+          if (e.reduce((a, b) => a + b, 0) !== fund || e.some(x => x < 0) || e.length !== cnt) {
+            sumBad++; if (bad.length < 4) bad.push(`합 ${fund}P·${cnt}인 ${JSON.stringify(e)}`);
+          }
+          /* 0P 봉투는 열리는 순간이 허탕이고, 그보다 나쁘게는 settleBounty 가 bounty<=0
+             에서 조기 반환해 개봉 연출이 통째로 생략된다(실측 3P·3인 → [2,1,0]). */
+          if (fund >= cnt && e.some(x => x === 0)) {
+            zeroBad++; if (bad.length < 4) bad.push(`빈봉투 ${fund}P·${cnt}인 ${JSON.stringify(e)}`);
+          }
+          /* 범위는 P 단위로 잰다 — 칸(%)은 정수지만 P 환산에서 내림이 물리므로,
+             퍼센트로 비교하면 lo 칸을 정확히 받은 봉투도 미달로 보인다. */
+          if (hiP >= 1 && e.some(x => x > hiP)) {
+            overBad++; if (bad.length < 4) bad.push(`상한 ${fund}P·${cnt}인 hi=${hiP}P ${JSON.stringify(e)}`);
+          }
+          if (fund >= cnt && e.some(x => x < loP)) {
+            underBad++; if (bad.length < 4) bad.push(`하한 ${fund}P·${cnt}인 lo=${loP}P ${JSON.stringify(e)}`);
+          }
+        }
+      }
+    }
+    ck(`합·개수·음수가 언제나 옳다 (${n.toLocaleString('ko-KR')}회)`, sumBad === 0, String(sumBad));
+    ck('빈 봉투가 없다 (펀드 ≥ 인원)', zeroBad === 0, String(zeroBad));
+    ck('상한을 넘지 않는다', overBad === 0, String(overBad));
+    ck('하한 아래로 내려가지 않는다', underBad === 0, String(underBad));
+    for (const b of bad) console.log('        ' + b);
+    /* 범위표 폴백이 자기 모순이면 안 된다 — 상한이 "나머지 전원의 하한" 자리를 남겨야
+       한 봉투가 상한까지 갔을 때 누군가 하한 아래로 내려가지 않는다(2인에서 실측). */
+    for (const cnt of [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 20]) {
+      const r = T.envelopeRange(cnt);
+      ck(`${cnt}인 범위가 자기 모순이 아니다 (lo×(n-1)+hi ≤ 100)`,
+        r.lo * (cnt - 1) + r.hi <= 100 || r.hi === Math.ceil(100 / cnt),
+        `lo=${r.lo} hi=${r.hi} → ${r.lo * (cnt - 1) + r.hi}`);
+    }
+    /* 마감 정리가 0P 봉투도 열어야 한다. `bounty > 0` 으로 걸러 두면 대회가 끝났는데도
+       그 사람 응답에 myBounty: null 이 실려 자기 봉투가 "?" 로 남는다(실측). */
+    ck('마감 정리가 0P 봉투도 연다',
+      /UPDATE holdem_entries SET bounty = 0, bounty_revealed = 1\s*\r?\n\s*WHERE tournament_id = \?`, t\.id\)/
+        .test(fsx.readFileSync('src/db/holdem.ts', 'utf8')));
+  }
+
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   process.exit(fail ? 1 : 0);
 }

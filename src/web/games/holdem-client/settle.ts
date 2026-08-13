@@ -275,7 +275,13 @@ export const SETTLE = `    var fxLayer = null;
       layers.forEach(function(pa){
         var key = pa.winners.map(function(w){ return w.seat; }).sort().join(',');
         var prev = out.length ? out[out.length - 1] : null;
-        if (prev && prev.__key === key) {
+        /* 승자가 둘 이상인 층(분할 팟)은 합치지 않는다.
+           합치면 배지 금액이 정확히 묶은 층 수만큼 부풀었다 — 아래 배지 코드가 분할 팟에서
+           "이 층 총액"을 각 승자에게 각각 적기 때문이다(그래야 한 명이 얼마 받는지 보인다).
+           층 [2000,1400] 을 두 명이 나눠 이긴 판에서 화면 배지 합이 6,800P 로 찍혔다 —
+           실제 팟은 3,400P 다(무작위 6,000판 중 43.9%에서 발생).
+           돈은 정확했다. 배지 글자만 틀렸다. */
+        if (prev && prev.__key === key && pa.winners.length === 1) {
           prev.amount += pa.amount || 0;
           prev.winners = prev.winners.map(function(w){
             var add = pa.winners.filter(function(x){ return x.seat === w.seat; })[0];
@@ -283,6 +289,13 @@ export const SETTLE = `    var fxLayer = null;
           });
           // 합쳐진 층은 이름표에서 "MAIN + SIDE 1" 처럼 묶어 보여준다
           prev.__span = (prev.__span || 1) + 1;
+          /* 서버는 팟 층을 **내림차순**으로 준다(db/holdem.ts, score desc → index desc).
+             그래서 묶음의 첫 원소 index 가 가장 크고, 그것을 그대로 남기면 아래 payLayer 가
+             그 값을 범위의 **시작**으로 읽어(li >= first && li < first+span) 뒤 묶음의
+             칩 더미를 미리 집어 간다. 그러면 뒤 묶음은 집을 것이 없어 남은 더미를 통째로
+             쓸어 가고, 폴링 재도색이 층을 되살려 같은 칩이 두 번 날았다(6,000판 중 9.9%).
+             묶음이 실제로 덮는 index 의 최솟값을 남긴다. */
+          prev.index = Math.min(prev.index, pa.index);
           return;
         }
         out.push({
@@ -377,8 +390,11 @@ export const SETTLE = `    var fxLayer = null;
         void i;
         return li >= first && li < first + span;
       });
-      // 층 정보가 없는 옛 기록이나 폴드 종료는 더미가 하나뿐이라 그것이 곧 전부다
-      if (!mine.length) mine = boxes;
+      /* 층 정보가 없는 옛 기록이나 폴드 종료는 더미가 하나뿐이라 그것이 곧 전부다.
+         다만 **마지막 층에서만** 그렇게 본다. 중간 층에서 빈손이면 그건 "이 층 상자가
+         아직 없다"는 뜻이지 "남은 게 다 내 것"이라는 뜻이 아니다 — 그때 전부를 쓸어 가면
+         뒤 층이 집을 것이 없어지고, 폴링 재도색이 층을 되살려 같은 칩이 두 번 난다. */
+      if (!mine.length && last) mine = boxes;
       var winners = pa.winners;
       var n = 0, sent = 0;
       /* 더미를 통째로 옮긴다 — 칩과 금액 배지가 한 상자(.ht-pg) 안에 있으므로

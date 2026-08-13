@@ -1177,12 +1177,20 @@ async function main(): Promise<void> {
     ck('아직은 응답을 안 받아 미달성', !A.hasAchievement('L1', 'la-right-7'));
 
     /* 과제의 min_bet 이 1,000P 라, 여는 자리에서 "얼마 걸었나"를 같이 넘겨야 한다.
-       연승을 이어 온 마지막 판의 베팅액이 그 값이고, 연승은 1,000P 이상으로만 쌓이므로
-       이 값은 반드시 기준을 넘는다 — 즉 화면의 문구가 실제로 막는 일은 없다.
-       (0 을 넘기면 바로 아래 '응답에 달성이 실려 온다' 가 무너진다) */
-    ck('마지막 우 승리 베팅액을 읽는다', LD.lastRightWinBet('L1') === 1_000,
-      String(LD.lastRightWinBet('L1')));
-    ck('그 값이 과제 기준을 넘는다', LD.lastRightWinBet('L1') >= 1_000);
+       그 값으로 **기준 상수를 그대로** 넘긴다. 예전에는 "연승을 이어 온 마지막 판의
+       베팅액"을 조회해 넘겼는데, 정산 자리가 금액과 무관하게 won=1 을 박으므로 7연승 뒤에
+       소액으로 한 번 더 이기면 그 값이 기준 아래로 내려가 문지기에 막혔다(실측 streak=7
+       인데 열리지 않음). 오래된 라운드가 정리되면 조회가 0 을 돌려주는 경로도 있었다.
+       진짜 문은 연승을 쌓는 자리에 있으므로 여기서는 표시용 숫자만 넘긴다. */
+    const ladSrc = (require('node:fs') as typeof import('node:fs')).readFileSync('src/web/games/ladder.ts', 'utf8');
+    ck('사다리 과제가 기준 상수를 넘긴다',
+      /award\(userId, LADDER_STREAK_MIN_BET, \[\['la-right-7'/.test(ladSrc));
+    ck('마지막 승리 판 조회를 쓰지 않는다', !/lastRightWinBet/.test(ladSrc));
+    ck('그 상수가 과제 기준과 같다', LD.LADDER_STREAK_MIN_BET === 1_000,
+      String(LD.LADDER_STREAK_MIN_BET));
+    /* 이것이 이 결함의 재현 조건이다 — 7연승을 유지한 채 소액으로 한 번 더 이겨도 열려야 한다. */
+    playRound([{ user: 'L1', guess: 'R', amount: 500 }], 'R');
+    ck('소액 승리 뒤에도 연승이 7 이다 (소액은 없던 판)', streak() === 7, String(streak()));
 
     /* 화면이 폴링하는 그 응답에서 열린다 — 토스트가 뜨려면 unlocked 가 실려야 한다. */
     let body = '';
@@ -2038,6 +2046,40 @@ async function main(): Promise<void> {
     ck('출석 전 바닥은 안 센다',
       !HK.commonAwards('rc2').some(u => u.id === 'roller-coaster'));
     ck('그래서 기록에도 없다', !A.hasAchievement('rc2', 'roller-coaster'));
+
+    /* ── 에스크로 구멍 ──────────────────────────────────────────────
+       베팅 차감은 손실이 아니다. 걸 때 잔액에서 빠지고 취소하거나 이기면 그대로
+       돌아오는데, 그 사이의 한 줄이 balance_after ≤ 1,000 을 만족했다. 그래서
+       **전 재산을 걸었다가 곧바로 취소하기만 해도** 과제가 열렸다(실측 손실 0P).
+       과제 하나가 출석·지원금에 영구히 +5% 를 얹으므로 그냥 두면 "아무것도 안 잃는
+       것이 최적"이 된다. 아래 셋은 그 구멍이 다시 뚫렸는지 보는 자리다. */
+    wipe(); seedForWiring(); mkUser('rcE1', 0);
+    setTo('rcE1', 5_000, 'attendance');
+    ledger('rcE1', 145_000, 'admin:grant');
+    ledger('rcE1', -150_000, 'game:graph:bet');     // 잔액 0 — 아직 결과가 아니다
+    ledger('rcE1', 150_000, 'game:graph:cancel');   // 그대로 돌려받았다
+    ck('전액 베팅 → 취소는 안 센다 (손실 0P)',
+      !HK.commonAwards('rcE1').some(u => u.id === 'roller-coaster'),
+      '잔액 ' + Q.getWebUser('rcE1')!.balance);
+
+    wipe(); seedForWiring(); mkUser('rcE2', 0);
+    setTo('rcE2', 5_000, 'attendance');
+    ledger('rcE2', 218_150, 'admin:grant');
+    ledger('rcE2', -223_150, 'game:graph:bet');
+    ledger('rcE2', 336_956, 'game:graph');          // 1.5x — 순이익이다
+    ck('전액 베팅 → 승리도 안 센다 (순이익)',
+      !HK.commonAwards('rcE2').some(u => u.id === 'roller-coaster'));
+
+    /* 그런데 진짜로 잃은 판은 그대로 잡혀야 한다. settleGameRound 가 패배한 판에도
+       원장 줄을 남기므로(delta 0 · 잃은 뒤의 잔액) 그 줄이 바닥을 증언한다. */
+    wipe(); seedForWiring(); mkUser('rcE3', 0);
+    setTo('rcE3', 5_000, 'attendance');
+    ledger('rcE3', 145_000, 'admin:grant');
+    ledger('rcE3', -150_000, 'game:graph:bet');
+    ledger('rcE3', 0, 'game:graph');                // 패배 정산 — 이 줄이 바닥이다
+    ledger('rcE3', 120_000, 'relief');
+    ck('전액 걸고 정말 잃은 뒤 회복은 센다',
+      HK.commonAwards('rcE3').some(u => u.id === 'roller-coaster'));
 
     /* 순서도 조건이다 — 회복한 뒤에 떨어진 것은 "되살아났다"가 아니다. */
     wipe(); seedForWiring(); mkUser('rc3', 0);

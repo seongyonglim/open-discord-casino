@@ -1585,8 +1585,15 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
   }
   /* 못 받은 자리(벌어 둔 것이 0 인 사람)의 머리·봉투도 비워 둔다 — 화면이 "열렸다"를
      한 가지 기준으로만 보게 하고, 다음 호출이 같은 값을 또 세지 않게 한다. */
+  /* 조건을 `bounty > 0` 으로 두면 안 된다. 액면가가 0P 인 봉투(아주 작은 펀드에서
+     나올 수 있었다)는 이 자리에 올 때 이미 bounty = 0 이라 스킵되고, 대회가 끝났는데도
+     bounty_revealed 가 0 으로 영구히 남았다 — 그 사람 응답에 myBounty: null 이 실려
+     자기 봉투가 "?" 로 남는다(실측). 취소·환불 경로는 bounty_paid 로 가려서 0P 봉투도
+     함께 열고 있었으므로, 마감 경로만 조건이 어긋나 있었다.
+     이 UPDATE 는 돈을 움직이지 않으므로 넓게 걸어도 멱등하다 — 지급의 자물쇠는 위
+     행별 UPDATE 의 `bounty_paid = 0` 이다. */
   run(`UPDATE holdem_entries SET bounty = 0, bounty_revealed = 1
-        WHERE tournament_id = ? AND bounty > 0`, t.id);
+        WHERE tournament_id = ?`, t.id);
 }
 
 /* ── 유저 동작 ───────────────────────────────────────────────────── */

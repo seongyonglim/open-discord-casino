@@ -79,6 +79,10 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     /* 설명에 "포카드 이상"을 그대로 쓴다 — 화면의 베팅 칸 이름과 같은 말이라야
        어디에 걸어야 하는지 찾을 수 있다. */
     description: '완성 족보 예측에서 «포카드 이상»에 걸어 맞힙니다.',
+    /* 여기만 500 이다. 포커 플립의 최소 코인이 500P 라 1,000P 로 두면 "최소 단위로는
+       못 깨는 과제"가 되고, 카드에도 «베팅 1,000P 이상»으로 적혀 실제 코인과 어긋난다.
+       화면은 과제마다 이 값을 그대로 찍으므로(web/achievements.ts) «베팅 500P 이상»으로
+       정확히 나간다. */
     minBet: 500,
     sortAt: 25,
     // 판정: src/web/games/poker.ts — 마지막 등급 칸(b4) 베팅이 적중했을 때
@@ -133,7 +137,7 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
        사람이 "이런 것도 있었나" 하고 발견하는 편이 이 과제답다. */
     isHidden: true,
     sortAt: 22,
-    // 판정: src/web/games/crash.ts — 캐시아웃 배율이 정확히 1.01 이고 예약 정산이 아닐 때
+    // 판정: src/web/games/crash.ts — 캐시아웃 배율이 1.01 이하(CRASH_MIN_X)이고 예약 정산이 아닐 때
   },
   {
     id: 'mi-1-of-25',

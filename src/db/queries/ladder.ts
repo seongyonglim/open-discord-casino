@@ -86,21 +86,16 @@ export function settleLadderBets(roundId: number, startSide: string, endSide: st
 
    출발을 안 고르고 홀짝만 건 판(start_guess 가 null)은 끊는 쪽으로 본다 —
    "우로만 걸었다"가 성립하지 않는 판이다. */
-const LADDER_STREAK_MIN_BET = 1_000;
+export const LADDER_STREAK_MIN_BET = 1_000;
 
-/**
- * 연승을 이어 온 마지막 판의 베팅액. 연승이 없으면 0.
- *
- * 과제를 열 때 "그 판에 얼마를 걸었나"로 쓴다. 연승은 1,000P 이상으로만 쌓이므로
- * 이 값은 반드시 그 이상이고, 그래서 과제 쪽 문지기를 1,000P 로 두어도 막히지 않는다 —
- * 화면의 «베팅 1,000P 이상» 표시가 실제 규칙과 같은 말이 된다.
- */
-export function lastRightWinBet(userId: string): number {
-  return one<{ amount: number }>(
-    `SELECT amount FROM ladder_bets
-      WHERE user_id = ? AND start_guess = 'R' AND won = 1
-      ORDER BY id DESC LIMIT 1`, userId)?.amount ?? 0;
-}
+/* lastRightWinBet() 은 없앴다. 과제를 열 때 "연승을 이어 온 마지막 판의 베팅액"을 조회해
+   문지기에 넘겼는데, 그 값이 기준보다 작아지는 경로가 실제로 있었다:
+     · 정산 자리는 금액과 무관하게 won=1 을 박으므로, 7연승을 쌓은 뒤 500P 로 한 번 더
+       이기면 "가장 최근 승리"가 그 500P 판이 되어 문지기에 막혔다(실측 streak=7, rows=0).
+     · pruneLadderRounds 가 오래된 라운드의 베팅을 지우므로, 창을 닫았다 30라운드 뒤에
+       돌아오면 조회가 0 을 돌려주어 같은 문에 막혔다.
+   진짜 문은 아래 trackRightStreak 에 이미 서 있다. 그래서 과제 쪽에는 기준 금액 상수를
+   그대로 넘긴다 — 그 값은 화면 카드의 «베팅 1,000P 이상» 표시용이다. */
 
 function trackRightStreak(
   userId: string, startGuess: string | null, won: boolean, amount: number

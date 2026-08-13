@@ -14,7 +14,7 @@ import {
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
 import { getStreak } from '../../db/streaks';
-import { lastRightWinBet } from '../../db/queries/ladder';
+import { LADDER_STREAK_MIN_BET } from '../../db/queries/ladder';
 import { layout, jsonForScript, ROSTER_JS, sidePanel, rankPane, rankJs, helpDialog } from '../views';
 import { gameSwitcher } from '../pages';
 
@@ -120,9 +120,13 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
    과제의 min_bet 이 0 이면 카드에 «베팅 1,000P 이상»이 안 붙어서, 규칙이 있는데 어디에도
    안 적힌 상태가 된다.
 
-   재는 값은 연승을 이어 온 마지막 판의 베팅액이다. 연승은 1,000P 이상으로만 쌓이므로
-   그 값은 반드시 기준을 넘고, 그래서 이 문이 실제로 막는 일은 없다 — 화면에 적힌 말과
-   코드가 같은 말을 하게 만드는 것이 목적이다.
+   넘기는 값은 **기준 금액 자체**다. 예전에는 "연승을 이어 온 마지막 판의 베팅액"을
+   조회해 넘겼는데, 그 값이 기준보다 작아지는 경로가 실제로 있었다 — 정산 자리는 금액과
+   무관하게 won=1 을 박으므로, 7연승을 쌓은 뒤에 500P 로 한 번 더 이기면 "가장 최근 승리"가
+   그 500P 판이 되어 문지기에 막혔다(실측: streak=7 인데 열리지 않음). 오래된 라운드가
+   정리되어(pruneLadderRounds) 조회가 0 을 돌려주는 경로도 있었다.
+   진짜 문은 연승을 쌓는 자리에 이미 서 있으므로, 여기서는 화면 표시용 숫자만 넘기면 된다.
+   폴링마다 돌던 조회 한 번도 함께 없어진다.
 
    매 폴링마다 도는 자리지만 값싸다 — 연승이 7 미만이면 조회 한 번으로 끝나고,
    7 이상이어도 awardIfBet 이 이미 달성한 사람을 곧바로 걸러 낸다. */
@@ -131,7 +135,7 @@ const RIGHT_STREAK_GOAL = 7;
 function ladderAwards(userId: string): { unlocked?: { id: string; title: string; description: string }[] } {
   const streak = getStreak(userId, 'ladder_right_win');
   if (streak < RIGHT_STREAK_GOAL) return withUnlocked(commonAwards(userId));
-  return withCommon(userId, award(userId, lastRightWinBet(userId), [['la-right-7', () => true]]));
+  return withCommon(userId, award(userId, LADDER_STREAK_MIN_BET, [['la-right-7', () => true]]));
 }
 
 export async function handleBet(req: IncomingMessage, res: ServerResponse, userId: string, username: string): Promise<void> {
