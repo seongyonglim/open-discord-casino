@@ -54,22 +54,26 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
         rnoteEl.hidden = true;
       }
       /* ── 예약의 수명 ─────────────────────────────────────────────────
-         예약은 "이 판, 이 차례"에만 유효하다. 그런데 비우는 코드가 runPreAction 안에만
+         예약은 "내 다음 액션 한 번"짜리다. 그런데 비우는 코드가 runPreAction 안에만
          있어서, 실행되지 않은 예약은 아무도 치우지 않았다 — 폴드하고 나가도, 판이
          넘어가도 체크가 그대로 남아 다음 판 첫 차례에 그대로 실행됐다. 다음 판의
          AA 를 지난 판에 걸어 둔 [체크/폴드]가 버리는 모양이다.
 
-         두 갈래로 비운다.
-          · 판이 바뀌면 — 판 번호가 열쇠다. 스트리트가 넘어가는 것과는 다르다
-            (같은 판 안에서는 예약이 살아 있어야 프리플랍에 걸어 둔 것이 플랍에도 쓰인다).
+         세 갈래로 비운다.
+          · 판이 바뀌면 — 예약을 건 판(preHand)과 지금 판이 다르면 버린다. 스트리트가
+            넘어가는 것과는 다르다: 같은 판 안에서는 살아 있어야 "내 다음 액션"에 닿는다
+            (플랍에서 걸어 둔 것이 턴의 첫 액션에 쓰이는 것이 정상이다).
           · 행동할 수 없게 되면 — 서버의 legal(내 차례)도 pre(내 차례가 아님)도 없는
             상태는 "이 판에서 내가 더 행동하지 않는다"는 뜻뿐이다: 폴드했거나, 올인이거나,
             판이 끝났거나, 자리에 없다. 그때 예약을 남겨 둘 이유가 하나도 없다.
             내 차례에는 legal 이 있으므로 여기 걸리지 않는다 — 실행 전에 비워지지 않는다.
-         자리 비움도 같이 비운다. 서버가 대신 체크·폴드하는 중이라 예약이 닿을 자리가 없고,
-         [게임 복귀]를 누른 사람에게 언제 걸었는지도 모를 예약이 살아 있으면 사고가 된다. */
-      if (st.table.handNo !== preHandNo) { preHandNo = st.table.handNo; clearPre(); }
-      else if (away || (!st.table.pre && !st.table.legal)) clearPre();
+          · 자리 비움 — 서버가 대신 체크·폴드하는 중이라 예약이 닿을 자리가 없고,
+            [게임 복귀]를 누른 사람에게 언제 걸었는지도 모를 예약이 살아 있으면 사고가 된다.
+
+         예약이 없을 때(preHand === null)는 아무것도 하지 않는다 — 빈 상자를 매 폴링
+         비우는 것은 공짜가 아니고, 사용자가 방금 누른 체크를 지울 위험만 만든다. */
+      if (preHand != null && (preHand !== st.table.handNo || away
+        || (!st.table.pre && !st.table.legal))) clearPre();
       /* 사전 액션 상자는 내 차례가 "아닐 때" 액션 버튼 자리에 뜬다. 예전에는 la(내 차례)를
          조건으로 두어 내 차례에만 보였는데, 그러면 미리 정해 둘 이유가 없다.
          근거는 서버가 주는 pre 다 — 내 차례가 되면 서버가 그것을 비우고 진짜 버튼이 뜬다. */
@@ -237,6 +241,15 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
        서버가 지금 금액과 비교해 더 커졌으면 거절한다. amount 와 따로 두는 이유는
        amount 가 레이즈 금액이라는 다른 뜻을 이미 갖고 있기 때문이다. */
     function act(kind, amount, maxCall){
+      /* 액션이 하나 나가면 예약은 무조건 끝난다 — 이 예약으로 나갔든, 사용자가 버튼을
+         직접 눌렀든 마찬가지다. 예약은 "다음 한 번"짜리이기 때문이다.
+
+         직접 누른 경우를 여기서 잡지 않으면 이렇게 된다: 예약을 걸어 둔 채 내 차례가
+         왔는데 아직 차례가 열리지 않아(actOpenIn) 예약이 보류된다. 기다리다 답답해서
+         버튼을 직접 누르면 액션은 나가지만 상자는 켜진 채로 남고, 같은 판에서 차례가
+         한 번 더 오면 그 낡은 예약이 그대로 실행된다. 제보의 "체크가 안 풀린다"가
+         이 경로다 — 화면에는 계속 켜져 있고, 사용자는 자기가 고른 적 없는 액션을 본다. */
+      clearPre();
       // 칩이 실제로 나가는 액션에만 소리를 낸다 (폴드·체크는 칩이 안 나간다).
       // 서버 응답을 기다리지 않고 클릭 순간에 울려야 손맛이 난다.
       if (kind !== 'fold' && kind !== 'check') {
@@ -277,14 +290,17 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
     var preCall = document.getElementById('htPreCall');
     var preCallAmount = null;
     var PRE_BOXES = [preCF, preC, preF, preCall];
-    /* 예약이 살아 있는 판. renderControls 가 이 값과 지금 판 번호를 견줘 비운다. */
-    var preHandNo = null;
-    /* 예약을 통째로 비운다. 체크와 preCallAmount 는 반드시 같이 움직여야 한다 —
-       한쪽만 비우면 "체크는 풀렸는데 걸어 둔 금액은 남은" 상태가 되고, 그 다음 예약이
-       지난 차례의 금액으로 검사된다(콜 5,000 을 200 이하로 착각한다). */
+    /* 예약을 건 판의 번호. 예약이 없으면 null 이다.
+       이 값이 지금 판과 다르면 예약은 실행되지 않고 버려진다 — 화면 정리가 어떤 이유로
+       늦거나 건너뛰어도 지난 판의 선택이 새 판에 나가는 일은 없다. */
+    var preHand = null;
+    /* 예약을 통째로 비운다. 세 값이 반드시 같이 움직여야 한다 — 하나만 비우면
+       "체크는 풀렸는데 걸어 둔 금액은 남은" 상태가 되고, 그 다음 예약이 지난 차례의
+       금액으로 검사된다(콜 5,000 을 200 이하로 착각한다). */
     function clearPre(){
       PRE_BOXES.forEach(function(b){ b.checked = false; });
       preCallAmount = null;
+      preHand = null;
     }
     PRE_BOXES.forEach(function(box){
       box.addEventListener('change', function(){
@@ -294,11 +310,18 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
            사고를 막는 유일한 장치다. 내 차례가 아닐 때는 legal 이 없으므로 pre 를 본다. */
         var cur = st && st.table ? (st.table.legal || st.table.pre) : null;
         preCallAmount = (box === preCall && box.checked && cur) ? cur.callAmount : null;
+        preHand = box.checked && st && st.table ? st.table.handNo : null;
       });
     });
     function runPreAction(){
       var la = st.table.legal;
       if (!la) return;
+      /* 다른 판의 예약은 실행하지 않고 버린다.
+         renderControls 가 이미 같은 판정을 하지만, 그것은 화면을 그리는 길에 얹혀 있다 —
+         테이블이 감춰져 있거나(로비 전환) 정산 연출 잠금으로 폴링이 큐에 쌓이는 동안에는
+         그 길이 돌지 않는다. 액션이 실제로 나가는 문은 여기 하나뿐이므로, "지난 판에 걸어
+         둔 것이 새 판에 나갔다"를 확실히 막으려면 이 자리에 세워야 한다. */
+      if (preHand != null && preHand !== st.table.handNo) { clearPre(); return; }
       /* 차례가 아직 열리지 않았으면 보내지 않는다. 서버가 too_soon으로 거절하는데
          아래 코드는 보내기 전에 체크박스를 먼저 끄므로, 거절당하면 미리 지정한 액션이
          사라진 채로 제한 시간까지 흘러 자동 폴드된다. 다음 폴링에서 다시 본다. */
@@ -307,23 +330,22 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
          끝이다. 체크를 남기면 다음 차례에 또 실행되고, 그건 사용자가 정한 것이 아니다.
          예전에는 [체크]만 이 처리가 빠져 있었다(아래 preC): 체크가 나간 뒤에도 상자가
          켜진 채로 남아 다음 스트리트·다음 판까지 따라다녔다. */
-      if (preCF.checked) { preCF.checked = false; act(la.canCheck ? 'check' : 'fold'); return; }
-      if (preF.checked) { preF.checked = false; act('fold'); return; }
+      if (preCF.checked) { clearPre(); act(la.canCheck ? 'check' : 'fold'); return; }
+      if (preF.checked) { clearPre(); act('fold'); return; }
       if (preC.checked) {
-        preC.checked = false;
-        if (la.canCheck) { act('check'); return; }
-        return;                               // 베팅이 들어왔다 — 자동 체크 해제
+        clearPre();
+        if (la.canCheck) act('check');        // 베팅이 들어왔으면 그냥 버린다(자동 체크 해제)
+        return;
       }
       if (preCall.checked) {
         var maxCall = preCallAmount;
         clearPre();
-        if (la.canCall && (maxCall == null || la.callAmount <= maxCall)) {
-          /* 걸어 둘 때 본 금액을 함께 보낸다. 화면의 자동 해제는 폴링 사이에 상황이
-             바뀌면 늦을 수 있고, 그 틈에 내 차례가 오면 의도하지 않은 금액을 콜하게 된다.
-             서버가 같은 값을 다시 확인하고 다르면 거절한다 — 마지막 문은 서버다. */
-          act('call', 0, maxCall); return;
-        }
-                                              // 레이즈가 들어왔다 — 자동 콜 해제
+        /* 걸어 둘 때 본 금액을 함께 보낸다. 화면의 자동 해제는 폴링 사이에 상황이
+           바뀌면 늦을 수 있고, 그 틈에 내 차례가 오면 의도하지 않은 금액을 콜하게 된다.
+           서버가 같은 값을 다시 확인하고 다르면 거절한다 — 마지막 문은 서버다.
+           금액이 올랐으면 아무것도 보내지 않는다 — 자동 콜 해제. */
+        if (la.canCall && (maxCall == null || la.callAmount <= maxCall)) act('call', 0, maxCall);
+        return;
       }
     }
     /* 상황에 맞는 둘만 보여준다. 베팅이 없으면 [체크/폴드][체크], 있으면 [폴드][콜 N].
@@ -340,6 +362,10 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
          살아 있다가 내 차례에 그대로 실행된다. */
       if (canCheck) { preF.checked = false; preCall.checked = false; preCallAmount = null; }
       else { preCF.checked = false; preC.checked = false; }
+      /* 상자가 다 꺼졌으면 예약이라는 것 자체가 없어진 것이다 — 판 번호도 함께 지운다.
+         남겨 두면 "예약은 없는데 예약을 건 판은 있는" 상태가 되고, 그 뒤의 판정들이
+         있지도 않은 예약을 두고 돈다. */
+      if (!PRE_BOXES.some(function(b){ return b.checked; })) { preHand = null; preCallAmount = null; }
       /* 콜 금액이 걸어 둘 때보다 커졌으면 그 자리에서 푼다. runPreAction 도 같은 검사를
          하고 서버가 maxCall 로 한 번 더 막지만, 그 둘은 내 차례가 와야 도는 문이다 —
          그때까지 화면에는 "콜 200" 이 체크된 채로 남아 있고, 앞에서 5,000 이 나온 것을

@@ -89,8 +89,10 @@ ${CONTROLS}
     setState: function(s){ st = s; },
     render: function(){ renderControls(); },
     run: function(){ runPreAction(); },
+    clickAct: function(kind){ act(kind); },
     boxes: { cf: preCF, c: preC, f: preF, call: preCall },
     callAmount: function(){ return preCallAmount; },
+    hand: function(){ return preHand; },
   };
 `;
 
@@ -110,16 +112,25 @@ type Tbl = {
   pre?: { canCheck: boolean; canCall: boolean; callAmount: number } | null;
 };
 let stamp = 1000;
-function feed(t: Tbl): void {
-  api.setState({
+function state(t: Tbl): unknown {
+  return {
     table: {
       handNo: t.handNo, street: t.street ?? 'preflop', pot: 0, actOpenIn: t.actOpenIn ?? 0,
       myPresence: t.myPresence ?? 'ACTIVE', level: { bb: 100 }, seats: [],
       legal: t.legal ?? null, pre: t.pre ?? null,
       deadline: t.deadline === undefined ? (t.legal ? ++stamp : null) : t.deadline,
     },
-  });
+  };
+}
+/** 폴링 한 번 = 상태 갈아 끼우고 그리고, 내 차례면 예약을 본다 (loop.ts 의 apply 와 같은 순서) */
+function feed(t: Tbl): void {
+  api.setState(state(t));
   api.render();
+  if (t.legal) api.run();
+}
+/** 화면을 그리지 않고 예약만 본다 — 테이블이 감춰졌거나 정산 잠금으로 render 가 안 도는 구간 */
+function feedNoRender(t: Tbl): void {
+  api.setState(state(t));
   if (t.legal) api.run();
 }
 const LEGAL_CHECK = { canFold: true, canCheck: true, canCall: false, callAmount: 0,
@@ -286,7 +297,71 @@ console.log('\n[6] 한 번에 하나만 걸린다');
   ck('나중에 고른 것만 남는다', B.c.checked && !B.cf.checked);
 }
 
-console.log('\n[7] 바운티 금액은 BB 표기를 켜도 포인트로 나온다');
+console.log('\n[7] 직접 버튼을 누르면 예약이 사라진다');
+{
+  /* 제보 "체크가 안 풀린다"의 경로. 예약을 걸어 둔 채 내 차례가 왔는데 차례가 아직
+     열리지 않아(actOpenIn) 예약이 보류된다. 기다리다 버튼을 직접 누르면 액션은 나가지만
+     상자는 켜진 채로 남고, 같은 판에서 차례가 한 번 더 오면 낡은 예약이 그대로 실행된다. */
+  sent.length = 0;
+  feed({ handNo: 20, pre: { canCheck: true, canCall: false, callAmount: 0 } });
+  check('c');
+  feed({ handNo: 20, legal: LEGAL_CHECK, actOpenIn: 3 });
+  ck('차례가 열리기 전이라 예약은 보류된다', B.c.checked && sent.length === 0);
+  api.clickAct('check');                        // 사용자가 직접 [체크] 를 눌렀다
+  ck('직접 누른 액션이 나갔다', sent.length === 1 && sent[0].action === 'check');
+  ck('그 순간 예약이 비워진다', !anyChecked() && api.hand() === null);
+  // 같은 판에서 차례가 또 와도 낡은 예약이 실행되지 않는다
+  feed({ handNo: 20, street: 'flop', pre: { canCheck: true, canCall: false, callAmount: 0 } });
+  feed({ handNo: 20, street: 'flop', legal: LEGAL_CHECK });
+  ck('같은 판 다음 차례에 되살아나지 않는다', sent.length === 1, JSON.stringify(sent));
+
+  // 레이즈를 직접 눌러도 같다
+  sent.length = 0;
+  feed({ handNo: 21, pre: { canCheck: false, canCall: true, callAmount: 200 } });
+  check('call');
+  feed({ handNo: 21, legal: legalCall(200), actOpenIn: 3 });
+  api.clickAct('raise');
+  ck('레이즈를 직접 눌러도 예약이 비워진다', !anyChecked() && api.callAmount() === null);
+}
+
+console.log('\n[8] 다른 판의 예약은 실행되는 문 앞에서 막힌다');
+{
+  /* renderControls 는 화면을 그리는 길에 얹혀 있다 — 테이블이 감춰져 있거나 정산 연출
+     잠금(settleBusy)으로 폴링이 큐에 쌓이는 동안에는 그 길이 돌지 않는다. 그래서 액션이
+     실제로 나가는 문(runPreAction)에도 같은 판정이 서 있어야 한다.
+     여기서는 render 를 일부러 건너뛰고 예약만 보게 해서 그 문을 시험한다. */
+  sent.length = 0;
+  feed({ handNo: 30, pre: { canCheck: true, canCall: false, callAmount: 0 } });
+  check('cf');
+  ck('30번 판에 예약이 걸렸다', B.cf.checked && api.hand() === 30);
+  feedNoRender({ handNo: 31, legal: LEGAL_CHECK });   // 화면 정리를 건너뛴 새 판
+  ck('새 판에서 아무것도 나가지 않았다', sent.length === 0, JSON.stringify(sent));
+  ck('그 자리에서 예약이 버려졌다', !anyChecked() && api.hand() === null);
+
+  // 콜 예약도 같다 — 금액이 같아도 판이 다르면 안 나간다
+  sent.length = 0;
+  feed({ handNo: 32, pre: { canCheck: false, canCall: true, callAmount: 200 } });
+  check('call');
+  feedNoRender({ handNo: 33, legal: legalCall(200) });
+  ck('금액이 같아도 판이 다르면 콜하지 않는다', sent.length === 0, JSON.stringify(sent));
+}
+
+console.log('\n[9] 예약이 없을 때는 상자를 건드리지 않는다');
+{
+  /* 수명 관리가 매 폴링 무조건 돌면, 사용자가 방금 누른 체크를 같은 틱의 폴링이
+     지워 버릴 수 있다. preHand 가 없을 때는 아무것도 하지 않아야 한다. */
+  feed({ handNo: 40, pre: { canCheck: true, canCall: false, callAmount: 0 } });
+  ck('예약이 없으면 판 번호도 비어 있다', api.hand() === null);
+  check('cf');
+  ck('누른 직후 값이 잡힌다', B.cf.checked && api.hand() === 40);
+  feed({ handNo: 40, pre: { canCheck: true, canCall: false, callAmount: 0 } });
+  ck('폴링이 지우지 않는다', B.cf.checked && api.hand() === 40);
+  // 손으로 체크를 풀면 판 번호도 같이 비워진다
+  B.cf.checked = false; B.cf.fire('change');
+  ck('손으로 풀면 판 번호도 비워진다', api.hand() === null);
+}
+
+console.log('\n[10] 바운티 금액은 BB 표기를 켜도 포인트로 나온다');
 {
   /* 제보된 버그: 칩 표기를 BB 로 두면 미스터리 바운티 금액이 "12.5BBP" 로 찍혔다.
      붙이는 쪽이 'P' 를 덧붙이는데 stackText 가 이미 'BB' 를 붙였기 때문이다.
