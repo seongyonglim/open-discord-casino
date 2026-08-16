@@ -286,24 +286,40 @@ export function leaderboardPage(me: WebUser | null): string {
       chipsEl.classList.toggle('more-r', chipsEl.scrollLeft < max - 2);
     }
     (function(){
-      var down = false, startX = 0, startLeft = 0, moved = 0;
+      var down = false, startX = 0, startLeft = 0, moved = 0, captured = false;
+      /* 누르는 순간에는 포인터를 잡지 않는다.
+         잡으면 그 뒤의 click 이 눌린 버튼이 아니라 «잡은 요소»로 날아간다 — 탭 리스너가
+         e.target.closest('.lb-chip') 으로 어느 칸인지 찾는데 그 값이 컨테이너라 늘 null 이
+         되고, 랭킹 탭이 통째로 안 눌렸다(제보).
+         끌기가 실제로 시작된 뒤에만 잡는다. 그래야 평범한 클릭은 캡처를 한 번도 거치지
+         않고, 손가락이 요소 밖으로 나가는 드래그는 그대로 따라온다. */
       chipsEl.addEventListener('pointerdown', function(e){
         if (e.button !== 0) return;
-        down = true; moved = 0; startX = e.clientX; startLeft = chipsEl.scrollLeft;
-        try { chipsEl.setPointerCapture(e.pointerId); } catch (err) { /* 구형 브라우저 */ }
+        down = true; moved = 0; captured = false;
+        startX = e.clientX; startLeft = chipsEl.scrollLeft;
       });
       chipsEl.addEventListener('pointermove', function(e){
         if (!down) return;
         var dx = e.clientX - startX;
         moved = Math.max(moved, Math.abs(dx));
-        if (moved > 4) chipsEl.classList.add('dragging');
+        /* 4px 안쪽은 끌기로 보지 않는다 — 누를 때 손가락은 늘 조금 움직인다.
+           그 구간에서는 스크롤도 하지 않는다. 1~2px 씩 밀리면 누르는 순간 줄이 떨린다. */
+        if (moved <= 4) return;
+        if (!captured) {
+          captured = true;
+          chipsEl.classList.add('dragging');
+          try { chipsEl.setPointerCapture(e.pointerId); } catch (err) { /* 구형 브라우저 */ }
+        }
         chipsEl.scrollLeft = startLeft - dx;
       });
       function release(e){
         if (!down) return;
         down = false;
         chipsEl.classList.remove('dragging');
-        try { chipsEl.releasePointerCapture(e.pointerId); } catch (err) { /* 위와 같다 */ }
+        if (captured) {
+          captured = false;
+          try { chipsEl.releasePointerCapture(e.pointerId); } catch (err) { /* 위와 같다 */ }
+        }
       }
       chipsEl.addEventListener('pointerup', release);
       chipsEl.addEventListener('pointercancel', release);

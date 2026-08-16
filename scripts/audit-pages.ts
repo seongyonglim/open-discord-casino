@@ -888,6 +888,38 @@ async function main(): Promise<void> {
       `sweep@${iSweep} closed@${iClosed}`);
   }
 
+  console.log('\n[12-b] 랭킹 탭 — 끌 수 있게 하면서 누를 수도 있어야 한다');
+  {
+    /* 게임이 늘면서 칩 줄이 화면 밖으로 넘쳤고(860px 칸에 983px), 끌어서 넘기게 했다.
+       그때 pointerdown 에서 곧바로 포인터를 잡았더니 랭킹 탭이 통째로 안 눌렸다(제보).
+
+       캡처가 걸려 있으면 브라우저가 이어지는 click 을 «잡은 요소»로 쏜다. 탭 리스너는
+       e.target.closest('.lb-chip') 으로 어느 칸인지 찾는데 그 값이 컨테이너라 늘 null 이
+       된다. 합성 이벤트(chip.click())로 짠 검사는 이 경로를 지나치지 않아 통과했다 —
+       그래서 여기서는 "언제 잡는가"를 글자로 못 박는다.
+
+       규칙: 누르는 순간에는 잡지 않는다. 끌기가 실제로 시작된 뒤(4px 초과)에만 잡는다. */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const lb = readFileSync('src/web/leaderboard.ts', 'utf8');
+    const down = lb.slice(lb.indexOf("addEventListener('pointerdown'"),
+      lb.indexOf("addEventListener('pointermove'"));
+    ck('누르는 순간에는 포인터를 잡지 않는다', !/setPointerCapture/.test(down), down);
+    ck('끌기가 시작된 뒤에만 잡는다',
+      /if \(moved <= 4\) return;[\s\S]{0,200}?setPointerCapture/.test(lb));
+    ck('잡았을 때만 놓는다 (안 잡고 놓으면 예외가 난다)',
+      /if \(captured\) \{[\s\S]{0,160}?releasePointerCapture/.test(lb));
+    /* 끌고 놓은 것을 클릭으로 세지 않는 문은 그대로 있어야 한다 — 캡처를 늦게 걸어도
+       4px 를 갓 넘긴 드래그는 click 이 버튼에 그대로 도착한다. */
+    ck('끈 뒤의 클릭은 삼킨다',
+      /if \(moved > 4\) \{ e\.stopPropagation\(\); e\.preventDefault\(\); \}/.test(lb));
+    ck('탭 리스너는 여전히 closest 로 칸을 찾는다',
+      /closest\('\.lb-chip'\)/.test(lb));
+    // 넘친 쪽 표시와 세로 휠도 함께 남아 있어야 한다
+    ck('끝 흐림이 스크롤 위치를 따라간다',
+      /classList\.toggle\('more-l'/.test(lb) && /classList\.toggle\('more-r'/.test(lb));
+    ck('세로 휠을 가로로 돌린다', /chipsEl\.scrollLeft \+= e\.deltaY/.test(lb));
+  }
+
   console.log('\n[13] 지뢰찾기도 공통 과제를 본다');
   {
     /* 지뢰찾기에는 폴링하는 상태 엔드포인트가 없다(라우트가 page·start·reveal·cashout
