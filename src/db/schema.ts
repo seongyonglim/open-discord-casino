@@ -486,6 +486,29 @@ function initSchema(): void {
       exact INTEGER NOT NULL DEFAULT 0       -- 1이면 since 가 정확한 값이다
     );
 
+    /* ── 채팅 ────────────────────────────────────────────────────────
+       카지노 전체가 한 방을 쓴다. 게임마다 방을 나누면 동시 접속이 다섯 명인 서비스에서
+       전부 빈 방이 된다 — 어느 화면에 있든 같은 대화가 보이고, 줄마다 그 사람이 어디
+       있었는지(where)를 작게 붙여 구분한다.
+
+       이 표는 자란 만큼 그대로 두지 않는다. 최근 것만 보여주는 화면이라 오래된 줄은
+       아무도 읽지 않는다 — 넣을 때마다 지운다(투척·포커 미출현과 같은 방식이다).
+       서버 타이머가 없어서 "나중에 지운다"를 걸 데가 없다는 사정도 같다.
+
+       hidden — 운영자가 지운 줄. 실제로 지우지 않는 이유는 id 가 연속이어야 하기
+       때문이다: 화면은 "내가 가진 것보다 큰 id"만 받아 가는데, 중간이 사라지면
+       그 자리를 영영 다시 요청하지 않는다. */
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,          -- 그때의 이름. 나중에 바뀌어도 대화는 그대로 남는다
+      body TEXT NOT NULL,
+      where_at TEXT,                   -- 'holdem' | 'baccarat' … 없으면 로비
+      hidden INTEGER NOT NULL DEFAULT 0,
+      created_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id, created_ms DESC);
+
     CREATE TABLE IF NOT EXISTS holdem_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -565,6 +588,9 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE ladder_bets ADD COLUMN parity_guess TEXT`); } catch {}
   // 개인회생 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 쿨다운 판정에 쓴다.
   try { d.exec(`ALTER TABLE users ADD COLUMN last_relief_at INTEGER`); } catch {}
+  /* 채팅 재갈이 풀리는 시각(초). 표를 따로 만들지 않는다 — 사람마다 하나뿐인 값이고,
+     읽는 자리가 "이 사람이 지금 말할 수 있나" 한 곳뿐이다. */
+  try { d.exec(`ALTER TABLE users ADD COLUMN chat_muted_until INTEGER`); } catch {}
   // 홀덤: 마지막 행동 표시 (이미 만들어진 DB에도 붙인다)
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}

@@ -22,6 +22,7 @@ import {
 } from '../db/admin';
 import { prizePoolOf, isPko, isMystery } from '../db/holdem';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
+import { chatRecentAll, setChatHidden, setChatMute, chatMuteLeft } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason } from '../db/settings';
 import {
   getRecurrence, saveRecurrence, nextOccurrence, WEEKDAY_LABEL, MODE_LABEL,
@@ -105,6 +106,31 @@ export function adminPage(user: WebUser): string {
           ? `<button type="button" class="ad-revoke danger" data-id="${t.id}"
                data-label="${esc(t.date_str)} · ${esc(t.title)}" data-paid="${t.paid}">상금 회수 후 삭제</button>`
           : `<button type="button" class="ad-del" data-id="${t.id}" data-label="${esc(t.date_str)} · ${esc(t.title)}">지우기</button>`}</td>
+    </tr>`;
+  }).join('');
+
+  /* 최근 대화. 감춘 줄까지 함께 보여준다 — 운영자가 되돌릴 수 있어야 하기 때문이다.
+     WHERE_LABEL 은 화면 표기용이고, 모르는 값은 그대로 적는다(로비면 비어 있다). */
+  const WHERE_LABEL: Record<string, string> = {
+    holdem: '홀덤', baccarat: '바카라', blackjack: '블랙잭',
+    crash: '그래프', ladder: '사다리', poker: '포커', mines: '지뢰찾기',
+  };
+  const chatRows = chatRecentAll(60).map(m => {
+    const t = new Date(m.created_ms);
+    const hh = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const muted = chatMuteLeft(m.user_id);
+    return `<tr class="${m.hidden ? 'off' : ''}">
+      <td class="ad-cm-t">${esc(hh)}</td>
+      <td>${esc(m.username)}${muted > 0 ? ` <i class="ad-cm-mute">재갈 ${Math.ceil(muted / 60)}분</i>` : ''}</td>
+      <td class="ad-cm-w">${esc(m.where_at ? (WHERE_LABEL[m.where_at] ?? m.where_at) : '로비')}</td>
+      <td class="ad-cm-b">${esc(m.body)}</td>
+      <td class="ad-cm-x">
+        <button type="button" class="ad-chat-hide" data-id="${m.id}" data-hidden="${m.hidden ? 1 : 0}"
+          >${m.hidden ? '되돌리기' : '숨김'}</button>
+        <button type="button" class="ad-chat-mute" data-user="${esc(m.user_id)}"
+          data-name="${esc(m.username)}" data-muted="${muted > 0 ? 1 : 0}"
+          >${muted > 0 ? '재갈 풀기' : '재갈'}</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -291,6 +317,19 @@ export function adminPage(user: WebUser): string {
         ${live
           ? `<button type="button" id="adAbort" class="danger">진행 중 대회 중단</button>`
           : ''}
+      </div>
+    </section>
+
+    <section class="ad-card" data-pane="tour">
+      <h2>채팅</h2>
+      <p class="ad-note">최근 대화입니다. <b>[숨김]</b>은 되돌릴 수 있습니다 —
+        줄을 실제로 지우지 않고 가리기만 합니다(id 가 끊기면 화면이 그 자리를 영영 다시 받아
+        가지 않습니다). <b>[재갈]</b>은 그 사람의 채팅만 막고 게임에는 영향이 없습니다.</p>
+      <div class="ad-scroll">
+        <table class="ad-tbl ad-chat">
+          <thead><tr><th>시각</th><th>이름</th><th>위치</th><th>내용</th><th></th></tr></thead>
+          <tbody id="adChatBody">${chatRows}</tbody>
+        </table>
       </div>
     </section>
 
@@ -775,6 +814,28 @@ export function adminPage(user: WebUser): string {
       confirmThen('진행 중인 대회를 중단할까요?',
         '앉아 있는 사람들의 판이 그 자리에서 끝나고 상금은 나가지 않습니다. 기록은 남습니다. 되돌릴 수 없습니다.',
         function(){ post('/api/admin/tournament/abort', {}).then(function(r){ if (shout(r)) location.reload(); }); });
+    });
+
+    /* 채팅 — 숨김과 재갈. 둘 다 되돌릴 수 있으므로 확인 모달을 두지 않는다.
+       되돌릴 수 없는 것(대회 삭제·상금 회수)에만 확인을 두어야 그 확인이 무게를 갖는다. */
+    var adChat = document.getElementById('adChatBody');
+    if (adChat) adChat.addEventListener('click', function(ev){
+      var h = ev.target.closest ? ev.target.closest('.ad-chat-hide') : null;
+      if (h) {
+        post('/api/admin/chat/hide', { id: Number(h.getAttribute('data-id')),
+          hidden: h.getAttribute('data-hidden') !== '1' })
+          .then(function(r){ if (shout(r)) location.reload(); });
+        return;
+      }
+      var m = ev.target.closest ? ev.target.closest('.ad-chat-mute') : null;
+      if (m) {
+        var on = m.getAttribute('data-muted') === '1';
+        /* 기본 10분. 길게 물릴 일이 드물고, 모자라면 다시 누르면 된다 —
+           반대로 길게 물린 것을 알아채는 데는 시간이 걸린다. */
+        post('/api/admin/chat/mute', { userId: m.getAttribute('data-user'), sec: on ? 0 : 600 })
+          .then(function(r){ if (shout(r)) location.reload(); });
+        return;
+      }
     });
 
     document.getElementById('adTBody').addEventListener('click', function(ev){
@@ -1325,6 +1386,28 @@ export async function handleAdminNoticeDelete(req: IncomingMessage, res: ServerR
   const r = deleteNotice(String(b?.id ?? ''));
   if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] });
   return sendJson(res, 200, { ok: true });
+}
+
+/* ── 채팅 ────────────────────────────────────────────────────────────
+   지우기와 재갈. 둘 다 되돌릴 수 있어야 한다 — 실수로 누른 것이 영구가 되면 그 버튼은
+   무서워서 못 쓴다. 줄을 실제로 지우지 않는 이유는 chat_messages 표 주석에 있다. */
+export async function handleAdminChatHide(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { id?: unknown; hidden?: unknown } | null;
+  const id = Math.floor(Number(b?.id));
+  if (!Number.isFinite(id) || id <= 0) return sendJson(res, 400, { error: '줄을 찾을 수 없습니다' });
+  setChatHidden(id, !!b?.hidden);
+  return sendJson(res, 200, { ok: true });
+}
+
+export async function handleAdminChatMute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { userId?: unknown; sec?: unknown } | null;
+  const userId = String(b?.userId ?? '');
+  if (!userId) return sendJson(res, 400, { error: '대상을 찾을 수 없습니다' });
+  /* 상한을 둔다. 실수로 0 을 하나 더 붙이면 그 사람은 사흘 뒤에야 말할 수 있게 되고,
+     그때쯤엔 아무도 왜 그랬는지 기억하지 못한다. 더 필요하면 다시 누르면 된다. */
+  const sec = Math.max(0, Math.min(24 * 3600, Math.floor(Number(b?.sec ?? 0))));
+  setChatMute(userId, sec);
+  return sendJson(res, 200, { ok: true, sec });
 }
 
 /** 돈으로 쓰일 값은 정수 0 이상만 받는다. NaN·음수·소수가 원장까지 흘러가면 안 된다. */

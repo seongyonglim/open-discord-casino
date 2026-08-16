@@ -388,6 +388,61 @@ async function main(): Promise<void> {
       bad.length ? bad.join(', ') + ' — display 를 정해 둬서 hidden 이 안 먹는다' : '');
     // 이 검사가 실제로 무언가를 보고 있는지 (대상이 0개면 통과가 무의미하다)
     ck('검사 대상이 실제로 있다', checked > 0, `${checked}개 요소`);
+
+    /* ── id 가 아니라 클래스로 감추는 것들 ─────────────────────────────
+       위 검사는 getElementById 로 찾은 요소만 본다. app.js 는 자기가 만든 마크업을
+       querySelector('.x') 로 잡아 hidden 을 켜는데, 그러면 위 그물에 걸리지 않는다 —
+       채팅 도크의 본체와 안 읽은 배지가 그렇게 빠져나갔다. 둘 다 display 를 정해 둬서
+       최소화 버튼이 아무 일도 안 했고, 안 읽은 줄이 없어도 "0" 배지가 늘 붙어 있었다.
+       (그때도 el.hidden 은 true 였다. 그래서 속성이 아니라 규칙으로 본다.) */
+    const appJs = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.js'), 'utf8');
+    const clsIds = new Set<string>();
+    // querySelector('.x').hidden = …  /  var v = …querySelector('.x'); … v.hidden = …
+    for (const m of appJs.matchAll(/querySelector\('\.([\w-]+)'\)\s*\.hidden\s*=/g)) clsIds.add(m[1]);
+    const clsVar = new Map<string, string>();
+    for (const m of appJs.matchAll(/(?:var\s+)?([A-Za-z_$][\w$]*)\s*=\s*[\w.]*querySelector\('\.([\w-]+)'\)/g)) {
+      clsVar.set(m[1], m[2]);
+    }
+    for (const [v, cls] of clsVar) {
+      if (new RegExp(`\\b${v}\\.hidden\\s*=`).test(appJs)) clsIds.add(cls);
+    }
+    const clsBad: string[] = [];
+    let clsChecked = 0;
+    for (const cls of clsIds) {
+      if (!withDisplay.has(cls)) continue;      // display 를 정해 둔 규칙이 없으면 안전하다
+      clsChecked++;
+      if (!hasHiddenRule(cls)) clsBad.push('.' + cls);
+    }
+    ck('클래스로 감추는 요소에도 [hidden] 규칙이 있다', clsBad.length === 0,
+      clsBad.length ? clsBad.join(', ') + ' — display 를 정해 둬서 hidden 이 안 먹는다' : '');
+    ck('클래스 쪽 검사 대상도 있다', clsChecked > 0, `${clsChecked}개 클래스`);
+
+    /* ── <i> 는 기본이 이탤릭이다 ──────────────────────────────────
+       이 프로젝트는 작은 뱃지·태그·아이콘을 <i> 로 쓴다. 의미상 강조가 아니라 그냥
+       작은 조각이라 그런데, 브라우저 기본 스타일이 font-style:italic 이라 글자가
+       비스듬하게 나온다. CSS 에 transform 이 하나도 없으니 코드만 봐서는 원인이
+       안 보이고, 화면을 봐야만 안다 — 홀덤 말풍선이 실제로 그렇게 나갔다.
+       그래서 글자가 들어가는 <i> 의 클래스에는 font-style 을 반드시 적게 한다. */
+    const iSrc = appJs
+      + readdirSync(join(process.cwd(), 'src', 'web', 'games', 'holdem-client'))
+        .map(f => readFileSync(join(process.cwd(), 'src', 'web', 'games', 'holdem-client', f), 'utf8'))
+        .join('\n');
+    const iBad: string[] = [];
+    let iChecked = 0;
+    /* 판정은 클래스가 아니라 요소 단위다 — `class="ht-oc more"` 처럼 여럿을 달고 있으면
+       그중 하나만 font-style 을 가져도 그 요소는 안 기운다. 클래스별로 보면 곁다리
+       클래스가 전부 거짓 경보로 잡힌다(.more 가 실제로 그랬다). */
+    const hasFontStyle = (cls: string) =>
+      new RegExp(`\\.${cls}\\b[^{]*\\{[^}]*font-style`).test(css);
+    for (const m of iSrc.matchAll(/<i class=\\?"([a-zA-Z][\w -]*)\\?"/g)) {
+      const list = m[1].split(/\s+/).filter(Boolean);
+      if (!list.length) continue;
+      iChecked++;
+      if (!list.some(hasFontStyle)) iBad.push(m[1]);
+    }
+    ck('글자가 들어가는 <i> 에 font-style 이 정해져 있다', iBad.length === 0,
+      iBad.length ? Array.from(new Set(iBad)).join(', ') + ' — <i> 기본값이 이탤릭이라 기울어 나온다' : '');
+    ck('<i> 검사 대상도 있다', iChecked > 0, `${iChecked}개`);
   }
 
   console.log('\n[3] 대회가 없을 때의 홀덤 화면');

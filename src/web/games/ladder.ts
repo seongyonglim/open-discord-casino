@@ -10,6 +10,7 @@ import {
   advanceLadderRound, placeLadderBet, cancelLadderBet, getLadderBets, getMyLadderBet, getWebUser, getRecentLadderResults,
   LADDER_REVEAL_SEC, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
   type LadderRoundRow, type WebUser,
+  chatMax,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
@@ -105,6 +106,9 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
     myBet: myBet ?? null,
     history: getRecentLadderResults(20),
     balance: getWebUser(userId)?.balance ?? 0,
+    /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
+       화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
+    chatMax: chatMax(),
     multiplier: LADDER_MULTIPLIER,
     doubleMultiplier: LADDER_DOUBLE_MULTIPLIER,
     ...ladderAwards(userId),
@@ -267,7 +271,8 @@ export function ladderPage(user: WebUser): string {
         <div id="lFeed" class="roster"><div class="empty" style="padding:16px 0">아직 베팅이 없습니다</div></div>
       `, rankPane('l'))}
     </div>
-    <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)}; window.__SFX_NEED__ = ['fanfare'];</script>
+    <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)}; window.__SFX_NEED__ = ['fanfare'];
+      window.__CHAT_WHERE__ = 'ladder';</script>
     <script>
     (function(){
     ${ROSTER_JS}
@@ -579,6 +584,9 @@ export function ladderPage(user: WebUser): string {
         pollFails = 0;
         lastState = d;
         applyState(d);
+        /* 채팅은 폴을 따로 돌지 않는다 — 응답의 마지막 메시지 id 만 넘겨주면 값이
+           늘었을 때만 채팅이 스스로 받아 간다(app.js 의 casinoChat). */
+        if (window.casinoChat) casinoChat.note(d.chatMax);
       }
 
       // 결과 공개 게이트: 공이 도착하기 전에는 히스토리/참가자 목록/잔액이 결과를 미리 보여주지 않는다.

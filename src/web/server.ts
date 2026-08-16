@@ -5,6 +5,7 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { lobbyPage, noticeListPage, noticeDetailPage } from './pages';
 import { leaderboardPage, handleRankApi } from './leaderboard';
+import { handleChatRead as chatRead, handleChatPost as chatPost } from './chat';
 import { achievementsPage, handleAchievements, handleUnlockers } from './achievements';
 import {
   handleNotifications, handleNotificationsReadAll, handleNotificationRead,
@@ -19,6 +20,7 @@ import {
   handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
   handleAdminRecurrence, handleAdminTournamentAbort,
   handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
+  handleAdminChatHide, handleAdminChatMute,
 } from './admin';
 import { handleLogin, handleCallback, handleLogout, currentUser, handlePreviewLogin, handleGo } from './auth';
 import { getLeaderboard, touchActive } from '../db/queries';
@@ -304,6 +306,17 @@ export function startWebServer(): void {
       }
       if (path === '/api/leaderboard' && req.method === 'GET') return await handleRankApi(req, res, url, me);
 
+      /* 채팅. 폴링을 새로 만들지 않는다 — 게임 화면이 이미 도는 /state 의 chatMax 를 보고
+         값이 늘었을 때만 읽기를 부른다. 아무도 말하지 않으면 여기로 오는 요청이 없다. */
+      if (path === '/api/chat' && req.method === 'GET') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return chatRead(req, res, url, me);
+      }
+      if (path === '/api/chat' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await chatPost(req, res, me);
+      }
+
       /* 운영자 화면. 보기는 admin 역할만, 바꾸는 동작은 admin + ADMIN_TOKEN 두 겹이다.
          로그인 안 한 사람에게는 이 경로의 존재를 알리지 않는다 — 다른 화면과 같이
          로그인으로 보낸다. 로그인했지만 권한이 없으면 403 으로 분명히 막는다. */
@@ -338,6 +351,9 @@ export function startWebServer(): void {
         if (path === '/api/admin/notice/update' && req.method === 'POST') return await handleAdminNoticeUpdate(req, res);
         if (path === '/api/admin/notice/toggle' && req.method === 'POST') return await handleAdminNoticeToggle(req, res);
         if (path === '/api/admin/notice/delete' && req.method === 'POST') return await handleAdminNoticeDelete(req, res);
+        /* 채팅 — 숨김과 재갈. 둘 다 되돌릴 수 있다. */
+        if (path === '/api/admin/chat/hide' && req.method === 'POST') return await handleAdminChatHide(req, res);
+        if (path === '/api/admin/chat/mute' && req.method === 'POST') return await handleAdminChatMute(req, res);
         if (path === '/api/admin/tournament/create' && req.method === 'POST') return await handleAdminTournamentCreate(req, res);
         if (path === '/api/admin/tournament/revoke' && req.method === 'POST') return await handleAdminTournamentRevoke(req, res);
         if (path === '/api/admin/tournament/abort' && req.method === 'POST') return await handleAdminTournamentAbort(req, res);

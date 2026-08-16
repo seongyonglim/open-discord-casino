@@ -1233,3 +1233,341 @@
   };
   window.__casinoPopups = showPopups;   // load() 가 응답을 받으면 넘겨준다
 })();
+
+/* ── 채팅 ────────────────────────────────────────────────────────────────
+   카지노 전체가 한 방을 쓴다. 게임마다 방을 나누면 동시 접속이 다섯 명인 서비스에서
+   전부 빈 방이 된다 — 어느 화면에 있든 같은 대화가 보이고, 줄마다 그 사람이 어디
+   있었는지를 작게 붙여 구분한다.
+
+   ── 폴링을 새로 만들지 않는다
+   모든 게임 화면은 이미 1초마다 /state 를 부른다. 채팅용 폴을 하나 더 달면 요청 수가
+   정확히 두 배가 된다. 대신 상태 응답에 실린 chatMax(마지막 메시지 id)를 게임 쪽에서
+   note() 로 넘겨주고, 그 값이 내가 가진 것보다 클 때만 /api/chat 을 한 번 부른다.
+   아무도 말하지 않으면 요청이 한 건도 늘지 않는다.
+
+   폴링이 없는 화면(로비·랭킹·공지)에서는 열려 있는 동안에만 스스로 5초 폴을 돈다.
+   닫으면 멈춘다 — 안 보는 화면을 위해 서버를 부를 이유가 없다.
+
+   여기(app.js)에 두는 이유: 게임마다 인라인 스크립트가 따로 있는데 채팅을 거기 넣으면
+   같은 코드가 여섯 벌이 된다. 모든 페이지가 이 파일을 받으므로 한 벌이면 된다. */
+(function(){
+  /* 서버(src/db/queries/chat.ts)의 CHAT_MAX_LEN · CHAT_MIN_GAP_MS 와 같은 값이어야 한다.
+     화면 쪽 값은 편의일 뿐이고 마지막 문은 언제나 서버지만, 두 값이 어긋나면 눌리는데
+     거절당하거나(화면이 느슨) 보낼 수 있는데 안 눌린다(화면이 빡빡).
+     감사(scripts/audit-chat.ts)가 두 값이 같은지 본다. */
+  var MAX_LEN = 100;
+  var MIN_GAP_MS = 400;
+  var MAX_ROWS = 120;            // 화면에 남기는 줄 수. seen 도 이 수에 묶인다
+  var IDLE_POLL_MS = 5000;       // 폴링이 없는 화면에서, 열려 있을 때만
+  /* 방금 한 말로 볼 시간. 이 안에 들어온 줄만 구독자에게 넘긴다(홀덤 말풍선이 쓴다).
+     처음 열 때 받는 40줄과, 탭을 한참 덮어 뒀다가 돌아왔을 때 한꺼번에 들어오는
+     묶음이 전부 말풍선으로 터지는 것을 막는다. */
+  var LIVE_MS = 15000;
+  /* 로비와 도전과제에 적히는 이름 그대로다. 한 게임을 화면마다 다르게 부르면
+     "포커"가 홀덤을 가리키는 줄 안다 — 이 카지노에는 포커가 둘이다. */
+  var WHERE = { holdem: '홀덤', baccarat: '바카라', blackjack: '블랙잭',
+    crash: '그래프', ladder: '사다리', poker: '포커 플립', mines: '지뢰찾기' };
+
+  var open = false, lastId = 0, unread = 0, muteUntil = 0, sendLockUntil = 0;
+  /* 마지막으로 눈으로 본 줄. 화면을 옮길 때마다 lastId 가 0 에서 다시 시작하므로
+     이것이 없으면 받아 온 최근 40줄이 전부 "안 읽음"으로 잡힌다 — 어느 화면을 열든
+     배지에 40 가까운 숫자가 붙어 있어서 그 숫자가 아무 뜻도 없게 된다. */
+  var lastSeen = Number(stored('od_chat_seen', '0')) || 0;
+  var idleTimer = null, dock = null, listEl = null, inputEl = null, badgeEl = null, noteEl = null;
+  var seen = {};                 // id → 1. 같은 줄을 두 번 그리지 않는다
+  var subs = [], primed = false; // 첫 수신(과거 줄)에는 구독자를 부르지 않는다
+  var jumpBottom = false;        // 방금 펼쳤다 — 다음 수신은 무조건 맨 아래로
+
+  function esc(s){
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function hhmm(ms){
+    var d = new Date(ms);
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+  function stored(k, d){ try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function store(k, v){ try { localStorage.setItem(k, v); } catch (e) { } }
+
+  function build(){
+    if (dock) return;
+    dock = document.createElement('div');
+    dock.className = 'chat-dock';
+    dock.innerHTML =
+      '<button type="button" class="chat-tab" aria-label="채팅 열기">'
+        + '<i class="chat-ico" aria-hidden="true">💬</i>'
+        + '<span class="chat-tab-t">채팅</span>'
+        + '<i class="chat-badge" hidden></i>'
+      + '</button>'
+      + '<div class="chat-panel" hidden>'
+        + '<div class="chat-head"><b>채팅</b>'
+          + '<span class="chat-note"></span>'
+          /* 닫기가 아니라 최소화다 — 누르면 대화가 사라지는 것이 아니라 접힐 뿐이고,
+             받아 둔 줄과 안 읽은 수는 그대로 남는다. ×로 그리면 "나가기"로 읽힌다. */
+          + '<button type="button" class="chat-min" title="최소화" aria-label="최소화">−</button>'
+        + '</div>'
+        + '<div class="chat-list"></div>'
+        + '<div class="chat-foot">'
+          + '<input type="text" class="chat-in" maxlength="' + MAX_LEN + '" placeholder="메시지를 입력하세요">'
+          + '<button type="button" class="chat-send">보내기</button>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(dock);
+    listEl = dock.querySelector('.chat-list');
+    inputEl = dock.querySelector('.chat-in');
+    badgeEl = dock.querySelector('.chat-badge');
+    noteEl = dock.querySelector('.chat-note');
+    dock.querySelector('.chat-tab').addEventListener('click', function(){ toggle(); });
+    dock.querySelector('.chat-min').addEventListener('click', function(){ toggle(false); });
+    dock.querySelector('.chat-send').addEventListener('click', send);
+    inputEl.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      /* 입력 중에 Esc — 마우스를 옮기지 않고 접는다. 게임 화면에서는 채팅을 치다가
+         곧바로 액션 버튼으로 돌아가야 하는 순간이 온다. */
+      else if (e.key === 'Escape') { e.preventDefault(); toggle(false); }
+    });
+    syncWidth();
+    window.addEventListener('resize', syncWidth);
+    /* 우측 패널은 처음부터 화면에 있는 것이 아니다 — 홀덤은 로비를 보다가 테이블이
+       열릴 때 비로소 크기가 생긴다. 크기가 생기는 순간을 직접 듣는다. */
+    var side = document.querySelector('.game-side');
+    if (side && typeof ResizeObserver === 'function') {
+      try { new ResizeObserver(syncWidth).observe(side); } catch (e) { }
+    }
+  }
+
+  /* ── 우측 패널에 폭을 맞춘다 ────────────────────────────────────────
+     도크는 position:fixed 라 화면 오른쪽을 기준으로 뜬다. 그런데 게임 화면의 오른쪽
+     끝은 화면 끝이 아니라 우측 패널(참가인원/랭킹)의 오른쪽 모서리다. 폭도 게임마다
+     다르다(290px, 좁은 창에서는 240px). 고정 폭으로 띄우면 그 차이만큼 왼쪽으로
+     비어져 나와 베팅 컨트롤을 덮는다 — 실제로 그랬다.
+
+     그래서 패널을 실측해서 폭과 오른쪽 여백을 그대로 가져온다. 계산이 아니라 실측인
+     이유는, 계산하려면 main 의 max-width·padding·게임별 폭을 여기서 다시 알아야 하고
+     그 값들이 바뀌면 여기가 조용히 틀리기 때문이다. */
+  function syncWidth(){
+    if (!dock) return;
+    var side = document.querySelector('.game-side');
+    var ok = false;
+    if (side && side.offsetParent !== null) {
+      var r = side.getBoundingClientRect();
+      var vw = document.documentElement.clientWidth || window.innerWidth;
+      /* 좁은 창에서는 패널이 본문 아래로 내려가 폭이 화면 전체가 된다. 그 폭을
+         따라가면 채팅이 화면을 통째로 덮는다 — 그때는 기본 배치로 돌아간다. */
+      if (r.width >= 200 && r.width <= vw * 0.6) {
+        dock.style.right = Math.max(8, Math.round(vw - r.right)) + 'px';
+        dock.style.setProperty('--chat-w', Math.round(r.width) + 'px');
+        ok = true;
+      }
+    }
+    dock.classList.toggle('sync', ok);
+    /* 인라인 값은 미디어 쿼리를 이긴다. 맞출 수 없는 상황이면 반드시 지워야
+       좁은 화면 규칙이 되살아난다. */
+    if (!ok) { dock.style.right = ''; dock.style.removeProperty('--chat-w'); }
+  }
+
+  function toggle(want){
+    open = want === undefined ? !open : !!want;
+    dock.querySelector('.chat-panel').hidden = !open;
+    dock.classList.toggle('on', open);
+    store('od_chat_open', open ? '1' : '0');
+    if (open) {
+      syncWidth();                             // 접혀 있는 동안 창이 바뀌었을 수 있다
+      markSeen(); unread = 0; paintBadge();
+      /* 펼치면 무조건 맨 아래 — 방금 오간 말이 먼저 보여야 한다.
+         읽던 자리로 되돌려 주는 것이 친절해 보이지만, 이 방은 지나간 기록을 훑는 곳이
+         아니라 지금 오가는 대화에 끼어드는 곳이다. 접혀 있는 동안에는 목록이
+         display:none 이라 높이가 0 이었고, 그래서 "아래에 붙어 있었나" 판정도 무의미하다. */
+      jumpBottom = true;
+      toBottom();                              // 이미 받아 둔 줄은 지금 바로 내린다
+      pull();                                  // 그 사이 들어온 줄도 받아 온다
+      if (inputEl) inputEl.focus();
+      startIdle();
+    } else {
+      stopIdle();
+    }
+  }
+
+  /* 폴링이 없는 화면을 위한 느린 폴. 열려 있을 때만 돈다.
+     게임 화면에서는 note() 가 대신 깨우므로 이 타이머가 있어도 헛돌지 않는다 —
+     서로 같은 pull() 을 부르고, pull 은 새 줄이 없으면 그리지 않는다. */
+  function startIdle(){
+    if (idleTimer) return;
+    idleTimer = setInterval(function(){
+      if (document.hidden) return;
+      pull();
+    }, IDLE_POLL_MS);
+  }
+  function stopIdle(){ if (idleTimer) { clearInterval(idleTimer); idleTimer = null; } }
+
+  /* 여기까지 봤다고 적어 둔다. 화면을 옮겨도 남아야 하므로 localStorage 다 —
+     펼쳐 놓고 있는 동안에도 새 줄이 올 때마다 갱신한다. */
+  function markSeen(){
+    if (lastId <= lastSeen) return;
+    lastSeen = lastId;
+    store('od_chat_seen', String(lastSeen));
+  }
+
+  /* 목록을 맨 아래로. scrollHeight 를 읽는 순간 레이아웃이 확정되므로, 방금 감춤을
+     푼 직후에 불러도 제대로 된 높이가 나온다. */
+  function toBottom(){ if (listEl) listEl.scrollTop = listEl.scrollHeight; }
+
+  function paintBadge(){
+    if (!badgeEl) return;
+    badgeEl.hidden = unread <= 0;
+    badgeEl.textContent = unread > 99 ? '99+' : String(unread);
+    /* 접혀 있을 때만 깜빡인다. 열어 놓고 보는 중에는 안 읽은 수가 0이라 어차피
+       숨지만, 조건을 열림에도 걸어 두면 나중에 배지를 다른 데 쓸 때 조용히 깜빡인다. */
+    badgeEl.classList.toggle('blink', !open && unread > 0);
+  }
+
+  function paintNote(){
+    if (!noteEl) return;
+    var left = Math.max(0, muteUntil - Date.now());
+    if (left > 0) {
+      noteEl.textContent = '채팅 제한 ' + Math.ceil(left / 1000) + '초';
+      if (inputEl) { inputEl.disabled = true; inputEl.placeholder = '지금은 보낼 수 없습니다'; }
+    } else {
+      noteEl.textContent = '';
+      if (inputEl) { inputEl.disabled = false; inputEl.placeholder = '메시지를 입력하세요'; }
+    }
+  }
+
+  /* 상위 세 사람은 메달과 이름 색으로 표가 난다.
+     한때 [👑 #1] 처럼 순위를 글자로 적었는데, 240~290px 짜리 창에서 그 네 글자가
+     이름과 게임 태그를 밀어내 정작 한 말이 네 번째 조각이 됐다. 메달은 글리프 하나이고
+     등수를 읽지 않아도 색과 모양으로 안다.
+     4위 이하는 메달이 없다 — 있는 것과 없는 것의 차이가 곧 정보다. */
+  var TOP = { 1: ['t1', '🥇'], 2: ['t2', '🥈'], 3: ['t3', '🥉'] };
+
+  function add(m){
+    if (seen[m.id]) return;
+    seen[m.id] = 1;
+    var mine = m.userId === window.__MEID__;
+    var w = m.where && WHERE[m.where] ? '<i class="chat-w">' + esc(WHERE[m.where]) + '</i>' : '';
+    var t = TOP[m.rank];
+    var row = document.createElement('div');
+    row.className = 'chat-row' + (mine ? ' me' : '') + (t ? ' ' + t[0] : '');
+    /* 메달 · 이름 · 어디 · 말. 이름표와 말 사이에 콜론 하나를 둔다 — 게임 태그까지 붙으면
+       어디까지가 이름표고 어디부터가 한 말인지 눈이 한 번 더듬는다. */
+    row.innerHTML = (t ? '<i class="chat-md" aria-hidden="true">' + t[1] + '</i>' : '')
+      + '<span class="chat-nm" title="' + esc(hhmm(m.at)) + '">' + esc(m.name) + '</span>'
+      + w + '<span class="chat-c">:</span>'
+      + '<span class="chat-b">' + esc(m.body) + '</span>';
+    row.dataset.id = m.id;
+    listEl.appendChild(row);
+    /* 보관은 화면에서도 잘라 둔다 — 오래 켜 두면 DOM 이 계속 자란다.
+       걷어낸 줄은 seen 에서도 지운다. 예전에는 DOM 만 잘라서, 탭을 하루 종일 열어 두면
+       본 적 있는 id 가 끝없이 쌓였다 — 한 줄에 키 하나씩이라 눈에 띄는 양은 아니지만
+       상한이 없는 것은 그 자체로 새는 것이다.
+       지운 id 가 다시 올 걱정은 없다: 서버는 since 보다 큰 id 만 준다. */
+    while (listEl.childElementCount > MAX_ROWS) {
+      var gone = listEl.firstChild;
+      delete seen[gone.dataset.id];
+      listEl.removeChild(gone);
+    }
+  }
+
+  var pulling = false;
+  function pull(){
+    if (pulling) return;
+    pulling = true;
+    fetch('/api/chat?since=' + lastId)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d || !d.messages) return;
+        if (typeof d.muteLeftMs === 'number') {
+          muteUntil = d.muteLeftMs > 0 ? Date.now() + d.muteLeftMs : 0;
+          paintNote();
+        }
+        var atBottom = listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 24;
+        var added = 0, live = [];
+        d.messages.forEach(function(m){
+          if (m.id > lastId) lastId = m.id;
+          if (seen[m.id]) return;
+          add(m); added++;
+          if (!open && m.id > lastSeen && m.userId !== window.__MEID__) unread++;
+          if (primed) live.push(m);
+        });
+        if (open) markSeen();
+        if (added) paintBadge();
+        /* 방금 펼쳤으면 무조건 내린다. 그 밖에는 아래에 붙어 있던 사람만 따라 내린다 —
+           위를 읽는 중인데 끌어내리면 읽던 자리를 잃는다. */
+        if (jumpBottom || (added && atBottom)) toBottom();
+        jumpBottom = false;
+        /* 구독자(홀덤 말풍선)는 첫 수신을 건너뛴다 — 처음 열 때 받는 것은 지난
+           대화지 방금 한 말이 아니다. */
+        live.forEach(fire);
+        primed = true;
+      })
+      .catch(function(){ /* 일시적 실패는 다음 기회에 회복된다 */ })
+      .then(function(){ pulling = false; });
+  }
+
+  function flash(msg){
+    if (!noteEl) return;
+    noteEl.textContent = msg;
+    setTimeout(paintNote, 2200);
+  }
+
+  function send(){
+    if (!inputEl) return;
+    var body = inputEl.value.trim();
+    if (!body) return;
+    if (Date.now() < sendLockUntil) return;
+    /* 화면에서도 잠근다 — 서버가 막아 주지만, 눌리는데 아무 일도 안 나면 고장으로 읽힌다. */
+    sendLockUntil = Date.now() + MIN_GAP_MS;
+    inputEl.value = '';
+    fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ body: body, where: window.__CHAT_WHERE__ || null }) })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
+      .then(function(r){
+        if (!r.ok) {
+          flash(r.d && r.d.error ? r.d.error : '보낼 수 없습니다');
+          if (r.d && r.d.leftMs) {
+            sendLockUntil = Date.now() + r.d.leftMs;
+            /* 재갈이면 남은 시간을 그대로 반영한다 — 입력창이 계속 열려 있으면
+               보낼 때마다 거절당하는 것을 그때 알게 된다. */
+            if (r.d.error && r.d.error.indexOf('제한') >= 0) {
+              muteUntil = Date.now() + r.d.leftMs; paintNote();
+            }
+          }
+          inputEl.value = body;               // 쓴 말을 잃지 않게 되돌린다
+          return;
+        }
+        pull();
+      })
+      .catch(function(){ flash('전송 실패'); inputEl.value = body; });
+  }
+
+  /* 게임 화면이 폴링 응답을 받을 때마다 부른다. 값이 늘었을 때만 실제로 요청한다. */
+  function note(max){
+    if (typeof max !== 'number' || max <= lastId) return;
+    pull();
+  }
+
+  /* 방금 들어온 줄을 게임 화면에 넘긴다(홀덤 테이블 말풍선).
+     구독자가 던지는 예외로 채팅이 멈추면 안 된다 — 채팅은 여기서 끝이고,
+     말풍선은 곁다리다. */
+  function fire(m){
+    if (Date.now() - (m.at || 0) > LIVE_MS) return;
+    for (var i = 0; i < subs.length; i++) {
+      try { subs[i](m); } catch (e) { }
+    }
+  }
+  function onMessage(fn){ if (typeof fn === 'function') subs.push(fn); }
+
+  function init(){
+    if (!window.__MEID__) return;             // 로그인 안 한 화면에는 붙이지 않는다
+    build();
+    lastId = 0;
+    pull();                                   // 최근 줄을 한 번 받아 배지를 세운다
+    if (stored('od_chat_open', '0') === '1') toggle(true);
+    else paintBadge();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+
+  window.casinoChat = { note: note, open: function(){ toggle(true); }, onMessage: onMessage };
+})();

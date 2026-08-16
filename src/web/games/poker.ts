@@ -14,6 +14,7 @@ import {
   POKER_TURN_SEC, POKER_RIVER_SEC, POKER_SETTLE_SEC, POKER_REVEAL_SEC,
   POKER_KEEP_ROUNDS,
   type PokerRoundRow, type WebUser,
+  chatMax,
 } from '../../db/queries';
 import {
   computeFlipProbabilities, computeFlipProbabilitiesYielding, oddsFromProbability, oddsForWinMarket, dealFlip,
@@ -176,6 +177,9 @@ function statePayload(round: PokerRoundRow, userId: string) {
        다섯 줄뿐이라 응답이 무거워지지도 않는다. */
     drought: getPokerDrought(),
     balance: getWebUser(userId)?.balance ?? 0,
+    /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
+       화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
+    chatMax: chatMax(),
     coins: COIN_SIZES,
     bucketNames: BUCKET_NAMES,
   };
@@ -328,7 +332,9 @@ export function pokerPage(user: WebUser): string {
         <div id="pRoster" class="roster"><div class="empty" style="padding:16px 0">아직 참가자가 없습니다</div></div>
       `, rankPane('p'))}
     </div>
-    <script>window.__ME__ = ${jsonForScript(user.username)}; window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];</script>
+    <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
+      window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];
+      window.__CHAT_WHERE__ = 'poker';</script>
     <script>
 ${pkHead(JSON.stringify(ASSET_V))}${PK_CARDS_JS}${PK_CHIPS_JS}${PK_MARKETS_JS}${pkLoop(rankJs('p', 'poker'))}
     </script>

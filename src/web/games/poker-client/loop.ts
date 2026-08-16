@@ -113,6 +113,9 @@ export function pkLoop(p0: string | number): string {
         }
         if (!coinsEl.children.length) renderCoins();
         render();
+        /* 채팅은 폴을 따로 돌지 않는다 — 응답의 마지막 메시지 id 만 넘겨주면 값이
+           늘었을 때만 채팅이 스스로 받아 간다(app.js 의 casinoChat). */
+        if (window.casinoChat) casinoChat.note(d.chatMax);
         if (__first && window.casinoMark) window.casinoMark('첫 렌더 완료 (카드·베팅판 표시)');
       }
 

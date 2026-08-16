@@ -1,0 +1,141 @@
+/* ── 채팅 도크 ──────────────────────────────────────────────────────────
+   모든 화면 오른쪽 아래에 붙는다. 게임마다 있는 우측 패널에 탭으로 넣는 방법도 있었지만
+   그러면 여섯 군데 마크업을 각각 고쳐야 하고, 무엇보다 참가 인원을 보다가 채팅을 보려면
+   보던 것을 포기해야 한다. 도크는 한 벌이면 모든 화면에 붙고 패널을 뺏지도 않는다.
+
+   기본은 닫힘이다. 닫혀 있을 때는 작은 탭 하나뿐이고 안 읽은 수만 배지로 알린다 —
+   테이블을 가리지 않는 것이 이 화면에서 가장 중요하다. */
+  .chat-dock{position:fixed;right:16px;bottom:16px;z-index:70;
+    display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+
+  /* 접힘 상태의 탭 — 금빛 테두리의 작은 알약. 펠트 위에서도 눈에 들어와야 하지만
+     시선을 뺏으면 안 된다(카드와 칩이 주인공이다). */
+  .chat-tab{position:relative;display:flex;align-items:center;gap:6px;
+    padding:9px 16px;border-radius:999px;cursor:pointer;
+    font-family:inherit;font-size:13px;font-weight:700;color:var(--gold-hi);
+    background:linear-gradient(180deg,rgba(24,34,28,.97),rgba(8,14,10,.97));
+    border:1px solid var(--gold-dim);
+    box-shadow:0 6px 18px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07);
+    transition:border-color .12s, transform .12s}
+  .chat-tab:hover{border-color:var(--gold);transform:translateY(-1px)}
+  /* 펼쳐져 있으면 알약을 치운다. 본체에 최소화 버튼이 이미 있어서 알약은 할 일이 없고,
+     우측 패널에 폭을 맞춘 뒤로는 이것이 패널 위에 떠서 사이드바의 탭 줄(칩 순위 · 상금)
+     옆에 나란히 앉아 세 번째 탭처럼 보였다. */
+  .chat-dock.on .chat-tab{display:none}
+  /* 말풍선 그림 하나로도 무엇인지 읽힌다. 글자는 거들 뿐이라 좁아지면 먼저 접는다. */
+  .chat-ico{font-style:normal;font-size:14px;line-height:1}
+  .chat-tab-t{letter-spacing:-.2px}
+  /* 안 읽은 수. 접혀 있을 때 이것 하나가 "지금 대화가 오간다"를 말한다.
+     그래서 접혀 있는 동안에만 깜빡인다 — 가만히 있는 숫자는 배경이 된다. */
+  .chat-badge{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;padding:0 5px;
+    border-radius:999px;display:flex;align-items:center;justify-content:center;
+    font-style:normal;font-size:11px;font-weight:800;color:#141414;
+    background:var(--gold);box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  /* display 를 직접 정해 둔 요소에는 hidden 속성이 안 먹는다 — 브라우저 기본
+     [hidden]{display:none} 은 우선순위가 가장 낮아서 위 display:flex 에 진다.
+     이게 빠져 있어서 안 읽은 줄이 없는데도 "0" 배지가 늘 붙어 있었다. */
+  .chat-badge[hidden]{display:none}
+  .chat-badge.blink{animation:chatBlink 1.15s ease-in-out infinite}
+  @keyframes chatBlink{
+    0%,100%{opacity:1;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+    50%{opacity:.45;box-shadow:0 0 0 4px rgba(212,175,55,.18),0 2px 6px rgba(0,0,0,.5)}}
+  /* 깜빡임은 알림이지 연출이 아니다. 움직임을 줄여 달라고 한 사람에게는 색만 남긴다. */
+  @media (prefers-reduced-motion:reduce){.chat-badge.blink{animation:none}}
+
+  .chat-panel{width:320px;height:380px;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,rgba(18,26,21,.98),rgba(8,13,10,.98));
+    border:1px solid var(--gold-dim);border-radius:12px;overflow:hidden;
+    box-shadow:0 14px 40px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05)}
+  /* 배지와 같은 함정. 이게 없으면 최소화 버튼을 눌러도 hidden 만 켜질 뿐 화면에서는
+     그대로 남는다 — el.hidden 만 찍어 보면 true 라 눈치채기 어렵다(실제로 그랬다). */
+  .chat-panel[hidden]{display:none}
+  .chat-head{display:flex;align-items:center;gap:8px;padding:9px 10px 8px 12px;
+    border-bottom:1px solid rgba(255,255,255,.07)}
+  .chat-head b{font-size:13px;color:var(--gold-hi);letter-spacing:-.2px}
+  /* 제한·오류 문구가 뜨는 자리. 남는 폭을 다 쓰되 넘치면 자른다 — 도크가 늘어나면
+     테이블을 더 가린다. */
+  .chat-note{flex:1;min-width:0;font-size:11px;color:#e0a0a0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+  /* 최소화. ×가 아니라 −인 것이 요점이다 — 누른다고 사라지는 것이 없다. */
+  .chat-min{width:22px;height:22px;flex:none;padding:0;cursor:pointer;
+    background:transparent;border:0;color:var(--muted);font-size:17px;line-height:1;
+    font-family:inherit;border-radius:5px}
+  .chat-min:hover{color:var(--txt);background:rgba(255,255,255,.08)}
+
+  /* 줄 간격은 .chat-row 의 margin-bottom 이 갖는다. 여기 gap 을 함께 두면 둘이 더해져
+     실제 간격이 13px 이 되고, 어느 쪽을 고쳐야 하는지가 두 곳으로 갈린다. */
+  .chat-list{flex:1;min-height:0;overflow-y:auto;padding:8px 10px;
+    display:flex;flex-direction:column;
+    scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+  .chat-list::-webkit-scrollbar{width:8px}
+  .chat-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:8px}
+
+  /* 한 줄 = (메달) + 이름 + (어디) + 말. 아바타를 넣지 않는다 — 320px 폭에서 아바타가
+     들어가면 말이 들어갈 자리가 없고, 이 방은 이름만으로 충분히 누군지 안다(14명이다).
+
+     줄 사이를 띄우고 아주 옅은 선을 하나 긋는다. 여러 줄로 접히는 말이 섞이면 어디서
+     한 사람의 말이 끝나고 다음 사람이 시작하는지 눈으로 끊기지 않았다 — 간격만으로는
+     부족하고, 진한 선을 그으면 대화가 표가 된다. 알파 0.05 는 "있는 줄 모르지만
+     없으면 헷갈리는" 세기다. */
+  .chat-row{margin-bottom:8px;padding:3px 0;
+    border-bottom:1px solid rgba(255,255,255,.05);
+    font-size:12.5px;line-height:1.55;color:#f1f5f9;word-break:break-word}
+  /* 마지막 줄 아래의 선은 그을 것이 없다 — 목록이 잘린 것처럼 보인다. */
+  .chat-row:last-child{border-bottom:none;margin-bottom:0}
+  /* 이름은 기본이 차분한 슬레이트 회색이다. 예전에는 전부 금색이었는데, 그러면 금색이
+     "이름"이라는 뜻밖에 못 갖는다 — 색을 상위권에게 넘겨주고 나머지는 물러난다. */
+  .chat-nm{font-weight:600;color:#94a3b8;margin-right:4px}
+  .chat-row.me .chat-nm{color:#9fd8f5}
+  /* ── 상위 세 사람 ────────────────────────────────────────────────
+     통합 랭킹 1~3위. 메달 하나와 이름 색으로만 말한다 — 한때 [👑 #1] 처럼 등수를 글자로
+     적었는데, 240px 까지 좁아지는 창에서 그 네 글자가 이름과 게임 태그를 밀어내
+     정작 한 말이 네 번째 조각이 됐다.
+
+     .me 규칙보다 뒤에 와야 이긴다 — 특이도가 같아서 순서가 곧 결과다.
+     내가 1위면 "내 줄"보다 "1위"가 먼저 읽혀야 한다. */
+  /* <i> 라서 font-style 을 정해 두지 않으면 메달이 기울어 그려진다(이모지에도 먹는다). */
+  .chat-md{font-style:normal;margin-right:3px;font-size:12px;line-height:1}
+  .chat-row.t1 .chat-nm{color:#fbbf24;font-weight:800}
+  .chat-row.t2 .chat-nm{color:#38bdf8;font-weight:800}
+  .chat-row.t3 .chat-nm{color:#fb923c;font-weight:800}
+  /* 어느 화면에서 말했는지. 방이 하나뿐이라 이것이 유일한 위치 정보다. */
+  .chat-w{font-style:normal;font-size:10px;font-weight:700;color:var(--muted);
+    margin-right:4px;padding:1px 5px;border-radius:4px;
+    background:rgba(255,255,255,.06)}
+  /* 이름표와 말 사이의 끊는 자리. 앞이 [순위][이름][게임]으로 길어져서, 구분자가 없으면
+     어디부터가 한 말인지 눈이 한 번 더듬는다. */
+  .chat-c{color:#475569;margin-right:5px}
+  .chat-b{color:#f1f5f9}
+
+  .chat-foot{display:flex;gap:6px;padding:8px;border-top:1px solid rgba(255,255,255,.07)}
+  .chat-in{flex:1;min-width:0;padding:8px 10px;border-radius:8px;
+    background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.1);
+    color:var(--txt);font-family:inherit;font-size:12.5px}
+  .chat-in:focus{outline:none;border-color:var(--gold-dim)}
+  .chat-in:disabled{opacity:.5;cursor:not-allowed}
+  .chat-send{flex:none;padding:8px 12px;border-radius:8px;cursor:pointer;
+    font-family:inherit;font-size:12.5px;font-weight:700;color:#141414;
+    background:linear-gradient(180deg,var(--gold-hi),var(--gold));border:0}
+  .chat-send:hover{filter:brightness(1.08)}
+
+  /* ── 우측 패널에 폭을 맞춘 상태 ────────────────────────────────────
+     app.js 의 syncWidth() 가 게임 화면의 우측 패널(.game-side)을 실측해서 --chat-w 와
+     인라인 right 를 꽂아 준다. 그러면 채팅이 참가인원/랭킹 패널과 같은 세로선 위에
+     정확히 놓여 왼쪽 베팅 컨트롤을 절대 침범하지 않는다.
+
+     이 규칙이 붙는 조건도 app.js 가 정한다 — 좁은 창에서 패널이 본문 아래로 내려가면
+     .sync 를 떼고 인라인 값을 지운다. 그래야 아래 좁은 화면 규칙이 되살아난다. */
+  .chat-dock.sync .chat-panel{width:var(--chat-w)}
+  /* 240px 까지 좁아지면(1000px 이하 창) 글자 자리가 빠듯하다. 말풍선 그림만 남긴다. */
+  @media (max-width:1000px){
+    .chat-dock.sync .chat-tab{padding:9px 13px}
+    .chat-dock.sync .chat-tab-t{display:none}
+  }
+
+  /* 좁은 화면에서는 도크가 테이블을 덮는다. 폭을 화면에 맞추고 높이를 줄인다 —
+     그래도 가리지만, 접어 두는 것이 기본이라 열었을 때만이다. */
+  @media (max-width:520px){
+    .chat-dock{right:10px;bottom:10px;left:10px;align-items:stretch}
+    .chat-panel{width:auto;height:300px}
+    .chat-tab{align-self:flex-end}
+  }

@@ -14,6 +14,7 @@ import {
   getBaccaratBets, getBaccaratPlayers, getMyBaccaratBets, getRecentBaccaratResults, getWebUser,
   BACC_THIRD_SEC, BACC_SETTLE_SEC, BACC_REVEAL_SEC,
   type BaccRoundRow, type BaccOutcome, type WebUser,
+  chatMax,
 } from '../../db/queries';
 import { baccaratProbabilities, drawRound, playRound, cardsToStrings, handTotal } from '../../services/baccarat';
 import { oddsFromProbability, oddsForWinMarket } from '../../services/poker';
@@ -146,6 +147,9 @@ function statePayload(round: BaccRoundRow, userId: string) {
     coins: COIN_SIZES,
     me: userId,
     balance: getWebUser(userId)?.balance ?? 0,
+    /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
+       화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
+    chatMax: chatMax(),
     bets: getBaccaratBets(round.id),
     myBets: getMyBaccaratBets(round.id, userId),
     players: getBaccaratPlayers(round.id),
@@ -301,6 +305,7 @@ export function baccaratPage(user: WebUser): string {
       window.__ME__ = ${jsonForScript(user.username)};
       window.__MEID__ = ${jsonForScript(user.id)};
       window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];
+      window.__CHAT_WHERE__ = 'baccarat';
     </script>
     <script>
 ${bcHead(JSON.stringify(ASSET_V), jsonForScript(o), jsonForScript({ player: p.player, banker: p.banker, tie: p.tie, pair: p.pair }))}${BC_CARDS_JS}${BC_REVEAL_JS}${BC_MARKETS_JS}${BC_CHIPS_JS}${BC_ROSTER_JS}${bcLoop(rankJs('b', 'baccarat'))}
