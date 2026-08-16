@@ -106,7 +106,13 @@ export const SEATS = `    var seatXY = {};
       }
       /* 누구 봉투인가 — 굴러가는 동안 이것만 보인다. 금액과 가져간 사람은 멈춘 뒤에 온다.
          셋을 한꺼번에 띄우면 굴러가는 숫자를 볼 이유가 없어진다. */
-      if (ofEl) ofEl.textContent = job.victim ? job.victim + ' 님의 바운티' : '바운티';
+      /* 우승자가 자기 봉투를 회수하는 줄은 문구가 달라야 한다. 남의 것과 같은 말로
+         적으면 우승자가 자기 자신을 잡은 것처럼 읽힌다 — 그건 다른 사건이다. */
+      if (ofEl) {
+        ofEl.textContent = !job.victim ? '바운티'
+          : job.self ? job.victim + ' 님이 지킨 바운티'
+          : job.victim + ' 님의 바운티';
+      }
       if (whoEl) whoEl.textContent = '';
       /* 봉투가 여럿이면 몇 번째인지 점으로 알려준다 — 안 그러면 두 번 도는 것이
          "버그로 다시 돌았다"로 읽힌다. */
@@ -156,6 +162,7 @@ export const SEATS = `    var seatXY = {};
            적으면 그 몫이 어디서 왔는지 설명이 없다. */
         if (whoEl) {
           whoEl.textContent = !job.takers.length ? ''
+            : job.self ? '끝까지 지켜 회수'
             : job.takers.join(' · ') + (job.takers.length > 1 ? ' 나눠 가집니다' : ' 획득');
         }
       }, MYS_IN_MS + MYS_ROLL_MS);
@@ -445,6 +452,21 @@ export const SEATS = `    var seatXY = {};
          숫자가 없다 — 한동안 물음표를 띄워 뒀는데, 다섯 자리에 똑같은 "?" 가 걸린 화면은
          정보가 0 이면서 자리만 차지했다. 미스터리의 금액은 개봉 연출 한 곳에서만 나온다. */
       var badgeOn = pko && !mystery;
+      /* 우승자의 좌석. 대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로 내리므로
+         presence 만으로는 진 사람과 이긴 사람을 가를 수 없다 — 등수가 그것을 가른다.
+         busted 는 탈락 순서대로 오고 1위도 거기 들어 있다(등수를 매기려면 모두에게
+         탈락 순서가 있어야 한다). 그 사람의 좌석 번호를 찾아 둔다. */
+      var champSeat = null;
+      (function(){
+        var b = tb.busted || [];
+        for (var i = 0; i < b.length; i++) {
+          if (b[i].place !== 1) continue;
+          var seats = tb.seats || [];
+          for (var j = 0; j < seats.length; j++) {
+            if (seats[j].userId === b[i].userId) { champSeat = seats[j].seat; return; }
+          }
+        }
+      })();
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
@@ -722,7 +744,13 @@ export const SEATS = `    var seatXY = {};
            아직 깔리는 중에도 끝날 수 있고, 그러면 턴 카드가 떨어지자마자 화면이
            처형으로 넘어간다(제보로 확인). 카드가 다 나오고 칩이 옮겨진 뒤여야 한다.
            폴드로 끝난 판은 둘 다 즉시 참이라 곧바로 진행된다. */
-        var koShow = pko && s.presence === 'OUT' && resultReady() && settleDone(tb);
+        /* 우승자는 쏘지 않는다.
+           대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로 내린다(등수를 매기려면
+           모두에게 탈락 순서가 있어야 한다). 그래서 마지막 쇼다운에서 진 사람과 이긴
+           사람의 presence 가 같은 값이 되고, 둘 다 총을 맞았다 — 제보로 확인했다.
+           1위는 탈락한 것이 아니라 남은 사람이다. 등수로 가른다. */
+        var koShow = pko && s.presence === 'OUT' && champSeat !== s.seat
+          && resultReady() && settleDone(tb);
         if (koShow && !koFired[s.seat]) {
           koFired[s.seat] = 1;
           /* 처음 그리는 프레임에는 터뜨리지 않는다. 이미 탈락한 사람이 있는 판에
@@ -789,7 +817,7 @@ export const SEATS = `    var seatXY = {};
            자릿수가 들쭉날쭉해서 폭이 흔들리고, "있을 수 있는 금액"으로 보이지 않는다. */
         var pool = rv.map(function(r){ return r.a; });
         rv.forEach(function(r, i){
-          mysQueue.push({ victim: r.v, amount: r.a, takers: r.k || [],
+          mysQueue.push({ victim: r.v, amount: r.a, takers: r.k || [], self: !!r.self,
             idx: i, total: rv.length, pool: pool });
         });
         /* 이 묶음이 끝나는 시각을 여기서 잡아 둔다 — 우승 팝업과 상금 탭이 이 값을 보고

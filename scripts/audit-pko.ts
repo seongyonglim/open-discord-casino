@@ -779,7 +779,11 @@ async function main(): Promise<void> {
        다른 곳이 남는다(정산 대기를 넣으면서 실제로 그 문제가 생겼다). */
     ck('KO 조건에 pko 가 들어 있다', /var koShow = pko &&/.test(seatsSrc));
     ck('KO 조건이 한 곳에만 있다',
-      (seatsSrc.match(/s\.presence === 'OUT' && resultReady\(\) && settleDone/g) ?? []).length === 1);
+      (seatsSrc.match(/s\.presence === 'OUT' && champSeat !== s\.seat/g) ?? []).length === 1);
+    /* 우승자는 쏘지 않는다. 대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로
+       내리므로(등수를 매기려면 모두에게 탈락 순서가 있어야 한다) presence 만으로는
+       마지막 쇼다운의 승자와 패자가 갈리지 않는다 — 둘 다 총을 맞았다(제보). */
+    ck('우승자를 처형에서 뺀다', /champSeat !== s\.seat/.test(seatsSrc));
 
     // (4) payload: 일반 판에는 칸 자체가 없어야 한다
     ck('bountyPool 은 PKO 에서만 실린다', /bountyPool: isPko\(t\) \?/.test(stateSrc));
@@ -868,7 +872,8 @@ async function main(): Promise<void> {
        그 사이에 KO 를 띄우면 쇼다운을 볼 이유가 없어지고, 뱃지를 올리면 "카드도 안 열렸는데
        남의 바운티를 이미 가져갔다"로 보인다 — 실제로 플랍만 깔린 화면에서 그랬다. */
     ck('KO 연출이 정산 완료를 기다린다',
-      /var koShow = pko && s\.presence === 'OUT' && resultReady\(\) && settleDone\(tb\)/.test(seatsSrc));
+      /var koShow = pko && s\.presence === 'OUT' && champSeat !== s\.seat\s*\r?\n\s*&& resultReady\(\) && settleDone\(tb\)/
+        .test(seatsSrc));
     ck('총자국과 흑백 처리가 같은 신호를 쓴다',
       /shots\[si\]\.hidden = !koShow/.test(seatsSrc) && /toggle\('koed', koShow\)/.test(seatsSrc));
     ck('바운티 뱃지 변화도 정산 완료를 기다린다',
@@ -1826,6 +1831,107 @@ async function main(): Promise<void> {
     ck('바운티 헌터 판정도 모드를 보지 않는다',
       !/isPko|isMystery/.test(src.slice(src.indexOf('function awardBounty'),
         src.indexOf('function announceWinner'))));
+  }
+
+  section('[15] 마지막 장면 — 우승 소식 · 우승자 봉투 · 우승자는 안 맞는다');
+  {
+    const fs15 = require('node:fs') as typeof import('node:fs');
+    const src = fs15.readFileSync('src/db/holdem.ts', 'utf8');
+    const seats = fs15.readFileSync('src/web/games/holdem-client/seats.ts', 'utf8');
+
+    /* (1) 우승 소식이 순위 상금만 적고 있었다. 미스터리 90% 대회에서 우승자가 52,000P 를
+       가져간 판에 "7,000P" 로 나갔다 — 실제로 번 돈의 1/7 이다. */
+    const ann = src.slice(src.indexOf('function announceWinner'),
+      src.indexOf('function payPrizes'));
+    ck('우승 소식이 바운티까지 읽는다', /bounty_paid/.test(ann));
+    ck('총액을 적는다 (순위 상금 + 바운티)',
+      /const took = Math\.max\(0, win\.prize\) \+ won/.test(ann));
+    ck('둘 다 있으면 내역을 함께 적는다', /순위 \$\{p\(win\.prize\)\} \+ 바운티/.test(ann));
+    ck('지급이 끝난 뒤에 부른다 (payPrizes → announceWinner)',
+      src.indexOf('payPrizes(fresh, now);') < src.indexOf('announceWinner(fresh);'));
+
+    /* (2) 우승자는 아무에게도 안 잡히므로 자기 봉투가 끝까지 안 열렸다 — 상금은 들어오는데
+       그게 얼마짜리였는지 안 나와서 총액에서 빼서 짐작해야 했다. */
+    const pay = src.slice(src.indexOf('function payBounties'), src.indexOf('export function unregisterHoldem'));
+    ck('우승자 봉투를 개봉 목록에 얹는다', /list\.push\(\{ v: champ\.username/.test(pay));
+    ck('그 줄에 self 표시가 붙는다 (잡은 것이 아니라 회수다)', /self: 1/.test(pay));
+    ck('미스터리에서만 얹는다', /if \(isMystery\(t\)\) \{/.test(pay));
+    ck('액면가(bounty_face)를 쓴다 — bounty 는 이 시점에 이미 0 이다',
+      /bounty_face/.test(pay));
+    ck('깨진 JSON 이 개봉을 막지 않는다', /catch \{ list = \[\]; \}/.test(pay));
+    ck('화면이 self 를 받아 문구를 가른다',
+      /self: !!r\.self/.test(seats) && /job\.self \? job\.victim \+ ' 님이 지킨 바운티'/.test(seats)
+      && /job\.self \? '끝까지 지켜 회수'/.test(seats));
+
+    /* (3) 대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로 내린다(등수를 매기려면
+       모두에게 탈락 순서가 있어야 한다). 그래서 마지막 쇼다운에서 우승자도 총을 맞았다. */
+    ck('우승자 좌석을 등수로 찾는다', /var champSeat = null;/.test(seats)
+      && /if \(b\[i\]\.place !== 1\) continue;/.test(seats));
+    ck('처형 조건에서 우승자를 뺀다', /champSeat !== s\.seat/.test(seats));
+
+    /* 서버가 실제로 우승자까지 OUT 으로 내리는지 — 이 전제가 깨지면 위 수정이 헛것이 된다.
+       대회를 하나 돌려 확인한다. */
+    wipe();
+    for (const p of ['w1', 'w2', 'w3']) mkUser(p, 100_000);
+    const made = AD.createTournament({
+      title: '마지막 장면 검사', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 0, prizeMultiplier: 20_000, bountyPct: 100, mode: 'MYSTERY_BOUNTY',
+    });
+    if (!made.ok) { console.log('대회 실패: ' + made.error); process.exit(1); }
+    for (const p of ['w1', 'w2', 'w3']) HD.registerHoldem(p, p);
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+    HD.advanceHoldem();
+    const table = HD.getTable(made.id)!;
+    /* entriesOf 는 bounty_face·username 을 읽지 않는다 — 여기서만 필요하므로 직접 뽑는다. */
+    const faceRows = () => db.prepare(
+      `SELECT user_id, username, bounty_face FROM holdem_entries WHERE tournament_id = ?`)
+      .all(made.id) as { user_id: string; username: string; bounty_face: number }[];
+    const faces = new Map(faceRows().map(r => [r.user_id, r.bounty_face]));
+    const names = new Map(faceRows().map(r => [r.user_id, r.username]));
+    ck('검사 전제: 셋 다 봉투를 받았다',
+      ['w1', 'w2', 'w3'].every(u => (faces.get(u) ?? 0) > 0),
+      JSON.stringify([...faces]));
+    for (let i = 0; i < 300; i++) {
+      const st = HD.advanceHoldem();
+      if (st.status !== 'RUNNING') break;
+      const h = HD.getCurrentHand(table.id);
+      if (!h) break;
+      if (h.ended_at != null) {
+        db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE tournament_id = ?`)
+          .run(now() - 1, made.id);
+        continue;
+      }
+      if (h.to_act_seat == null) continue;
+      const seat = HD.getSeats(table.id).find(x => x.seat === h.to_act_seat);
+      if (!seat) break;
+      db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+        .run(now() + HD.ACTION_SEC, h.id);
+      if (!HD.holdemAction(seat.user_id, 'allin', 0).ok) HD.holdemAction(seat.user_id, 'call', 0);
+    }
+    const fin = entriesOf(made.id);
+    const champ = fin.find(r => r.finish_place === 1)!;
+    /* 전제 확인 — 이것이 이 결함의 원인이다. */
+    const outs = db.prepare(
+      `SELECT COUNT(*) AS n FROM holdem_seats WHERE table_id = ? AND presence = 'OUT'`)
+      .get(table.id) as { n: number };
+    ck('전제: 대회가 끝나면 우승자 자리도 OUT 이 된다', outs.n === 3, String(outs.n));
+    ck('그래서 presence 만으로는 못 가른다 — 등수가 필요하다', champ.finish_place === 1);
+
+    /* 우승자 봉투가 실제로 개봉 목록에 실렸는가 */
+    const hand = HD.getCurrentHand(table.id);
+    let rv: Array<{ v: string; a: number; self?: number }> = [];
+    try { rv = JSON.parse(hand?.bounty_reveals ?? '[]'); } catch { rv = []; }
+    const selfRow = rv.find(x => x.self);
+    ck('우승자 봉투가 개봉 목록에 실린다', selfRow != null, JSON.stringify(rv));
+    ck('그 금액이 우승자 액면가와 같다',
+      selfRow != null && selfRow.a === faces.get(champ.user_id),
+      `${selfRow?.a} vs ${faces.get(champ.user_id)}`);
+    ck('그 줄의 주인이 우승자다', selfRow?.v === names.get(champ.user_id),
+      `${selfRow?.v} vs ${names.get(champ.user_id)}`);
+    /* 돈은 그대로다 — 개봉 표시는 연출일 뿐이라 지급을 건드리면 안 된다. */
+    const paid = fin.reduce((n, r) => n + r.bounty_paid, 0);
+    ck('걷은 펀드가 전부 나갔다 (연출이 지급을 건드리지 않는다)',
+      paid === 20_000 * 3, `${paid} vs ${20_000 * 3}`);
   }
 
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

@@ -668,7 +668,7 @@ export function advanceHoldem(userId?: string): HoldemStatus {
       run(`UPDATE holdem_tournaments SET reg_notified_at = ?
             WHERE id = ? AND reg_notified_at IS NULL`, now, t.id);
       if (one<{ n: number }>(`SELECT changes() AS n`)!.n === 1) {
-        notifyAll('TOURNAMENT_OPEN', '홀덤 프리롤 등록 시작',
+        notifyAll('TOURNAMENT_OPEN', '홀덤 토너먼트 등록 시작',
           `${t.title} · ${kstHM(s.scheduledStartAt)} 시작`, '/games/holdem');
       }
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
@@ -1484,16 +1484,29 @@ function awardBounty(t: HtRow): void {
  * 우승자 본인은 이미 게임 화면에서 우승 연출을 봤다.
  */
 function announceWinner(t: HtRow): void {
-  const win = one<{ username: string; prize: number }>(
-    `SELECT username, prize FROM holdem_entries
+  /* 바운티도 함께 읽는다. 순위 상금만 적으면 바운티 대회에서 소식이 거짓이 된다 —
+     실제로 미스터리 바운티 우승자가 52,000P 를 가져간 판에 "7,000P" 라고 나갔다.
+     그 대회는 상금의 90%가 바운티로 나가므로, 순위 상금은 실제로 번 돈의 1/7 이었다.
+
+     payPrizes 가 bounty_paid 까지 채운 뒤에 불리므로 이 시점의 값이 최종 지급액이다
+     (finishTournament 의 호출 순서를 보라). */
+  const win = one<{ username: string; prize: number; bounty_paid: number }>(
+    `SELECT username, prize, bounty_paid FROM holdem_entries
       WHERE tournament_id = ? AND finish_place = 1 LIMIT 1`, t.id);
   if (!win) return;
   /* 참가자가 몇 명이었는지 함께 적는다. "3명 중 1등"과 "9명 중 1등"은 다른 소식이고,
      숫자가 없으면 그 판이 어느 정도였는지 알 수 없다. */
   const entries = one<{ n: number }>(
     `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ?`, t.id)!.n;
-  const prize = win.prize > 0 ? ` · ${win.prize.toLocaleString('ko-KR')}P` : '';
-  notifyAll('TOURNAMENT_WIN', '홀덤 프리롤 우승',
+  const won = Math.max(0, win.bounty_paid);
+  const took = Math.max(0, win.prize) + won;
+  const p = (n: number) => n.toLocaleString('ko-KR') + 'P';
+  /* 둘 다 있으면 내역을 함께 적는다 — 총액만 적으면 바운티 대회에서 "순위 상금이 이렇게
+     많았나"로 읽힌다. 한쪽이 0 인 판(일반 대회, 바운티 100%)에서는 총액만 적는다. */
+  const detail = win.prize > 0 && won > 0
+    ? ` (순위 ${p(win.prize)} + 바운티 ${p(won)})` : '';
+  const prize = took > 0 ? ` · ${p(took)}${detail}` : '';
+  notifyAll('TOURNAMENT_WIN', '홀덤 토너먼트 우승',
     `${win.username} 님 우승 (${entries}명 참가)${prize}`, '/games/holdem');
 }
 
@@ -1582,6 +1595,30 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
     /* 반드시 adjustBalance 를 거친다 — 잔액을 직접 고치면 "잔액 = 원장 누적합"이 깨진다.
        이 서비스의 유일한 불변식이고 감사가 매번 검사한다. */
     adjustBalance(r.user_id, amount, 'game:holdem:bounty:' + t.id);
+  }
+  /* 우승자가 회수한 자기 봉투를 화면에 열어 준다.
+     미스터리에서 봉투는 잡힐 때만 열린다. 그런데 우승자는 아무에게도 안 잡히므로 자기
+     봉투가 끝까지 안 열렸다 — 상금은 들어오는데 그게 얼마짜리였는지는 안 나와서, 총액에서
+     빼서 짐작해야 했다(제보). 마지막 판의 개봉 목록에 한 줄 얹으면 다른 봉투와 같은
+     전광판을 타고 나온다.
+     self 로 표시해 화면이 "잡았다"가 아니라 "회수했다"로 읽게 한다 — 우승자가 자기
+     이름을 잡은 것처럼 보이면 그건 다른 사건이다. */
+  if (isMystery(t)) {
+    const face = one<{ bounty_face: number }>(
+      `SELECT bounty_face FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+      t.id, champ.user_id);
+    const table = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE tournament_id = ?`, t.id);
+    const hand = table ? getCurrentHand(table.id) : undefined;
+    if (face && face.bounty_face > 0 && hand) {
+      let list: unknown[] = [];
+      try { list = JSON.parse(hand.bounty_reveals ?? '[]') as unknown[]; }
+      catch { list = []; }              // 깨진 JSON 이 개봉을 통째로 막지 않는다
+      if (Array.isArray(list)) {
+        list.push({ v: champ.username, a: face.bounty_face, k: [champ.username], self: 1 });
+        run(`UPDATE holdem_hands SET bounty_reveals = ? WHERE id = ?`,
+          JSON.stringify(list), hand.id);
+      }
+    }
   }
   /* 못 받은 자리(벌어 둔 것이 0 인 사람)의 머리·봉투도 비워 둔다 — 화면이 "열렸다"를
      한 가지 기준으로만 보게 하고, 다음 호출이 같은 값을 또 세지 않게 한다. */
