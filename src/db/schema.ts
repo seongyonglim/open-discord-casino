@@ -467,6 +467,25 @@ function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_notices_order ON notices(active, sort_at DESC);
 
+    /* ── 포커 플립: 등급별 미출현 판수 ──────────────────────────────
+       "몇 판째 안 나왔나"를 라운드 기록에서 세면 30판이 한계다 — 그 너머는
+       prunePokerRounds 가 지운다(보관 30판). 그래서 화면이 «29판+ 미출현» 으로 잘렸다.
+       판수 자체가 이 게임의 재미인데 상한에 걸려 뭉개지고 있었다.
+
+       기록을 더 오래 보관하는 대신 세어 둔 값을 남긴다. 라운드 하나가 정산될 때마다
+       한 줄씩 갱신하면 되고, 30판이 지워져도 값은 남는다. 응답에 실리는 것도 다섯 줄뿐이라
+       보관을 늘리는 쪽(라운드 200개를 매 초 내려보내기)보다 훨씬 싸다.
+
+       exact — 이 값이 정확한가. 표를 처음 만들 때는 남아 있는 30판으로 채울 수밖에 없어서
+       "적어도 N판"이 최선이다(그때는 화면이 예전처럼 «N판+» 로 적는다). 그 뒤에 한 번
+       적중해서 0 으로 리셋되면 그때부터는 정확한 값이라 1 로 올린다 — 스스로 낫는다. */
+    CREATE TABLE IF NOT EXISTS poker_drought (
+      bucket INTEGER PRIMARY KEY,            -- 0..4 (BUCKET_NAMES 의 번호)
+      since INTEGER NOT NULL DEFAULT 0,      -- 마지막 적중 이후 지나간 판 수
+      best INTEGER NOT NULL DEFAULT 0,       -- 역대 최장 미출현
+      exact INTEGER NOT NULL DEFAULT 0       -- 1이면 since 가 정확한 값이다
+    );
+
     CREATE TABLE IF NOT EXISTS holdem_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
