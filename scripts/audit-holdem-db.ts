@@ -1168,6 +1168,61 @@ console.log('\n[13] 반복 개최 (자동 생성은 켰을 때만 · 지운 판�
   const hint = R.upcomingHint();
   ck('행이 없어도 다음 대회를 안내한다', hint != null && hint.startAt === far.startAt);
 
+  /* ── 자동 개최가 방식도 고른다 ─────────────────────────────────
+     예전에는 템플릿에 방식 칸이 없어서 자동으로 열리는 판은 언제나 일반 대회였고,
+     바운티는 운영자가 매번 손으로 열어야 했다. 그 칸을 두었으니 실제로 그 방식으로
+     열리는지, 그리고 몫과 이름까지 따라오는지 확인한다.
+
+     조용히 어긋나면 알아채기 어려운 종류다 — 바운티로 열린 줄 알았는데 일반이면
+     대회가 끝날 때까지 아무도 모른다(참가자는 명찰이 없는 것을 미스터리로 읽는다). */
+  const openNow = (cfg: Parameters<typeof S.saveConfig>[0]) => {
+    wipe();
+    S.saveConfig(cfg);
+    R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+    const sm2 = S.getConfig().startMin;
+    const day0 = T.kstTimeToUnix(T.kstDateStr(Date.now()), Math.floor(sm2 / 60), sm2 % 60);
+    R.ensureRecurring(day0 - 3600);
+    return db.prepare(`SELECT title, mode, bounty_pct, buy_in FROM holdem_tournaments
+      ORDER BY id DESC LIMIT 1`).get() as
+      { title: string; mode: string; bounty_pct: number; buy_in: number } | undefined;
+  };
+
+  const base = S.defaultConfig();
+  const mys = openNow({ ...base, mode: 'MYSTERY_BOUNTY', bountyPct: 100 });
+  ck('템플릿이 미스터리면 미스터리로 열린다', mys?.mode === 'MYSTERY_BOUNTY',
+    JSON.stringify(mys));
+  ck('바운티 몫도 그대로 따라온다', mys?.bounty_pct === 100, String(mys?.bounty_pct));
+  /* 이름도 방식을 따라야 한다 — "홀덤 프리롤"이라고 적힌 미스터리 대회는 목록에서
+     어느 판이 무엇이었는지 알 수 없게 만든다. */
+  ck('이름이 방식을 말한다', mys?.title === '미스터리 바운티', mys?.title);
+
+  const pko = openNow({ ...base, mode: 'PKO_BOUNTY', bountyPct: 70 });
+  ck('템플릿이 바운티 헌터면 그렇게 열린다', pko?.mode === 'PKO_BOUNTY', JSON.stringify(pko));
+  ck('그 몫도 따라온다', pko?.bounty_pct === 70, String(pko?.bounty_pct));
+  ck('바운티 헌터 이름이 붙는다', pko?.title === '바운티 헌터', pko?.title);
+
+  const cls = openNow({ ...base, mode: 'CLASSIC' });
+  ck('일반이면 예전 그대로 열린다', cls?.mode === 'CLASSIC', JSON.stringify(cls));
+  ck('프리롤 이름은 그대로다', cls?.title === '홀덤 프리롤', cls?.title);
+
+  /* 저장을 거치지 않은 옛 설정은 일반으로 읽어야 한다 — 자동 개최가 뜻하지 않게
+     바운티를 여는 것보다 그쪽이 안전하다. */
+  wipe();
+  db.prepare(`INSERT INTO holdem_settings (key, value) VALUES ('tmplMode', 'GARBAGE')
+    ON CONFLICT(key) DO UPDATE SET value = 'GARBAGE'`).run();
+  ck('알 수 없는 방식은 일반으로 읽는다', S.getConfig().mode === 'CLASSIC', S.getConfig().mode);
+  ck('바운티 몫은 범위를 벗어날 수 없다',
+    S.saveConfig({ ...base, mode: 'PKO_BOUNTY', bountyPct: 0 }).ok === false
+    && S.saveConfig({ ...base, mode: 'PKO_BOUNTY', bountyPct: 101 }).ok === false);
+  ck('없는 방식은 저장을 거절한다',
+    S.saveConfig({ ...base, mode: 'NOPE' as never }).ok === false);
+  /* [기본값으로]가 방식도 되돌려야 한다 — 안 지우면 되돌린 뒤에도 바운티로 열린다. */
+  S.saveConfig({ ...base, mode: 'MYSTERY_BOUNTY', bountyPct: 90 });
+  S.resetConfig();
+  ck('기본값으로 되돌리면 일반으로 돌아간다', S.getConfig().mode === 'CLASSIC');
+  ck('바운티 몫도 기본값으로 돌아간다', S.getConfig().bountyPct === base.bountyPct,
+    String(S.getConfig().bountyPct));
+
   // 진행 중 대회 중단 — 자동으로 정리되던 장치가 없어졌으므로 사람이 풀 수 있어야 한다
   wipe();
   setWindow(-60, 600, 1800);

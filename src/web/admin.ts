@@ -372,6 +372,16 @@ export function adminPage(user: WebUser): string {
           <option value="free" ${cfg.buyIn > 0 ? '' : 'selected'}>프리롤 (참가비 없음)</option>
           <option value="buyin" ${cfg.buyIn > 0 ? 'selected' : ''}>바이인 (참가비 있음)</option>
         </select><i>고른 쪽의 설정만 아래에 나옵니다</i></label>
+        <!-- 자동 개최가 방식까지 고른다. 예전에는 이 칸이 없어서 자동으로 열리는 판은
+             언제나 일반 대회였고, 바운티는 매번 손으로 열어야 했다. -->
+        <label>대회 방식<select id="cfMode">
+          <option value="CLASSIC" ${cfg.mode === 'CLASSIC' ? 'selected' : ''}>일반 (순위 상금만)</option>
+          <option value="PKO_BOUNTY" ${cfg.mode === 'PKO_BOUNTY' ? 'selected' : ''}>바운티 헌터 (금액 공개)</option>
+          <option value="MYSTERY_BOUNTY" ${cfg.mode === 'MYSTERY_BOUNTY' ? 'selected' : ''}>미스터리 바운티 (금액 비공개)</option>
+        </select><i>자동으로 열리는 판에 그대로 적용됩니다</i></label>
+        <label id="cfBtyRow">바운티 몫<span class="ad-inx"><input type="number" id="cfBtyPct"
+          min="${T.BOUNTY_PCT_MIN}" max="${T.BOUNTY_PCT_MAX}" step="5" value="${cfg.bountyPct}"><b>%</b></span>
+          <i>나머지가 순위 상금입니다 · 100%면 전액 바운티</i></label>
       </div>
       <!-- 방식에 따라 한 쪽만 보인다. 배수와 참가비는 상금 풀을 정하는 서로 다른 방법이라
            나란히 두면 어느 것이 지금 쓰이는지 알 수 없다. -->
@@ -926,6 +936,16 @@ export function adminPage(user: WebUser): string {
     cfKind.addEventListener('change', cfSyncRows);
     cfSyncRows();
 
+    /* 바운티 몫은 바운티 판에서만 뜻이 있다. 일반 대회에서 숫자를 띄워 두면 "이게 뭘
+       바꾸나"를 묻게 되고, 답은 "아무것도"다.
+       값 자체는 지우지 않는다 — 방식을 되돌리면 예전 몫이 그대로 나와야 한다. */
+    var cfMode = document.getElementById('cfMode');
+    function cfSyncMode(){
+      document.getElementById('cfBtyRow').hidden = cfMode.value === 'CLASSIC';
+    }
+    cfMode.addEventListener('change', cfSyncMode);
+    cfSyncMode();
+
     function cfRead(){
       var buyin = cfBuyin();
       return {
@@ -938,6 +958,10 @@ export function adminPage(user: WebUser): string {
         weekdayMultiplier: buyin ? 0 : cfNum('cfWd'),
         weekendMultiplier: buyin ? 0 : cfNum('cfWe'),
         prizeFixed: buyin ? cfNum('cfGtd') : cfNum('cfFixed'),
+        /* 방식과 바운티 몫은 참가 방식과 무관하게 늘 보낸다 — 일반 대회를 골라 두어도
+           값은 남아 있어야 나중에 바운티로 되돌릴 때 예전 몫이 그대로 나온다. */
+        mode: document.getElementById('cfMode').value,
+        bountyPct: cfNum('cfBtyPct'),
       };
     }
     function cfCheck(c){
@@ -946,8 +970,9 @@ export function adminPage(user: WebUser): string {
       var LABEL = { regOpenMin: '등록 시작', startMin: '대회 시작', graceMin: '최소 인원 대기',
         lateRegMin: '레이트 레지', startingStack: '시작 칩', levelMin: '블라인드 주기',
         weekdayMultiplier: '평일 배수', weekendMultiplier: '주말 배수',
-        prizeFixed: '고정 상금 풀', buyIn: '참가비' };
-      for (var k in c) if (!isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
+        prizeFixed: '고정 상금 풀', buyIn: '참가비', bountyPct: '바운티 몫' };
+      /* mode 는 숫자가 아니다 — isFinite 로 걸면 언제나 "값을 확인해 주세요"가 뜬다. */
+      for (var k in c) if (k !== 'mode' && !isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
       /* 분 단위로 바뀐 뒤에도 시(regOpenHour/startHour)를 보고 있었다 — 없는 값이라
          비교가 전부 false 가 되어 화면 검증이 조용히 아무것도 안 했다. 서버가 막아 주긴
          하지만, 저장을 눌러 봐야 알게 되는 것이 이 검사를 둔 이유를 지운다. */
@@ -1211,6 +1236,10 @@ export async function handleAdminConfig(req: IncomingMessage, res: ServerRespons
     weekdayMultiplier: n('weekdayMultiplier'), weekendMultiplier: n('weekendMultiplier'),
     prizeFixed: n('prizeFixed'),
     buyIn: n('buyIn'),
+    /* 방식은 문자열이라 n() 을 태우면 NaN 이 된다. 알 수 없는 값은 일반 대회로 읽는다 —
+       자동 개최가 뜻하지 않게 바운티를 여는 것보다 그쪽이 안전하다(saveConfig 이 다시 막는다). */
+    mode: b?.mode === 'PKO_BOUNTY' || b?.mode === 'MYSTERY_BOUNTY' ? b.mode : 'CLASSIC',
+    bountyPct: n('bountyPct'),
   });
   if (!r.ok) return sendJson(res, 400, { error: r.errors.join(' · ') });
   return sendJson(res, 200, { ok: true });

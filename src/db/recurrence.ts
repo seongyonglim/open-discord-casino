@@ -179,10 +179,17 @@ export function ensureRecurring(now: number = Math.floor(Date.now() / 1000)): vo
 
   /* 순환 참조를 피하려고 여기서 부른다 — admin 이 settings 를 읽고, 이 파일도 읽는다. */
   const { createTournament } = require('./admin') as typeof import('./admin');
+  /* 방식도 템플릿에서 가져온다. 예전에는 여기 칸이 없어서 자동으로 열리는 판은 언제나
+     일반 대회였고, 바운티는 운영자가 매번 손으로 열어야 했다.
+     이름은 비워 둔다 — createTournament 가 방식과 참가비를 보고 붙인다. 여기서 적으면
+     미스터리 대회에 "홀덤 프리롤"이라는 이름이 박힌다. */
+  const { getConfig } = require('./settings') as typeof import('./settings');
+  const cfg = getConfig();
   const made = createTournament({
-    title: '홀덤 프리롤',
     regOpenAt: next.regOpenAt,
     startAt: next.startAt,
+    mode: cfg.mode,
+    bountyPct: cfg.bountyPct,
   });
   if (made.ok) put('recurLastAt', String(next.startAt));
 }

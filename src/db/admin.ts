@@ -297,8 +297,13 @@ export function createTournament(o: {
       };
     }
     const fixed = Math.max(0, Math.floor(o.prizeFixed ?? cfg.prizeFixed));
-    /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이다. */
-    const title = (o.title ?? '').trim() || (buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
+    /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이고,
+       바운티 판도 마찬가지다 — 자동 개최가 방식까지 고르게 되면서 이름만 남아 있으면
+       목록에서 어느 판이 미스터리였는지 알 수 없다. */
+    const title = (o.title ?? '').trim()
+      || (mode === 'MYSTERY_BOUNTY' ? '미스터리 바운티'
+        : mode === 'PKO_BOUNTY' ? '바운티 헌터'
+        : buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
     /* date_str 은 이제 "하루 하나"의 열쇠가 아니다(유니크 인덱스를 걷어냈다).
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments

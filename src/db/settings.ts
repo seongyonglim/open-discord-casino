@@ -30,6 +30,15 @@ export interface TournamentConfig {
      어긋나는 상태(바이인인데 0원, 프리롤인데 500원)가 생기고, 그때 어느 쪽을 믿을지
      아무도 모른다. 금액 하나만 두면 0 인가 아닌가로 방식이 저절로 정해진다. */
   buyIn: number;
+  /* 판의 종류. 자동 개최가 이 값으로 대회를 연다 — 예전에는 여기 칸이 없어서 자동으로
+     열리는 판은 언제나 일반 대회였고, 바운티는 운영자가 매번 손으로 열어야 했다.
+
+     buyIn 과 달리 방식과 금액이 어긋날 여지가 없다: 이 값 하나가 곧 방식이고,
+     바운티 몫은 아래 bountyPct 가 따로 든다(일반 대회에서는 쓰이지 않는다). */
+  mode: 'CLASSIC' | 'PKO_BOUNTY' | 'MYSTERY_BOUNTY';
+  /* 1인당 금액 중 바운티로 갈 몫(%). 바운티 판에서만 쓴다.
+     미스터리도 이 값을 쓴다 — 100%면 순위 상금이 0 이 되고 전액이 봉투로 간다. */
+  bountyPct: number;
 }
 /* 순위별 분배 비율은 여기서 다루지 않는다. ITM 인원(참가자의 30%)과 순위별 비중은
    검증된 산식이라 그대로 둔다 — 운영자가 고치는 것은 "풀의 크기"까지다. */
@@ -58,6 +67,8 @@ export function defaultConfig(): TournamentConfig {
     weekendMultiplier: r.freerollPerHeadWeekend,
     prizeFixed: 0,
     buyIn: 0,
+    mode: 'CLASSIC',
+    bountyPct: T.BOUNTY_PCT_DEFAULT,
   };
 }
 
@@ -88,6 +99,10 @@ export function getConfig(): TournamentConfig {
     weekendMultiplier: numOf('weekendMultiplier', d.weekendMultiplier),
     prizeFixed: numOf('prizeFixed', d.prizeFixed),
     buyIn: numOf('buyIn', d.buyIn),
+    /* 저장된 적이 없거나 알 수 없는 값이면 일반 대회로 읽는다 — 자동 개최가 뜻하지 않게
+       바운티를 여는 것보다 아무 표시 없이 일반을 여는 쪽이 안전하다. */
+    mode: v.tmplMode === 'PKO_BOUNTY' || v.tmplMode === 'MYSTERY_BOUNTY' ? v.tmplMode : d.mode,
+    bountyPct: T.clampBountyPct(numOf('tmplBountyPct', d.bountyPct)),
   };
 }
 
@@ -125,6 +140,15 @@ export function validateConfig(c: TournamentConfig): string[] {
   /* 참가비는 사람 잔액에서 실제로 빠져나가는 돈이다. 음수·소수가 여기를 지나면
      그대로 원장에 남는다. */
   if (!int(c.buyIn) || c.buyIn < 0) bad.push('참가비는 0 이상의 정수여야 합니다');
+  if (!['CLASSIC', 'PKO_BOUNTY', 'MYSTERY_BOUNTY'].includes(c.mode)) {
+    bad.push('대회 방식이 올바르지 않습니다');
+  }
+  /* 바운티 몫은 일반 대회에서도 저장은 된다(방식을 바꿔도 값이 남아 있어야 한다).
+     다만 범위는 언제나 지킨다 — 0% 면 바운티가 없는 바운티 판이 되고, 100% 를 넘으면
+     상금 팟이 음수가 된다. */
+  if (!int(c.bountyPct) || c.bountyPct < T.BOUNTY_PCT_MIN || c.bountyPct > T.BOUNTY_PCT_MAX) {
+    bad.push(`바운티 몫은 ${T.BOUNTY_PCT_MIN}~${T.BOUNTY_PCT_MAX} 사이여야 합니다`);
+  }
   return bad;
 }
 
@@ -145,6 +169,8 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
     put('weekendMultiplier', String(c.weekendMultiplier));
     put('prizeFixed', String(c.prizeFixed));
     put('buyIn', String(c.buyIn));
+    put('tmplMode', c.mode);
+    put('tmplBountyPct', String(c.bountyPct));
     return { ok: true as const };
   });
 }
@@ -153,6 +179,7 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
 const CONFIG_KEYS = [
   'regOpenMin', 'startMin', 'graceMin', 'lateRegMin', 'startingStack', 'levelMin',
   'weekdayMultiplier', 'weekendMultiplier', 'prizeFixed', 'buyIn',
+  'tmplMode', 'tmplBountyPct',
   // 예전 표기(시 단위). 남아 있으면 되돌린 뒤에도 그 값이 읽히므로 함께 지운다
   'regOpenHour', 'startHour',
 ];
