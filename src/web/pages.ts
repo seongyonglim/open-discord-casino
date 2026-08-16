@@ -51,8 +51,11 @@ interface GameDef {
 }
 
 const GAMES: GameDef[] = [
-  { key: 'holdem', name: '홀덤 프리롤', icon: trophyIcon, group: 'event',
-    desc: '참가비 없이 모여서 겨루는 토너먼트. 상위 입상자가 상금을 나눠 갖습니다.',
+  /* "프리롤"이 아니라 "토너먼트"다. 참가비 대회도 열 수 있고(buy_in), 바운티·미스터리
+     바운티까지 붙으면서 프리롤은 그중 한 방식일 뿐이 됐다 — 이름이 게임을 좁게 말하고
+     있었다. 어떤 방식인지는 카드 설명과 상금 탭이 대회마다 말한다. */
+  { key: 'holdem', name: '홀덤 토너먼트', icon: trophyIcon, group: 'event',
+    desc: '모여서 한 판에 겨루는 토너먼트. 상위 입상자가 상금을 나눠 갖습니다.',
     /* 사실 줄을 두지 않는다 — 이 카드의 설명은 freerollOverride가 대회 상태로 갈아끼우고,
        거기에 신청 인원과 상금 풀이 들어 있다. 살아 있는 수치가 고정값보다 낫다. */
     /* 배지에 고정 시각을 적지 않는다. 예전에는 '매일 22:00'이었는데, 대회를 운영자가
@@ -323,7 +326,7 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
   /* 예정된 대회가 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
      예전에는 '매일 22:00'을 적어 뒀는데, 이제 그건 사실이 아니다.
      없는 일정을 적으면 기다린 사람이 헛걸음한다. */
-  if (!ht || !ht.schedule) return { label: '홀덤 프리롤', value: '예정 없음', sub: '열리면 공지합니다' };
+  if (!ht || !ht.schedule) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
   const now = Math.floor(Date.now() / 1000);
   const short = (at: number) => {
     const s = Math.max(0, at - now);
@@ -342,17 +345,17 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
       return { label: '프리롤 인원 대기', value: `${ht.registered} / ${T.MIN_PLAYERS}명`,
         sub: `${hhmm(ht.schedule.graceEndsAt)}까지 안 차면 취소` };
     case 'RUNNING':
-      return { label: '프리롤', value: '진행 중', sub: `${ht.registered}명 참가` };
+      return { label: '토너먼트', value: '진행 중', sub: `${ht.registered}명 참가` };
     case 'FINISHED': case 'CANCELLED': {
       /* 이 판은 끝났다. 다음이 언제인지는 예약된 판이나 반복 규칙에서 온다 —
          예전에는 "내일 같은 시각"을 계산했는데, 매일 열린다는 보장이 없어졌다. */
       const up = upcomingHint(now);
-      if (!up) return { label: '홀덤 프리롤', value: '예정 없음', sub: '열리면 공지합니다' };
-      return { label: '다음 프리롤 등록까지', value: short(up.regOpenAt),
+      if (!up) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
+      return { label: '다음 대회 등록까지', value: short(up.regOpenAt),
         sub: `${up.dateStr} · ${hhmm(up.startAt)} 시작` };
     }
     default:
-      return { label: '프리롤 등록까지', value: short(ht.schedule.regOpenAt),
+      return { label: '대회 등록까지', value: short(ht.schedule.regOpenAt),
         sub: `${hhmm(ht.schedule.scheduledStartAt)} 시작 · ${ht.schedule.title}` };
   }
 }

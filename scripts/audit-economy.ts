@@ -1357,7 +1357,7 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
 
   ck('끝난 대회만 센다 (취소된 대회 제외)', S.seasonHoldemCount(s.id) === 2,
     String(S.seasonHoldemCount(s.id)));
-  const r = S.seasonHoldemRanking(s.id);
+  const r = S.seasonHoldemRanking(s.id, 'CLASSIC');
   ck('프리롤 상금 순으로 줄 선다',
     r.length === 3 && r[0].userId === 'ht_b' && r[1].userId === 'ht_a',
     JSON.stringify(r.map(x => x.userId + ':' + x.prize)));
@@ -1368,10 +1368,10 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
     r[2].userId === 'ht_c' && r[2].prize === 0 && r[2].entries === 1, JSON.stringify(r[2]));
   ck('취소된 대회의 상금은 안 잡힌다', r[2].prize === 0);
 
-  const mine = S.myHoldemRank(s.id, 'ht_a');
+  const mine = S.myHoldemRank(s.id, 'ht_a', 'CLASSIC');
   ck('내 홀덤 순위가 나온다',
     mine != null && mine.rank === 2 && mine.total === 3 && mine.score === 2600, JSON.stringify(mine));
-  ck('안 나간 사람은 순위가 없다', S.myHoldemRank(s.id, 'se_a') == null);
+  ck('안 나간 사람은 순위가 없다', S.myHoldemRank(s.id, 'se_a', 'CLASSIC') == null);
 
   /* 시즌 경계는 둘째 시즌부터 의미가 있다.
      첫 시즌에는 앞선 시즌이 없으므로, 그 전에 끝난 대회를 가져갈 다른 주인도 없다.
@@ -1380,8 +1380,8 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
      아예 안 떴고, 아무 에러도 없이 그냥 없는 카테고리가 됐다. */
   mk(4, s.started_at - 100); ent(4, 'ht_a', 1, 5000);
   ck('첫 시즌은 시작 전에 끝난 대회도 담는다 (앞 시즌이 없으니 다른 주인이 없다)',
-    S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize === 7600,
-    String(S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize));
+    S.seasonHoldemRanking(s.id, 'CLASSIC').find(x => x.userId === 'ht_a')!.prize === 7600,
+    String(S.seasonHoldemRanking(s.id, 'CLASSIC').find(x => x.userId === 'ht_a')!.prize));
   ck('그래서 홀덤 카테고리가 뜬다', S.seasonHoldemCount(s.id) === 3,
     String(S.seasonHoldemCount(s.id)));
 
@@ -1465,10 +1465,96 @@ section('[10b] 첫 시즌으로 지난 기록 가져오기');
       S.currentSeason().started_at <= long, `${S.currentSeason().started_at} vs ${long}`);
     ck('그래서 홀덤 카테고리가 뜬다', S.seasonHoldemCount(s2.id) === 1,
       String(S.seasonHoldemCount(s2.id)));
-    const hr = S.seasonHoldemRanking(s2.id);
+    const hr = S.seasonHoldemRanking(s2.id, 'CLASSIC');
     ck('홀덤 순위에 옛 대회가 들어온다',
       hr.length === 1 && hr[0].prize === 3000 && hr[0].wins === 1, JSON.stringify(hr[0]));
   }
+}
+
+section('[10e] 홀덤 — 장르별 랭킹 (일반 / 바운티)');
+{
+  /* 실제로 일어난 일을 그대로 세워 확인한다.
+     운영 대회 #44 「위캔드 미스터리 바운티 프리롤」(2026-08-16, 7인 · 인당 20,000P ·
+     바운티 100%)에서 우승자가 72,800P, 2위가 53,200P 를 가져갔는데 랭킹에는 둘 다
+     «상금 0P» 로 찍혀 최하위권에 앉았다. 그 대회는 순위 상금이 0 이고 돈이 전부
+     bounty_paid 로 나가는데 집계가 SUM(e.prize) 만 보고 있었기 때문이다.
+
+     그래서 장르를 갈랐다. 이 절이 확인하는 것은 세 가지다:
+       · 두 표가 서로의 대회를 섞지 않는다
+       · 바운티 표에서는 바운티가 상금으로 잡힌다 (0P 로 사라지지 않는다)
+       · 입상(ITM)도 그 장르 기준으로 센다 */
+  const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const db = getDb();
+  for (const t of ['season_stats', 'season_results', 'seasons',
+    'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  mkUser('gn_win', 0); mkUser('gn_2nd', 0); mkUser('gn_cls', 0);
+  const s = S.currentSeason();
+
+  const mkT = (id: number, mode: string) =>
+    db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at, mode) VALUES (?, ?, ?, 0, 0, 0, 20000, 1, ?, ?)`)
+      .run(id, '2026-08-1' + id, mode, Math.floor(Date.now() / 1000), mode);
+  const ent = (tid: number, uid: string, place: number, prize: number, paid: number) =>
+    db.prepare(`INSERT INTO holdem_entries
+      (tournament_id, user_id, username, registered_at, finish_place, prize, bounty_paid)
+      VALUES (?, ?, ?, 0, ?, ?, ?)`).run(tid, uid, uid, place, prize, paid);
+
+  // #44 재현 — 미스터리 바운티 100%: 순위 상금 0, 바운티만 나간다
+  mkT(1, 'MYSTERY_BOUNTY');
+  ent(1, 'gn_win', 1, 0, 72_800);
+  ent(1, 'gn_2nd', 2, 0, 53_200);
+  ent(1, 'gn_cls', 3, 0, 0);
+  // 일반 대회 — 순위 상금만 있다
+  mkT(2, 'CLASSIC');
+  ent(2, 'gn_cls', 1, 26_750, 0);
+  ent(2, 'gn_win', 2, 0, 0);
+
+  ck('탭이 장르별로 갈린다', S.seasonHoldemCount(s.id, 'CLASSIC') === 1
+    && S.seasonHoldemCount(s.id, 'BOUNTY') === 1
+    && S.seasonHoldemCount(s.id) === 2);
+  ck('사람 수도 장르별이다', S.seasonHoldemPlayers(s.id, 'CLASSIC') === 2
+    && S.seasonHoldemPlayers(s.id, 'BOUNTY') === 3);
+
+  const cls = S.seasonHoldemRanking(s.id, 'CLASSIC');
+  ck('일반 표에 바운티 대회가 섞이지 않는다', cls.length === 2
+    && cls.every(r => r.entries === 1), JSON.stringify(cls.map(r => [r.userId, r.entries])));
+  ck('일반 표 1위는 순위 상금이 가장 많은 사람',
+    cls[0].userId === 'gn_cls' && cls[0].prize === 26_750, JSON.stringify(cls[0]));
+
+  const bty = S.seasonHoldemRanking(s.id, 'BOUNTY');
+  ck('바운티 표에 일반 대회가 섞이지 않는다', bty.length === 3
+    && bty.every(r => r.entries === 1), JSON.stringify(bty.map(r => [r.userId, r.entries])));
+  /* 여기가 제보의 핵심이다 — 예전에는 이 값이 0 이었다. */
+  ck('바운티가 상금으로 잡힌다 (0P 로 사라지지 않는다)',
+    bty[0].userId === 'gn_win' && bty[0].prize === 72_800, JSON.stringify(bty[0]));
+  ck('2위도 받은 만큼 잡힌다',
+    bty[1].userId === 'gn_2nd' && bty[1].prize === 53_200, JSON.stringify(bty[1]));
+  ck('한 푼도 못 받은 사람은 0 이다',
+    bty[2].userId === 'gn_cls' && bty[2].prize === 0, JSON.stringify(bty[2]));
+  ck('입상(ITM)도 장르 기준으로 센다 (예전엔 전원 0 이었다)',
+    bty[0].itm === 1 && bty[1].itm === 1 && bty[2].itm === 0,
+    JSON.stringify(bty.map(r => [r.userId, r.itm])));
+  ck('우승 수는 그대로다', bty[0].wins === 1 && bty[1].wins === 0);
+
+  // 내 순위도 장르를 따라간다 — 같은 사람이 두 표에서 다른 등수다
+  const mineB = S.myHoldemRank(s.id, 'gn_win', 'BOUNTY');
+  const mineC = S.myHoldemRank(s.id, 'gn_win', 'CLASSIC');
+  ck('내 순위가 표마다 따로 나온다',
+    mineB!.rank === 1 && mineB!.score === 72_800 && mineC!.rank === 2 && mineC!.score === 0,
+    JSON.stringify({ mineB, mineC }));
+  ck('그 장르에 안 나간 사람은 순위가 없다',
+    S.myHoldemRank(s.id, 'se_a', 'BOUNTY') == null);
+
+  /* 순위 상금과 바운티가 섞여 있는 PKO 는 둘을 합쳐 센다 — 한쪽만 세면 같은 대회에서
+     번 돈의 절반이 사라진다. */
+  mkT(3, 'PKO_BOUNTY');
+  ent(3, 'gn_2nd', 1, 10_000, 5_000);
+  const bty2 = S.seasonHoldemRanking(s.id, 'BOUNTY');
+  ck('PKO 는 순위 상금 + 바운티를 합쳐 센다',
+    bty2.find(r => r.userId === 'gn_2nd')!.prize === 53_200 + 15_000,
+    JSON.stringify(bty2.find(r => r.userId === 'gn_2nd')));
+  ck('PKO 도 바운티 표에 들어간다', S.seasonHoldemCount(s.id, 'BOUNTY') === 2);
 }
 auditLedger('시즌 후');
 

@@ -822,7 +822,7 @@ export function holdemPage(user: WebUser): string {
       </div>
     </div>
 
-    ${helpDialog('htHelp', '홀덤 프리롤 규칙', helpBody())}
+    ${helpDialog('htHelp', '홀덤 토너먼트 규칙', helpBody())}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
       'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide','myturn',
@@ -837,5 +837,5 @@ export function holdemPage(user: WebUser): string {
 ${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY_EMPTY}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}
   })();
   </script>`;
-  return layout('홀덤 프리롤', 'lobby', body);
+  return layout('홀덤 토너먼트', 'lobby', body);
 }

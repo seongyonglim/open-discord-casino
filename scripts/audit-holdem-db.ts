@@ -1515,7 +1515,9 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     ck('대회 수와는 다른 값이다 (인원이지 판수가 아니다)',
       SE.seasonHoldemCount(sid) === 1 && SE.seasonHoldemPlayers(sid) === users.length);
 
-    const rank = SE.seasonHoldemRanking(sid, 100);
+    /* 이 절이 세운 대회는 일반(CLASSIC)이다 — holdemRecords 와 맞춰 보는 자리이므로
+       같은 장르의 표를 읽어야 한다. */
+    const rank = SE.seasonHoldemRanking(sid, 'CLASSIC', 100);
     const rec = HD.holdemRecords(100);
     const byUser = new Map(rec.map(r => [r.userId, r]));
     ck('두 랭킹의 사람 수가 같다', rank.length === rec.length, `${rank.length} vs ${rec.length}`);

@@ -99,10 +99,43 @@ export function seasonGames(seasonId: number): { game: string; rounds: number; p
    두 시즌에 동시에 들어간다(실측 시즌 = [1, 2]). 하한을 «초과» 로 함께 옮겨야 한 시즌에만
    속한다. 첫 시즌은 하한이 없으므로(isFirstSeason) 영향이 없고, 진행 중 시즌은
    closed_at 이 NULL 이라 상한이 걸리지 않아 그대로다. */
-function holdemWindow(s: SeasonRow): string {
+/* ── 대회의 장르 ────────────────────────────────────────────────────
+   같은 홀덤이지만 "무엇으로 버느냐"가 다른 두 게임이다. 하나의 표에 섞으면 한쪽이
+   통째로 0 으로 잡힌다 — 실제로 그랬다:
+
+     8/16 미스터리 바운티(7인 · 인당 20,000P · 바운티 100%)에서 우승자가 72,800P,
+     2위가 53,200P 를 가져갔는데 랭킹에는 둘 다 «상금 0P» 로 찍혀 최하위권에 앉았다.
+     그 대회는 순위 상금이 0 이고 돈이 전부 bounty_paid 로 나가는데, 집계가
+     SUM(e.prize) 만 보고 있었기 때문이다. 입상 횟수(ITM)도 prize > 0 으로 세서
+     참가자 전원이 0 이 됐다.
+
+   그래서 장르를 갈라 각각의 표를 만들고, 표마다 그 장르에서 실제로 번 돈을 센다.
+   일반 대회에서 바운티 칸은 언제나 0 이므로 합계에 넣어도 결과는 같지만, 넣지 않는다 —
+   "이 표는 순위 상금 표"라는 말이 SQL 에도 그대로 적혀 있어야 나중에 읽는 사람이
+   두 표의 차이를 코드에서 확인할 수 있다. */
+export type HoldemGenre = 'CLASSIC' | 'BOUNTY';
+const GENRE_MODE: Record<HoldemGenre, string> = {
+  CLASSIC: `t.mode = 'CLASSIC'`,
+  /* 바운티 헌터와 미스터리 바운티는 한 표에 둔다. 잡아서 버는 게임이라는 점이 같고,
+     둘을 또 가르면 대회 수가 적어 표가 각각 한두 줄짜리가 된다. */
+  BOUNTY: `t.mode IN ('PKO_BOUNTY', 'MYSTERY_BOUNTY')`,
+};
+/** 그 장르에서 «번 돈». 일반은 순위 상금뿐이고, 바운티는 순위 상금 + 받은 바운티다. */
+const GENRE_TOOK: Record<HoldemGenre, string> = {
+  CLASSIC: `e.prize`,
+  /* bounty_won 이 아니라 bounty_paid 다. 앞은 진행 중 누계(확보했다는 표시)이고
+     실제로 지갑에 들어간 금액은 뒤쪽이다 — 대회가 중단되면 앞은 남고 뒤는 0 이다. */
+  BOUNTY: `(e.prize + e.bounty_paid)`,
+};
+
+function holdemWindow(s: SeasonRow, genre?: HoldemGenre): string {
   const lower = isFirstSeason(s) ? `(? IS NOT NULL OR 1)` : `t.finished_at > ?`;
+  /* 장르 조건은 값을 바인딩하지 않고 문자열로 붙인다 — 위의 상수 표에서만 오는 값이라
+     바깥에서 들어올 길이 없고, 바인딩을 섞으면 이 함수를 쓰는 네 곳의 인자 순서가
+     전부 달라진다. */
+  const mode = genre ? ` AND ${GENRE_MODE[genre]}` : '';
   return `t.finished_at IS NOT NULL AND ${lower}
-          AND (? IS NULL OR t.finished_at <= ?)`;
+          AND (? IS NULL OR t.finished_at <= ?)${mode}`;
 }
 
 /** 이 시즌보다 앞선 시즌이 있는가. 없으면 그 전의 기록은 전부 이 시즌 몫이다. */
@@ -116,19 +149,24 @@ export interface SeasonHoldemRow {
   entries: number; wins: number; itm: number; prize: number; rank: number;
 }
 
-export function seasonHoldemRanking(seasonId: number, limit = 100): SeasonHoldemRow[] {
+export function seasonHoldemRanking(
+  seasonId: number, genre: HoldemGenre, limit = 100
+): SeasonHoldemRow[] {
   const s = getSeason(seasonId);
   if (!s) return [];
+  const took = GENRE_TOOK[genre];
   const rows = all<Omit<SeasonHoldemRow, 'rank'>>(
     `SELECT e.user_id AS userId, u.username, u.avatar,
             COUNT(*) AS entries,
             SUM(CASE WHEN e.finish_place = 1 THEN 1 ELSE 0 END) AS wins,
-            SUM(CASE WHEN e.prize > 0 THEN 1 ELSE 0 END) AS itm,
-            COALESCE(SUM(e.prize), 0) AS prize
+            /* 입상(ITM)도 그 장르에서 번 돈으로 센다. prize > 0 으로 세면 바운티
+               100% 대회는 참가자 전원이 0 이 된다 — 실제로 그랬다. */
+            SUM(CASE WHEN ${took} > 0 THEN 1 ELSE 0 END) AS itm,
+            COALESCE(SUM(${took}), 0) AS prize
        FROM holdem_entries e
        JOIN holdem_tournaments t ON t.id = e.tournament_id
        JOIN users u ON u.id = e.user_id
-      WHERE ${holdemWindow(s)}
+      WHERE ${holdemWindow(s, genre)}
       GROUP BY e.user_id
       ORDER BY prize DESC, wins DESC, entries DESC, e.user_id ASC
       LIMIT ?`, s.started_at, s.closed_at, s.closed_at, limit);
@@ -136,11 +174,11 @@ export function seasonHoldemRanking(seasonId: number, limit = 100): SeasonHoldem
 }
 
 /** 그 시즌에 끝난 대회가 하나라도 있는가 — 홀덤 카테고리를 띄울지 정한다. */
-export function seasonHoldemCount(seasonId: number): number {
+export function seasonHoldemCount(seasonId: number, genre?: HoldemGenre): number {
   const s = getSeason(seasonId);
   if (!s) return 0;
   return one<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM holdem_tournaments t WHERE ${holdemWindow(s)}`,
+    `SELECT COUNT(*) AS n FROM holdem_tournaments t WHERE ${holdemWindow(s, genre)}`,
     s.started_at, s.closed_at, s.closed_at)!.n;
 }
 
@@ -150,20 +188,20 @@ export function seasonHoldemCount(seasonId: number): number {
  * 탭 옆의 작은 숫자가 이 값이다 — 다른 게임은 "몇 명이 했나"를 띄우는데 홀덤만 0을
  * 넣어 두어 배지가 아예 안 붙었다. 대회 수가 아니라 사람 수여야 다른 탭과 뜻이 같다.
  */
-export function seasonHoldemPlayers(seasonId: number): number {
+export function seasonHoldemPlayers(seasonId: number, genre?: HoldemGenre): number {
   const s = getSeason(seasonId);
   if (!s) return 0;
   return one<{ n: number }>(
     `SELECT COUNT(DISTINCT e.user_id) AS n
        FROM holdem_entries e JOIN holdem_tournaments t ON t.id = e.tournament_id
-      WHERE ${holdemWindow(s)}`,
+      WHERE ${holdemWindow(s, genre)}`,
     s.started_at, s.closed_at, s.closed_at)!.n;
 }
 
 /** 홀덤에서의 내 자리. 상금 순이라 나보다 상금이 많은 사람 수로 등수를 센다. */
-export function myHoldemRank(seasonId: number, userId: string):
+export function myHoldemRank(seasonId: number, userId: string, genre: HoldemGenre):
   { rank: number; total: number; score: number; entries: number; wins: number; itm: number } | null {
-  const rows = seasonHoldemRanking(seasonId, 100000);
+  const rows = seasonHoldemRanking(seasonId, genre, 100000);
   const i = rows.findIndex(r => r.userId === userId);
   if (i < 0) return null;
   const r = rows[i];
@@ -245,9 +283,22 @@ function awardSeasonSweep(seasonId: number): void {
       tops.add(top.userId);
       if (tops.size > 1) return;              // 이미 갈렸다
     }
-    const ht = seasonHoldemRanking(seasonId, 1)[0];
-    if (!ht) return;
-    tops.add(ht.userId);
+    /* 대회는 장르가 둘이다(홀덤 토너먼트 · 바운티). 화면에 탭이 둘로 나오므로
+       "전 종목"도 둘 다를 뜻해야 한다 — 한쪽만 보면 바운티 랭킹 1위가 다른 사람인데도
+       전 종목 1위가 나간다.
+
+       그 시즌에 열리지 않은 장르는 세지 않는다. 탭도 그때는 안 붙으므로, 있지도 않은
+       종목 때문에 판정이 막히면 화면과 어긋난다. 둘 다 안 열렸으면 예전처럼 돌아간다 —
+       대회가 하나도 없는 시즌에는 이 과제가 나가지 않는다. */
+    const genres: HoldemGenre[] = ['CLASSIC', 'BOUNTY'];
+    const opened = genres.filter(g => seasonHoldemCount(seasonId, g) > 0);
+    if (!opened.length) return;
+    for (const g of opened) {
+      const ht = seasonHoldemRanking(seasonId, g, 1)[0];
+      if (!ht) return;
+      tops.add(ht.userId);
+      if (tops.size > 1) return;
+    }
     if (tops.size !== 1) return;
     unlockAchievement([...tops][0], 'all-first-1');
   } catch (e) {

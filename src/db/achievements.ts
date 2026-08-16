@@ -28,7 +28,7 @@ export type GameType = typeof GAME_TYPES[number];
    묶어서 감추는 것보다 낫다. */
 export const ACH_TABS: { key: string; label: string; types: GameType[] }[] = [
   { key: 'all', label: '전체', types: [] },   // 빈 배열 = 거르지 않는다
-  { key: 'holdem', label: '홀덤 프리롤', types: ['HOLDEM'] },
+  { key: 'holdem', label: '홀덤 토너먼트', types: ['HOLDEM'] },
   { key: 'baccarat', label: '바카라', types: ['BACCARAT'] },
   { key: 'blackjack', label: '블랙잭', types: ['BLACKJACK'] },
   { key: 'poker', label: '포커 플립', types: ['POKER'] },

@@ -13,7 +13,7 @@ import { layout, esc, jsonForScript } from './views';
 import { sendJson } from './http';
 import {
   listSeasons, getSeason, seasonGames, seasonOverall, seasonGameRanking, mySeasonRank,
-  seasonHoldemRanking, seasonHoldemCount, seasonHoldemPlayers, myHoldemRank,
+  seasonHoldemRanking, seasonHoldemCount, seasonHoldemPlayers, myHoldemRank, type HoldemGenre,
   type SeasonRow,
 } from '../db/queries';
 import type { WebUser } from '../db/queries';
@@ -57,21 +57,35 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
   /* 홀덤은 season_stats 에 없다 — 판마다 걸고 되받는 게임이 아니라 대회이고, 집계를
      대회 결과(holdem_entries)에서 시즌 구간으로 잘라 온다. 그래서 카테고리도 여기서 붙인다.
      그 시즌에 끝난 대회가 있을 때만 붙으므로, 다른 게임과 마찬가지로 데이터가 정한다. */
-  const htCount = seasonHoldemCount(s.id);
+  /* 대회는 장르로 가른다. 같은 홀덤이지만 "무엇으로 버느냐"가 달라서 한 표에 섞으면
+     한쪽이 통째로 0 으로 잡힌다 — 미스터리 바운티 우승자(72,800P)가 «상금 0P» 로
+     최하위권에 앉았던 것이 그 결과다(season.ts 의 GENRE_TOOK 주석에 자세히 적어 뒀다).
+       홀덤 토너먼트 — 순위 상금으로 겨룬다
+       바운티        — 순위 상금 + 잡아서 받은 바운티로 겨룬다
+     탭 옆 숫자는 "몇 명이 했나"다(다른 게임도 그렇다).
+     그 시즌에 그 장르의 대회가 있을 때만 붙으므로, 탭 구성은 데이터가 정한다. */
+  const htBounty = seasonHoldemCount(s.id, 'BOUNTY');
+  if (htBounty > 0) {
+    games.unshift({ key: 'bounty', label: '바운티 토너먼트',
+      rounds: htBounty, players: seasonHoldemPlayers(s.id, 'BOUNTY') });
+  }
+  const htCount = seasonHoldemCount(s.id, 'CLASSIC');
   if (htCount > 0) {
-    /* 탭 옆 숫자는 "몇 명이 했나"다(다른 게임도 그렇다). 예전에는 0을 넣어 두어
-       홀덤에만 배지가 안 붙었고, 그래서 이 탭만 다른 규칙인 것처럼 보였다. */
-    games.unshift({
-      key: 'holdem', label: '홀덤 토너먼트', rounds: htCount, players: seasonHoldemPlayers(s.id),
-    });
+    games.unshift({ key: 'holdem', label: '홀덤 토너먼트',
+      rounds: htCount, players: seasonHoldemPlayers(s.id, 'CLASSIC') });
   }
   // 요청한 탭이 그 시즌에 없으면 통합으로 되돌린다 — 시즌을 바꿨을 때 빈 화면이 나오지 않게
   const active = tab !== 'overall' && games.some(g => g.key === tab) ? tab : 'overall';
 
+  /* 두 대회 탭은 같은 표를 쓴다 — 열 구성(참가·우승·입상·상금)이 같고, 다른 것은
+     "상금"에 무엇을 세느냐뿐이다. 그 판단은 장르가 들고 있다. */
+  const genre: HoldemGenre | null =
+    active === 'holdem' ? 'CLASSIC' : active === 'bounty' ? 'BOUNTY' : null;
+
   const rows: RankRow[] = active === 'overall'
     ? seasonOverall(s.id, 100).map(r => ({ ...r }))
-    : active === 'holdem'
-      ? seasonHoldemRanking(s.id, 100).map(r => ({
+    : genre
+      ? seasonHoldemRanking(s.id, genre, 100).map(r => ({
           userId: r.userId, username: r.username, avatar: r.avatar, rank: r.rank,
           score: r.prize, entries: r.entries, wins: r.wins, itm: r.itm,
         }))
@@ -81,7 +95,7 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
         }));
 
   const mine = !me ? null
-    : active === 'holdem' ? myHoldemRank(s.id, me.id)
+    : genre ? myHoldemRank(s.id, me.id, genre)
     : mySeasonRank(s.id, me.id, active === 'overall' ? null : active);
   return {
     seasons: seasons.map(x => ({ id: x.id, number: x.number, name: x.name, closed: x.closed_at != null })),
@@ -91,7 +105,9 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
          지난 시즌 화면에 붙이면 다음 시즌 예약을 그 시즌의 종료일인 양 적게 된다. */
       closeAt: s.closed_at == null ? getSeasonSchedule().closeAt : null },
     games, tab: active,
-    kind: active === 'overall' ? 'overall' : active === 'holdem' ? 'holdem' : 'game',
+    /* 두 대회 탭은 kind 가 같다 — 화면이 이 값으로 열 구성을 고르는데, 둘은 같은
+       열(참가·우승·입상·상금)을 쓴다. 여기서 갈라 두면 바운티 탭만 다른 표가 된다. */
+    kind: active === 'overall' ? 'overall' : genre ? 'holdem' : 'game',
     rows,
     /* userId 를 함께 준다. 이게 없어서 화면의 "내 줄" 표시가 한 번도 켜진 적이 없었다 —
        표는 r.userId === data.me.userId 로 판단하는데 오른쪽이 늘 undefined 였다.
