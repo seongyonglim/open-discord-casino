@@ -1720,6 +1720,114 @@ async function main(): Promise<void> {
         .test(fsx.readFileSync('src/db/holdem.ts', 'utf8')));
   }
 
+  section('[14] 도전과제 — 두 장르 모두에서 깨진다');
+  {
+    /* 랭킹을 장르로 가르고 나니 "과제도 갈렸나"가 따라온다. 갈리면 안 된다 — 홀덤
+       과제는 홀덤에서 깨져야지, 그날 열린 대회가 어느 방식이었느냐로 달라질 이유가 없다.
+
+       판정 자리가 둘인데 둘 다 mode 를 보지 않는다는 것을 실행으로 확인한다:
+         ho-bounty-4      finishTournament → awardBounty (ko_count ≥ 4 + 우승)
+         ho-straight-flush endHand → awardStraightFlush (쇼다운 공개)
+       특히 ko_count 는 isPko(t) 바깥에서 오르는지가 관건이다. 안쪽으로 들어가면
+       일반 대회에서는 KO 가 세어지지 않아 이 과제가 바운티 전용이 된다. */
+    const AC = require('../src/db/achievements') as typeof import('../src/db/achievements');
+    const fs14 = require('node:fs') as typeof import('node:fs');
+    const src = fs14.readFileSync('src/db/holdem.ts', 'utf8');
+
+    /* 운영과 같은 과제 목록을 넣는다. 직접 upsert 로 만들어 넣으면 내가 적은 값을
+       내가 확인하는 꼴이라 아무것도 검증하지 못한다 — 실제 시드 스크립트를 돌려
+       운영에 들어가는 그 정의로 판정한다. */
+    process.env.QUIET = '1';
+    require('./seed-achievements');
+
+    /* 프리롤은 참가비가 0 이라, 두 과제의 최소 베팅이 0 이 아니면 어느 모드에서도
+       영영 안 깨진다(awardIfBet 이 bet < min 에서 막는다). */
+    for (const id of ['ho-bounty-4', 'ho-straight-flush']) {
+      const a = AC.listAchievements().find(x => x.id === id);
+      ck(`${id} — 최소 베팅이 0 이라 프리롤에서도 판정된다`, a != null && a.min_bet === 0,
+        a ? String(a.min_bet) : '없음');
+    }
+
+    /* KO 세는 자리가 isPko 바깥이어야 한다. 위치를 글자로 확인한다 —
+       "일반 대회에서도 KO 가 세어진다"는 아래에서 실제 대회를 돌려 확인한다. */
+    const iKo = src.indexOf('UPDATE holdem_entries SET ko_count = ko_count + 1');
+    const iPko = src.indexOf('if (isPko(t) && killers.length)');
+    ck('KO 세기가 바운티 판정보다 앞에 있다 (모드와 무관하게 센다)',
+      iKo > 0 && iPko > iKo, `ko@${iKo} pko@${iPko}`);
+
+    // ── 일반(CLASSIC) 대회에서 KO 넷 + 우승 → 과제가 열린다
+    wipe();
+    db.exec(`DELETE FROM user_achievements`);   // 과제 정의는 남기고 달성 기록만 비운다
+    const P5 = ['a1', 'a2', 'a3', 'a4', 'a5'];
+    for (const p of P5) mkUser(p, 100_000);
+    const made = AD.createTournament({
+      title: '일반 대회 과제 검사', regOpenAt: now() - 60, startAt: now() + 3_600,
+      buyIn: 0, prizeMultiplier: 10_000, mode: 'CLASSIC',
+    });
+    if (!made.ok) { console.log('대회 실패: ' + made.error); process.exit(1); }
+    for (const p of P5) HD.registerHoldem(p, p);
+    db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ?`).run(now() - 1);
+    HD.advanceHoldem();
+    const table = HD.getTable(made.id)!;
+    ck('검사 전제: 일반 대회다', HD.isPko(
+      db.prepare(`SELECT * FROM holdem_tournaments WHERE id=?`).get(made.id) as never) === false);
+
+    /* a1 에게 AA, 나머지는 짧은 스택으로 두고 한 판에 다 털리게 한다.
+       확률에 맡기면 감사가 이따금 실패하므로 카드와 스택을 못 박는다. */
+    const hand = HD.getCurrentHand(table.id)!;
+    const hole: Record<string, number[]> = {
+      a1: [c(12, 0), c(12, 1)], a2: [c(0, 0), c(0, 1)], a3: [c(1, 0), c(1, 1)],
+      a4: [c(2, 0), c(2, 1)], a5: [c(3, 0), c(3, 1)],
+    };
+    for (const s of HD.getSeats(table.id)) {
+      db.prepare(`UPDATE holdem_hand_seats SET hole_json = ? WHERE hand_id = ? AND seat = ?`)
+        .run(JSON.stringify(hole[s.user_id]), hand.id, s.seat);
+    }
+    db.prepare(`UPDATE holdem_hands SET board_json = ? WHERE id = ?`)
+      .run(JSON.stringify([c(5, 2), c(7, 3), c(9, 0), c(10, 1), c(11, 3)]), hand.id);
+    for (const uid of ['a2', 'a3', 'a4', 'a5']) {
+      db.prepare(`UPDATE holdem_hand_seats SET stack = 300 WHERE hand_id = ? AND user_id = ?`)
+        .run(hand.id, uid);
+      db.prepare(`UPDATE holdem_seats SET stack = 300 WHERE table_id = ? AND user_id = ?`)
+        .run(table.id, uid);
+    }
+    for (let i = 0; i < 80; i++) {
+      const h = HD.getCurrentHand(table.id);
+      if (!h || h.ended_at != null || h.to_act_seat == null) break;
+      const seat = HD.getSeats(table.id).find(x => x.seat === h.to_act_seat)!;
+      db.prepare(`UPDATE holdem_hands SET action_deadline = ? WHERE id = ?`)
+        .run(now() + HD.ACTION_SEC, h.id);
+      if (!HD.holdemAction(seat.user_id, 'allin', 0).ok) HD.holdemAction(seat.user_id, 'call', 0);
+    }
+    const a1 = entriesOf(made.id).find(r => r.user_id === 'a1')!;
+    ck('일반 대회에서도 KO 가 세어진다', a1.ko_count === 4, String(a1.ko_count));
+    // 대회를 끝까지 밀어 마감 정산(awardBounty)이 돌게 한다
+    for (let i = 0; i < 40; i++) {
+      const st = HD.advanceHoldem();
+      if (st.status === 'FINISHED' || st.status === 'NONE') break;
+      db.prepare(`UPDATE holdem_tables SET next_hand_at = ? WHERE tournament_id = ?`)
+        .run(now() - 1, made.id);
+    }
+    ck('검사 전제: a1 이 우승했다',
+      entriesOf(made.id).find(r => r.user_id === 'a1')!.finish_place === 1);
+    ck('일반 대회에서 [죽음의 바운티 헌터]가 열린다',
+      AC.hasAchievement('a1', 'ho-bounty-4'));
+
+    /* 스트레이트 플러시는 endHand 에서 판정한다 — 그 자리도 mode 를 보지 않는다.
+       카드를 짜서 실제로 한 판을 돌려 확인하는 것이 가장 확실하지만, 그러려면 쇼다운까지
+       가는 판을 또 세워야 한다. 여기서는 판정 함수가 대회 모드를 인자로도, 조건으로도
+       쓰지 않는다는 것을 글자로 못 박는다. */
+    const sf = src.slice(src.indexOf('function awardStraightFlush'),
+      src.indexOf('/** 핸드 종료'));
+    ck('스트레이트 플러시 판정이 모드를 보지 않는다',
+      sf.length > 0 && !/isPko|isMystery|mode/.test(sf));
+    ck('그 판정이 endHand 에서 불린다', /awardStraightFlush\(t, /.test(src));
+    /* 바운티 판정도 마찬가지다 — awardBounty 는 finishTournament 에서 무조건 불린다. */
+    ck('바운티 헌터 판정도 모드를 보지 않는다',
+      !/isPko|isMystery/.test(src.slice(src.indexOf('function awardBounty'),
+        src.indexOf('function announceWinner'))));
+  }
+
   console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
   process.exit(fail ? 1 : 0);
 }

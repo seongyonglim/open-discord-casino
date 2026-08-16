@@ -63,15 +63,20 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
        홀덤 토너먼트 — 순위 상금으로 겨룬다
        바운티        — 순위 상금 + 잡아서 받은 바운티로 겨룬다
      탭 옆 숫자는 "몇 명이 했나"다(다른 게임도 그렇다).
-     그 시즌에 그 장르의 대회가 있을 때만 붙으므로, 탭 구성은 데이터가 정한다. */
+     그 시즌에 그 장르의 대회가 있을 때만 붙으므로, 탭 구성은 데이터가 정한다.
+
+     이름에서 "토너먼트"를 뺀다. 이 줄의 다른 칸은 3~5글자(지뢰찾기·블랙잭·바카라)인데
+     "홀덤 클래식 토너먼트"는 10글자다 — 실측으로 칩 하나가 169px 이 되어 둘이 338px,
+     줄 전체가 1,058px 로 컨테이너(860px)를 198px 넘긴다. "홀덤 클래식"이면 112px 씩
+     224px 이고, 랭킹 화면에서 "토너먼트"는 어차피 홀덤이 대회라는 뜻 말고는 없다. */
   const htBounty = seasonHoldemCount(s.id, 'BOUNTY');
   if (htBounty > 0) {
-    games.unshift({ key: 'bounty', label: '바운티 토너먼트',
+    games.unshift({ key: 'bounty', label: '홀덤 바운티',
       rounds: htBounty, players: seasonHoldemPlayers(s.id, 'BOUNTY') });
   }
   const htCount = seasonHoldemCount(s.id, 'CLASSIC');
   if (htCount > 0) {
-    games.unshift({ key: 'holdem', label: '홀덤 토너먼트',
+    games.unshift({ key: 'holdem', label: '홀덤 클래식',
       rounds: htCount, players: seasonHoldemPlayers(s.id, 'CLASSIC') });
   }
   // 요청한 탭이 그 시즌에 없으면 통합으로 되돌린다 — 시즌을 바꿨을 때 빈 화면이 나오지 않게
@@ -247,12 +252,77 @@ export function leaderboardPage(me: WebUser | null): string {
        줄바꿈으로 쌓으면 게임이 늘어날수록 표가 아래로 밀려 첫 화면에서 사라진다. */
     function paintChips(){
       var items = [{ key: 'overall', label: '통합 랭킹' }].concat(data.games);
-      document.getElementById('lbChips').innerHTML = items.map(function(g){
+      /* el 같은 흔한 이름을 쓰지 않는다. 화면 코드가 한 문자열로 이어 붙는 구조라
+         이름이 겹치기 쉽고, 실제로 감사가 이 자리의 el 을 다른 조각의 el.hidden 대입과
+         묶어 "hidden 이 안 먹는 요소"로 오탐했다.
+         (이 주석에 백틱을 쓰면 안 된다 — 이 조각 자체가 템플릿 문자열이라 거기서 끊긴다) */
+      chipsEl.innerHTML = items.map(function(g){
         return '<button type="button" class="lb-chip' + (g.key === data.tab ? ' on' : '')
           + '" role="tab" data-key="' + esc(g.key) + '">' + esc(g.label)
           + (g.players ? '<i>' + g.players + '<\\/i>' : '') + '<\\/button>';
       }).join('');
+      /* 고른 칸이 화면 밖이면 끌어와 보여준다. 넘친 줄에서는 [포커 플립]을 누르고
+         돌아왔을 때 그 칩이 오른쪽 밖에 있어 "어디가 켜졌는지" 보이지 않는다. */
+      var on = chipsEl.querySelector('.lb-chip.on');
+      if (on && on.scrollIntoView) {
+        on.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      }
+      chipEdges();
     }
+
+    /* ── 넘친 줄을 끌어서 넘긴다 ────────────────────────────────────
+       게임이 늘면서 칩 줄이 화면 밖으로 넘쳤다(실측: 860px 칸에 983px — [사다리게임]이
+       잘리고 [포커 플립]은 아예 안 보인다). 줄 하나에 가로 스크롤바가 붙으면 지저분해서
+       감춰 두었는데, 그러면 마우스로는 넘어간 것에 닿을 방법이 사라진다.
+
+       세 가지를 함께 둔다. 하나만으로는 부족하다:
+         · 끌기      — 손으로 미는 가장 직접적인 방법
+         · 세로 휠   — 휠 마우스는 가로 스크롤을 주지 않는다(트랙패드만 준다)
+         · 끝 흐림   — 넘어간 것이 있다는 신호. 없으면 끌어 볼 생각 자체를 못 한다 */
+    var chipsEl = document.getElementById('lbChips');
+    function chipEdges(){
+      var max = chipsEl.scrollWidth - chipsEl.clientWidth;
+      chipsEl.classList.toggle('more-l', chipsEl.scrollLeft > 2);
+      chipsEl.classList.toggle('more-r', chipsEl.scrollLeft < max - 2);
+    }
+    (function(){
+      var down = false, startX = 0, startLeft = 0, moved = 0;
+      chipsEl.addEventListener('pointerdown', function(e){
+        if (e.button !== 0) return;
+        down = true; moved = 0; startX = e.clientX; startLeft = chipsEl.scrollLeft;
+        try { chipsEl.setPointerCapture(e.pointerId); } catch (err) { /* 구형 브라우저 */ }
+      });
+      chipsEl.addEventListener('pointermove', function(e){
+        if (!down) return;
+        var dx = e.clientX - startX;
+        moved = Math.max(moved, Math.abs(dx));
+        if (moved > 4) chipsEl.classList.add('dragging');
+        chipsEl.scrollLeft = startLeft - dx;
+      });
+      function release(e){
+        if (!down) return;
+        down = false;
+        chipsEl.classList.remove('dragging');
+        try { chipsEl.releasePointerCapture(e.pointerId); } catch (err) { /* 위와 같다 */ }
+      }
+      chipsEl.addEventListener('pointerup', release);
+      chipsEl.addEventListener('pointercancel', release);
+      /* 끌고 놓은 것을 클릭으로 세지 않는다 — 줄을 넘기려다 엉뚱한 탭이 열리면 그건
+         고장으로 읽힌다. 캡처 단계에서 막아 탭 리스너에 닿지 않게 한다.
+         4px 은 손떨림과 의도를 가르는 선이다(누를 때 손가락은 늘 조금 움직인다). */
+      chipsEl.addEventListener('click', function(e){
+        if (moved > 4) { e.stopPropagation(); e.preventDefault(); }
+        moved = 0;
+      }, true);
+      chipsEl.addEventListener('wheel', function(e){
+        if (chipsEl.scrollWidth <= chipsEl.clientWidth) return;
+        if (e.deltaX !== 0) return;              // 트랙패드는 가로를 직접 준다 — 건드리지 않는다
+        chipsEl.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }, { passive: false });
+      chipsEl.addEventListener('scroll', chipEdges);
+      window.addEventListener('resize', chipEdges);
+    })();
 
     function paintTable(){
       var overall = data.kind === 'overall';
