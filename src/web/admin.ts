@@ -91,13 +91,14 @@ export function adminPage(user: WebUser): string {
       <td class="r">${num(t.entries)}</td>
       ${/* 바운티 판은 상금이 두 갈래로 나간다. 한동안 순위 상금만 적어서 바운티 100%
             대회가 «0P» 로 보였고, 140,000P 가 나간 판이 흔적 없는 판으로 읽혔다.
-            총액을 적고 그 아래에 내역을 작게 붙인다 — 총액만 적으면 "순위 상금이
-            이렇게 많았나"가 되고, 내역만 적으면 두 숫자를 눈으로 더해야 한다. */''}
-      <td class="r">${num(pool + t.bounty_pool)}P${t.bounty_pool > 0
-        ? `<i class="ad-split">순위 ${num(pool)} + 바운티 ${num(t.bounty_pool)}</i>` : ''}</td>
-      <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P${
-        t.paid_bounty > 0
-          ? `<i class="ad-split">순위 ${num(t.paid_prize)} + 바운티 ${num(t.paid_bounty)}</i>` : ''}</td>
+            그래서 총액을 적는다.
+
+            갈래별 내역(순위 N + 바운티 M)을 한 줄 더 붙였다가 걷어냈다 — 줄마다 두 줄이
+            되면서 표가 두 배로 길어졌는데, 이 표는 "언제·얼마짜리 판이었나"를 훑는
+            자리이지 정산 내역서가 아니다. 갈래가 궁금하면 방식 태그(바운티 70%·미스터리)가
+            옆에 이미 붙어 있다. */''}
+      <td class="r">${num(pool + t.bounty_pool)}P</td>
+      <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P</td>
       <td>${live2(t)
         ? `<span class="ad-no">진행 중</span>`
         : t.paid > 0

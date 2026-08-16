@@ -38,21 +38,16 @@ export interface AdminTournamentRow {
    *  가 bounty 도 본다) 돈이 새지는 않지만, 운영자에게 실패할 버튼을 내주는 것은
    *  그 자체로 결함이다. 목록이 판단하는 근거와 서버가 판단하는 근거가 같아야 한다. */
   paid: number;
-  /** 위 paid 의 내역 — 목록이 "순위 14,000 + 바운티 126,000" 처럼 풀어 적는 데 쓴다 */
-  paid_prize: number;
-  paid_bounty: number;
 }
 
 export function listTournaments(limit = 30): AdminTournamentRow[] {
   return all<AdminTournamentRow>(
     `SELECT t.*,
             (SELECT COUNT(*) FROM holdem_entries e WHERE e.tournament_id = t.id) AS entries,
-            (SELECT COALESCE(SUM(e.prize), 0) FROM holdem_entries e WHERE e.tournament_id = t.id)
-              AS paid_prize,
-            (SELECT COALESCE(SUM(e.bounty_paid), 0) FROM holdem_entries e WHERE e.tournament_id = t.id)
-              AS paid_bounty,
             /* 나간 돈 전부. purgeTournament 가 거절하는 기준(prize·fees·bounty)과 같은
-               갈래를 봐야 목록의 버튼과 서버의 판단이 어긋나지 않는다. */
+               갈래를 봐야 목록의 버튼과 서버의 판단이 어긋나지 않는다.
+               갈래별로 나눠 두었다가 합쳤다 — 목록이 총액만 쓰고, 안 쓰는 값을 내려보내면
+               다음에 읽는 사람이 "이건 어디에 쓰나"를 쫓게 된다. */
             (SELECT COALESCE(SUM(e.prize), 0) + COALESCE(SUM(e.bounty_paid), 0)
                FROM holdem_entries e WHERE e.tournament_id = t.id) AS paid
        FROM holdem_tournaments t
