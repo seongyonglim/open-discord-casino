@@ -778,8 +778,11 @@ async function main(): Promise<void> {
        예전에는 조건을 쓰는 자리마다 pko 를 다시 적었는데, 그러면 한 곳을 고칠 때
        다른 곳이 남는다(정산 대기를 넣으면서 실제로 그 문제가 생겼다). */
     ck('KO 조건에 pko 가 들어 있다', /var koShow = pko &&/.test(seatsSrc));
-    ck('KO 조건이 한 곳에만 있다',
-      (seatsSrc.match(/s\.presence === 'OUT' && champSeat !== s\.seat/g) ?? []).length === 1);
+    /* 실행 조건(koShow)은 한 곳에만 둔다. 예약 쪽은 그것을 그대로 비추는 것이라 따로 센다
+       (바로 아래 "총격 예약도 우승자를 뺀다"). */
+    ck('KO 실행 조건이 한 곳에만 있다',
+      (seatsSrc.match(/var koShow = pko && s\.presence === 'OUT' && champSeat !== s\.seat/g) ?? [])
+        .length === 1);
     /* 우승자는 쏘지 않는다. 대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로
        내리므로(등수를 매기려면 모두에게 탈락 순서가 있어야 한다) presence 만으로는
        마지막 쇼다운의 승자와 패자가 갈리지 않는다 — 둘 다 총을 맞았다(제보). */
@@ -1868,6 +1871,13 @@ async function main(): Promise<void> {
     ck('우승자 좌석을 등수로 찾는다', /var champSeat = null;/.test(seats)
       && /if \(b\[i\]\.place !== 1\) continue;/.test(seats));
     ck('처형 조건에서 우승자를 뺀다', /champSeat !== s\.seat/.test(seats));
+    /* 총격 예약(루프 앞)과 실행 조건(루프 안)이 같아야 한다. 예약 쪽에만 우승자 제외가
+       빠져 있어서 실제로 사고가 났다: 우승자 자리는 OUT 인데 koFired 가 영영 안 찍혀
+       fresh 가 매 폴링 참으로 남고, koBurstEndsAt 이 계속 미래로 밀려 "총격이 끝났나"를
+       보는 것들이 전부 멈췄다 — 전광판도, 상금 탭의 바운티 표도, 우승 팝업도. */
+    ck('총격 예약도 우승자를 뺀다 (예약과 실행 조건이 같다)',
+      (seats.match(/champSeat !== s\.seat/g) ?? []).length === 2,
+      String((seats.match(/champSeat !== s\.seat/g) ?? []).length));
 
     /* 서버가 실제로 우승자까지 OUT 으로 내리는지 — 이 전제가 깨지면 위 수정이 헛것이 된다.
        대회를 하나 돌려 확인한다. */

@@ -89,8 +89,15 @@ export function adminPage(user: WebUser): string {
         : isPko(t) ? ` <span class="ad-tag pko">바운티 ${t.bounty_pct}%</span>` : ''}</td>
       <td><span class="ad-st s-${st === '진행 중' ? 'run' : st === '종료' ? 'done' : st === '취소' ? 'cancel' : 'wait'}">${st}</span></td>
       <td class="r">${num(t.entries)}</td>
-      <td class="r">${num(pool)}P</td>
-      <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P</td>
+      ${/* 바운티 판은 상금이 두 갈래로 나간다. 한동안 순위 상금만 적어서 바운티 100%
+            대회가 «0P» 로 보였고, 140,000P 가 나간 판이 흔적 없는 판으로 읽혔다.
+            총액을 적고 그 아래에 내역을 작게 붙인다 — 총액만 적으면 "순위 상금이
+            이렇게 많았나"가 되고, 내역만 적으면 두 숫자를 눈으로 더해야 한다. */''}
+      <td class="r">${num(pool + t.bounty_pool)}P${t.bounty_pool > 0
+        ? `<i class="ad-split">순위 ${num(pool)} + 바운티 ${num(t.bounty_pool)}</i>` : ''}</td>
+      <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P${
+        t.paid_bounty > 0
+          ? `<i class="ad-split">순위 ${num(t.paid_prize)} + 바운티 ${num(t.paid_bounty)}</i>` : ''}</td>
       <td>${live2(t)
         ? `<span class="ad-no">진행 중</span>`
         : t.paid > 0

@@ -99,6 +99,11 @@
   .ad-tag.pko{background:rgba(212,175,55,.16);color:#e8c86a}
   /* 미스터리는 PKO 와 구분돼야 한다 — 금액이 비공개라 운영 판단이 달라진다 */
   .ad-tag.mystery{background:rgba(150,110,220,.16);color:#b898ea}
+  /* 금액 칸의 내역 줄 — 총액 아래에 작게 붙는다(순위 상금 + 바운티).
+     총액만 적으면 바운티 판에서 "순위 상금이 이렇게 많았나"로 읽힌다.
+     이름을 ad-sub 로 지었다가 감사에 걸렸다 — 그건 이미 화면 위쪽 설명문이 쓰고 있다. */
+  .ad-split{display:block;font-style:normal;font-size:10.5px;font-weight:600;
+    color:var(--muted);white-space:nowrap;margin-top:2px}
   .ad-st{display:inline-block;font-size:11.5px;font-weight:700;white-space:nowrap}
   .ad-st.s-wait{color:var(--muted)}
   .ad-st.s-run{color:var(--win)}

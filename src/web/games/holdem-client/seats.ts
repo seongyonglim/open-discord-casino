@@ -636,10 +636,15 @@ export const SEATS = `    var seatXY = {};
 
          정산이 끝난 판인지(settleDone)까지 함께 봐야 한다 — 안 그러면 카드가 열리는
          중에 미리 창을 열어 두고, 정작 총격은 나중에 시작된다. */
-      // 아래 루프의 koShow 와 같은 조건이어야 한다 — 어긋나면 창을 미리 열거나 못 연다
+      /* 아래 루프의 koShow 와 같은 조건이어야 한다 — 어긋나면 창을 미리 열거나 못 연다.
+         우승자를 빼는 조건이 여기 빠져 있어서 실제로 못 여는 쪽이 났다: 대회가 끝나면
+         우승자 자리도 OUT 이 되는데 그 자리는 koShow 가 false 라 koFired 가 영영 안 찍힌다.
+         그러면 fresh 가 매 폴링 참으로 남아 koBurstEndsAt 이 계속 미래로 밀리고,
+         "총격이 끝났나"를 보는 것들이 전부 멈춘다 — 미스터리 개봉(전광판)도, 상금 탭의
+         바운티 표도, 우승 팝업도. 첫 판에 끝나든 열 판째에 끝나든 마지막 판마다 그랬다. */
       if (pko && resultReady() && settleDone(tb)) {
         var fresh = seats.some(function(s){
-          return s.presence === 'OUT' && !koFired[s.seat];
+          return s.presence === 'OUT' && champSeat !== s.seat && !koFired[s.seat];
         });
         if (fresh && koSeen) {
           var end = Date.now() + KO_LEAD_MS + koBurstLen();
