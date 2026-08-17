@@ -1009,6 +1009,24 @@ async function main(): Promise<void> {
     // 실제로 그 규칙이 app.css 에 실렸는지까지 본다
     const css = (await get('/app.css', cookie)).text;
     ck('경고 토스트 규칙이 실제로 실린다', /\.toast\.warn/.test(css));
+
+    /* ── 폰 규칙이 데스크톱으로 새지 않는가 ────────────────────────
+       "웹 화면은 지금 그대로 둔다"가 이 작업의 전제다. 폰용 조각(15·16)의 규칙이
+       하나라도 미디어쿼리 밖에 있으면 그 순간 데스크톱까지 바뀐다 — 그리고 그건
+       화면을 열어 보기 전에는 모른다. 여기서 소스를 직접 읽어 못 박는다. */
+    for (const f of ['15-mobile.css', '16-ingame.css']) {
+      if (!onDisk.includes(f)) continue;
+      const src = readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const outside: string[] = [];
+      let depth = 0, buf = '';
+      for (const c of src) {
+        if (c === '{') { if (depth === 0 && !/@media/.test(buf)) outside.push(buf.trim().slice(0, 40)); depth++; buf = ''; }
+        else if (c === '}') { depth--; buf = ''; }
+        else buf += c;
+      }
+      ck(`${f} 의 규칙이 전부 미디어쿼리 안에 있다`, outside.length === 0,
+        outside.join(' | ') + ' — 이 규칙은 데스크톱에도 걸린다');
+    }
   }
 
   console.log('\n[14] 운영자 왼쪽 메뉴 — 메뉴에 있으면 눌러서 열려야 한다');

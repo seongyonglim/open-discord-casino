@@ -67,9 +67,22 @@
        띠를 아래에 두는 셋에만 건다. 좌우로 나란히 놓는 넷(홀덤·지뢰찾기·그래프·사다리)은
        판 폭이 이미 정해져 있어서, 여기에 width:100% 를 걸면 판이 칸을 다 먹고 조작부가
        화면 밖으로 밀려난다(실제로 홀덤 조작부가 917~1217 로 나갔다). */
-    html.ingame .poker-shell .game-main > :first-child,
-    html.ingame .game-shell:has(.bacc-table) .game-main > :first-child,
-    html.ingame .game-shell:has(.bj-table) .game-main > :first-child{align-self:center;width:100%}
+    /* ── 모든 게임이 같은 틀을 쓴다 ──────────────────────────────
+       판이 화면의 대부분 · 베팅은 아래 전체 폭 · 참가인원과 랭킹은 오른쪽 레일.
+       한동안 게임마다 다르게 두었다(어떤 것은 좌우, 어떤 것은 위아래). 조작부 모양이
+       다르니 자리도 달라야 한다고 봤는데, 그러면 게임을 옮길 때마다 화면이 재배치되어
+       어디를 눌러야 하는지 매번 다시 찾게 된다. 자리는 하나로 고정하는 것이 맞다.
+       15-mobile.css 가 넷을 좌우로 돌려 놓으므로 여기서 전부 되돌린다. */
+    html.ingame .game-shell .game-main{flex-direction:column;align-items:stretch;gap:6px}
+    /* 선택자를 길게 쓴다. 15-mobile.css 의 규칙들이 .game-shell:has(...) 로 시작해
+       더 구체적이라, 짧게 쓰면 zoom 이 안 걷혔다 — 바카라 글자가 다시 4.8px 이 됐다. */
+    html.ingame .game-shell .game-main > :first-child{
+      flex:1 1 auto;min-height:0;width:auto;max-width:none;zoom:1;margin:0;
+      align-self:stretch;overflow:hidden;
+      display:flex;flex-direction:column;justify-content:center}
+    /* 베팅 띠는 제 높이만 쓰고 아래에 붙는다 */
+    html.ingame .game-main > :last-child{
+      flex:0 0 auto;min-width:0;width:auto;margin:0;box-sizing:border-box}
 
     /* ── 홀덤도 액션을 아래로 ────────────────────────────────────
        15-mobile.css 는 홀덤을 좌우 배치로 둔다. 그 판단의 근거는 "아래에 두면 테이블이
@@ -82,18 +95,30 @@
        정하면 그걸 놓친다. 포커 앱들이 가로에서 테이블 위·액션 아래로 두는 이유다.
        폭 상한은 app.js 의 capOf 가 배율을 나눠서 건다. */
     html.ingame .ht-shell .game-main{flex-direction:column}
-    html.ingame .ht-shell .game-main > :first-child{align-self:center;width:100%;zoom:1}
+    /* ── 홀덤은 배율이 아니라 크기 변수로 맞춘다 ────────────────────
+       zoom 으로 줄였더니 닉네임이 10.5px → 4.6px 가 되어 읽을 수 없었다. 배율은 글자와
+       그림을 가리지 않고 같이 줄인다 — 애초에 잘못된 손잡이였다.
+       홀덤은 크기를 변수 한 벌로 유도하게 짜여 있다(09-holdem.css 의 구간별 티어).
+       그 체계에 이 화면용 티어를 하나 더 얹는다. 배율이 1 이므로 글자는 제 크기다.
 
-    /* 좌우로 남는 셋은 배율이 CSS 에 박혀 있다(자동 맞춤은 세로로 쌓는 쪽만 본다).
-       인게임에서는 높이가 더 생겼으므로 그만큼 키운다 — 안 키우면 아래가 그냥 빈다. */
-    html.ingame .mines-shell .game-main > :first-child{zoom:.88}
-    html.ingame .game-shell:has(.crash-graph) .game-main > :first-child{zoom:.95}
-    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{zoom:.92}
+       높이 계산: 테이블 높이 = pushU + pushD + htAv + cloth + 38.
+       상단바 40 + 액션 띠 약 90 + 여백을 빼면 판에 약 235px 이 남는다.
+       htAv 40 · pushU 40 · pushD 16 → 96 + 38 = 134, 그래서 cloth 는 100 언저리다.
+       폭은 그 비율에 맞춰 묶는다 — 안 묶으면 915px 을 다 먹고 납작해진다. */
+    html.ingame .ht-shell .game-main > :first-child{align-self:center;zoom:1;
+      width:100%;max-width:300px}
+    html.ingame .ht-shell{--htCloth:104px;--htAv:40px;--htCard:26px;--htRail:9px;
+      --htPushU:40px;--htPushD:16px;--htPushX:4px;--htTagUp:10px;
+      --htBoardW:26px;--htBoardH:39px}
+    /* 아바타에서 유도되는 글자들은 아바타를 줄이면 같이 줄어든다. 딜러 버튼은
+       calc(--htAv * .16) 이라 40px 아바타에서 6.4px 이 된다 — 읽을 수 있는 하한을 깐다. */
+    html.ingame .ht-shell .ht-puck{font-size:9px}
 
-    /* ── 베팅 띠를 아래에 붙인다 ────────────────────────────────
-       칩과 버튼은 손가락으로 누르는 자리라 화면 맨 아래가 가장 편하다.
-       판이 위를 다 쓰고 띠가 아래에 깔린다. */
-    html.ingame .game-main{justify-content:space-between}
+    /* 남아 있던 배율 지정은 전부 걷었다. 배율은 글자까지 줄이므로 이 화면에서는 쓰지
+       않는다 — 크기가 문제면 그 게임의 실제 치수를 손본다(아래 게임별 구간). */
+
+    /* 판이 위를 다 쓰고 띠가 아래에 깔린다 — 위 flex 설정(판 1 1 auto · 띠 0 0 auto)이
+       이미 그렇게 만든다. justify-content 를 따로 주면 판 안의 가운데 정렬과 부딪힌다. */
 
     /* ── 채팅 ───────────────────────────────────────────────────
        떠 있는 캡슐을 없앤다. 상단바의 💬 를 눌렀을 때만 오른쪽에서 덮는다. */
@@ -104,4 +129,41 @@
     html.ingame .chat-dock .chat-tab{display:none}
     html.ingame .chat-dock .chat-panel{width:100%;height:100%;border-radius:0;
       border-top:none;border-right:none;border-bottom:none;pointer-events:auto}
+  }
+
+  /* ── 게임별로 이 화면에 맞게 줄인다 (배율이 아니라 실제 크기) ────────
+     zoom 을 쓰면 글자까지 같이 줄어 못 읽는다. 그래서 무엇이 높이를 먹는지 재고
+     그 자리만 손본다. 아래 숫자는 전부 실측이다. */
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 바카라 577px = 구슬머리 17 + 구슬줄 24 + 테이블 234 + 마켓격자 251.
+       쓸 수 있는 높이는 372 이므로 205 를 줄여야 한다.
+       · 지난 결과 구슬(41)은 접는다 — 판을 보는 데 필요한 것이 아니다.
+       · 마켓 다섯을 세로로 쌓지 않고 한 줄로 편다(251 → 약 90). 가로에서는 폭이 남는다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-bead-head,
+    html.ingame .game-shell:has(.bacc-table) .bacc-bead-row{display:none}
+       .market-grid 는 grid 가 아니라 flex column 이다(05-poker.css). 처음에
+       grid-template-columns 를 걸었더니 아무 일도 안 일어났다 — 줄(.market-row)을
+       가로로 눕혀야 한다. */
+    html.ingame .market-grid{flex-direction:row;gap:6px;align-items:stretch}
+    html.ingame .market-row{flex:1 1 0;gap:6px}
+    html.ingame .market{padding-bottom:4px}
+    html.ingame .m-top{padding:3px 6px}
+    html.ingame .m-name{font-size:11px;padding:2px 4px}
+    html.ingame .m-sub{font-size:9px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 그래프 조작부는 수동/자동 두 칸이 나란히 서서 300px 로는 9px 이 모자랐다(실측). */
+    html.ingame .game-shell:has(.crash-graph) .game-main > :last-child{min-width:320px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 원본이 이미 작은 글자들. 배율을 걷어냈어도 6~7px 이라 폰에서는 안 읽힌다.
+       이 화면에서만 키운다 — 데스크톱은 그대로다. */
+    html.ingame .bj-rule{font-size:9.5px}
+    html.ingame .seat-name{font-size:10px}
+    html.ingame .m-sub{font-size:9px}
+    /* 지뢰 격자가 화면의 33% 밖에 안 썼다. 칸을 키워 판이 화면을 차지하게 한다. */
+    html.ingame .mines-grid{gap:5px}
+    html.ingame .mines-tile{width:auto;height:auto;aspect-ratio:1;min-width:0}
   }
