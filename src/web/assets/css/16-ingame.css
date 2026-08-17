@@ -19,8 +19,14 @@
     html.ingame header{display:none}
     /* 게임 전환 드롭다운도 없앤다 — 지금 무슨 게임인지는 상단바가 말한다 */
     html.ingame .game-switch{display:none}
-    /* 참가자·랭킹 패널은 가로 인게임에서 자리가 없다. 세로로 돌리면 그대로 있다 */
-    html.ingame .game-side{display:none}
+    /* ── 참가자 패널은 남긴다 ────────────────────────────────────
+       한번 숨겼다가 되돌렸다. 누가 얼마를 걸었는지 옆에서 흐르는 것이 이 서비스의
+       재미 중 하나인데, 자리가 없다는 이유로 통째로 없앴다 — 자리를 만들면 될 일이었다.
+       화면 오른쪽에 붙박이 레일로 세운다. 세로로 돌리면 원래대로 아래에 쌓인다. */
+    html.ingame .game-side{display:block;position:fixed;right:0;top:36px;bottom:0;
+      width:172px;padding:6px 6px 6px 0;overflow-y:auto;overflow-x:hidden;z-index:470;
+      background:linear-gradient(90deg,rgba(5,5,6,0),rgba(5,5,6,.55) 12%)}
+    html.ingame main{padding-right:178px}
     /* 그 밖에 게임과 무관한 것들 — 락다운 배너, 공지 띠 */
     html.ingame .lockbanner{display:none}
 
@@ -63,10 +69,21 @@
     html.ingame .game-shell:has(.bacc-table) .game-main > :first-child,
     html.ingame .game-shell:has(.bj-table) .game-main > :first-child{align-self:center;width:100%}
 
-    /* 좌우로 나란히 놓는 넷은 배율이 CSS 에 박혀 있다(자동 맞춤은 세로로 쌓는 쪽만 본다).
-       인게임에서는 껍데기를 벗어 높이가 108px 더 생겼으므로 그만큼 키운다 —
-       안 키우면 아래 3분의 1 이 그냥 빈다. 넘치지 않는지는 check-mobile 이 본다. */
-    html.ingame .ht-shell .game-main > :first-child{zoom:.68}
+    /* ── 홀덤도 액션을 아래로 ────────────────────────────────────
+       15-mobile.css 는 홀덤을 좌우 배치로 둔다. 그 판단의 근거는 "아래에 두면 테이블이
+       납작해진다" 였는데, 그건 껍데기가 108px 을 먹던 때의 계산이다. 인게임에서는 그것을
+       벗어 쓸 수 있는 높이가 290px → 376px 이 되었으므로 다시 계산이 선다:
+       테이블 폭을 700px 로 묶으면 2.3:1 이 나오고, 액션 띠를 빼도 들어간다.
+
+       그리고 실제 핸드 중의 조작부는 폴드·체크·콜·레이즈가 나란히 선 가로 띠다.
+       좁은 오른쪽 칸에 넣으면 세로로 접힌다 — 버튼 하나만 보이는 지금 화면만 보고
+       정하면 그걸 놓친다. 포커 앱들이 가로에서 테이블 위·액션 아래로 두는 이유다.
+       폭 상한은 app.js 의 capOf 가 배율을 나눠서 건다. */
+    html.ingame .ht-shell .game-main{flex-direction:column}
+    html.ingame .ht-shell .game-main > :first-child{align-self:center;width:100%;zoom:1}
+
+    /* 좌우로 남는 셋은 배율이 CSS 에 박혀 있다(자동 맞춤은 세로로 쌓는 쪽만 본다).
+       인게임에서는 높이가 더 생겼으므로 그만큼 키운다 — 안 키우면 아래가 그냥 빈다. */
     html.ingame .mines-shell .game-main > :first-child{zoom:.88}
     html.ingame .game-shell:has(.crash-graph) .game-main > :first-child{zoom:.95}
     html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{zoom:.92}

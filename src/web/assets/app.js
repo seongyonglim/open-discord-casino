@@ -1740,6 +1740,7 @@
 (function(){
   var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
   var MIN = 0.3;     // 이보다 줄이면 글자를 읽을 수 없다. 차라리 스크롤이 낫다.
+  var MAX = 1.8;     // 이보다 키우면 원본이 작은 글자·그림이 뭉개진다.
   var GAP = 26;       // 아래 끝에 닿지 않게 남기는 여유
 
   /* 판이 화면에서 이 폭을 넘지 않게 한다. 테이블은 주어진 폭을 그대로 늘리는데
@@ -1747,7 +1748,13 @@
      CSS 에 못 적는 이유: zoom 이 걸린 요소에서는 max-width 도 같이 줄어들어
      화면에 찍히는 폭이 (적은 값 × 배율)이 된다. 여기서 배율로 나눠 건다. */
   function capOf(board){
-    if (board.querySelector('.ht-rail') || board.className.indexOf('ht-felt') >= 0) return 440;
+    /* 홀덤. 인게임(웹 껍데기를 벗은 가로)에서는 높이가 더 있으므로 폭도 더 준다 —
+       테이블이 2.3:1 을 지킨다. 껍데기가 있는 가로에서는 높이가 모자라 더 좁혀야 한다. */
+    if (board.querySelector('.ht-rail') || board.className.indexOf('ht-felt') >= 0) {
+      /* 펠트 높이(--htCloth)는 폭과 무관하게 고정이라, 상한이 곧 가로세로 비를 정한다.
+         700 을 줬더니 3.4:1 이 나왔다 — 480 이 2.3:1 로 포커 테이블처럼 읽힌다. */
+      return document.documentElement.classList.contains('ingame') ? 480 : 440;
+    }
     if (board.querySelector('.bj-table')) return 560;
     if (board.querySelector('.bacc-table')) return 760;
     return 0;                                  // 상한 없음 (포커 플립은 넓을수록 낫다)
@@ -1785,9 +1792,14 @@
     var others = ctlEl ? ctlEl.getBoundingClientRect().height + 10 : 0;
     var room = limit - board.getBoundingClientRect().top - others - GAP;
     if (boardH <= 0 || room <= 0) return;
+    /* 줄이기만 하던 것을 키우기도 하게 바꿨다. 인게임에서는 껍데기를 벗어 높이가
+       남는데, 줄이기만 하면 판이 제 자연 크기 그대로 있고 아래가 그냥 빈다 —
+       홀덤 테이블이 4.3:1 로 납작하게 남았다.
+       위로는 1.8배까지만. 그 이상 키우면 원본이 작은 글자·그림이 뭉개져 보인다. */
     var z = room / boardH;
-    if (z >= 1) return;
+    if (z > MAX) z = MAX;
     z = Math.max(MIN, Math.floor(z * 1000) / 1000);
+    if (Math.abs(z - 1) < 0.02 && !cap) return;   // 그대로 둬도 되는 경우
     board.style.zoom = String(z);
     /* 상한은 화면에 찍히는 폭 기준이다. zoom 이 걸리면 max-width 도 같이 줄어드므로
        배율로 나눠 둬야 화면에서 cap 이 된다(안 나눴더니 620px 이 250px 이 됐다). */
