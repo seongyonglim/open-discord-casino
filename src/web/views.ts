@@ -1,6 +1,8 @@
 // SSR HTML 렌더링 (레이아웃 + 공통 헬퍼). 프레임워크 없이 템플릿 문자열만 사용.
 // 톤앤매너: 블랙 + 골드 베이스의 절제된 카지노 UI. 초록/빨강은 승패 등 기능적 신호에만 사용.
 import { ASSET_V } from './assets';
+/* pwa 는 assets 만 가져다 쓴다 — views 를 안 부르므로 순환이 생기지 않는다. */
+import { THEME_BG } from './pwa';
 import { seasonLockdown } from '../db/season-schedule';
 import { discordIcon } from './icons';
 
@@ -396,6 +398,13 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · OD CASINO</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+${/* 앱으로 설치되기 위한 세 줄. 매니페스트가 이름·아이콘·시작 화면을 알려주고,
+     theme-color 는 안드로이드가 상태 표시줄에 칠하는 색이다(--bg 와 같은 값이라
+     앱을 열 때 흰 띠가 안 생긴다). apple-touch-icon 은 iOS 홈 화면용 —
+     iOS 는 매니페스트의 아이콘을 안 보고 이 태그만 본다. */''}
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="${THEME_BG}">
+<link rel="apple-touch-icon" href="/icon/apple-touch-icon.png?v=${ASSET_V}">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- 브랜드용 Black Han Sans 하나만 받고, 그마저도 렌더를 막지 않게 비동기로 로드한다.
      (media="print"로 받아 두고 onload에서 all로 바꾸는 방식 — 첫 페인트가 폰트를 기다리지 않는다)

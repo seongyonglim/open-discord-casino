@@ -1660,3 +1660,21 @@
 
   window.casinoChat = { note: note, open: function(){ toggle(true); }, onMessage: onMessage };
 })();
+
+/* ── 서비스워커 등록 ──────────────────────────────────────────────────
+   앱으로 설치되기 위한 마지막 조각이다. 화면 동작에는 아무것도 더하지 않는다 —
+   여기서 하는 일은 "이 사이트는 설치할 수 있다"고 브라우저에 알리는 것과, 카드
+   그림·효과음처럼 안 바뀌는 파일을 두 번 안 받게 하는 것뿐이다.
+
+   load 를 기다렸다가 부른다. 등록은 첫 화면이 그려지는 것과 경쟁할 이유가 없고,
+   먼저 부르면 서비스워커 파일을 받느라 화면이 늦어진다.
+
+   실패는 삼킨다. 사설 인증서, 시크릿 창, 회사 정책으로 막힌 브라우저 — 서비스워커가
+   안 깔리는 사정은 여러 가지이고 그중 무엇도 게임을 못 하게 만들 이유가 아니다.
+   깔리지 않으면 그냥 예전과 똑같이 동작한다. */
+(function(){
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(){ });
+  });
+})();

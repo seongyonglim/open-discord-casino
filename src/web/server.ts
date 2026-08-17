@@ -13,6 +13,7 @@ import {
 } from './notifications-api';
 import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
+import { manifest, offlinePage, SW_UNINSTALL, swOff } from './pwa';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminLedger, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
@@ -115,6 +116,11 @@ const MIME: Record<string, string> = {
    왜 SVG 가 아니라 PNG 인가: 디스코드 임베드는 SVG 를 그리지 않는다(png·jpg·gif·webp만).
    공지 웹훅의 푸터 아이콘이 이 파일을 쓴다 — 없으면 아이콘 없이 글자만 나간다. */
 const IMG_FILES = new Set(['broke.jpg', 'logo.png']);
+/* 앱 아이콘. scripts/bake-icons.ts 가 로고 SVG 에서 굽는다 — 손으로 만들지 않는다.
+   마스커블은 안드로이드 런처가 제 모양대로 자를 때 쓰는 별도 한 장이다. */
+const ICON_FILES = new Set([
+  'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
+]);
 // 뒷면 두 종류 — back(남색)은 블랙잭·바카라·포커 플립, back-red(마룬)은 홀덤 테이블이 쓴다
 const CARD_FILES = new Set<string>(['back.svg', 'back-red.svg']);
 for (const s of ['s', 'h', 'd', 'c']) {
@@ -127,8 +133,9 @@ for (const s of ['s', 'h', 'd', 'c']) {
 interface CachedAsset { raw: Buffer; gz: Buffer | null }
 const assetCache = new Map<string, CachedAsset>();
 
-function serveAsset(dir: 'sfx' | 'cards' | 'img', name: string, res: http.ServerResponse): void {
-  const allowed = dir === 'sfx' ? SFX_FILES : dir === 'img' ? IMG_FILES : CARD_FILES;
+function serveAsset(dir: 'sfx' | 'cards' | 'img' | 'icon', name: string, res: http.ServerResponse): void {
+  const allowed = dir === 'sfx' ? SFX_FILES : dir === 'img' ? IMG_FILES
+    : dir === 'icon' ? ICON_FILES : CARD_FILES;
   if (!allowed.has(name)) { res.writeHead(404); res.end(); return; }
   const mime = MIME[name.split('.').pop() ?? ''] ?? 'application/octet-stream';
   const key = `${dir}/${name}`;
@@ -203,6 +210,18 @@ function serveAppFile(route: string, res: http.ServerResponse): void {
     useGz ? 'gzip' : 'identity');
 }
 
+/* 서비스워커 원본. app.js 와 같은 자리에 두고 같은 방식으로 __ASSET_V__ 를 채운다 —
+   워커 안의 캐시 이름과 미리 받을 목록이 그 값을 쓰기 때문이다. 배포하면 값이 바뀌고,
+   워커는 이름이 다른 캐시를 전부 버린다.
+   serveAppFile 을 안 쓰는 이유는 헤더가 다르기 때문이다: 이 파일만은 캐시하면 안 된다. */
+let swCache: string | null = null;
+function swSource(): string {
+  if (swCache !== null && APP_CACHE_ON) return swCache;
+  swCache = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'sw.js'), 'utf8')
+    .split('__ASSET_V__').join(ASSET_V);
+  return swCache;
+}
+
 function send(res: http.ServerResponse, status: number, html: string): void {
   sendBody(res, status, 'text/html; charset=utf-8', html);
 }
@@ -249,6 +268,27 @@ export function startWebServer(): void {
       if (path === '/favicon.svg') {
         sendBody(res, 200, 'image/svg+xml; charset=utf-8', LOGO_SVG,
           { 'cache-control': 'public, max-age=86400' });
+        return;
+      }
+      if (path.startsWith('/icon/')) return serveAsset('icon', path.slice(6), res);
+
+      /* ── 앱으로 설치되기 위한 것들 ────────────────────────────────────
+         로그인보다 앞에 둔다. 안드로이드는 앱을 설치할지 판단할 때 쿠키 없이
+         매니페스트를 받아 가고, 서비스워커도 로그인 여부와 무관하게 깔려야 한다. */
+      if (path === '/manifest.webmanifest') {
+        sendBody(res, 200, 'application/manifest+json; charset=utf-8', manifest(),
+          { 'cache-control': 'public, max-age=3600' });
+        return;
+      }
+      if (path === '/offline') {
+        return send(res, 200, offlinePage());
+      }
+      if (path === '/sw.js') {
+        /* 캐시하지 않는다. 서비스워커는 브라우저가 스스로 다시 받아 보는데, 여기에
+           캐시를 걸면 그 확인이 낡은 파일에 걸려 되돌리기가 안 먹는다. */
+        const body = swOff() ? SW_UNINSTALL : swSource();
+        sendBody(res, 200, 'text/javascript; charset=utf-8', body,
+          { 'cache-control': 'no-cache', 'service-worker-allowed': '/' });
         return;
       }
 
