@@ -1740,7 +1740,7 @@
 (function(){
   var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
   var MIN = 0.3;     // 이보다 줄이면 글자를 읽을 수 없다. 차라리 스크롤이 낫다.
-  var GAP = 10;       // 탭바에 닿지 않게 남기는 여유
+  var GAP = 26;       // 아래 끝에 닿지 않게 남기는 여유
 
   /* 판이 화면에서 이 폭을 넘지 않게 한다. 테이블은 주어진 폭을 그대로 늘리는데
      좌석 위치는 퍼센트라, 915px 을 다 주면 길쭉한 알약이 되고 좌석만 가운데로 몰린다.
@@ -1771,13 +1771,19 @@
       if (avail > cap) board.style.maxWidth = cap + 'px';
     }
 
+    /* 아래 한도. 탭바가 있으면 그 위까지, 없으면 화면 바닥까지다.
+       숨은 요소는 getBoundingClientRect 가 전부 0 이라 top 도 0 이 된다 — 높이를
+       안 보고 top 만 썼더니 인게임(탭바 숨김)에서 한도가 0 이 되어 아예 안 줄였다. */
     var nav = document.querySelector('header nav');
-    var limit = nav ? nav.getBoundingClientRect().top : window.innerHeight;
-    var mainTop = main.getBoundingClientRect().top;
+    var nr = nav ? nav.getBoundingClientRect() : null;
+    var limit = (nr && nr.height > 0) ? nr.top : window.innerHeight;
+
     var boardH = board.getBoundingClientRect().height;
-    /* 조작부와 칸 사이 간격 — 판 말고 나머지가 쓰는 높이다. 이건 안 줄인다. */
-    var others = main.getBoundingClientRect().height - boardH;
-    var room = limit - mainTop - others - GAP;
+    /* 판 말고 나머지(조작부)가 쓰는 높이. main 의 높이에서 빼면 안 된다 — 인게임에서는
+       main 이 화면 높이만큼 늘어나 있어서 남는 자리까지 "나머지"로 세게 된다. */
+    var ctlEl = main.lastElementChild !== board ? main.lastElementChild : null;
+    var others = ctlEl ? ctlEl.getBoundingClientRect().height + 10 : 0;
+    var room = limit - board.getBoundingClientRect().top - others - GAP;
     if (boardH <= 0 || room <= 0) return;
     var z = room / boardH;
     if (z >= 1) return;

@@ -105,6 +105,16 @@ const PROBE = `(() => {
     ctlW: cb ? Math.round(cb.width) : null,
     ctlNeed: ctl ? Math.round(ctl.scrollWidth) : null,
     over,
+    /* ── 인게임 풀스크린 ─────────────────────────────────────────
+       가로에서 게임 화면은 스크롤이 없어야 한다. 웹 껍데기(헤더·탭바·게임 전환)가
+       높이를 먹으면 판이 줄거나 화면이 밀린다. 아래 셋으로 그것을 본다. */
+    scrollH: de.scrollHeight,
+    ingame: document.documentElement.classList.contains('ingame'),
+    barH: (function(){ var b = document.querySelector('.ig-bar');
+      return b ? Math.round(b.getBoundingClientRect().height) : null; })(),
+    navShown: !!(nav && nav.height > 0),
+    /* 판이 화면을 얼마나 쓰는가. 남는 높이를 확보해 놓고도 판이 작으면 의미가 없다. */
+    boardFill: bb ? Math.round(bb.height / innerHeight * 100) : null,
   };
 })()`;
 
@@ -151,8 +161,17 @@ async function main(): Promise<void> {
     for (let i = 0; i < 40 && !loaded; i++) await sleep(200);
     await sleep(1800);   // 폴링이 첫 상태를 받아 판을 그릴 때까지
   };
-  const probe = async (): Promise<any> =>
-    (await send('Runtime.evaluate', { expression: PROBE, returnByValue: true })).result?.result?.value;
+  const probe = async (): Promise<any> => {
+    const r = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
+    /* 화면 안에서 던진 예외는 조용히 undefined 로 돌아온다 — 그러면 "로그인이 없다"로
+       잘못 읽힌다(실제로 그렇게 헤맸다). 던졌으면 그 자리에서 말한다. */
+    if (r.result?.exceptionDetails) {
+      const e = r.result.exceptionDetails;
+      throw new Error('화면 안 검사식이 던졌다: '
+        + (e.exception?.description || e.text || JSON.stringify(e)).split('\n')[0]);
+    }
+    return r.result?.result?.value;
+  };
 
   await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 2, mobile: true });
   if (BASE.includes('localhost')) await go(`${BASE}/dev/login`);
@@ -164,6 +183,7 @@ async function main(): Promise<void> {
      이 스크립트가 대신 할 수 없다) — 로컬 미리보기로 재는 것이 정상 경로다. */
   await go(`${BASE}/games/holdem`);
   const first = await probe();
+  if (process.env.MOB_DEBUG) console.log('첫 프로브:', JSON.stringify(first).slice(0, 400));
   if (!first?.loggedIn) {
     console.log(`\n로그인이 없어 게임 화면을 열 수 없다 — 잴 것이 없다.`);
     console.log(`  ${BASE} 은 디스코드 로그인이 필요하다.`);
@@ -184,11 +204,28 @@ async function main(): Promise<void> {
       if (!m) { ck(`${g} — 측정 실패`, false); continue; }
       ck(`${g} 가로로 안 넘친다`, m.scrollW <= m.vw + 1 && m.over.length === 0,
         `scrollW ${m.scrollW} > ${m.vw}` + (m.over.length ? ' · ' + m.over.join(' / ') : ''));
-      ck(`${g} 탭바가 화면 바닥에`, m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2,
-        `${m.navBottom} vs ${m.vh}`);
-      /* 판과 조작부가 한 화면에. 이것이 "게임이 스크롤 없이 되는가"다. */
-      ck(`${g} 판+조작부가 한 화면에`, m.mainBottom !== null && m.navTop !== null && m.mainBottom <= m.navTop,
-        m.mainBottom !== null ? `${m.mainBottom - (m.navTop ?? 0)}px 넘침 (판 ${m.mainTop}~${m.mainBottom} · 탭바 ${m.navTop})` : '.game-main 없음');
+
+      if (size.name === '가로') {
+        /* ── 인게임 풀스크린 ───────────────────────────────────────
+           가로 게임 화면은 웹 껍데기를 벗고 판에 화면을 다 내준다.
+           스크롤이 생기면 그 자체로 실패다 — 폰에서 판이 밀린다. */
+        ck(`${g} 인게임 껍데기가 켜진다`, m.ingame === true);
+        ck(`${g} 세로로도 안 밀린다 (스크롤 없음)`, m.scrollH <= m.vh + 1,
+          `scrollH ${m.scrollH} > ${m.vh}`);
+        ck(`${g} 하단 탭바가 없다`, m.navShown === false);
+        ck(`${g} 상단바가 얇다 (≤44px)`, m.barH !== null && m.barH <= 44,
+          m.barH === null ? '.ig-bar 없음' : `${m.barH}px`);
+        /* 자리를 비워 놓고 판이 그대로면 아무것도 얻은 게 없다. */
+        ck(`${g} 판이 화면 높이의 45% 이상`, (m.boardFill ?? 0) >= 45, `${m.boardFill}%`);
+      } else {
+        ck(`${g} 탭바가 화면 바닥에`, m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2,
+          `${m.navBottom} vs ${m.vh}`);
+      }
+      /* 판과 조작부가 한 화면에. 이것이 "게임이 스크롤 없이 되는가"다.
+         가로에서는 탭바가 없으므로 화면 바닥을 기준으로 본다. */
+      const 바닥 = size.name === '가로' ? m.vh : m.navTop;
+      ck(`${g} 판+조작부가 한 화면에`, m.mainBottom !== null && 바닥 !== null && m.mainBottom <= 바닥,
+        m.mainBottom !== null ? `${m.mainBottom - (바닥 ?? 0)}px 넘침 (판 ${m.mainTop}~${m.mainBottom} · 바닥 ${바닥})` : '.game-main 없음');
       /* 눌러서 맞춘 것이 아닌지. 화면 폭의 3할도 안 되는 판은 게임이 아니라 막대다. */
       const 최소폭 = Math.round(m.vw * 0.3);
       ck(`${g} 판이 찌그러지지 않았다`, m.boardW !== null && m.boardW >= 최소폭,

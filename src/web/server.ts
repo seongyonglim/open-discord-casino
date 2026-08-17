@@ -168,7 +168,11 @@ function serveAsset(dir: 'sfx' | 'cards' | 'img' | 'icon', name: string, res: ht
    이어 붙인 결과가 나누기 전과 한 글자도 다르지 않은지는 scripts/golden.ts 가 확인한다. */
 const APP_FILES: Record<string, { path: string | string[]; mime: string }> = {
   '/app.css': { path: cssParts(), mime: 'text/css; charset=utf-8' },
-  '/app.js': { path: 'app.js', mime: 'text/javascript; charset=utf-8' },
+  /* ingame.js 를 따로 두고 여기서 이어 붙인다. 페이지 머리말에 <script> 를 하나 더
+     넣으면 서버 HTML 이 바뀌고, 그러면 "웹 화면은 그대로"를 골든 비교로 증명할 수
+     없게 된다. 파일은 나눠 두되 나가는 것은 한 덩어리다 — 그 파일만 빼면 인게임
+     껍데기가 통째로 사라진다(되돌리기 장치). */
+  '/app.js': { path: ['app.js', 'ingame.js'], mime: 'text/javascript; charset=utf-8' },
 };
 
 /* 돌려주는 경로는 src/web/assets/ 를 기준으로 한 상대 경로다 — serveAppFile 이 그 앞을
