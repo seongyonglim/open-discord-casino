@@ -311,3 +311,284 @@
     html.ingame .game-shell .bead-lbl,
     html.ingame .game-shell .bead .bead-lbl{font-size:10px}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 실측으로 자리를 맞춘다 ─────────────────────────────────
+       쓸 수 있는 높이는 368px 다. 지금(실측):
+         블랙잭  531 = 테이블 391 + 베팅 98      → 테이블을 230 으로
+         지뢰찾기 487 = 격자 312 + 베팅 145      → 격자를 215 로
+         바카라  451 = 테이블 214 + 마켓 99 + 베팅 98 → 테이블을 150 으로
+       줄이는 것은 그림(카드·칸)이고, 누르는 자리와 글자는 그대로 둔다. */
+
+    /* 블랙잭 — 카드와 자리 상자가 높이를 먹는다 */
+    html.ingame .game-shell:has(.bj-table) .bj-table{padding:8px 10px 10px}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer{padding-bottom:2px}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer-head{margin-bottom:3px}
+    html.ingame .game-shell:has(.bj-table) .bj-seat{min-height:0;height:88px}
+    html.ingame .game-shell:has(.bj-table) .pcard{width:30px;height:42px}
+    html.ingame .game-shell:has(.bj-table) .bj-arc{top:56px}
+
+    /* 지뢰찾기 — 격자를 남는 높이에 맞춘다. 앞서 height:100% 를 줬더니 칸이 늘어나
+       312px 이 됐다(더 커진 셈이다). 상한을 둔다. */
+    html.ingame .mines-shell .board-stage{max-height:215px}
+    html.ingame .mines-grid{height:215px;width:215px}
+
+    /* 바카라 — 카드 상자를 더 줄인다 */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats{padding:4px 0}
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:28px;height:39px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-status{font-size:10.5px;padding:2px 0}
+
+    /* 사다리 라벨 — 앞서 준 값이 안 먹었다. 구슬 안의 라벨이라 더 구체적으로 잡는다. */
+    html.ingame .game-shell .bead .bead-lbl,
+    html.ingame .game-shell .bead-row .bead-lbl,
+    html.ingame .game-shell span.bead-lbl{font-size:10px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 사다리에 15-mobile.css 의 배율(0.72)이 아직 걸려 있었다. 그 선택자가 :not 을
+       여섯 개 물고 있어 구체성이 매우 높아, 짧은 규칙으로는 못 이긴다 — 같은 사슬에
+       html.ingame 만 앞에 붙여 되돌린다. 10px 로 적은 라벨이 7.2px 로 찍힌 이유다. */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{zoom:1;width:auto;max-width:none}
+
+    /* 마지막 다듬기 — 실측 기준 바카라 86 · 블랙잭 62 · 지뢰찾기 16 이 남았다.
+       카드와 칸을 조금 더 줄인다. 글자와 누르는 자리는 건드리지 않는다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats{padding:2px 0}
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:25px;height:35px}
+    html.ingame .game-shell:has(.bacc-table) .market{height:40px}
+    html.ingame .game-shell:has(.bj-table) .bj-seat{height:68px}
+    html.ingame .game-shell:has(.bj-table) .pcard{width:26px;height:36px}
+    html.ingame .mines-shell .board-stage{max-height:198px}
+    html.ingame .mines-grid{height:198px;width:198px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 15-mobile.css 가 좌우로 돌려 놓은 넷은 선택자가 길어(:not 여섯 개) 구체성이 높다.
+       인게임에서는 전부 위아래로 되돌려야 하므로 같은 사슬에 html.ingame 을 붙여 덮는다.
+       사다리가 아직 좌우로 남아 조작부가 화면 밖(652~952)으로 밀려 있었다. */
+    html.ingame .ht-shell .game-main,
+    html.ingame .mines-shell .game-main,
+    html.ingame .game-shell:has(.crash-graph) .game-main,
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main{
+      flex-direction:column;align-items:stretch}
+    html.ingame .ht-shell .game-main > :last-child,
+    html.ingame .mines-shell .game-main > :last-child,
+    html.ingame .game-shell:has(.crash-graph) .game-main > :last-child,
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :last-child{
+      flex:0 0 auto;min-width:0;width:auto}
+
+    /* 바카라 70 · 블랙잭 42 가 남았다. 테이블 안쪽 여백을 마저 줄인다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-table{padding:4px 6px}
+    html.ingame .game-shell:has(.bacc-table) .market{height:36px}
+    html.ingame .game-shell:has(.bj-table) .bj-table{padding:5px 8px 6px}
+    html.ingame .game-shell:has(.bj-table) .bj-seat{height:58px}
+    html.ingame .game-shell:has(.bj-table) .bj-label{font-size:9.5px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 사다리 454 = 판 248 + 베팅 206. 베팅 쪽이 판만큼 크다.
+       배당 줄(적중 시 얼마)은 읽어서 아는 것이라 접는다 — 배당은 예측 버튼 옆에 이미
+       적혀 있다. 구슬 줄도 지난 기록이라 판을 보는 데 필요하지 않다. */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .payout-line{display:none}
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .bead{display:none}
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .board-stage{max-height:200px}
+
+    /* 그래프 14 · 블랙잭 25 · 바카라 58 — 마지막으로 조금씩 더 줄인다. */
+    html.ingame .crash-graph{max-height:168px}
+    html.ingame .game-shell:has(.bj-table) .bj-seat{height:50px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:22px;height:31px}
+    html.ingame .game-shell:has(.bacc-table) .market{height:32px}
+    html.ingame .game-shell:has(.bacc-table) .m-name{font-size:10px;padding:1px 2px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 마지막 50 · 17 · 26px. 바카라는 테이블 자체가 아직 크다 — 그 안의 vs 표시와
+       여백을 줄인다. 나머지는 카드와 칸을 한 단계 더. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats{gap:6px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-seat{padding:4px 6px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:15px}
+    html.ingame .game-shell:has(.bj-table) .bj-seat{height:44px}
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .board-stage{max-height:172px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 블랙잭 배분을 바로잡는다 ───────────────────────────────
+       검사의 숫자를 맞추려고 자리 높이를 44px 까지 깎았더니 카드가 상자 밖으로
+       삐져나왔다. 줄여야 할 것은 카드가 아니라 빈 펠트였다.
+       실측: 딜러 영역 124px · 자리 44px · 자리 아래 빈 펠트 31px.
+       딜러 쪽은 카드 한 장과 여백이 전부인데 자리 셋만큼을 쓰고 있었다.
+       그래서 딜러를 줄이고 그만큼을 자리로 돌린다 — 카드가 상자 안에 들어간다. */
+    html.ingame .game-shell:has(.bj-table) .bj-dealer{padding-bottom:0}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer-head{margin-bottom:2px}
+    html.ingame .game-shell:has(.bj-table) .bj-rule{margin:2px 0}
+    html.ingame .game-shell:has(.bj-table) .bj-seat{height:64px}
+    html.ingame .game-shell:has(.bj-table) .pcard{width:30px;height:42px}
+    html.ingame .game-shell:has(.bj-table) .bj-table{padding:4px 8px 4px}
+    /* 자리 아래 빈 펠트를 걷는다 */
+    html.ingame .game-shell:has(.bj-table) .bj-seats{margin-bottom:0;padding-bottom:0}
+
+    /* 베팅 칸이 96px 을 필요로 하는데 88 만 줬다 — Clear Screen 이 잘렸다.
+       필요한 만큼 준다. 누르는 자리를 잘라서 맞추는 것은 이 작업의 원칙에 어긋난다. */
+    html.ingame .game-shell:not(.ht-shell) .game-main > :last-child{min-height:98px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 오른쪽 레일을 제대로 짠다 ──────────────────────────────
+       앞서 넣은 규칙은 클래스 이름을 추측해서 적은 것이라 하나도 안 맞았다.
+       실제 구조는 .sp-tabs > .sp-tab · .sp-pane > .sp-rank > .sp-rw > (.sp-no·.sp-mid·.sp-p) 다.
+
+       진짜 원인: .sp-mid 의 폭이 0 이었다. 150px 안에서 번호(22)와 손익(84)이 자리를
+       먼저 가져가 이름 칸에 남는 폭이 없었고, 글자가 한 자씩 세로로 쪼개져 한 줄이
+       98px 이 됐다. 이름 칸에 남는 폭을 주고 넘치면 자른다. */
+    html.ingame .game-side{width:170px}
+    html.ingame main{padding-right:176px}
+    html.ingame .sp-tabs .sp-tab{font-size:10.5px;padding:5px 4px}
+    html.ingame .sp-rank{gap:1px;padding:4px 5px 6px}
+    html.ingame .sp-rank .sp-rw{display:flex;align-items:center;gap:5px;
+      height:auto;min-height:0;padding:4px 5px}
+    html.ingame .sp-rank .sp-no{flex:none;width:13px;font-size:10px;text-align:center}
+    html.ingame .sp-rank .sp-mid{flex:1 1 auto;min-width:0;width:auto;height:auto;
+      display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      font-size:10.5px;line-height:1.3}
+    html.ingame .sp-rank .sp-p{flex:none;width:auto;font-size:10px;white-space:nowrap}
+    html.ingame .side-head{font-size:10.5px;padding:4px 5px}
+    html.ingame .roster .empty{font-size:10px;padding:8px 5px;line-height:1.4}
+
+    /* ── 베팅 띠를 한 줄로 ──────────────────────────────────────
+       칩 줄 아래에 [Clear Screen] 이 따로 한 줄을 차지해 띠가 두 배로 두꺼웠다.
+       옆에 두면 한 줄이면 된다 — 누르는 크기는 그대로다. */
+    html.ingame .game-shell:not(.ht-shell) .game-main > :last-child{
+      flex-direction:row;align-items:center;justify-content:center;gap:12px;
+      min-height:56px;padding:6px 10px}
+    html.ingame .game-shell:not(.ht-shell) .game-main > :last-child > .btn{
+      flex:none;margin:0;padding:9px 14px;font-size:12px}
+    html.ingame .coin-row{margin:0}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 되돌림: 한 줄 배치는 칩 줄을 쓰는 셋에만 ────────────────
+       앞에서 :not(.ht-shell) 로 걸었더니 그래프·사다리·지뢰찾기의 세로 입력 폼까지
+       가로로 눌렸다. 그래프에서 "자동 캐시아웃" 이 한 글자씩 세로로 쪼개지고 칩이
+       서로 겹치고 [베팅하기] 가 그 위를 덮었다.
+       한 줄로 눕혀도 되는 것은 칩 줄(.coin-row)이 있는 게임뿐이다. */
+    html.ingame .game-shell:not(.ht-shell) .game-main > :last-child{
+      flex-direction:column;align-items:stretch;justify-content:center}
+    html.ingame .game-shell:has(.coin-row) .game-main > :last-child{
+      flex-direction:row;align-items:center;justify-content:center;gap:12px;
+      min-height:56px;padding:6px 10px}
+    html.ingame .game-shell:not(:has(.coin-row)) .game-main > :last-child{min-height:0}
+
+    /* ── 블랙잭 세로 배분 ───────────────────────────────────────
+       딜러 카드 한 장 위아래로 빈 펠트가 200px 넘게 남는데 정작 플레이어 자리는
+       펠트 밖으로 잘렸다. 위아래를 갈라 딜러는 위, 자리는 아래에 붙인다. */
+    html.ingame .game-shell:has(.bj-table) .bj-table{
+      display:flex;flex-direction:column;justify-content:space-between;
+      padding:6px 10px 10px}
+    /* 자리를 계단식으로 어긋나게 두던 것을 이 화면에서는 편다 — 아래로 밀린 자리가
+       펠트를 넘는다. */
+    html.ingame .game-shell:has(.bj-table) .bj-seat{--dy:0px;height:66px}
+    html.ingame .game-shell:has(.bj-table) .pcard{width:30px;height:42px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 그래프 42px · 사다리 27px 이 남았다. 그래프는 [수동/자동] 탭이 80px 을 쓰는데
+       두 글자짜리 선택지라 그만큼 클 이유가 없다 — 읽는 데 필요한 크기로 줄인다.
+       누르는 자리는 44px 을 지킨다. */
+    html.ingame .mode-tabs{gap:6px}
+    html.ingame .mode-tab{padding:9px 8px;font-size:12px;min-height:0}
+    html.ingame .crash-graph{max-height:150px}
+    /* 사다리 판을 조금 더 */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .board-stage{max-height:148px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 사다리·그래프: 판 카드가 flex 로 늘어나 남는 높이를 다 먹고, 아래 베팅 카드의
+       마지막 버튼이 잘렸다. 판 안쪽은 이미 비어 있으므로(좌/우와 홀/짝 사이가 빈 칸)
+       카드 자체에 상한을 걸어 아래에 자리를 남긴다. */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{max-height:190px}
+    html.ingame .game-shell:has(.crash-graph) .game-main > :first-child{max-height:184px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 지뢰찾기: 판 카드가 화면 폭을 안 쓰고 가운데에 476px 로 서 있고, 그 안에서도
+       격자가 오른쪽으로 치우쳐 왼쪽 3분의 1 이 텅 비었다.
+       04-board.css 의 .mines-shell .game-main{max-width:620px} 이 남아 있었다 —
+       세로로 쌓을 때는 맞는 값이지만 가로에서는 화면을 다 써야 한다. */
+    html.ingame .mines-shell .game-main{max-width:none;width:100%}
+    html.ingame .mines-shell .game-main > :first-child{width:auto;max-width:none}
+    html.ingame .mines-shell .board-stage{display:flex;align-items:center;
+      justify-content:center;width:100%}
+    /* 남는 높이를 다 쓰게 조금 더 키운다 — 칸이 곧 누르는 자리다. */
+    html.ingame .mines-shell .board-stage{max-height:196px}
+    html.ingame .mines-grid{height:196px;width:196px;margin:0 auto}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 지뢰찾기 셸이 화면 폭 731 중 476 만 쓰고 좌우가 텅 비었다.
+       원인은 04-board.css 의 .mines-shell{max-width:926px;margin:0 auto} 다 —
+       가로 margin 이 auto 면 세로 flex 에서 stretch 가 꺼지고 내용 폭까지 줄어든다.
+       (오늘 같은 함정을 세 번 만났다: margin:auto · align-self:center · 그리고 이것.
+        세로 flex 칸에서 가운데 정렬을 하려면 width 를 함께 줘야 한다.) */
+    html.ingame .mines-shell{margin:0;max-width:none;width:100%}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 마켓 상자를 32px 로 눌렀더니 이름(플레이어·타이·뱅커·페어)이 잘려 배당 숫자만
+       남았다. 어디에 거는지 모르는 베팅 UI 가 된 것이다 — "최소화하되 불편하지 않게"
+       에서 불편한 쪽으로 넘어갔다. 이름이 보이는 높이를 돌려준다. */
+    html.ingame .game-shell .market{height:auto;min-height:46px}
+    html.ingame .game-shell .m-name{font-size:11px;padding:2px 4px 4px;display:block}
+    html.ingame .game-shell:has(.bacc-table) .market{height:auto;min-height:46px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 마켓 이름을 살리니 높이가 필요해졌다. 그 자리는 마켓이 아니라 테이블에서 낸다 —
+       PLAYER/BANKER 상자가 카드 두 장에 290px 을 쓰고 아래가 비어 있었다.
+       베팅에 필요한 것(무엇에 · 얼마에 거는가)이 우선이고, 카드는 보이기만 하면 된다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-table{max-height:188px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-seat{padding:4px 6px 6px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:16px;margin-top:2px}
+    /* 포커 플립도 같은 이유로 보드를 조금 줄인다 */
+    html.ingame .poker-shell .poker-table{max-height:150px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 마켓 격자가 아직 세로로 쌓여 220px(108×2 줄)이었다. 앞서 flex-direction:row 를
+       걸었지만 더 구체적인 규칙에 밀렸다. 선택자를 길게 해서 못 박는다.
+       한 줄에 다섯 개, 각 52px — 이름과 배당이 둘 다 보이는 최소 높이다. */
+    html.ingame .game-shell .game-main .market-grid{
+      flex-direction:row;gap:6px;align-items:stretch;flex:0 0 auto}
+    html.ingame .game-shell .game-main .market-row{flex:1 1 0;gap:6px}
+    html.ingame .game-shell .game-main .market{height:52px;min-height:0}
+    html.ingame .game-shell .game-main .m-top{padding:2px 5px;font-size:10.5px}
+    html.ingame .game-shell .game-main .m-name{font-size:10.5px;padding:0 3px 3px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 마켓 안에서 이름이 안 보인 진짜 이유: 칩이 쌓이는 자리(.m-pile)가 56px 를 차지해
+       이름 줄(.m-body)이 상자 밖으로 밀리고 overflow:hidden 에 잘렸다. 배당만 남고
+       무엇에 거는지 모르는 화면이 된 것이다.
+       칩 자리를 줄이고(걸면 보이기는 한다) 이름이 들어갈 높이를 준다. */
+    html.ingame .game-shell .game-main .m-pile{height:16px;min-height:0}
+    html.ingame .game-shell .game-main .market{height:62px}
+    html.ingame .game-shell .game-main .m-body{font-size:10.5px;line-height:1.2}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 카드를 키운다 ─────────────────────────────────────────
+       화면에 맞추느라 카드를 계속 깎았고, 재 보니 이렇게 되어 있었다:
+         홀덤 25×33 · 바카라 22×31 · 블랙잭 30×42 · 포커플립 32×48
+       22×31 은 카드로 안 보인다 — 무늬도 숫자도 못 읽는다. 카드는 이 게임들의
+       본체이고, 못 읽으면 게임이 성립하지 않는다.
+       남는 높이가 29~89px 있었으므로 그것을 카드에 돌린다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:34px;height:48px}
+    html.ingame .game-shell:has(.bj-table) .pcard{width:36px;height:50px}
+    html.ingame .poker-shell .pcard{width:42px;height:59px}
+    html.ingame .ht-shell{--htCard:34px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 키운 뒤에도 여유가 29~78px 남았다 — 그만큼 더 준다. 모바일 카지노 앱의 카드는
+       가로 40px 안팎이고, 그 아래로 내려가면 무늬가 뭉개진다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:40px;height:56px}
+    html.ingame .game-shell:has(.bj-table) .pcard{width:40px;height:56px}
+  }
