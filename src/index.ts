@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { getDb } from './db/schema';
 import { startWebServer } from './web/server';
+import { startTicks } from './tick';
 
 /* ── 마지막 그물 ────────────────────────────────────────────────────
    요청 처리는 server.ts 가 통째로 try/catch 로 감싸지만, 그 바깥에서 나는 예외 —
@@ -40,6 +41,9 @@ process.on('uncaughtException', (err) => {
 
 getDb();       // 스키마 초기화를 부팅 시점에 즉시 수행 (요청 시점 지연 방지)
 startWebServer();
+/* 판을 서버가 스스로 전진시킨다. 이 한 줄을 빼면 예전 동작(요청이 전진시킨다)으로
+   그대로 돌아간다 — 요청 경로는 손대지 않았다. 배포한 뒤 끄고 싶으면 TICK=off. */
+startTicks();
 
 // Gateway(Client.login) 없음 — 디스코드 상호작용은 /discord/interactions 웹훅으로만 받는다.
 // 그래야 fly.io가 유휴 시 이 프로세스를 완전히 재울 수 있다(scale-to-zero).

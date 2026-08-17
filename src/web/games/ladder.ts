@@ -68,7 +68,10 @@ function revealSecFor(round: LadderRoundRow): number {
   return Math.ceil(descentMs(rungs) / 1000) + LADDER_REVEAL_SEC;
 }
 
-function advance(): LadderRoundRow {
+/* 서버 전진 타이머(src/tick.ts)도 이 함수를 부른다. 헬퍼를 밖으로 열지 않고
+   이 한 함수만 내보내는 이유가 그것이다 — 어떤 규칙으로 전진하는지는 이 모듈이
+   쥐고 있어야 하고, 부르는 쪽은 "사다리을 전진시켜라"만 알면 된다. */
+export function advance(): LadderRoundRow {
   return advanceLadderRound(computeResult, revealSecFor);
 }
 
