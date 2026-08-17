@@ -24,9 +24,11 @@
        재미 중 하나인데, 자리가 없다는 이유로 통째로 없앴다 — 자리를 만들면 될 일이었다.
        화면 오른쪽에 붙박이 레일로 세운다. 세로로 돌리면 원래대로 아래에 쌓인다. */
     html.ingame .game-side{display:block;position:fixed;right:0;top:36px;bottom:0;
-      width:172px;padding:6px 6px 6px 0;overflow-y:auto;overflow-x:hidden;z-index:470;
+      width:150px;padding:6px 5px 6px 0;overflow-y:auto;overflow-x:hidden;z-index:470;
       background:linear-gradient(90deg,rgba(5,5,6,0),rgba(5,5,6,.55) 12%)}
-    html.ingame main{padding-right:178px}
+    /* 오른쪽 자리 비우기는 아래 main 규칙에서 한 번에 적는다. 여기에 padding-right 만
+       따로 적었더니 뒤에 오는 padding 단축 속성이 그것을 덮어써서, 판이 레일 밑으로
+       들어가 글자가 겹쳐 보였다. */
     /* 그 밖에 게임과 무관한 것들 — 락다운 배너, 공지 띠 */
     html.ingame .lockbanner{display:none}
 
@@ -54,7 +56,7 @@
 
     /* ── 판에 화면을 내준다 ──────────────────────────────────────
        상단바 36px 만 빼고 나머지가 전부 게임이다. main 의 여백도 걷는다. */
-    html.ingame main{padding:38px 8px 6px;height:100%;box-sizing:border-box;
+    html.ingame main{padding:38px 156px 6px 8px;height:100%;box-sizing:border-box;
       display:flex;flex-direction:column;min-height:0}
     html.ingame .game-shell{flex:1;min-height:0;gap:8px}
     html.ingame .game-main{min-height:0}

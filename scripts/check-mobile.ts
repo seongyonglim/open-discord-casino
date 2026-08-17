@@ -115,6 +115,37 @@ const PROBE = `(() => {
     navShown: !!(nav && nav.height > 0),
     /* 판이 화면을 얼마나 쓰는가. 남는 높이를 확보해 놓고도 판이 작으면 의미가 없다. */
     boardFill: bb ? Math.round(bb.height / innerHeight * 100) : null,
+    /* 화면에 실제로 찍히는 글자 크기. zoom 을 걸면 적힌 크기와 보이는 크기가 달라진다 —
+       10.5px 로 적힌 닉네임이 배율 0.44 에서 4.6px 로 나왔고, 그동안의 검사는 전부
+       초록이었다. 판을 줄여 "들어가게" 만들어 놓고 읽을 수 없게 한 것이다.
+       여기서는 조상들의 zoom 을 전부 곱해 보이는 크기를 구한다. */
+    tinyText: (function(){
+      if (!el) return null;
+      var worst = 999, sample = '';
+      var nodes = el.querySelectorAll('*');
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (!n.textContent || !n.textContent.trim()) continue;
+        var r = n.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) continue;
+        /* 글자를 직접 담은 요소만 본다 — 감싸는 상자까지 세면 같은 글자를 여러 번 센다 */
+        var direct = false;
+        for (var k = 0; k < n.childNodes.length; k++) {
+          if (n.childNodes[k].nodeType === 3 && n.childNodes[k].nodeValue.trim()) direct = true;
+        }
+        if (!direct) continue;
+        var z = 1, p = n;
+        while (p && p !== document.body) {
+          var pz = parseFloat(getComputedStyle(p).zoom);
+          if (pz && pz !== 1) z *= pz;
+          p = p.parentElement;
+        }
+        var px = parseFloat(getComputedStyle(n).fontSize) * z;
+        if (px < worst) { worst = px; sample = (n.className || n.tagName) + ' "'
+          + n.textContent.trim().slice(0, 10) + '"'; }
+      }
+      return worst === 999 ? null : { px: Math.round(worst * 10) / 10, sample: sample };
+    })(),
   };
 })()`;
 
@@ -217,6 +248,11 @@ async function main(): Promise<void> {
           m.barH === null ? '.ig-bar 없음' : `${m.barH}px`);
         /* 자리를 비워 놓고 판이 그대로면 아무것도 얻은 게 없다. */
         ck(`${g} 판이 화면 높이의 45% 이상`, (m.boardFill ?? 0) >= 45, `${m.boardFill}%`);
+        /* 그리고 읽을 수 있어야 한다. 판을 줄여 "들어가게" 만들어 놓고 글자를 4.6px 로
+           만들면 들어간 것이 아니다 — 그동안 이 항목이 없어서 전부 통과했다.
+           9px 은 폰에서 겨우 읽히는 하한이다. */
+        ck(`${g} 글자가 읽을 수 있는 크기`, (m.tinyText?.px ?? 99) >= 9,
+          m.tinyText ? `가장 작은 글자 ${m.tinyText.px}px — ${m.tinyText.sample}` : '못 잼');
       } else {
         ck(`${g} 탭바가 화면 바닥에`, m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2,
           `${m.navBottom} vs ${m.vh}`);
