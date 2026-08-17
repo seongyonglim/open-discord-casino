@@ -85,7 +85,15 @@ const PROBE = `(() => {
   const el = document.querySelector('.game-main');
   const board = el && el.firstElementChild;
   const bb = board ? board.getBoundingClientRect() : null;
+  /* 조작부도 같이 본다. 판만 지켰더니 지뢰찾기 조작부가 185px 로 눌려 안의 글자들이
+     서로 겹쳤다 — 판 검사는 초록이었다. 눌린 칸은 scrollWidth 가 실제 폭보다 크다. */
+  const ctl = el && el.lastElementChild !== board ? el.lastElementChild : null;
+  const cb = ctl ? ctl.getBoundingClientRect() : null;
   return {
+    /* 로그인 여부. 게임 화면은 로그인해야 열리므로, 안 한 채로 재면 모든 항목이
+       "없음"으로 나와 전부 실패처럼 보인다 — 운영 주소로 돌렸다가 42개가 빨갛게
+       나왔는데 전부 이 이유였다. 고장이 아니라 잴 수 없는 상태다. */
+    loggedIn: !!window.__MEID__,
     vw: innerWidth, vh: innerHeight,
     scrollW: de.scrollWidth,
     navBottom: nav ? Math.round(nav.bottom) : null,
@@ -94,6 +102,8 @@ const PROBE = `(() => {
     mainTop: main ? Math.round(main.top) : null,
     boardW: bb ? Math.round(bb.width) : null,
     boardH: bb ? Math.round(bb.height) : null,
+    ctlW: cb ? Math.round(cb.width) : null,
+    ctlNeed: ctl ? Math.round(ctl.scrollWidth) : null,
     over,
   };
 })()`;
@@ -144,9 +154,22 @@ async function main(): Promise<void> {
   const probe = async (): Promise<any> =>
     (await send('Runtime.evaluate', { expression: PROBE, returnByValue: true })).result?.result?.value;
 
-  if (BASE.includes('localhost')) {
-    await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 2, mobile: true });
-    await go(`${BASE}/dev/login`);
+  await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 2, mobile: true });
+  if (BASE.includes('localhost')) await go(`${BASE}/dev/login`);
+
+  /* 로그인이 없으면 게임 화면 자체가 안 열린다. 그 상태로 재면 "판이 없다"가 일곱 게임
+     × 두 방향으로 쏟아져 고장처럼 보인다 — 운영 주소로 돌렸다가 실제로 그랬다.
+     잴 수 없는 것과 틀린 것은 다르므로 여기서 갈라 말하고 끝낸다.
+     운영에서 재려면 그 브라우저에 로그인 세션이 있어야 한다(디스코드 OAuth 라
+     이 스크립트가 대신 할 수 없다) — 로컬 미리보기로 재는 것이 정상 경로다. */
+  await go(`${BASE}/games/holdem`);
+  const first = await probe();
+  if (!first?.loggedIn) {
+    console.log(`\n로그인이 없어 게임 화면을 열 수 없다 — 잴 것이 없다.`);
+    console.log(`  ${BASE} 은 디스코드 로그인이 필요하다.`);
+    console.log(`  로컬 미리보기(casino-real, 8300)로 돌리면 /dev/login 으로 들어가 잰다.\n`);
+    ws.close();
+    return;
   }
 
   for (const size of SIZES) {
@@ -170,6 +193,12 @@ async function main(): Promise<void> {
       const 최소폭 = Math.round(m.vw * 0.3);
       ck(`${g} 판이 찌그러지지 않았다`, m.boardW !== null && m.boardW >= 최소폭,
         `판 폭 ${m.boardW}px < ${최소폭}px`);
+      /* 조작부도 같이 본다. 눌린 칸은 안의 내용이 들어갈 자리를 못 얻어 겹친다 —
+         scrollWidth 가 실제 폭보다 크면 그 상태다. */
+      if (m.ctlW !== null) {
+        ck(`${g} 조작부가 눌리지 않았다`, m.ctlW >= 280 && m.ctlNeed <= m.ctlW + 2,
+          `폭 ${m.ctlW}px · 필요 ${m.ctlNeed}px`);
+      }
     }
 
     for (const p of PLAIN) {
