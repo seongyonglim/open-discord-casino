@@ -199,7 +199,170 @@ async function main(): Promise<void> {
     ck('동시 폴링 30회가 라운드를 중복 생성하지 않음', after - before <= 1, `${before} → ${after}`);
   }
 
-  section('[7] 최종 원장 정합성');
+  /* ── 7. 서버 전진이 도는 중에 사람이 조작한다 ──────────────────── */
+  /* 여기까지의 검사는 전부 "요청끼리" 겹칠 때를 봤다. 서버 전진(src/tick.ts)이 생기면서
+     겹치는 상대가 하나 늘었다 — 아무도 안 불렀는데 라운드를 닫는 타이머다.
+     node:sqlite 는 동기이고 Node 는 단일 스레드라 트랜잭션이 서로의 사이에 끼어들 수는
+     없다. 그러니 여기서 묻는 것은 "동시에 쓰는가"가 아니라 순서다:
+       베팅이 마감되는 그 순간에 들어온 베팅이 어떻게 되는가.
+     예전에는 그 베팅을 보낸 사람의 요청이 직접 라운드를 닫았다. 지금은 타이머가 먼저
+     닫아 놓았을 수 있다. 결과는 같아야 하지만 — 확인은 안 했으므로 여기서 한다.
+
+     그래서 마감 시각을 DB 에서 직접 읽어(HTTP 를 안 거쳐야 시각이 안 흐트러진다)
+     그 경계에 베팅을 몰아넣는다. */
+  section('[7] 서버 전진 × 사람 — 마감 경계에 요청을 밀어 넣는다');
+  {
+    const T = require('../src/tick') as typeof import('../src/tick');
+    const cs = ['r1', 'r2', 'r3', 'r4'].map(n => mkSession('x_' + n, 200_000));
+
+    const crashDone0 = (db.prepare(
+      `SELECT COUNT(*) AS n FROM crash_rounds WHERE phase='done'`).get() as any).n;
+    const ladderDone0 = (db.prepare(
+      `SELECT COUNT(*) AS n FROM ladder_rounds WHERE phase='done'`).get() as any).n;
+
+    T.startTicks();
+    const t0 = Date.now();
+    let shots = 0;
+    const burst = { crash_rounds: 0, ladder_rounds: 0 };
+    const fired = new Set<string>();   // 라운드마다 한 번만 몰아넣는다
+
+    /* 경계 사격 — 마감 시각 직전 80ms 안에 들어오면 네 명이 동시에 베팅한다. */
+    const sniper = setInterval(() => {
+      /* 그래프 한 판의 상승 시간은 크래시 지점에 달려 있어 10초가 될 수도, 40초가 될
+         수도 있다. 그대로 두면 "정해진 시간 안에 두 판이 끝나는가"가 운에 좌우되어
+         같은 코드가 통과했다 실패했다 한다(대회 검사에서 블라인드를 당긴 것과 같은
+         이유다). 규칙은 그대로 두고 시계만 당긴다 — 새로 열린 판의 크래시 지점을
+         낮춰 상승을 짧게 만든다. 이 검사가 보려는 것은 상승이 아니라 베팅 마감
+         경계이고, 마감은 크래시 지점과 무관하게 열린 지 10초 뒤다.
+         상승 중인 판까지 당긴다 — 앞 구간에서 넘어온 판은 지점이 높을 수 있고, 그것
+         하나가 40초를 끌면 이 검사 전체의 소요가 운에 좌우된다(실제로 한 번은 40초에,
+         한 번은 75초를 다 쓰고 끝났다). */
+      db.prepare(`UPDATE crash_rounds SET crash_point = 1.35
+                   WHERE phase != 'done' AND crash_point > 1.35`).run();
+
+      for (const [table, path, body] of [
+        ['crash_rounds', '/api/games/crash/bet', { betAmount: 500 }],
+        ['ladder_rounds', '/api/games/ladder/bet', { startGuess: 'L', betAmount: 500 }],
+      ] as const) {
+        const r = db.prepare(
+          `SELECT id, phase, betting_ends_at FROM ${table} ORDER BY id DESC LIMIT 1`).get() as
+          { id: number; phase: string; betting_ends_at: number } | undefined;
+        if (!r || r.phase !== 'betting') continue;
+        const leftMs = r.betting_ends_at * 1000 - Date.now();
+        const key = table + r.id;
+        if (leftMs > 80 || leftMs < -400 || fired.has(key)) continue;
+        fired.add(key); burst[table]++;
+        for (const c of cs) { shots++; void req('POST', path, c, body).catch(() => {}); }
+        for (const c of cs) { shots++; void req('POST', '/api/games/crash/cashout', c, {}).catch(() => {}); }
+      }
+    }, 20);
+
+    /* 그 사이 꾸준한 잡음도 깔아 둔다 — 경계가 아닌 시각에 들어오는 평범한 요청이
+       타이머와 겹칠 때도 봐야 한다. */
+    /* 지각생 — 경계 사격에는 안 끼는 사람들이다.
+       위의 넷은 베팅 창에서 이미 한 번씩 걸어 두었으므로, 판이 닫힌 뒤에 또 걸어도
+       "이미 베팅함"에 먼저 막힌다. 그 막힘 때문에 정작 보려던 것 — 닫힌 판에 새 베팅이
+       꽂히는가 — 을 못 본다(실제로 방어를 두 겹 다 빼고 돌려도 안 잡혔다).
+       그래서 그 판에 발을 안 담근 사람을 따로 둔다. */
+    const late = ['l1', 'l2', 'l3', 'l4'].map(n => mkSession('x_' + n, 200_000));
+    const lateFired = new Set<number>();
+
+    const noise = setInterval(() => {
+      const c = cs[shots % cs.length];
+      shots += 2;
+      void req('POST', '/api/games/crash/cashout', c, {}).catch(() => {});
+      void req('GET', '/api/games/crash/state', c).catch(() => {});
+
+      /* 이미 끝난 판에 베팅을 밀어 넣는다. 막히는 것이 정상이고, 뚫리면 그 돈은
+         정산이 끝난 판에 얹혀 영영 정산되지 않는다 — 아래 (a)가 그것을 본다. */
+      const r = db.prepare(`SELECT id, phase FROM crash_rounds ORDER BY id DESC LIMIT 1`)
+        .get() as { id: number; phase: string } | undefined;
+      if (r && r.phase === 'done' && !lateFired.has(r.id)) {
+        lateFired.add(r.id);
+        for (const lc of late) {
+          shots++;
+          void req('POST', '/api/games/crash/bet', lc, { betAmount: 300 }).catch(() => {});
+        }
+      }
+    }, 120);
+
+    /* 크래시 지점을 당겼으므로 한 판은 베팅 10초 + 상승 약 1초 + 공개 3초다.
+       두 판이 마감되고 두 번의 경계를 통과할 때까지 기다린다. */
+    while (Date.now() - t0 < 75_000) {
+      await new Promise(r => setTimeout(r, 500));
+      const cd = (db.prepare(`SELECT COUNT(*) AS n FROM crash_rounds WHERE phase='done'`)
+        .get() as any).n - crashDone0;
+      const ld = (db.prepare(`SELECT COUNT(*) AS n FROM ladder_rounds WHERE phase='done'`)
+        .get() as any).n - ladderDone0;
+      if (process.env.TICK_TRACE) console.log(`    …${((Date.now() - t0) / 1000).toFixed(0)}초`
+        + ` 마감 그래프${cd}/사다리${ld} · 경계 그래프${burst.crash_rounds}/사다리${burst.ladder_rounds}`);
+      if (cd >= 2 && ld >= 2 && burst.crash_rounds >= 2 && burst.ladder_rounds >= 2) break;
+    }
+    clearInterval(sniper); clearInterval(noise);
+    T.stopTicks();
+    await new Promise(r => setTimeout(r, 800));   // 날아가던 요청이 끝나기를 기다린다
+
+    const crashDone = (db.prepare(`SELECT COUNT(*) AS n FROM crash_rounds WHERE phase='done'`)
+      .get() as any).n - crashDone0;
+    const ladderDone = (db.prepare(`SELECT COUNT(*) AS n FROM ladder_rounds WHERE phase='done'`)
+      .get() as any).n - ladderDone0;
+
+    /* 이 검사가 실제로 무언가를 통과했는지부터 본다. 라운드가 안 돌았는데 통과하면
+       아래 불변식들은 "아무 일도 없었다"를 확인한 것에 지나지 않는다. */
+    ck('타이머가 라운드를 마감했다 (그래프 ≥2)', crashDone >= 2, `${crashDone}판`);
+    ck('타이머가 라운드를 마감했다 (사다리 ≥2)', ladderDone >= 2, `${ladderDone}판`);
+    ck('그래프 마감 경계에 요청을 밀어 넣었다', burst.crash_rounds >= 2,
+      `${burst.crash_rounds}번`);
+    ck('사다리 마감 경계에 요청을 밀어 넣었다', burst.ladder_rounds >= 2,
+      `${burst.ladder_rounds}번`);
+    console.log(`    (${((Date.now() - t0) / 1000).toFixed(0)}초 동안 요청 ${shots}건)`);
+
+    /* (a) 삼켜진 베팅이 없는가 — 가장 걱정한 경우다.
+       타이머가 라운드를 닫은 직후에 베팅이 들어와 통과해 버리면, 돈은 빠져나갔는데
+       그 라운드는 이미 정산이 끝나 영영 정산되지 않는다. 끝난 라운드에 payout 이
+       비어 있는 베팅이 하나라도 있으면 그것이다. */
+    const stuckC = (db.prepare(
+      `SELECT COUNT(*) AS n FROM crash_bets b JOIN crash_rounds r ON r.id = b.round_id
+        WHERE r.phase = 'done' AND b.payout IS NULL`).get() as any).n;
+    ck('끝난 그래프 라운드에 정산 안 된 베팅이 없다', stuckC === 0, `${stuckC}건`);
+    const stuckL = (db.prepare(
+      `SELECT COUNT(*) AS n FROM ladder_bets b JOIN ladder_rounds r ON r.id = b.round_id
+        WHERE r.phase = 'done' AND b.won IS NULL`).get() as any).n;
+    ck('끝난 사다리 라운드에 정산 안 된 베팅이 없다', stuckL === 0, `${stuckL}건`);
+
+    /* (b) 원장과 베팅표가 서로 맞는가.
+       차감만 되고 베팅이 안 꽂히거나(돈만 사라짐), 베팅은 꽂혔는데 차감이 없으면(공짜 베팅)
+       여기서 어긋난다. 취소는 환불로 되돌아가고 행이 지워지므로 빼 준다. */
+    const sum = (q: string, ...a: any[]) =>
+      (db.prepare(q).get(...a) as any).n as number;
+    for (const [game, betTable, betReason, cancelReason, payReason] of [
+      ['그래프', 'crash_bets', 'game:graph:bet', 'game:graph:cancel', 'game:graph'],
+      ['사다리', 'ladder_bets', 'game:ladder:bet', 'game:ladder:cancel', 'game:ladder'],
+    ] as const) {
+      const debit = -sum(`SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE reason=?`, betReason);
+      const refund = sum(`SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE reason=?`, cancelReason);
+      const staked = sum(`SELECT COALESCE(SUM(amount),0) AS n FROM ${betTable}`);
+      ck(`${game}: 차감 − 환불 = 베팅표 합`, debit - refund === staked,
+        `${debit} − ${refund} ≠ ${staked}`);
+      const paidLedger = sum(`SELECT COALESCE(SUM(delta),0) AS n FROM points_ledger WHERE reason=?`, payReason);
+      const paidTable = sum(`SELECT COALESCE(SUM(payout),0) AS n FROM ${betTable} WHERE payout IS NOT NULL`);
+      ck(`${game}: 지급 원장 = 베팅표 지급 합 (이중 지급 없음)`, paidLedger === paidTable,
+        `${paidLedger} ≠ ${paidTable}`);
+    }
+
+    /* (c) 한 라운드에 같은 사람이 두 번 들어가지 않았는가 — 경계에서 4명이 동시에
+       쏘았으므로 "이미 베팅함" 검사가 타이머와 겹쳐도 버텨야 한다. */
+    const dupC = (db.prepare(
+      `SELECT COUNT(*) AS n FROM (SELECT round_id, user_id FROM crash_bets
+         GROUP BY round_id, user_id HAVING COUNT(*) > 1)`).get() as any).n;
+    ck('그래프: 한 라운드에 같은 사람이 두 번 안 들어갔다', dupC === 0, `${dupC}건`);
+    const dupL = (db.prepare(
+      `SELECT COUNT(*) AS n FROM (SELECT round_id, user_id FROM ladder_bets
+         GROUP BY round_id, user_id HAVING COUNT(*) > 1)`).get() as any).n;
+    ck('사다리: 한 라운드에 같은 사람이 두 번 안 들어갔다', dupL === 0, `${dupL}건`);
+  }
+
+  section('[8] 최종 원장 정합성');
   ck('모든 유저: 잔액 = 원장 누적합', ledgerOk());
   const neg = (db.prepare(`SELECT COUNT(*) AS n FROM users WHERE balance < 0`).get() as any).n;
   ck('음수 잔액 없음', neg === 0, `${neg}명`);

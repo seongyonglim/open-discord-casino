@@ -31,8 +31,9 @@
     "audit:holdem-db": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem-db.ts",
     "audit:chat": "node --experimental-sqlite --require tsx/cjs scripts/audit-chat.ts",
     "audit:quick": "npm run smoke && npm run audit:pages && npm run audit:economy && npm run audit:security && npm run audit:discord && npm run audit:holdem",
-    "audit": "npm run audit:quick && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:holdem-db && npm run audit:achievements && npm run audit:season && npm run audit:lockdown && npm run audit:pko && npm run audit:preaction && npm run audit:chat && npm run audit:tick",
-    "audit:tick": "node --experimental-sqlite --require tsx/cjs scripts/audit-tick.ts"
+    "audit": "npm run audit:quick && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:holdem-db && npm run audit:achievements && npm run audit:season && npm run audit:lockdown && npm run audit:pko && npm run audit:preaction && npm run audit:chat && npm run audit:tick && npm run audit:tourney",
+    "audit:tick": "node --experimental-sqlite --require tsx/cjs scripts/audit-tick.ts",
+    "audit:tourney": "node --experimental-sqlite --require tsx/cjs scripts/audit-tourney.ts"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
