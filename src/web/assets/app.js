@@ -1725,3 +1725,75 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+/* ── 가로에서 판을 남는 높이에 맞춘다 ──────────────────────────────────
+   폰을 눕히면 높이가 412px 뿐이다. 판(펠트·보드)과 조작부가 그 안에 함께 들어가야
+   스크롤 없이 게임이 된다.
+
+   왜 CSS 에 배율을 적지 않는가: 판 높이가 게임이 도는 동안 바뀐다. 홀덤은 좌석이
+   늘고 카드가 깔리고, 포커 플립은 마켓 줄이 생기고, 바카라는 결과 구슬이 쌓인다.
+   한 순간을 재서 정한 숫자는 다음 순간에 다시 넘친다 — 실제로 그렇게 몇 번 어긋났다.
+   여기서 재면 그 순간의 실제 높이로 맞으므로 어긋날 자리가 없다.
+
+   조작부를 옆에 두는 게임(지뢰찾기·그래프·사다리)은 건드리지 않는다. 그쪽은 기준이
+   높이가 아니라 폭이라 CSS 값이 흔들리지 않는다 — flex-direction 을 보고 가린다. */
+(function(){
+  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var MIN = 0.3;     // 이보다 줄이면 글자를 읽을 수 없다. 차라리 스크롤이 낫다.
+  var GAP = 10;       // 탭바에 닿지 않게 남기는 여유
+
+  /* 판이 화면에서 이 폭을 넘지 않게 한다. 테이블은 주어진 폭을 그대로 늘리는데
+     좌석 위치는 퍼센트라, 915px 을 다 주면 길쭉한 알약이 되고 좌석만 가운데로 몰린다.
+     CSS 에 못 적는 이유: zoom 이 걸린 요소에서는 max-width 도 같이 줄어들어
+     화면에 찍히는 폭이 (적은 값 × 배율)이 된다. 여기서 배율로 나눠 건다. */
+  function capOf(board){
+    if (board.querySelector('.ht-rail') || board.className.indexOf('ht-felt') >= 0) return 440;
+    if (board.querySelector('.bj-table')) return 560;
+    if (board.querySelector('.bacc-table')) return 760;
+    return 0;                                  // 상한 없음 (포커 플립은 넓을수록 낫다)
+  }
+
+  function fit(){
+    var main = document.querySelector('.game-main');
+    var board = main && main.firstElementChild;
+    if (!board) return;
+    /* 먼저 되돌리고 잰다 — 줄여 놓은 상태에서 재면 그 값을 또 줄이게 된다. */
+    board.style.zoom = '';
+    board.style.maxWidth = '';
+    if (!window.matchMedia(MQ).matches) return;
+    if (getComputedStyle(main).flexDirection === 'row') return;   // 옆에 둔 게임은 제외
+
+    /* 폭 상한을 먼저 건다. 폭이 좁아지면 판이 세로로 길어지므로 높이를 그다음에 잰다 —
+       순서가 반대면 좁아진 뒤의 높이를 모른 채 배율을 정하게 된다. */
+    var cap = capOf(board);
+    if (cap) {
+      var avail = main.getBoundingClientRect().width;
+      if (avail > cap) board.style.maxWidth = cap + 'px';
+    }
+
+    var nav = document.querySelector('header nav');
+    var limit = nav ? nav.getBoundingClientRect().top : window.innerHeight;
+    var mainTop = main.getBoundingClientRect().top;
+    var boardH = board.getBoundingClientRect().height;
+    /* 조작부와 칸 사이 간격 — 판 말고 나머지가 쓰는 높이다. 이건 안 줄인다. */
+    var others = main.getBoundingClientRect().height - boardH;
+    var room = limit - mainTop - others - GAP;
+    if (boardH <= 0 || room <= 0) return;
+    var z = room / boardH;
+    if (z >= 1) return;
+    z = Math.max(MIN, Math.floor(z * 1000) / 1000);
+    board.style.zoom = String(z);
+    /* 상한은 화면에 찍히는 폭 기준이다. zoom 이 걸리면 max-width 도 같이 줄어드므로
+       배율로 나눠 둬야 화면에서 cap 이 된다(안 나눴더니 620px 이 250px 이 됐다). */
+    if (cap) board.style.maxWidth = Math.round(cap / z) + 'px';
+  }
+
+  function schedule(){ requestAnimationFrame(fit); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule);
+  else schedule();
+  window.addEventListener('resize', schedule);
+  window.addEventListener('orientationchange', schedule);
+  /* 판이 커지는 순간(카드가 깔리는 등)을 잡는다. 폴링이 1초라 그보다 촘촘할 이유가 없다.
+     가로가 아닐 때는 fit 이 첫 줄에서 곧바로 돌아오므로 값이 싸다. */
+  setInterval(fit, 1000);
+})();

@@ -74,20 +74,40 @@
        세로에서는 그게 맞지만 가로에서는 높이가 412px 뿐이라 조작부가 화면 밖으로
        밀린다 — 재 보니 일곱 게임이 전부 그랬다(176~382px 넘침).
        가로에서는 반대로 폭이 남는다. 그래서 방향만 돌린다: 판 왼쪽, 조작부 오른쪽.
-       실제 포커 클라이언트들이 가로에서 쓰는 배치이기도 하다. */
+       실제 포커 클라이언트들이 가로에서 쓰는 배치이기도 하다.
+       ── 다만 모든 게임이 그런 것은 아니다
+       조작부 모양을 재 보니 둘로 갈린다(세로 배치일 때의 가로:세로 비).
+         홀덤 5.1 · 바카라 3.5 · 블랙잭 3.5 · 포커플립 3.5  → 가로로 긴 띠(칩·액션 버튼)
+         지뢰찾기 1.1 · 그래프 1.1 · 사다리 0.9              → 세로로 긴 입력 폼
+       가로로 긴 띠를 좁은 오른쪽 칸에 밀어 넣으면 화면이 반으로 줄고 띠는 세로로
+       접힌다 — 넷 다 그렇게 됐다. 띠는 아래에 그대로 두고 판이 폭을 다 쓰는 것이 맞다.
+
+       예외가 하나: 홀덤은 조작부가 띠인데도 옆에 둔다. 테이블이 타원이라 아래 띠
+       배치와 안 맞기 때문이다 — 폭을 다 주면 길쭉한 알약이 되고 좌석만 가운데로
+       몰리며, 폭을 좁히면 이번엔 높이가 안 남는다. 옆에 두면 2.6:1 을 지킨다.
+       그래서 좌우로 도는 것은 넷(홀덤·지뢰찾기·그래프·사다리)이다. */
     main{padding-top:6px;padding-bottom:6px}
     .game-shell{gap:10px}
-    .game-main{flex-direction:row;align-items:flex-start;gap:10px}
-    /* 판은 제 크기를 그대로 지키고(0 0 auto), 조작부가 남는 폭을 가져간다.
+    .ht-shell .game-main,
+    .mines-shell .game-main,
+    .game-shell:has(.crash-graph) .game-main,
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main{
+      flex-direction:row;align-items:flex-start;gap:10px}
+    /* 좌우로 돌린 셋만. 판은 제 크기를 지키고(0 0 auto) 조작부가 남는 폭을 가져간다.
        처음에 판을 0 1 auto + min-width:0 으로 두었더니 flex 가 판을 끝까지 짜부라뜨려
-       홀덤 테이블이 왼쪽에 폭 100px 짜리 세로 막대가 됐다. 높이만 재던 검사는 그걸
-       통과시켰다 — 낮아지긴 했으니까. 그래서 검사에도 "판이 찌그러지지 않았다"를
-       넣었다(check-mobile.ts). */
-    .game-main > :first-child{flex:0 0 auto}
-    /* 조작부에 바닥을 깔아 준다. 안 깔았더니 지뢰찾기 조작부가 185px 로 눌려서
-       베팅 금액·지뢰 개수·배당이 서로 겹쳐 읽을 수 없게 나왔다. 판만 지키고
-       조작부는 안 봤던 것이다 — 검사에도 "조작부가 눌리지 않았다"를 넣었다. */
-    .game-main > :last-child{flex:1 1 0;min-width:300px}
+       홀덤 테이블이 왼쪽에 폭 64px 짜리 세로 막대가 됐다. 높이만 재던 검사는 그걸
+       통과시켰다 — 낮아지긴 했으니까.
+       조작부에는 바닥을 깔아 준다. 안 깔았더니 지뢰찾기 조작부가 185px 로 눌려서
+       베팅 금액·지뢰 개수·배당이 서로 겹쳐 읽을 수 없게 나왔다. 판만 지키고 조작부는
+       안 봤던 것이다 — 검사에 둘 다 넣었다(check-mobile.ts). */
+    .ht-shell .game-main > :first-child,
+    .mines-shell .game-main > :first-child,
+    .game-shell:has(.crash-graph) .game-main > :first-child,
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{flex:0 0 auto}
+    .ht-shell .game-main > :last-child,
+    .mines-shell .game-main > :last-child,
+    .game-shell:has(.crash-graph) .game-main > :last-child,
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :last-child{flex:1 1 0;min-width:300px}
     /* 판 폭을 묶어 둔 게임들이 있다(지뢰찾기 .game-main 은 620px). 세로로 쌓을 때는
        그게 맞지만 가로로 돌리면 그 안에 조작부까지 들어가야 해서 둘 다 좁아진다.
        가로에서는 화면 폭을 다 쓴다. */
@@ -119,12 +139,38 @@
        폭도 같이 정해야 한다. 세로에서는 판이 칸 폭을 그대로 받지만(세로 배치라
        늘어난다), 가로로 돌리면 블록 요소라 제 내용의 최소폭까지 줄어든다 — 홀덤
        테이블이 폭 64px 이 됐다. 그래서 게임마다 폭을 적는다. 화면에 찍히는 폭은
-       여기 적은 값 × zoom 이므로, 전부 대략 화면의 절반이 되게 맞췄다. */
+       여기 적은 값 × zoom 이므로, 전부 대략 화면의 절반이 되게 맞췄다.
+       가로 띠 넷은 폭을 안 적는다 — 판이 칸 폭을 그대로 받아 화면을 다 쓰는 것이
+       요점이라 폭을 적으면 그걸 되돌리는 셈이 된다. 높이만 zoom 으로 맞춘다. */
+    /* 가로 띠 넷(홀덤·바카라·블랙잭·포커플립)은 여기서 배율을 안 적는다.
+       판 높이는 게임이 도는 동안 바뀐다 — 카드가 깔리고, 좌석이 늘고, 마켓 줄이 생긴다.
+       한 순간을 보고 정한 숫자는 다음 순간에 다시 넘친다(실제로 그렇게 몇 번 어긋났다).
+       그래서 app.js 가 남는 높이를 재서 맞춘다.
+       아래 셋(좌우로 돌린 것들)은 기준이 폭이라 값이 안 흔들려 그대로 적어 둔다.
+
+       다만 폭에는 상한이 필요하다. 테이블은 주어진 폭을 그대로 늘리는데 좌석 위치는
+       퍼센트라, 915px 을 다 주면 테이블이 길쭉한 알약이 되고 좌석만 가운데로 몰린다
+       (블랙잭·바카라가 실제로 그렇게 나왔다). 제 비율을 지킬 만큼만 주고 가운데에 둔다.
+       상한은 CSS 에 못 적는다. zoom 이 걸린 요소에서는 max-width 도 함께 줄어들어
+       화면에 찍히는 폭이 (적은 값 × 배율)이 된다 — 620px 이라고 적었더니 250px 이
+       됐다. 그래서 app.js 가 배율을 나눠서 건다. */
+       가운데 정렬에 margin:auto 를 쓰면 안 된다. 세로 flex 칸에서 가로 margin 이 auto 면
+       stretch 가 꺼져 판이 제 내용 폭까지 줄어든다 — 560px 을 걸었는데 161px 이 나왔다.
+       align-self 로 가운데에 두고 width:100% 로 채운 뒤 상한만 건다. */
+    .game-shell:has(.bj-table) .game-main > :first-child,
+    .game-shell:has(.bacc-table) .game-main > :first-child{align-self:center;width:100%}
+
+    /* 채팅 도크가 아래 띠(칩·액션 버튼)를 덮는다. 가로에서는 오른쪽 가운데로 올려
+       띠와 겹치지 않게 한다 — 그 자리는 어느 게임에서도 비어 있다. */
+    .chat-dock{bottom:auto;top:50%;transform:translateY(-50%);right:8px;left:auto;
+      width:min(240px,32vw)}
+    .chat-dock .chat-panel{width:auto;height:min(260px,62vh)}
+    /* 좌우로 돌린 넷은 폭도 적어야 한다(위 설명 참고).
+       홀덤이 여기 있는 이유: 테이블이 타원이라 아래 띠 배치와 안 맞는다. 폭을 다 줘도
+       납작한 알약이 되고, 폭을 좁히면 이번엔 높이가 안 남는다. 옆에 두면 테이블이
+       제 비율(2.6:1)을 지킨다 — 실제 포커 클라이언트들도 가로에서 그렇게 놓는다. */
     .ht-shell .game-main > :first-child{zoom:.56;width:760px}
     .mines-shell .game-main > :first-child{zoom:.85;width:500px}
-    .poker-shell .game-main > :first-child{zoom:.78;width:545px}
-    .game-shell:has(.bacc-table)  .game-main > :first-child{zoom:.48;width:880px}
-    .game-shell:has(.bj-table)    .game-main > :first-child{zoom:.66;width:640px}
     .game-shell:has(.crash-graph) .game-main > :first-child{zoom:.74;width:570px}
     /* 사다리. :not 들 사이에 빈칸이 들어가면 자손 결합자가 되어 전혀 다른 것을
        가리킨다 — 줄을 나눴다가 그렇게 되어 규칙이 안 먹었다. 한 줄로 붙여 둔다. */
@@ -139,7 +185,6 @@
     header nav{box-shadow:0 -4px 14px rgba(0,0,0,.5)}
     .tab{font-size:10px;padding:6px 2px 5px}
     body{padding-bottom:calc(34px + env(safe-area-inset-bottom,0px))}
-    .chat-dock{bottom:calc(40px + env(safe-area-inset-bottom,0px))}
     .game-switch.gs-m{margin-bottom:6px}
     .game-switch.gs-m > .gs-pill.active{padding-top:5px;padding-bottom:5px}
     /* 펼쳤을 때는 한 줄에 넷 — 세로보다 폭이 넓으니 두 줄이면 다 들어간다 */
