@@ -10,3 +10,4 @@ data-snapshot.db
 *.log
 *.tmp.*
 .golden/
+.states/
