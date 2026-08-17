@@ -656,7 +656,9 @@ async function main(): Promise<void> {
     ck('폭이 내용에 맞춰 좌석 밖으로 뻗는다', /\.ht-bub\{[^}]*width:max-content/.test(css9));
     ck('세 줄에서 자르고 말줄임을 붙인다',
       /-webkit-line-clamp:3/.test(css9) && /text-overflow:ellipsis/.test(css9));
-    ck('길어도 테이블을 덮지 않게 폭을 묶는다', /max-width:min\(154px,40vw\)/.test(css9));
+    /* 40vw 는 375px 화면에서 150px 인데, 가장 좁은 자리의 여유가 113px 이라 27px 이
+       화면 왼쪽으로 삐져나갔다(실측). 28vw = 105px 이면 그 자리에도 들어간다. */
+    ck('길어도 테이블을 덮지 않게 폭을 묶는다', /max-width:min\(154px,28vw\)/.test(css9));
     ck('클릭을 먹지 않는다', /\.ht-bub\{[^}]*pointer-events:none/.test(css9));
     ck('꼬리가 말한 사람을 가리킨다',
       /\.ht-bub\.l::before,\.ht-bub\.l::after\{right:13px\}/.test(css9)

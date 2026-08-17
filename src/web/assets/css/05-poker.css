@@ -40,6 +40,31 @@
     .hand,.board{gap:4px}
     .pcard{width:34px;height:51px;border-radius:5px}
   }
+  /* ── 폰에서는 두 줄로 접는다 ──────────────────────────────────────
+     한 줄에 [손 2장][보드 5장][손 2장] = 카드 아홉 장이 가로로 들어가야 하는데,
+     375px 화면에서는 자리가 289px 뿐이라 109px 이 잘렸다. 오른쪽 SHARK 손이 통째로
+     화면 밖(363~441)에 있어서, 무엇에 걸지 고르는 게임인데 한쪽 패가 안 보였다.
+
+     가로 스크롤로 두는 선택지도 있었지만(.poker-table 이 이미 overflow-x:auto 다)
+     그건 "스크롤해서 찾아보라"는 뜻이라 판을 읽는 화면으로는 못 쓴다.
+     카드를 더 줄이는 선택지도 있었으나 34px 아래로 가면 무늬와 숫자가 안 읽힌다.
+
+     그래서 줄을 나눈다: 위에 두 손을 나란히, 아래에 보드. 카드 크기는 그대로 둔다 —
+     이 화면에서 읽어야 하는 것이 카드이기 때문이다.
+       위  [MASTER]        [SHARK]
+       아래      [보드 5장]
+     보드는 5×34 + 4×4 = 186px 이라 289px 안에 들어간다. */
+  @media (max-width:560px){
+    .poker-seats{grid-template-columns:1fr 1fr;grid-template-areas:"m s" "b b";
+      gap:10px 8px;justify-items:center}
+    .poker-seats > .seat:first-child{grid-area:m}
+    .poker-seats > .board-wrap{grid-area:b}
+    .poker-seats > .seat:last-child{grid-area:s}
+    .seat{min-width:0}
+    /* 상태 줄(베팅 마감까지 N초)은 보드 위가 아니라 두 손 사이가 아니다 — 아래 줄의
+       머리다. 가운데 정렬을 유지해 보드와 한 덩어리로 읽히게 둔다. */
+    .board-wrap{width:100%}
+  }
 
   .market-grid{display:flex;flex-direction:column;gap:9px}
   .market-row{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}

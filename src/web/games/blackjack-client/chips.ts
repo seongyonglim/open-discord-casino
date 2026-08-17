@@ -19,13 +19,19 @@ export function bjChips(p0: string | number): string {
       }
       function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
       // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
+      /* 가로로 벌어지는 폭을 px 로 박지 않는다 — 자리 폭이 화면에 따라 달라지기 때문이다.
+         데스크톱에서는 자리가 132px 이라 5열 더미가 넉넉했는데, 폰에서는 같은 자리가
+         63px 로 줄어든다(5자리 + 간격이 375px 을 나눠 갖는다). 그런데 벌어지는 폭은
+         고정이라, 골드바 칩이 중심에서 53px 까지 나가 옆자리로 삐져나왔다.
+         칸 간격과 흔들림을 CSS 변수로 빼서 좁은 화면에서 함께 줄인다. */
       function chipSprite(denom, owner, idx, anim){
         var col = idx % 5, row = Math.floor(idx / 5);
-        var x = (col - 2) * 14 + jit(idx, 9) - 4;
+        var c = col - 2, jx = jit(idx, 9) - 4;
+        var x = 'calc(50% + '+c+' * var(--pcPitch, 14px) + '+jx+' * var(--pcJit, 1px))';
         var y = 3 + row * 5 + jit(idx + 7, 3);
         return '<span class="pchip '+chipKind(denom)+(owner===MEID?' mine':'')+(anim?' '+anim:'')+
           '" data-owner="'+esc(owner)+'"'+
-          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
+          ' style="left:'+x+';bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
       }
       // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
       function decompose(amount){

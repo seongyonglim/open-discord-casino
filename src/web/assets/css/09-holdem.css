@@ -418,8 +418,13 @@
      접히므로 nowrap 을 쓸 수 없어 max-content 가 필요하다.) */
   .ht-bub{position:absolute;bottom:74%;z-index:10;width:max-content;
     /* 좁은 창에서는 테이블 자체가 300px 아래로 줄어든다 — 그때도 154px 이면
-       말풍선 하나가 테이블 절반이다. 화면 폭에 같이 묶어 둔다. */
-    max-width:min(154px,40vw);min-width:34px;padding:6px 9px;border-radius:10px;
+       말풍선 하나가 테이블 절반이다. 화면 폭에 같이 묶어 둔다.
+
+       40vw 로는 모자란다. 375px 화면에서 자리마다 남는 폭을 재 보니 가장 좁은 자리가
+       113px 인데 40vw 는 150px 이라, 그 자리의 말풍선이 화면 왼쪽으로 27px 삐져나갔다.
+       28vw(375px 에서 105px)면 가장 좁은 자리에도 들어간다. 넓은 화면에서는 154px
+       상한이 먼저 걸리므로 좁은 쪽만 달라진다. */
+    max-width:min(154px,28vw);min-width:34px;padding:6px 9px;border-radius:10px;
     /* 오른쪽 아래 채팅창과 같은 딥 차콜이다. 한때 금색 상자였는데, 펠트 위에서 금색은
        이미 임자가 있는 색이다 — 딜러 버튼, 블라인드 배지, 바운티 명찰, 팟 금액이 전부
        금색이라 말풍선이 그 사이에 끼면 "또 하나의 게임 정보"로 읽혔다.
