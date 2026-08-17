@@ -1274,6 +1274,7 @@
      배지에 40 가까운 숫자가 붙어 있어서 그 숫자가 아무 뜻도 없게 된다. */
   var lastSeen = Number(stored('od_chat_seen', '0')) || 0;
   var idleTimer = null, dock = null, listEl = null, inputEl = null, badgeEl = null, noteEl = null;
+  var lastEl = null;             // 접힌 바에 뜨는 마지막 한 줄
   var seen = {};                 // id → 1. 같은 줄을 두 번 그리지 않는다
   var subs = [], primed = false; // 첫 수신(과거 줄)에는 구독자를 부르지 않는다
   var jumpBottom = false;        // 방금 펼쳤다 — 다음 수신은 무조건 맨 아래로
@@ -1294,9 +1295,13 @@
     dock = document.createElement('div');
     dock.className = 'chat-dock';
     dock.innerHTML =
+      /* 접힌 상태는 알약이 아니라 한 줄 바다. 알약은 "채팅이 있다"만 말했고, 그러면
+         열어 보기 전까지 방이 살아 있는지 알 수 없다 — 동시 접속이 다섯인 방에서 그건
+         아무도 안 열고 아무도 안 쓰는 쪽으로 굴러간다.
+         마지막 줄을 그 자리에 그대로 띄우면, 접힌 채로도 대화가 보인다. */
       '<button type="button" class="chat-tab" aria-label="채팅 열기">'
         + '<i class="chat-ico" aria-hidden="true">💬</i>'
-        + '<span class="chat-tab-t">채팅</span>'
+        + '<span class="chat-last"><span class="chat-last-e">채팅</span></span>'
         + '<i class="chat-badge" hidden></i>'
       + '</button>'
       + '<div class="chat-panel" hidden>'
@@ -1314,6 +1319,7 @@
       + '</div>';
     document.body.appendChild(dock);
     listEl = dock.querySelector('.chat-list');
+    lastEl = dock.querySelector('.chat-last');
     inputEl = dock.querySelector('.chat-in');
     badgeEl = dock.querySelector('.chat-badge');
     noteEl = dock.querySelector('.chat-note');
@@ -1412,6 +1418,23 @@
      푼 직후에 불러도 제대로 된 높이가 나온다. */
   function toBottom(){ if (listEl) listEl.scrollTop = listEl.scrollHeight; }
 
+  /* 접힌 바에 마지막 한 줄을 그린다. 펼쳐 있으면 바가 숨어 있으므로 그려도 보이지
+     않지만, 그때도 갱신해 둔다 — 접는 순간 옛 줄이 보이면 안 된다. */
+  function paintLast(m, fresh){
+    if (!lastEl || !m) return;
+    var t = TOP[m.rank];
+    lastEl.className = 'chat-last' + (t ? ' ' + t[0] : '');
+    lastEl.innerHTML = (t ? '<i class="chat-md" aria-hidden="true">' + t[1] + '</i>' : '')
+      + '<span class="chat-nm">' + esc(m.name) + '</span>'
+      + '<span class="chat-b">' + esc(m.body) + '</span>';
+    /* 새로 온 줄일 때만 슬쩍 올라온다. 처음 받아 온 지난 대화까지 움직이면
+       "방금 누가 말했다"는 신호가 값싸진다. */
+    if (!fresh) return;
+    lastEl.classList.remove('up');
+    void lastEl.offsetWidth;
+    lastEl.classList.add('up');
+  }
+
   function paintBadge(){
     if (!badgeEl) return;
     badgeEl.hidden = unread <= 0;
@@ -1491,6 +1514,8 @@
         });
         if (open) markSeen();
         if (added) paintBadge();
+        /* 접힌 바에는 언제나 가장 마지막 줄이 뜬다. 목록은 오름차순이라 끝이 최신이다. */
+        if (d.messages.length) paintLast(d.messages[d.messages.length - 1], primed);
         /* 방금 펼쳤으면 무조건 내린다. 그 밖에는 아래에 붙어 있던 사람만 따라 내린다 —
            위를 읽는 중인데 끌어내리면 읽던 자리를 잃는다. */
         if (jumpBottom || (added && atBottom)) toBottom();

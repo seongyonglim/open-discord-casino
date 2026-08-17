@@ -1223,6 +1223,66 @@ console.log('\n[13] 반복 개최 (자동 생성은 켰을 때만 · 지운 판�
   ck('바운티 몫도 기본값으로 돌아간다', S.getConfig().bountyPct === base.bountyPct,
     String(S.getConfig().bountyPct));
 
+  /* ── 자동 개최 대회 이름 (평일 / 주말) ─────────────────────────
+     주말 기준은 상금 배수와 같아야 한다(토·일). 두 곳이 다르면 "주말 배수를 받는데
+     평일 이름이 붙은 판"이 생기고, 그건 화면만 보고는 절대 못 찾는 종류다. */
+  {
+    /* 하루를 지정해 여는 도우미. 위 openNow 는 오늘로 고정이라 요일을 고를 수 없다. */
+    const openOn = (cfg: Parameters<typeof S.saveConfig>[0], dateStr: string) => {
+      wipe();
+      S.saveConfig(cfg);
+      R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+      const sm = S.getConfig().startMin;
+      const at = T.kstTimeToUnix(dateStr, Math.floor(sm / 60), sm % 60);
+      R.ensureRecurring(at - 3600);
+      return db.prepare(`SELECT title FROM holdem_tournaments ORDER BY id DESC LIMIT 1`)
+        .get() as { title: string } | undefined;
+    };
+    /* 2026-08-19 은 수요일, 08-22 는 토요일, 08-23 은 일요일이다. */
+    const WED = '2026-08-19', SAT = '2026-08-22', SUN = '2026-08-23';
+    ck('고른 날짜의 요일이 맞다',
+      T.isKstWeekend(T.kstTimeToUnix(SAT, 12, 0) * 1000)
+      && T.isKstWeekend(T.kstTimeToUnix(SUN, 12, 0) * 1000)
+      && !T.isKstWeekend(T.kstTimeToUnix(WED, 12, 0) * 1000));
+
+    const named = { ...base, weekdayTitle: '데일리 프리롤', weekendTitle: '위켄드 메인이벤트' };
+    ck('평일에는 평일 이름이 붙는다', openOn(named, WED)?.title === '데일리 프리롤',
+      openOn(named, WED)?.title);
+    ck('토요일에는 주말 이름이 붙는다', openOn(named, SAT)?.title === '위켄드 메인이벤트',
+      openOn(named, SAT)?.title);
+    ck('일요일도 주말이다', openOn(named, SUN)?.title === '위켄드 메인이벤트',
+      openOn(named, SUN)?.title);
+    /* 이름을 적어 두면 방식보다 이름이 이긴다 — 운영자가 명시한 것을 코드가 덮으면 안 된다. */
+    ck('이름을 적으면 방식 이름을 덮는다',
+      openOn({ ...named, mode: 'MYSTERY_BOUNTY', bountyPct: 100 }, WED)?.title === '데일리 프리롤');
+    /* 비워 두면 지금까지의 동작 그대로 — 한 번도 안 건드린 서버가 달라지면 안 된다. */
+    ck('비워 두면 방식이 이름을 정한다',
+      openOn({ ...base, mode: 'MYSTERY_BOUNTY', bountyPct: 100 }, WED)?.title === '미스터리 바운티');
+    ck('한쪽만 적으면 그쪽만 바뀐다',
+      openOn({ ...base, weekendTitle: '주말판' }, WED)?.title === '홀덤 프리롤'
+      && openOn({ ...base, weekendTitle: '주말판' }, SAT)?.title === '주말판');
+    /* 공백만 적은 것은 비운 것과 같아야 한다 — 아니면 이름 없는 대회가 열린다. */
+    ck('공백만 적으면 비운 것과 같다', openOn({ ...base, weekdayTitle: '   ' }, WED)?.title === '홀덤 프리롤');
+
+    // 문지기 — 화면이 아니라 여기가 마지막 문이다
+    ck(`${S.TITLE_MAX_LEN}자를 넘기면 거절한다`,
+      S.saveConfig({ ...base, weekdayTitle: '가'.repeat(S.TITLE_MAX_LEN + 1) }).ok === false);
+    ck('딱 맞는 길이는 통과한다',
+      S.saveConfig({ ...base, weekdayTitle: '가'.repeat(S.TITLE_MAX_LEN) }).ok === true);
+    /* 길이는 코드 포인트로 센다 — 이모지 하나가 둘로 잡히면 사람이 세는 글자 수와 다르다. */
+    ck('이모지도 한 글자로 센다',
+      S.saveConfig({ ...base, weekdayTitle: '\u{1F3B0}'.repeat(S.TITLE_MAX_LEN) }).ok === true);
+    ck('줄바꿈은 거절한다', S.saveConfig({ ...base, weekdayTitle: '앞\n뒤' }).ok === false);
+    ck('보이지 않는 글자도 거절한다',
+      S.saveConfig({ ...base, weekendTitle: '주말\u200b판' }).ok === false);
+    /* [기본값으로]가 이름도 지워야 한다 — 안 지우면 되돌린 뒤에도 그 이름으로 열린다. */
+    S.saveConfig({ ...base, weekdayTitle: '남는 이름', weekendTitle: '남는 주말' });
+    S.resetConfig();
+    ck('기본값으로 되돌리면 이름도 비워진다',
+      S.getConfig().weekdayTitle === '' && S.getConfig().weekendTitle === '',
+      JSON.stringify([S.getConfig().weekdayTitle, S.getConfig().weekendTitle]));
+  }
+
   // 진행 중 대회 중단 — 자동으로 정리되던 장치가 없어졌으므로 사람이 풀 수 있어야 한다
   wipe();
   setWindow(-60, 600, 1800);

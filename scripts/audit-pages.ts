@@ -988,6 +988,33 @@ async function main(): Promise<void> {
     ck('"판정할 과제가 없다" 주석이 남아 있지 않다', !/판정할 과제가 없다/.test(mn));
   }
 
+  console.log('\n[14] 운영자 왼쪽 메뉴 — 메뉴에 있으면 눌러서 열려야 한다');
+  {
+    const ad = (await get('/admin', cookie)).text;
+    /* 화면 전환은 PANES 목록을 본다. 모르는 key 는 조용히 PANES[0] 으로 되돌아가므로,
+       메뉴에만 넣고 이 목록을 빠뜨리면 "눌리는데 첫 화면으로 튕긴다"가 된다 —
+       채팅 화면을 새로 넣었을 때 실제로 그랬다. 그래서 목록을 손으로 적지 않고
+       메뉴에서 뽑아 쓴다. 이 검사는 그 약속이 지켜지는지를 본다. */
+    ck('PANES 를 손으로 적지 않는다', !/var PANES = \['/.test(ad), 'PANES 가 하드코딩됐다');
+    const panes = /var PANES = (\[[^\]]*\])/.exec(ad);
+    const keys: string[] = panes ? JSON.parse(panes[1]) : [];
+    ck('PANES 를 읽어 왔다', keys.length > 0, panes?.[1]);
+    /* 메뉴 버튼 하나하나가 실제로 그 목록에 있어야 한다. */
+    const navKeys = [...ad.matchAll(/class="ad-nav-item" data-pane="(\w+)"/g)].map(m => m[1]);
+    ck('메뉴 버튼이 있다', navKeys.length >= 4, navKeys.join(','));
+    const orphanNav = navKeys.filter(k => !keys.includes(k));
+    ck('메뉴에 있는 화면은 전부 열 수 있다', orphanNav.length === 0,
+      orphanNav.join(', ') + ' — 눌러도 첫 화면으로 되돌아간다');
+    /* 반대쪽도 본다: 목록에만 있고 그릴 카드가 없으면 빈 화면이 열린다. */
+    const cardKeys = [...ad.matchAll(/class="ad-card" data-pane="(\w+)"/g)].map(m => m[1]);
+    const empty = keys.filter(k => !cardKeys.includes(k));
+    ck('빈 화면으로 가는 메뉴가 없다', empty.length === 0, empty.join(', '));
+    // 채팅은 대회 관리에서 빠져나왔다
+    ck('채팅이 제 화면을 갖는다', navKeys.includes('chat') && cardKeys.includes('chat'));
+    ck('채팅이 대회 관리에 남아 있지 않다',
+      !/data-pane="tour">\s*<h2>채팅<\/h2>/.test(ad));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;
