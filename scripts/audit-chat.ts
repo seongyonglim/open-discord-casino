@@ -144,6 +144,66 @@ async function main(): Promise<void> {
     ck('풀리면 다시 말할 수 있다', (await say('c2', '이제 된다')).ok === true);
   }
 
+  console.log('\n[4-b] 재갈을 물리고 푼 것을 방이 함께 본다');
+  {
+    db.prepare(`DELETE FROM chat_messages`).run();
+    C.setChatMute('c2', 600);
+    const afterMute = C.chatSince(0);
+    const muteLine = afterMute.find(r => r.kind === 'mute');
+    /* 당사자만 겪으면 고장으로 읽힌다("왜 안 써지지?"). 방 전체가 봐야 조치가 된다. */
+    ck('물리면 방에 줄이 남는다', !!muteLine, JSON.stringify(afterMute.map(r => r.body)));
+    ck('누구인지와 얼마인지를 적는다',
+      muteLine?.body === 'c2 입에 재갈을 물렸습니다. 10분 동안 채팅을 못합니다.', muteLine?.body);
+    ck('사람이 한 말과 구분된다', muteLine?.user_id === '@system' && muteLine?.kind === 'mute');
+    /* 시간 표기는 사람이 읽는 단위로. 초·분·시간이 섞이면 "600초 동안"이 나온다. */
+    ck('45초', C.muteDurText(45) === '45초', C.muteDurText(45));
+    ck('10분', C.muteDurText(600) === '10분', C.muteDurText(600));
+    ck('1시간', C.muteDurText(3600) === '1시간', C.muteDurText(3600));
+    ck('1시간 30분', C.muteDurText(5400) === '1시간 30분', C.muteDurText(5400));
+
+    // 손으로 풀면 그것도 알린다
+    C.setChatMute('c2', 0);
+    const un = C.chatSince(0).find(r => r.kind === 'unmute');
+    ck('풀면 방에 줄이 남는다', !!un);
+    ck('풀림 문구', un?.body === 'c2 입에 물린 재갈이 풀렸습니다.', un?.body);
+    /* 안 물린 사람을 푸는 것은 아무 일도 아니다 — 운영자가 버튼을 눌러 볼 때마다
+       방에 줄이 쌓이면 그게 도배다. */
+    const n0 = C.chatSince(0).length;
+    C.setChatMute('c2', 0);
+    ck('안 물린 사람을 풀면 아무 줄도 안 남는다', C.chatSince(0).length === n0);
+
+    /* 시간이 지나 저절로 풀리는 경우. 서버에 타이머가 없으므로 다음 요청에서 처리한다 —
+       그 자리가 chatTick 이다(상태 응답이 매초 부른다). */
+    db.prepare(`DELETE FROM chat_messages`).run();
+    db.prepare(`UPDATE users SET chat_muted_until = ? WHERE id = 'c3'`)
+      .run(Math.floor(Date.now() / 1000) - 5);          // 5초 전에 이미 끝났다
+    ck('아직 아무도 안 알렸다', C.chatSince(0).length === 0);
+    const tick = C.chatTick();
+    const auto = C.chatSince(0).find(r => r.kind === 'unmute');
+    ck('다음 요청에서 저절로 풀린 것을 알린다', !!auto, auto?.body);
+    ck('그 사람 이름으로 적는다', auto?.body === 'c3 입에 물린 재갈이 풀렸습니다.', auto?.body);
+    ck('틱이 숫자 둘을 함께 준다',
+      typeof tick.chatMax === 'number' && typeof tick.chatMod === 'number');
+    /* 두 번 적으면 방이 같은 말로 도배된다 — 알린 뒤 값을 비워서 한 번만 적는다. */
+    const n1 = C.chatSince(0).length;
+    C.chatTick(); C.chatTick();
+    ck('두 번 알리지 않는다', C.chatSince(0).length === n1, `${n1} → ${C.chatSince(0).length}`);
+
+    /* 시스템 줄은 문지기를 지나지 않는다 — 서버가 스스로 적는 줄이라 막을 대상이 없다.
+       다만 사람의 도배 판정에 섞여서도 안 된다(남의 재갈 때문에 내가 막히면 안 된다). */
+    db.prepare(`DELETE FROM chat_messages`).run();
+    for (let i = 0; i < C.CHAT_BURST + 3; i++) C.setChatMute('c2', i % 2 === 0 ? 60 : 0);
+    ck('시스템 줄은 도배 문지기를 안 탄다', C.chatSince(0).length > C.CHAT_BURST,
+      String(C.chatSince(0).length));
+    await sleep(C.CHAT_MIN_GAP_MS + 60);
+    ck('그 뒤에도 사람은 말할 수 있다', C.postChat('c1', '나는 말할 수 있다', null).ok === true);
+    /* 보관 상한은 함께 지킨다 — 시스템 줄만 예외면 표가 상한 없이 자란다. */
+    for (let i = 0; i < 60; i++) C.setChatMute('c2', i % 2 === 0 ? 60 : 0);
+    const cnt = (db.prepare(`SELECT COUNT(*) AS n FROM chat_messages`).get() as { n: number }).n;
+    ck('시스템 줄도 보관 상한을 지킨다', cnt <= C.CHAT_KEEP, String(cnt));
+    C.setChatMute('c2', 0);
+  }
+
   console.log('\n[5] 숨김 — 지우지 않고 가린다');
   {
     const rows = C.chatSince(0);
@@ -234,7 +294,9 @@ async function main(): Promise<void> {
       ['사다리', 'src/web/games/ladder.ts'], ['포커', 'src/web/games/poker.ts'],
     ];
     for (const [label, p] of payloads) {
-      ck(`${label} 응답에 chatMax 가 실린다`, /chatMax: chatMax\(\),/.test(r(p)));
+      /* 두 숫자를 손으로 적지 않고 틱 하나를 펼친다 — 여섯 군데에 같은 두 필드를
+         적어 두면 언젠가 갈라지고, 저절로 풀린 재갈을 정리하는 자리도 여기다. */
+      ck(`${label} 응답이 채팅 틱을 부른다`, /\.\.\.chatTick\(\),/.test(r(p)));
     }
     const loops: [string, string][] = [
       ['홀덤', 'src/web/games/holdem-client/loop.ts'],
@@ -669,7 +731,12 @@ async function main(): Promise<void> {
     ck('값이 늘었을 때만 받아 간다',
       /if \(typeof max !== 'number' \|\| max <= lastId\) return;/.test(app));
     ck('상태 응답에 실리는 것은 숫자 둘이다',
-      /chatMax: chatMax\(\), chatMod: chatMod\(\),/.test(r('src/web/games/holdem.ts')));
+      /\.\.\.chatTick\(\),/.test(r('src/web/games/holdem.ts'))
+      && /chatMax: number; chatMod: number/.test(r('src/db/queries/chat.ts')));
+    /* 저절로 풀린 재갈을 정리하는 자리. 서버에 타이머가 없으므로 상태 응답이 그 자리다 —
+       이게 빠지면 시간이 지나도 아무도 안 알리고, 아무도 안 알리니 아무도 안 받아 간다. */
+    ck('틱이 지난 재갈을 정리한다',
+      /export function chatTick[\s\S]{0,200}?sweepExpiredMutes\(\);/.test(r('src/db/queries/chat.ts')));
 
     /* ── 운영자 조치가 남의 화면까지 닿는가 ────────────────────────
        숨김은 마지막 id 를 바꾸지 않는다. 조치 수를 따로 보지 않으면 남의 화면은

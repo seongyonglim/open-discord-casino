@@ -35,7 +35,7 @@ export const CHAT_BURST = 10;
 export const CHAT_BURST_MS = 5_000;
 
 export interface ChatRow {
-  id: number; user_id: string; username: string; body: string;
+  id: number; user_id: string; username: string; body: string; kind: string | null;
   where_at: string | null; created_ms: number;
 }
 
@@ -72,12 +72,12 @@ export function chatSince(since: number): ChatRow[] {
        보관 전체(200줄)의 앞머리가 나온다 — 화면이 원하는 것은 끝쪽이다. */
     return all<ChatRow>(
       `SELECT * FROM (
-         SELECT id, user_id, username, body, where_at, created_ms
+         SELECT id, user_id, username, body, where_at, created_ms, kind
            FROM chat_messages WHERE hidden = 0 ORDER BY id DESC LIMIT ?
        ) ORDER BY id ASC`, CHAT_PAGE);
   }
   return all<ChatRow>(
-    `SELECT id, user_id, username, body, where_at, created_ms
+    `SELECT id, user_id, username, body, where_at, created_ms, kind
        FROM chat_messages WHERE hidden = 0 AND id > ? ORDER BY id ASC LIMIT ?`,
     Math.floor(since), CHAT_PAGE);
 }
@@ -164,15 +164,80 @@ export function setChatHidden(id: number, hidden: boolean): void {
   run(`UPDATE chat_messages SET hidden = ? WHERE id = ?`, hidden ? 1 : 0, Math.floor(id));
 }
 
-/** 재갈을 물리거나(초) 푼다(0). */
+/* ── 시스템이 적는 줄 ────────────────────────────────────────────────
+   사람이 한 말이 아니라 방에 일어난 일이다. 문지기(길이·도배·재갈)를 지나지 않는다 —
+   서버가 스스로 적는 줄이라 막을 대상이 없다.
+
+   왜 채팅에 적나: 재갈은 당사자만 겪으면 고장으로 읽힌다("왜 안 써지지?"). 방 전체가
+   같이 보면 그때부터 그건 조치다. 그리고 풀린 것도 같이 보여야 끝이 난다. */
+function postSystem(kind: 'mute' | 'unmute', body: string): number {
+  const nowMs = Date.now();
+  run(`INSERT INTO chat_messages (user_id, username, body, where_at, created_ms, kind)
+       VALUES ('@system', '', ?, NULL, ?, ?)`, body, nowMs, kind);
+  const id = one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id;
+  run(`DELETE FROM chat_messages WHERE id <= ?`, id - CHAT_KEEP);
+  return id;
+}
+
+/** "10분" · "1시간 30분" · "45초". 사람이 읽는 단위로만 적는다. */
+export function muteDurText(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60), h = Math.floor(m / 60), rm = m % 60;
+  if (h <= 0) return `${m}분`;
+  return rm > 0 ? `${h}시간 ${rm}분` : `${h}시간`;
+}
+
+/** 재갈을 물리거나(초) 푼다(0). 물리고 푸는 것을 방에 알린다. */
 export function setChatMute(userId: string, sec: number): void {
-  const until = sec > 0 ? Math.floor(Date.now() / 1000) + Math.floor(sec) : null;
-  run(`UPDATE users SET chat_muted_until = ? WHERE id = ?`, until, userId);
+  return tx(() => {
+    const u = one<{ username: string; chat_muted_until: number | null }>(
+      `SELECT username, chat_muted_until FROM users WHERE id = ?`, userId);
+    if (!u) return;
+    const had = (u.chat_muted_until ?? 0) > Math.floor(Date.now() / 1000);
+    const until = sec > 0 ? Math.floor(Date.now() / 1000) + Math.floor(sec) : null;
+    run(`UPDATE users SET chat_muted_until = ? WHERE id = ?`, until, userId);
+    if (until) {
+      postSystem('mute',
+        `${u.username} 입에 재갈을 물렸습니다. ${muteDurText(sec)} 동안 채팅을 못합니다.`);
+    } else if (had) {
+      /* 안 물려 있던 사람을 푸는 것은 아무 일도 아니다 — 그때는 적지 않는다.
+         적으면 운영자 화면에서 [재갈] 옆 버튼을 눌러 볼 때마다 방에 줄이 쌓인다. */
+      postSystem('unmute', `${u.username} 입에 물린 재갈이 풀렸습니다.`);
+    }
+  });
+}
+
+/* 시간이 지나 저절로 풀린 재갈을 알린다.
+   서버에 타이머가 없으므로(이 프로젝트의 지연 진행 규칙) 누군가 요청을 보낼 때
+   여기서 처리한다. 알린 뒤 값을 비워서 두 번 적지 않는다 — chatMuteLeft 는 지난
+   시각을 이미 0 으로 보므로, 비우는 것으로 동작이 달라지지 않는다. */
+function sweepExpiredMutes(): void {
+  const now = Math.floor(Date.now() / 1000);
+  const done = all<{ id: string; username: string }>(
+    `SELECT id, username FROM users WHERE chat_muted_until IS NOT NULL AND chat_muted_until <= ?`,
+    now);
+  if (!done.length) return;
+  for (const u of done) {
+    run(`UPDATE users SET chat_muted_until = NULL WHERE id = ?`, u.id);
+    postSystem('unmute', `${u.username} 입에 물린 재갈이 풀렸습니다.`);
+  }
+}
+
+/* 채팅의 한 틱. 상태 응답이 매번 부르는 자리다.
+   숫자 둘을 돌려주면서, 그 김에 저절로 풀린 재갈을 정리한다 — 이 서비스에서 "나중에"는
+   언제나 "다음 요청에"다(홀덤의 advanceHoldem 과 같은 규칙).
+
+   상태 응답에 그대로 펼쳐 넣을 모양으로 돌려준다(`...chatTick(),`) — 부르는 곳마다
+   두 필드를 손으로 적으면 여섯 군데가 언젠가 갈라진다. */
+export function chatTick(): { chatMax: number; chatMod: number } {
+  sweepExpiredMutes();
+  return { chatMax: chatMax(), chatMod: chatMod() };
 }
 
 /** 운영자 화면용 — 감춘 줄까지 함께 준다. */
 export function chatRecentAll(limit = 60): (ChatRow & { hidden: number })[] {
   return all<ChatRow & { hidden: number }>(
-    `SELECT id, user_id, username, body, where_at, created_ms, hidden
+    `SELECT id, user_id, username, body, where_at, created_ms, kind, hidden
        FROM chat_messages ORDER BY id DESC LIMIT ?`, limit);
 }

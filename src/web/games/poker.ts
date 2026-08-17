@@ -14,7 +14,7 @@ import {
   POKER_TURN_SEC, POKER_RIVER_SEC, POKER_SETTLE_SEC, POKER_REVEAL_SEC,
   POKER_KEEP_ROUNDS,
   type PokerRoundRow, type WebUser,
-  chatMax, chatMod,
+  chatTick,
 } from '../../db/queries';
 import {
   computeFlipProbabilities, computeFlipProbabilitiesYielding, oddsFromProbability, oddsForWinMarket, dealFlip,
@@ -179,7 +179,7 @@ function statePayload(round: PokerRoundRow, userId: string) {
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
-    chatMax: chatMax(), chatMod: chatMod(),
+    ...chatTick(),
     coins: COIN_SIZES,
     bucketNames: BUCKET_NAMES,
   };

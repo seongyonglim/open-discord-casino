@@ -591,6 +591,10 @@ function initSchema(): void {
   /* 채팅 재갈이 풀리는 시각(초). 표를 따로 만들지 않는다 — 사람마다 하나뿐인 값이고,
      읽는 자리가 "이 사람이 지금 말할 수 있나" 한 곳뿐이다. */
   try { d.exec(`ALTER TABLE users ADD COLUMN chat_muted_until INTEGER`); } catch {}
+  /* 시스템이 적는 줄의 종류. 비어 있으면 사람이 한 말이다.
+     'mute' 는 붉게, 'unmute' 는 초록으로 그린다 — 재갈이 물리고 풀린 것을 방에 있는
+     사람이 다 같이 알아야 조치가 조치로 읽힌다(혼자만 못 쓰면 고장으로 읽힌다). */
+  try { d.exec(`ALTER TABLE chat_messages ADD COLUMN kind TEXT`); } catch {}
   // 홀덤: 마지막 행동 표시 (이미 만들어진 DB에도 붙인다)
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}

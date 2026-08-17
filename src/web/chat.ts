@@ -58,6 +58,9 @@ export function handleChatRead(
     messages: rows.map(r => ({
       id: r.id, userId: r.user_id, name: r.username, body: r.body,
       at: r.created_ms, where: r.where_at, rank: rank.get(r.user_id),
+      /* 시스템이 적은 줄이면 종류가 붙는다(재갈 물림·풀림). 사람이 한 말에는 없다 —
+         없는 것이 기본이라 화면이 실수로 색을 칠할 수가 없다. */
+      kind: r.kind || undefined,
     })),
     /* 내가 지금 말할 수 있나. 재갈이 물린 사람에게 입력창을 열어 두면 보내 봐야
        거절당하는 것을 그때 알게 된다. */

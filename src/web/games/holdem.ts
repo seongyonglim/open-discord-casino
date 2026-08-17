@@ -17,7 +17,7 @@ import {
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
-import { getWebUser, chatMax, chatMod } from '../../db/queries';
+import { getWebUser, chatTick } from '../../db/queries';
 import { recentRecap } from '../../db/holdem-recap';
 import { upcomingHint } from '../../db/recurrence';
 import { getConfig } from '../../db/settings';
@@ -107,7 +107,7 @@ function statePayload(st: HoldemStatus, userId: string) {
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
-    chatMax: chatMax(), chatMod: chatMod(),
+    ...chatTick(),
     serverNow: now,
     tournament: {
       id: t.id,

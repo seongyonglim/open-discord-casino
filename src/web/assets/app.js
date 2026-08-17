@@ -1425,6 +1425,13 @@
      않지만, 그때도 갱신해 둔다 — 접는 순간 옛 줄이 보이면 안 된다. */
   function paintLast(m, fresh){
     if (!lastEl || !m) return;
+    /* 시스템 줄은 이름이 없다 — 그대로 한 줄로 적고 색만 종류를 따라간다. */
+    if (m.kind === 'mute' || m.kind === 'unmute') {
+      lastEl.className = 'chat-last sys ' + m.kind;
+      lastEl.innerHTML = '<span class="chat-b">' + esc(m.body) + '</span>';
+      if (fresh) { lastEl.classList.remove('up'); void lastEl.offsetWidth; lastEl.classList.add('up'); }
+      return;
+    }
     var t = TOP[m.rank];
     lastEl.className = 'chat-last' + (t ? ' ' + t[0] : '');
     lastEl.innerHTML = (t ? '<i class="chat-md" aria-hidden="true">' + t[1] + '</i>' : '')
@@ -1469,6 +1476,21 @@
   function add(m){
     if (seen[m.id]) return;
     seen[m.id] = 1;
+    /* 시스템이 적은 줄 — 사람이 한 말이 아니라 방에 일어난 일이다. 이름표도 게임 태그도
+       달지 않는다: 누가 말한 것이 아니므로 붙일 것이 없고, 붙이면 그것이 발언으로 읽힌다. */
+    if (m.kind === 'mute' || m.kind === 'unmute') {
+      var sys = document.createElement('div');
+      sys.className = 'chat-sys ' + m.kind;
+      sys.dataset.id = m.id;
+      sys.textContent = m.body;
+      listEl.appendChild(sys);
+      while (listEl.childElementCount > MAX_ROWS) {
+        var old = listEl.firstChild;
+        delete seen[old.dataset.id];
+        listEl.removeChild(old);
+      }
+      return;
+    }
     var mine = m.userId === window.__MEID__;
     var w = m.where && WHERE[m.where] ? '<i class="chat-w">' + esc(WHERE[m.where]) + '</i>' : '';
     var t = TOP[m.rank];

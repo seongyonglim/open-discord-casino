@@ -13,7 +13,7 @@ import {
   getCrashBets, getMyCrashBet, getRecentCrashResults, getWebUser, seasonGameProfit,
   CRASH_REVEAL_SEC,
   type CrashRoundRow, type WebUser,
-  chatMax, chatMod,
+  chatTick,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
@@ -109,7 +109,7 @@ function statePayload(round: CrashRoundRow, userId: string) {
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
-    chatMax: chatMax(), chatMod: chatMod(),
+    ...chatTick(),
   };
 }
 
