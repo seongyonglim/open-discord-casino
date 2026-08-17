@@ -176,3 +176,33 @@
     .ig-bar .ig-name{order:-2}
     .ig-bar .ig-clock{order:-1}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 지난 결과 띠 (상단 전체 폭) ────────────────────────────
+       사다리 칸(약 290px)에 두 줄로 넣었더니 여덟 개만 보이고 잘렸다.
+       가로 915px 을 다 쓰면 한 줄에 스물여섯 개가 들어간다.
+       예산에서 34px 을 쓰고 나머지를 격자가 받는다. */
+    .ig-hist{flex:none;height:34px;box-sizing:border-box;margin:40px 8px 0;
+      padding:3px 8px;display:flex;align-items:center;overflow:hidden;
+      background:rgba(18,18,20,.62);border:1px solid var(--line);border-radius:10px}
+    /* 띠가 40px 를 차지하므로 격자는 그만큼 위 여백을 뺀다 */
+    .ig-hist + .ig-body{margin-top:6px}
+    .ig-hist .bead{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
+      gap:2px;overflow-x:auto;overflow-y:hidden;margin:0;padding:0;border:none;height:auto}
+    .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none}
+    .ig-hist .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;color:var(--muted)}
+    .ig-hist .bead-cell{flex:none;width:15px;height:12px;font-size:9px;
+      display:flex;align-items:center;justify-content:center;border-radius:3px}
+    /* 판 칸에는 이제 기록 줄이 없다 */
+    .ig-ladder .ig-board .bead{display:none}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 참가자 패널이 화면 위로 떠 있었다. 16-ingame.css 의
+       html.ingame .game-side{position:fixed;top:36px} 가 아직 이겼기 때문이다 —
+       내 .ig-cell > .game-side 보다 구체성이 높았다(html+.ingame 이 요소 하나를 더 센다).
+       격자 안에서는 흐름에 있어야 하므로 같은 무게로 다시 적는다. */
+    html.ig-grid .ig-cell > .game-side{position:static;top:auto;right:auto;bottom:auto;
+      left:auto;width:auto;padding:0;background:none;z-index:auto;
+      flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  }

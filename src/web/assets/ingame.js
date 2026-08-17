@@ -337,3 +337,44 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
+
+/* ── 지난 결과를 상단 전체 폭 띠로 ────────────────────────────────────
+   사다리 칸(5/12 ≈ 290px)에 두 줄로 넣었더니 여덟 개만 보이고 나머지가 잘렸다.
+   지난 흐름은 판 하나에 매인 정보가 아니라 화면 전체의 맥락이고, 예측의 근거라
+   자주 본다. 가로 915px 을 다 쓰면 한 줄에 스물여섯 개가 들어간다.
+
+   격자 위, 상단바 아래에 띠로 둔다. 예산에서 34px 을 쓰고 나머지를 격자가 받는다. */
+(function(){
+  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var strip = null, histHome = null;
+
+  function apply(){
+    var grid = document.querySelector('.ig-body');
+    var on = grid && window.matchMedia(MQ).matches;
+    var hist = document.querySelector('.bead');
+
+    if (!on) {
+      if (histHome && hist) { histHome.parent.insertBefore(hist, histHome.next); histHome = null; }
+      if (strip) { strip.remove(); strip = null; }
+      return;
+    }
+    if (strip || !hist) return;
+
+    strip = document.createElement('div');
+    strip.className = 'ig-hist';
+    histHome = { parent: hist.parentNode, next: hist.nextSibling };
+    strip.appendChild(hist);
+    grid.parentNode.insertBefore(strip, grid);
+  }
+
+  function start(){
+    apply();
+    var m = window.matchMedia(MQ);
+    if (m.addEventListener) m.addEventListener('change', apply);
+    window.addEventListener('orientationchange', apply);
+    window.addEventListener('resize', apply);
+    setInterval(apply, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
