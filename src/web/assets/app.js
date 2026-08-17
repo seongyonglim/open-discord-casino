@@ -1768,6 +1768,11 @@
     board.style.zoom = '';
     board.style.maxWidth = '';
     if (!window.matchMedia(MQ).matches) return;
+    /* 인게임(웹 껍데기를 벗은 화면)에서는 배율을 아예 안 쓴다. 거기서는 게임마다
+       실제 치수로 맞춰 두었고, 배율을 걸면 글자까지 같이 줄어 못 읽게 된다 —
+       여기서 inline 으로 zoom 을 걸고 있어서 CSS 의 zoom:1 이 못 이겼고,
+       바카라 부제가 10px 로 적혀 있는데 화면에는 4.3px 로 찍혔다. */
+    if (document.documentElement.classList.contains('ingame')) return;
     if (getComputedStyle(main).flexDirection === 'row') return;   // 옆에 둔 게임은 제외
 
     /* 폭 상한을 먼저 건다. 폭이 좁아지면 판이 세로로 길어지므로 높이를 그다음에 잰다 —

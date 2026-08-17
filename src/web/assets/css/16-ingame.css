@@ -167,3 +167,94 @@
     html.ingame .mines-grid{gap:5px}
     html.ingame .mines-tile{width:auto;height:auto;aspect-ratio:1;min-width:0}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 액션 자리를 고정한다 ────────────────────────────────────
+       버튼이 생기고 사라질 때마다 테이블 크기가 바뀌었다. 아래 칸이 내용만큼만
+       차지하니, 폴드·콜·레이즈가 나타나면 그만큼 판이 줄어든 것이다.
+       실제 포커 테이블은 액션 자리가 늘 같은 자리에 같은 높이로 있다 — 판이 움직이면
+       카드를 보다가 시선을 다시 맞춰야 하고, 누르려던 버튼이 이동한다.
+       그래서 자리를 미리 비워 둔다. 비어 있어도 그 높이를 지킨다. */
+    html.ingame .game-shell .game-main > :last-child{
+      min-height:116px;display:flex;flex-direction:column;justify-content:center}
+
+    /* ── 푸터는 접는다 ──────────────────────────────────────────
+       "재미로 즐기는 서버 내부 포인트 게임" 은 로비에서 한 번 읽으면 되는 문구다.
+       게임 중에는 그 한 줄이 판이 쓸 높이를 가져간다. */
+    html.ingame .footer{display:none}
+
+    /* ── 오른쪽 레일을 좁은 폭에 맞게 다시 짠다 ──────────────────
+       290px 용으로 짠 표를 150px 에 밀어 넣어 글자가 줄바꿈되고 값이 라벨 아래로
+       떨어졌다. 폭에 맞는 서식을 따로 준다: 한 줄에 라벨과 값, 넘치면 자른다. */
+    html.ingame .game-side .card{padding:7px 8px;margin:0 0 6px}
+    html.ingame .game-side .sp-head,
+    html.ingame .game-side h3{font-size:11px;margin:0 0 5px}
+    html.ingame .game-side .ht-info-row,
+    html.ingame .game-side .sp-row,
+    html.ingame .game-side .roster-row{display:flex;align-items:baseline;gap:6px;
+      font-size:10.5px;line-height:1.35;padding:3px 0;white-space:nowrap}
+    html.ingame .game-side .ht-info-row > :first-child,
+    html.ingame .game-side .sp-row > :first-child{flex:1;min-width:0;overflow:hidden;
+      text-overflow:ellipsis;color:var(--muted)}
+    html.ingame .game-side .ht-info-row > :last-child,
+    html.ingame .game-side .sp-row > :last-child{flex:none;font-weight:700}
+    /* 탭(참가인원 / 랭킹)도 좁은 폭에 맞춘다 */
+    html.ingame .game-side .sp-tabs button,
+    html.ingame .game-side .sp-tab{font-size:10.5px;padding:5px 6px}
+    html.ingame .game-side .empty{font-size:10px;line-height:1.4;padding:8px 4px}
+
+    /* ── 블랙잭 ─────────────────────────────────────────────────
+       테이블이 폭을 안 쓰고 오른쪽에 큰 여백이 남았다. 폭을 채우고 칩을 줄인다 —
+       칩은 손가락으로 누르는 것이라 너무 작으면 안 되지만 지금은 과하게 크다. */
+    html.ingame .game-shell:has(.bj-table) .bj-table{width:100%;max-width:none}
+    html.ingame .pchip,
+    html.ingame .chip-pick{transform:scale(.82);transform-origin:center}
+    html.ingame .chiprow{gap:2px}
+
+    /* ── 지뢰찾기·그래프 베팅을 한 줄로 ─────────────────────────
+       세로로 쌓인 폼(금액 · 개수 · 배당 · 시작)이 화면의 절반을 먹고, 정작 판은
+       29% 만 썼다. 가로에서는 폭이 남으므로 한 줄로 편다. */
+    html.ingame .game-controls .field-grid{grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:8px;align-items:end}
+    html.ingame .game-controls .field label{font-size:10px;margin-bottom:3px}
+    html.ingame .game-controls .game-input{padding:6px 8px;font-size:12px}
+    html.ingame .game-controls .chip-btn{height:28px;font-size:11px;padding:0 7px}
+    html.ingame .game-controls .quick-row{margin-top:4px;gap:4px}
+    html.ingame .game-controls .btn-primary{padding:8px 0;font-size:13px}
+    html.ingame .game-controls{padding:8px 10px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 작은 글자에 바닥을 깐다 ────────────────────────────────
+       아래 목록은 검사가 짚어 준 것들이다(check-mobile 이 화면에 찍히는 px 를 재서
+       가장 작은 것의 이름을 알려준다). 대부분 컨테이너나 em 에서 유도되어, 판을
+       줄이면 같이 줄어든다. 이 화면에서만 실제 값을 준다 — 9px 이 폰에서 겨우 읽히는
+       하한이고, 여유를 둬서 10px 로 잡았다. */
+    html.ingame .ht-pot-k{font-size:10px}
+    html.ingame .game-shell .m-sub{font-size:10px}
+    html.ingame .game-shell .m-name{font-size:11px}
+    html.ingame .game-shell .bj-rule{font-size:10px}
+    html.ingame .game-shell .seat-name{font-size:10.5px}
+    html.ingame .game-shell .bead-lbl{font-size:10px}
+    /* 그래프 축 글자는 SVG 안에 있다 — 클래스가 아니라 요소로 잡는다 */
+    html.ingame .crash-graph text{font-size:10px}
+
+    /* ── 지뢰 격자를 키운다 ────────────────────────────────────
+       판이 화면의 35% 밖에 안 썼다. 격자가 제 폭만 쓰고 가운데에 작게 놓여 있어서다.
+       남는 높이에 맞춰 칸을 키운다 — 칸이 곧 누르는 자리라 클수록 낫다. */
+    html.ingame .mines-shell .board-stage{flex:1;min-height:0;display:flex;
+      align-items:center;justify-content:center}
+    html.ingame .mines-grid{height:100%;aspect-ratio:1;width:auto;
+      display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);gap:5px}
+    html.ingame .mines-tile{width:auto;height:auto;min-width:0;font-size:13px}
+
+    /* ── 그래프 캔버스 높이를 줄인다 ────────────────────────────
+       조작부가 68px 밖으로 밀렸다. 곡선은 가로로 길수록 읽기 좋으므로 높이를 내준다. */
+    html.ingame .crash-area{min-height:0}
+    html.ingame .crash-graph{max-height:190px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    html.ingame .game-shell .ht-blind{font-size:9.5px}
+    html.ingame .game-shell .bead-lbl{font-size:10px}
+  }
