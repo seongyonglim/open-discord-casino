@@ -10,7 +10,7 @@ import {
   advanceLadderRound, placeLadderBet, cancelLadderBet, getLadderBets, getMyLadderBet, getWebUser, getRecentLadderResults,
   LADDER_REVEAL_SEC, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
   type LadderRoundRow, type WebUser,
-  chatMax,
+  chatMax, chatMod,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
@@ -108,7 +108,7 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
-    chatMax: chatMax(),
+    chatMax: chatMax(), chatMod: chatMod(),
     multiplier: LADDER_MULTIPLIER,
     doubleMultiplier: LADDER_DOUBLE_MULTIPLIER,
     ...ladderAwards(userId),
@@ -586,7 +586,7 @@ export function ladderPage(user: WebUser): string {
         applyState(d);
         /* 채팅은 폴을 따로 돌지 않는다 — 응답의 마지막 메시지 id 만 넘겨주면 값이
            늘었을 때만 채팅이 스스로 받아 간다(app.js 의 casinoChat). */
-        if (window.casinoChat) casinoChat.note(d.chatMax);
+        if (window.casinoChat) casinoChat.note(d.chatMax, d.chatMod);
       }
 
       // 결과 공개 게이트: 공이 도착하기 전에는 히스토리/참가자 목록/잔액이 결과를 미리 보여주지 않는다.

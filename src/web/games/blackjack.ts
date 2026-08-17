@@ -18,7 +18,7 @@ import {
   getBlackjackHands, getBlackjackPlayers, getMyBlackjackHand, getWebUser,
   BJ_SEATS, BJ_REVEAL_SEC, bjSchedule,
   type BjRoundRow, type BjHelpers, type WebUser,
-  chatMax,
+  chatMax, chatMod,
 } from '../../db/queries';
 import {
   shuffleShoe, isBlackjack, dealerShouldHit, handTotal, settleHand, cardsToStrings,
@@ -117,7 +117,7 @@ function statePayload(round: BjRoundRow, userId: string) {
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
-    chatMax: chatMax(),
+    chatMax: chatMax(), chatMod: chatMod(),
     myHand: (() => {
       const h = getMyBlackjackHand(round.id, userId);
       if (!h) return null;

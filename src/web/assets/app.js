@@ -1278,6 +1278,9 @@
   var seen = {};                 // id → 1. 같은 줄을 두 번 그리지 않는다
   var subs = [], primed = false; // 첫 수신(과거 줄)에는 구독자를 부르지 않는다
   var jumpBottom = false;        // 방금 펼쳤다 — 다음 수신은 무조건 맨 아래로
+  /* 운영자가 가린 줄 수. null 은 "아직 모른다"라서 첫 수신에서는 다시 받지 않는다.
+     이 값이 달라지면 목록을 통째로 다시 받는다 — 숨김·되돌리기를 알 다른 방법이 없다. */
+  var lastMod = null, needRebuild = false;
 
   function esc(s){
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1491,6 +1494,25 @@
     }
   }
 
+  /* ── 가려진 줄을 걷어낸다 ────────────────────────────────────────────
+     운영자가 줄을 가려도 화면은 그것을 알 방법이 없었다. 받아 오는 것은 "내가 가진
+     마지막 id 뒤의 새 줄"뿐이라, 이미 그려 둔 줄이 없어졌다는 신호가 오지 않는다.
+     게다가 chatMax(마지막 id)는 숨김으로 바뀌지 않아서 재요청조차 하지 않았다 —
+     가린 사람 화면에서만 사라지고 남들에게는 그대로 보였다.
+
+     그래서 서버가 "가려진 줄 수"(mod)를 함께 준다. 그 값이 달라지면 목록을 통째로
+     다시 받는다. 숨김과 되돌리기가 한 경로로 처리되고(되돌린 줄은 다시 그려야 하는데
+     since 로는 영영 못 받는다), 조치는 드물게 일어나므로 비용도 그때뿐이다. */
+  function rebuild(){
+    lastId = 0;
+    seen = {};
+    if (listEl) listEl.innerHTML = '';
+    /* 다시 채우는 동안은 "처음 여는 것"으로 취급한다 — 안 그러면 되받은 지난 줄이
+       전부 새 말인 양 홀덤 말풍선으로 터지고, 접힌 바도 매번 새로 튀어 오른다. */
+    primed = false;
+    pull();
+  }
+
   var pulling = false;
   function pull(){
     if (pulling) return;
@@ -1499,6 +1521,13 @@
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(d){
         if (!d || !d.messages) return;
+        /* 응답으로도 조치를 알아챈다 — 느린 폴로 도는 화면(로비·랭킹)은 게임 상태를
+           받지 않아서 이 경로가 유일한 신호다. 지금 요청 중이라 여기서 바로 다시
+           부를 수는 없고, 아래 마무리에서 한 번 다시 받는다. */
+        if (typeof d.mod === 'number') {
+          if (lastMod !== null && d.mod !== lastMod) needRebuild = true;
+          lastMod = d.mod;
+        }
         if (typeof d.muteLeftMs === 'number') {
           muteUntil = d.muteLeftMs > 0 ? Date.now() + d.muteLeftMs : 0;
           paintNote();
@@ -1526,7 +1555,12 @@
         primed = true;
       })
       .catch(function(){ /* 일시적 실패는 다음 기회에 회복된다 */ })
-      .then(function(){ pulling = false; });
+      .then(function(){
+        pulling = false;
+        /* 조치가 있었으면 여기서 한 번만 다시 받는다. rebuild 안에서 부르는 pull 은
+           mod 가 이미 최신이라 needRebuild 를 다시 세우지 않는다 — 무한히 돌지 않는다. */
+        if (needRebuild) { needRebuild = false; rebuild(); }
+      });
   }
 
   function flash(msg){
@@ -1565,8 +1599,16 @@
       .catch(function(){ flash('전송 실패'); inputEl.value = body; });
   }
 
-  /* 게임 화면이 폴링 응답을 받을 때마다 부른다. 값이 늘었을 때만 실제로 요청한다. */
-  function note(max){
+  /* 게임 화면이 폴링 응답을 받을 때마다 부른다. 값이 움직였을 때만 실제로 요청한다.
+     새 줄(max)뿐 아니라 운영자 조치(mod)도 본다 — 숨김은 max 를 바꾸지 않아서,
+     이것이 없으면 가려진 줄이 남의 화면에 그대로 남는다(실제로 그랬다). */
+  function note(max, mod){
+    if (typeof mod === 'number' && lastMod !== null && mod !== lastMod) {
+      lastMod = mod;
+      rebuild();
+      return;                    // rebuild 가 어차피 최신까지 받아 온다
+    }
+    if (typeof mod === 'number' && lastMod === null) lastMod = mod;
     if (typeof max !== 'number' || max <= lastId) return;
     pull();
   }

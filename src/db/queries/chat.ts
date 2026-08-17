@@ -41,9 +41,23 @@ export interface ChatRow {
 
 export type ChatError = 'empty' | 'too_long' | 'too_fast' | 'muted' | 'no_user';
 
-/** 마지막 메시지 id. 상태 응답이 매번 이 값 하나만 싣는다. */
+/** 마지막 메시지 id. 상태 응답이 매번 이 값과 아래 chatMod 를 싣는다. */
 export function chatMax(): number {
   return one<{ n: number }>(`SELECT COALESCE(MAX(id), 0) AS n FROM chat_messages`)!.n;
+}
+
+/* 가려진 줄 수. "숨김이 일어났다"를 알리는 유일한 신호다.
+
+   이게 없어서 실제로 새어 나갔다: 운영자가 줄을 가려도 MAX(id) 는 그대로라 다른 사람
+   화면은 재요청조차 하지 않았고, 이미 그려 둔 줄은 그 자리에 그대로 남았다. 가린 사람은
+   화면이 새로고침돼서 사라진 것처럼 보였고, 남들에게는 계속 보였다.
+
+   숨김과 되돌리기 둘 다에서 값이 움직이므로 방향은 볼 필요가 없다 — 화면은 값이
+   달라졌다는 것만 알면 목록을 처음부터 다시 받는다. 보관이 200줄이라 세는 비용도
+   무시할 만하고, 어차피 이 값은 상태 응답에 이미 실려 나가는 chatMax 옆자리다. */
+export function chatMod(): number {
+  return one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM chat_messages WHERE hidden = 1`)!.n;
 }
 
 /**

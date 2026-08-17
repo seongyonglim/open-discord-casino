@@ -7,7 +7,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readJson, sendJson } from './http';
 import {
-  chatSince, postChat, chatMuteLeft, CHAT_MAX_LEN, CHAT_MIN_GAP_MS,
+  chatSince, postChat, chatMuteLeft, chatMod, CHAT_MAX_LEN, CHAT_MIN_GAP_MS,
   currentSeason, seasonOverall,
   type WebUser,
 } from '../db/queries';
@@ -51,6 +51,10 @@ export function handleChatRead(
      순위는 숫자 하나뿐이다 — 잔액을 주면 랭킹 페이지에 없는 정보가 채팅으로 샌다. */
   sendJson(res, 200, {
     ok: true,
+    /* 가려진 줄 수. 화면은 이 값이 달라지면 목록을 처음부터 다시 받는다 —
+       가린 줄을 되돌려 받을 방법이 달리 없기 때문이다(since 뒤의 새 줄만 오므로).
+       느린 폴로 도는 화면(로비·랭킹)도 이 값만 보고 알아챈다. */
+    mod: chatMod(),
     messages: rows.map(r => ({
       id: r.id, userId: r.user_id, name: r.username, body: r.body,
       at: r.created_ms, where: r.where_at, rank: rank.get(r.user_id),
