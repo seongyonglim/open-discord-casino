@@ -166,8 +166,11 @@ function serveAsset(dir: 'sfx' | 'cards' | 'img' | 'icon', name: string, res: ht
    순서가 곧 동작이다 — CSS 는 뒤에 오는 규칙이 이기므로, 조각 순서를 바꾸면 화면이 바뀐다.
    그래서 순서는 assets/css/ORDER.txt 한 곳에만 적고 여기서 그대로 읽는다.
    이어 붙인 결과가 나누기 전과 한 글자도 다르지 않은지는 scripts/golden.ts 가 확인한다. */
-const APP_FILES: Record<string, { path: string | string[]; mime: string }> = {
-  '/app.css': { path: cssParts(), mime: 'text/css; charset=utf-8' },
+const APP_FILES: Record<string, { path: string | string[] | (() => string[]); mime: string }> = {
+  /* 함수로 둔다. 값으로 두면 이 모듈이 읽히는 순간의 ORDER.txt 로 목록이 굳어서,
+     조각을 새로 넣어도 서버를 다시 띄우기 전에는 안 실린다 — 17-ig-grid.css 를
+     넣고 한참을 "왜 규칙이 안 먹지" 하고 들여다봤다. APP_CACHE_ON 과 같은 함정이다. */
+  '/app.css': { path: () => cssParts(), mime: 'text/css; charset=utf-8' },
   /* ingame.js 를 따로 두고 여기서 이어 붙인다. 페이지 머리말에 <script> 를 하나 더
      넣으면 서버 HTML 이 바뀌고, 그러면 "웹 화면은 그대로"를 골든 비교로 증명할 수
      없게 된다. 파일은 나눠 두되 나가는 것은 한 덩어리다 — 그 파일만 빼면 인게임
@@ -203,7 +206,8 @@ function serveAppFile(route: string, res: http.ServerResponse): void {
   let hit = APP_CACHE_ON() ? appCache.get(route) : undefined;
   if (!hit) {
     // app.js 안의 효과음 URL이 자산 버전을 필요로 하므로 여기서 치환한다
-    const parts = Array.isArray(meta.path) ? meta.path : [meta.path];
+    const list = typeof meta.path === 'function' ? meta.path() : meta.path;
+    const parts = Array.isArray(list) ? list : [list];
     const text = parts
       .map(p => readFileSync(join(process.cwd(), 'src', 'web', 'assets', p), 'utf8'))
       /* 조각 사이에 줄바꿈 하나를 넣는다 — 조각은 마지막 줄의 줄바꿈을 갖고 있지 않다.

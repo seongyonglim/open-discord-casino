@@ -165,3 +165,107 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
+
+/* ── 인게임 전용 격자 ─────────────────────────────────────────────────
+   여기까지는 데스크톱 레이아웃 위에 규칙을 덮어써 왔다. 16-ingame.css 가 809줄 ·
+   341개 규칙이 됐고, 하나를 고치면 다른 하나가 어긋나는 일이 반복됐다 —
+   칩 줄을 걷으니 인풋이 폭 0 이 되고, 인풋을 살리니 MAX 가 옆 칸을 덮는 식이었다.
+   덮어쓰기가 쌓이면 서로 간섭하는 것이 당연하다.
+
+   그래서 이 화면만은 구조를 새로 짠다. 서버 HTML 은 여전히 그대로다 —
+   여기서 격자를 만들고 이미 있는 칸(판·조작부·참가자)을 그 안에 옮겨 담을 뿐이다.
+   세로로 돌리면 원래 자리로 되돌린다.
+
+     ig-body(격자 12칸)
+       ig-cell ig-board  판
+       ig-cell ig-bet    조작부
+       ig-cell ig-side   참가인원·랭킹
+
+   칸 수는 게임마다 다르다 — 사다리는 세로로 긴 판이라 5:4:3, 지뢰찾기는 정사각
+   격자라 6:6(참가자 없음), 나머지는 판이 넓어야 해서 판이 아래를 쓴다. */
+(function(){
+  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var body = null;
+  var home = [];      // [노드, 원래 부모, 원래 다음 형제]
+
+  function shellKind(){
+    var s = document.querySelector('.game-shell');
+    if (!s) return null;
+    if (s.classList.contains('ht-shell')) return 'holdem';
+    if (s.classList.contains('mines-shell')) return 'mines';
+    if (s.classList.contains('poker-shell')) return 'poker';
+    if (s.querySelector('.bacc-table')) return 'baccarat';
+    if (s.querySelector('.bj-table')) return 'blackjack';
+    if (s.querySelector('.crash-graph')) return 'graph';
+    return 'ladder';
+  }
+
+  function take(node, cell){
+    if (!node) return;
+    home.push([node, node.parentNode, node.nextSibling]);
+    cell.appendChild(node);
+  }
+
+  function build(){
+    if (body) return;
+    var main = document.querySelector('.game-main');
+    var shell = document.querySelector('.game-shell');
+    if (!main || !shell) return;
+    var kind = shellKind();
+
+    var board = main.firstElementChild;
+    var bet = main.lastElementChild !== board ? main.lastElementChild : null;
+    var side = document.querySelector('.game-side');
+
+    body = document.createElement('div');
+    body.className = 'ig-body ig-' + kind;
+
+    var cBoard = document.createElement('div'); cBoard.className = 'ig-cell ig-board';
+    var cBet = document.createElement('div'); cBet.className = 'ig-cell ig-bet';
+    var cSide = document.createElement('div'); cSide.className = 'ig-cell ig-side';
+    body.appendChild(cBoard); body.appendChild(cBet); body.appendChild(cSide);
+
+    take(board, cBoard);
+    take(bet, cBet);
+    take(side, cSide);
+
+    home.push([body, null, null]);       // 정리할 때 지울 것
+    (document.querySelector('main') || document.body).appendChild(body);
+    document.documentElement.classList.add('ig-grid');
+  }
+
+  function tearDown(){
+    if (!body) return;
+    /* 넣은 역순으로 되돌린다 — 앞의 것을 먼저 되돌리면 다음 형제가 이미 옮겨져 있다 */
+    for (var i = home.length - 1; i >= 0; i--) {
+      var n = home[i][0], p = home[i][1], nx = home[i][2];
+      if (!p) { n.parentNode && n.parentNode.removeChild(n); continue; }
+      p.insertBefore(n, nx);
+    }
+    home = [];
+    body = null;
+    document.documentElement.classList.remove('ig-grid');
+  }
+
+  /* 한 게임씩 옮긴다. 여기 적힌 게임만 격자를 쓰고, 나머지는 예전 배치를 그대로 쓴다 —
+     일곱 개를 한꺼번에 바꾸면 어디가 왜 깨졌는지 가릴 수 없다. 하나를 끝내고 확인한
+     뒤에 다음을 더한다. */
+  var MOVED = ['ladder'];
+
+  function apply(){
+    var on = /^\/games\//.test(location.pathname)
+      && window.matchMedia(MQ).matches
+      && MOVED.indexOf(shellKind()) >= 0;
+    if (on) build(); else tearDown();
+  }
+
+  function start(){
+    apply();
+    var m = window.matchMedia(MQ);
+    if (m.addEventListener) m.addEventListener('change', apply);
+    window.addEventListener('orientationchange', apply);
+    window.addEventListener('resize', apply);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

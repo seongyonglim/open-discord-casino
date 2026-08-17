@@ -1,0 +1,153 @@
+  /* ── 인게임 격자 (폰 가로) — 화면은 문서가 아니라 고정된 판이다 ──────
+     16-ingame.css 는 데스크톱 레이아웃 위에 규칙을 덮어썼다. 809줄 · 341개가 되면서
+     하나를 고치면 다른 하나가 어긋났다 — 칩 줄을 걷으니 인풋이 폭 0 이 되고, 인풋을
+     살리니 MAX 가 옆 칸을 덮는 식이었다. 흐르는 문서를 좁은 화면에 욱여넣었기 때문이다.
+
+     여기서는 반대로 간다. 412px 는 흐름이 아니라 예산이고, 먼저 나눈다.
+
+       상단바  40
+       본문   372  = 화면 - 상단바
+     그 372 를 게임마다 어떻게 쓰는지 정해 놓고, 그 안에서만 그린다. 넘칠 자리가 없다.
+
+     ingame.js 가 격자를 만들고 이미 있는 칸(판·조작부·참가자)을 옮겨 담는다.
+     서버 HTML 은 그대로다 — 세로로 돌리면 원래 자리로 되돌린다.
+
+     ── 간섭 차단
+     16-ingame.css 의 규칙 중 .game-shell 로 묶인 것들은 노드가 격자로 옮겨지면서
+     저절로 안 걸린다. 묶이지 않은 것들(html.ingame .bet-row 등 68개)은 여기서
+     명시적으로 되돌린다 — 아래 "무효화" 절이 그것이다. */
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+
+    /* ── 간섭 차단 ──────────────────────────────────────────────
+       처음에는 all:revert 로 예전 덮어쓰기를 한 번에 지우려 했다. 그런데 revert 는
+       내 덮어쓰기만이 아니라 그 요소의 author 스타일을 통째로 되돌린다 — 04-board.css
+       의 기본 규칙(.bet-row{display:flex} 등)까지 사라져서 인풋과 버튼이 흩어졌다.
+
+       그래서 지우지 않고 이긴다. 아래 규칙은 전부 .ig-ladder 로 시작하므로
+       html.ingame .bet-row 같은 예전 규칙보다 구체적이고, 파일 순서도 뒤다.
+       .game-shell 로 묶인 예전 규칙들은 노드가 격자로 옮겨지면서 저절로 안 걸린다. */
+
+    /* 격자를 쓰는 동안 원래 자리는 비어 있다 */
+    html.ig-grid.ingame .game-shell{display:none}
+    html.ig-grid.ingame main{padding:0;height:100%;box-sizing:border-box;
+      display:flex;flex-direction:column;min-height:0;overflow:hidden}
+
+    /* ── 뼈대: 상단바 40 · 본문 나머지 ───────────────────────── */
+    html.ig-grid .ig-bar{height:40px}
+    .ig-body{flex:1 1 auto;min-height:0;display:grid;gap:8px;padding:8px;
+      grid-template-columns:repeat(12,minmax(0,1fr));box-sizing:border-box;
+      margin-top:40px}
+    .ig-cell{min-width:0;min-height:0;display:flex;flex-direction:column;
+      background:rgba(18,18,20,.62);border:1px solid var(--line);border-radius:12px;
+      padding:8px;overflow:hidden;box-sizing:border-box}
+    /* 옮겨 온 칸은 제 테두리를 벗는다 — 격자 칸이 이미 상자다 */
+    .ig-cell > .card{background:none;border:none;padding:0;margin:0;border-radius:0;
+      flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:0}
+    .ig-cell > .game-side{width:auto;position:static;padding:0;background:none;
+      flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+
+    /* ══ 사다리 — 5 : 4 : 3 ═══════════════════════════════════ */
+    .ig-body.ig-ladder .ig-board{grid-column:span 5}
+    .ig-body.ig-ladder .ig-bet{grid-column:span 4}
+    .ig-body.ig-ladder .ig-side{grid-column:span 3}
+
+    /* ── 좌: 사다리판 ─────────────────────────────────────────
+       최근 결과 34px 고정 + 그림이 나머지 전부. 그림은 viewBox 를 가진 SVG 라
+       높이를 주면 비율대로 줄어든다 — max-height 로 자르면 도착 지점이 사라진다. */
+    .ig-ladder .ig-board .bead{flex:none;height:34px;box-sizing:border-box;
+      display:flex;flex-direction:column;justify-content:center;gap:2px;
+      overflow-x:auto;overflow-y:hidden;margin:0 0 6px;padding:0 0 4px;
+      border-bottom:1px solid rgba(255,255,255,.06)}
+    .ig-ladder .ig-board .bead-row{display:flex;gap:3px;align-items:center}
+    .ig-ladder .ig-board .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;
+      color:var(--muted)}
+    .ig-ladder .ig-board .bead-cell{flex:none;width:15px;height:15px;font-size:9.5px;
+      display:flex;align-items:center;justify-content:center;border-radius:4px}
+    .ig-ladder .ig-board .board-stage{flex:1 1 auto;min-height:0;position:relative;
+      display:flex;align-items:center;justify-content:center;padding:0;max-height:none}
+    .ig-ladder .ig-board .ladder-board{width:100%;height:100%;min-height:0;
+      display:flex;align-items:center;justify-content:center}
+    .ig-ladder .ig-board .ladder-svg{width:auto;height:100%;max-width:100%;max-height:100%}
+    /* 상태 안내는 사다리를 밀어내지 않게 띄운다 */
+    .ig-ladder .ig-board .stage-status{position:absolute;top:0;left:50%;
+      transform:translateX(-50%);background:rgba(212,175,55,.14);
+      border:1px solid var(--gold-dim);border-radius:999px;padding:3px 12px;
+      color:var(--gold);font-weight:700;font-size:11px;white-space:nowrap;margin:0}
+
+    /* ── 중: 베팅 — 44 / 46 / 46 / 50 ────────────────────────
+       네 줄이 각자 제 높이를 갖고 위아래로 벌어진다. 겹칠 자리가 구조적으로 없다. */
+    .ig-ladder .ig-bet .card{justify-content:space-between;gap:8px}
+    .ig-ladder .ig-bet .field-grid{display:flex;flex-direction:column;gap:8px;
+      flex:1 1 auto;justify-content:center;min-height:0}
+    .ig-ladder .ig-bet .field{display:flex;flex-direction:column;gap:8px}
+    .ig-ladder .ig-bet .field > label{display:none}
+    .ig-ladder .ig-bet .quick-row{display:none}
+    .ig-ladder .ig-bet .game-msg{display:none}
+
+    .ig-ladder .ig-bet .bet-row{display:flex;gap:6px;height:44px;flex:none}
+    .ig-ladder .ig-bet .bet-row .game-input{flex:1 1 auto;min-width:0;height:44px;
+      font-size:14px;padding:0 10px;box-sizing:border-box}
+    .ig-ladder .ig-bet .bet-row .chip-btn,
+    .ig-ladder .ig-bet .bet-row .ig-max{flex:none;height:44px;min-width:42px;padding:0 8px;
+      font-size:11.5px;display:inline-flex;align-items:center;justify-content:center;
+      box-sizing:border-box}
+    .ig-ladder .ig-bet .bet-row .ig-max{background:var(--panel2);
+      border:1px solid var(--gold-dim);border-radius:8px;color:var(--gold);
+      font-weight:700;cursor:pointer;font-family:inherit}
+
+    /* 출발 · 도착: 라벨은 고정 폭, 버튼 둘이 남는 폭을 반씩 */
+    .ig-ladder .ig-bet .predict-row{display:flex;align-items:center;gap:8px;
+      height:46px;flex:none}
+    .ig-ladder .ig-bet .predict-row > label,
+    .ig-ladder .ig-bet .predict-row > span:first-child{flex:none;width:32px;
+      text-align:center;font-size:11px;font-weight:700;color:var(--muted)}
+    .ig-ladder .ig-bet .predict-row button{flex:1 1 0;min-width:0;height:46px;
+      font-size:14px;font-weight:700;box-sizing:border-box}
+
+    .ig-ladder .ig-bet .btn-primary,
+    .ig-ladder .ig-bet .game-action{flex:none;width:100%;height:50px;font-size:14px;
+      margin:0;padding:0;box-sizing:border-box}
+    .ig-ladder .ig-bet .payout-line{flex:none;font-size:11px;padding:0;margin:0;
+      text-align:center;color:var(--muted)}
+
+    /* ── 우: 참가인원 · 랭킹 — 탭 30 + 목록 나머지 ──────────── */
+    .ig-ladder .ig-side .sp-tabs{flex:none;height:30px;display:flex;gap:4px}
+    .ig-ladder .ig-side .sp-tab{flex:1 1 0;min-width:0;font-size:11px;padding:0;
+      height:30px;display:flex;align-items:center;justify-content:center}
+    .ig-ladder .ig-side .sp-pane{flex:1 1 auto;min-height:0;overflow-y:auto}
+    .ig-ladder .ig-side .side-head{font-size:10.5px;padding:5px 4px}
+    .ig-ladder .ig-side .sp-rank{gap:1px;padding:2px}
+    .ig-ladder .ig-side .sp-rw{display:flex;align-items:center;gap:5px;
+      height:auto;min-height:0;padding:4px 5px}
+    .ig-ladder .ig-side .sp-no{flex:none;width:13px;font-size:10px;text-align:center}
+    .ig-ladder .ig-side .sp-mid{flex:1 1 auto;min-width:0;width:auto;height:auto;
+      display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      font-size:11px;line-height:1.3}
+    .ig-ladder .ig-side .sp-p{flex:none;width:auto;font-size:10.5px;white-space:nowrap}
+    .ig-ladder .ig-side .empty{font-size:10.5px;padding:10px 4px;line-height:1.4;
+      text-align:center}
+
+    /* ══ 아직 안 고친 게임들 ══════════════════════════════════
+       사다리만 격자로 옮겼다. 나머지는 예전 배치를 그대로 쓴다 —
+       ingame.js 가 그 게임들에는 격자를 안 만든다. */
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 실측: 베팅 칸 258px 인데 안의 줄이 332px 로 밀려 나갔다.
+       <input type=number> 는 기본 크기(size)로 185px 를 주장한다. min-width:0 은
+       그 주장을 못 이긴다 — 최소 너비만 풀 뿐 본래 크기는 그대로다.
+       width:0 + flex-basis:0 이어야 "남는 만큼만" 쓴다. */
+    .ig-ladder .ig-bet .field{width:100%;min-width:0;align-self:stretch;box-sizing:border-box}
+    .ig-ladder .ig-bet .bet-row{width:100%;box-sizing:border-box}
+    .ig-ladder .ig-bet .bet-row .game-input{flex:1 1 0;width:0;min-width:0}
+    .ig-ladder .ig-bet .predict-row{width:100%;box-sizing:border-box}
+    .ig-ladder .ig-bet .field-grid{align-items:stretch}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 상태 안내 뱃지가 판 왼쪽 끝에 붙어 글자가 잘렸다("…개 중…").
+       판 위 가운데에 띄우되, 판 폭을 넘지 않게 한다. */
+    .ig-ladder .ig-board .stage-status{left:50%;right:auto;max-width:calc(100% - 16px);
+      overflow:hidden;text-overflow:ellipsis}
+  }

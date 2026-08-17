@@ -82,12 +82,16 @@ const PROBE = `(() => {
   /* 판이 찌그러졌는지. 높이만 재면 "판을 폭 100px 짜리 막대로 눌러 놓고" 도 통과한다 —
      실제로 가로 배치를 넣었을 때 flex 가 홀덤 테이블을 그렇게 만들었고, 높이 검사는
      통과했다. 그림을 보고서야 알았다. 그래서 폭도 같이 본다. */
-  const el = document.querySelector('.game-main');
-  const board = el && el.firstElementChild;
+  /* 판과 조작부를 찾는다. 인게임 격자로 옮긴 게임은 .game-main 이 비어 있고 내용이
+     .ig-board / .ig-bet 안에 있다 — 옛 자리만 보면 "판이 없다"로 잘못 읽는다. */
+  const grid = document.querySelector('.ig-body');
+  const el = grid || document.querySelector('.game-main');
+  const board = grid ? grid.querySelector('.ig-board') : (el && el.firstElementChild);
   const bb = board ? board.getBoundingClientRect() : null;
   /* 조작부도 같이 본다. 판만 지켰더니 지뢰찾기 조작부가 185px 로 눌려 안의 글자들이
      서로 겹쳤다 — 판 검사는 초록이었다. 눌린 칸은 scrollWidth 가 실제 폭보다 크다. */
-  const ctl = el && el.lastElementChild !== board ? el.lastElementChild : null;
+  const ctl = grid ? grid.querySelector('.ig-bet')
+    : (el && el.lastElementChild !== board ? el.lastElementChild : null);
   const cb = ctl ? ctl.getBoundingClientRect() : null;
   return {
     /* 로그인 여부. 게임 화면은 로그인해야 열리므로, 안 한 채로 재면 모든 항목이
