@@ -13,7 +13,7 @@ import {
 } from './notifications-api';
 import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
-import { manifest, offlinePage, SW_UNINSTALL, swOff } from './pwa';
+import { manifest, offlinePage, SW_UNINSTALL, swOff, assetLinks } from './pwa';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminLedger, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
@@ -185,11 +185,18 @@ const appCache = new Map<string, CachedAsset>();
    프로세스 수명 동안 캐시하면 스타일 한 줄을 고칠 때마다 서버를 다시 띄워야 한다 —
    시뮬레이션이 돌고 있으면 대회가 처음부터 다시 시작되므로, 화면을 확인하려던 그
    상황을 다시 만들 수 없다. 배포 환경(FLY_APP_NAME)에서는 그대로 캐시한다. */
-const APP_CACHE_ON = !!process.env.FLY_APP_NAME || process.env.PREVIEW_LOGIN !== '1';
+/* 상수가 아니라 함수다. 상수로 두면 이 모듈이 import 되는 순간의 환경 변수로 값이
+   굳는데, 미리보기 기동 스크립트는 process.env 를 set 한 뒤에 server 를 부르는 것처럼
+   보여도 실제로는 import 가 먼저 돈다(require 가 파일 맨 위로 끌어올려진다).
+   그래서 "미리보기에서는 캐시하지 않는다"고 적어 두고도 내내 캐시하고 있었다 —
+   스타일을 고칠 때마다 서버를 다시 띄워야 했던 이유가 이것이다. */
+function APP_CACHE_ON(): boolean {
+  return !!process.env.FLY_APP_NAME || process.env.PREVIEW_LOGIN !== '1';
+}
 
 function serveAppFile(route: string, res: http.ServerResponse): void {
   const meta = APP_FILES[route];
-  let hit = APP_CACHE_ON ? appCache.get(route) : undefined;
+  let hit = APP_CACHE_ON() ? appCache.get(route) : undefined;
   if (!hit) {
     // app.js 안의 효과음 URL이 자산 버전을 필요로 하므로 여기서 치환한다
     const parts = Array.isArray(meta.path) ? meta.path : [meta.path];
@@ -202,11 +209,11 @@ function serveAppFile(route: string, res: http.ServerResponse): void {
       .split('__ASSET_V__').join(ASSET_V);
     const raw = Buffer.from(text, 'utf8');
     hit = { raw, gz: gzipSync(raw, { level: 9 }) };
-    if (APP_CACHE_ON) appCache.set(route, hit);
+    if (APP_CACHE_ON()) appCache.set(route, hit);
   }
   const useGz = acceptsGzip(res);
   sendBody(res, 200, meta.mime, useGz ? hit.gz! : hit.raw,
-    { 'cache-control': APP_CACHE_ON ? 'public, max-age=604800' : 'no-store' },
+    { 'cache-control': APP_CACHE_ON() ? 'public, max-age=604800' : 'no-store' },
     useGz ? 'gzip' : 'identity');
 }
 
@@ -216,7 +223,7 @@ function serveAppFile(route: string, res: http.ServerResponse): void {
    serveAppFile 을 안 쓰는 이유는 헤더가 다르기 때문이다: 이 파일만은 캐시하면 안 된다. */
 let swCache: string | null = null;
 function swSource(): string {
-  if (swCache !== null && APP_CACHE_ON) return swCache;
+  if (swCache !== null && APP_CACHE_ON()) return swCache;
   swCache = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'sw.js'), 'utf8')
     .split('__ASSET_V__').join(ASSET_V);
   return swCache;
@@ -282,6 +289,14 @@ export function startWebServer(): void {
       }
       if (path === '/offline') {
         return send(res, 200, offlinePage());
+      }
+      /* 안드로이드가 설치할 때 이 파일을 읽어 "이 앱이 정말 이 사이트 것인가"를 대조한다.
+         맞으면 주소창을 없애고 앱처럼 띄운다. 로그인과 무관하게 열려 있어야 한다 —
+         안드로이드는 쿠키 없이 받아 간다. */
+      if (path === '/.well-known/assetlinks.json') {
+        sendBody(res, 200, 'application/json; charset=utf-8', assetLinks(),
+          { 'cache-control': 'public, max-age=3600' });
+        return;
       }
       if (path === '/sw.js') {
         /* 캐시하지 않는다. 서비스워커는 브라우저가 스스로 다시 받아 보는데, 여기에

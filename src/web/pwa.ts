@@ -94,7 +94,45 @@ self.addEventListener('activate', function (e) {
 });
 `;
 
-/** 서비스워커를 끌지 여부. 배포 후 이상하면 fly secrets 로 SW=off 를 넣는다. */
+/**
+ * 서비스워커를 끌지 여부. 배포 후 이상하면 fly secrets 로 SW=off 를 넣는다.
+ *
+ * 로컬 미리보기에서는 기본으로 끈다. 워커가 app.css·app.js 를 캐시 우선으로 잡기
+ * 때문에, 켜 두면 스타일을 고쳐도 서버를 다시 띄우기 전까지 화면이 안 바뀐다 —
+ * 실제로 15-mobile.css 를 만들고 한참을 "왜 안 먹지" 하고 들여다봤다.
+ * 로컬에서 워커 자체를 확인하고 싶을 때는 SW=on 으로 띄운다.
+ */
 export function swOff(): boolean {
-  return process.env.SW === 'off';
+  if (process.env.SW === 'on') return false;
+  if (process.env.SW === 'off') return true;
+  return !process.env.FLY_APP_NAME && process.env.PREVIEW_LOGIN === '1';
+}
+
+/* ── 안드로이드 앱과의 연결 ────────────────────────────────────────────
+   TWA 는 이 화면을 크롬으로 띄우는 껍데기다. 그냥 띄우면 위에 주소창이 남는다 —
+   "이 앱은 정말 우리 사이트인가"를 안드로이드가 확인하지 못했기 때문이다.
+   그 확인이 이 파일이다: 사이트가 /.well-known/assetlinks.json 에 "이 패키지와 이
+   서명 지문을 가진 앱은 우리 것"이라고 적어 두면, 안드로이드가 설치할 때 대조하고
+   맞으면 주소창을 없앤다.
+
+   지문은 비밀이 아니다 — 공개 주소로 내보내라고 만들어진 값이고, 그것만으로는
+   서명을 못 한다(서명에는 키스토어와 그 암호가 필요하고 그건 이 저장소에 없다). */
+export const TWA_PACKAGE = 'kr.kro.odcasino';
+
+/* 앱 서명 키의 SHA-256 지문. 키스토어를 만든 뒤 아래 명령으로 얻어 여기에 적는다.
+     keytool -list -v -keystore android.keystore -alias odcasino
+   Play 스토어에 올리면 구글이 다시 서명하므로 지문이 하나 더 생긴다. 그래서 배열이다 —
+   업로드 키와 Play 서명 키를 둘 다 적어야 두 경로 모두 주소창이 사라진다.
+   비어 있으면 빈 목록이 나가고, 앱은 주소창이 있는 채로 동작한다(설치와 실행은 된다). */
+export const TWA_FINGERPRINTS: string[] = [];
+
+export function assetLinks(): string {
+  return JSON.stringify(TWA_FINGERPRINTS.map(fp => ({
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: TWA_PACKAGE,
+      sha256_cert_fingerprints: [fp],
+    },
+  })), null, 2);
 }

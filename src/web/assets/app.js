@@ -1678,3 +1678,50 @@
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(){ });
   });
 })();
+
+/* ── 좁은 화면에서 게임 전환을 접는다 ──────────────────────────────────
+   게임 칩이 일곱 개라 폰에서는 세 줄(129px)이 된다. 화면 위쪽을 그만큼 잃는데,
+   대부분의 시간에는 지금 하는 게임 하나만 알면 된다.
+
+   여는 손잡이를 새로 만들지 않고 활성 칩을 그대로 쓴다. 그 칩은 원래 지금 보고 있는
+   페이지로 가는 링크라 눌러도 아무 일이 없었다 — 그 빈 동작에 "펼치기"를 얹는다.
+
+   여기서 DOM 을 건드리는 이유: 서버가 내보내는 HTML 은 한 글자도 안 바꾸기로 했다.
+   데스크톱 화면이 지금 그대로여야 하고, 그 사실을 골든 비교가 증명해 주기 때문이다.
+   클래스 하나를 화면에서 붙이면 그 약속을 지키면서도 폰에서만 달라진다. */
+(function(){
+  var MQ = '(max-width:768px), (max-width:1024px) and (max-height:560px)';
+  function init(){
+    var gs = document.querySelector('.game-switch');
+    if (!gs) return;                                  // 게임 화면이 아니면 없다
+    var m = window.matchMedia(MQ);
+    function apply(){
+      if (m.matches) gs.classList.add('gs-m');
+      else { gs.classList.remove('gs-m'); gs.classList.remove('gs-open'); }
+    }
+    apply();
+    /* 화면을 돌리면 조건이 바뀐다 — 세로에서 접혀 있다가 데스크톱 폭이 되면 풀려야 한다.
+       addEventListener 가 없는 오래된 브라우저에서는 첫 판정만 쓴다(그래도 동작한다). */
+    if (m.addEventListener) m.addEventListener('change', apply);
+    else if (m.addListener) m.addListener(apply);
+
+    gs.addEventListener('click', function(e){
+      if (!gs.classList.contains('gs-m')) return;
+      var pill = e.target.closest ? e.target.closest('.gs-pill') : null;
+      if (!pill) return;
+      /* 활성 칩만 손잡이다. 나머지는 원래대로 그 게임으로 간다 — 여기서 가로채면
+         펼쳐 놓고 아무것도 못 고르는 화면이 된다. */
+      if (!pill.classList.contains('active')) return;
+      e.preventDefault();
+      gs.classList.toggle('gs-open');
+    });
+    /* 밖을 누르면 접는다. 펼친 채로 두면 원래 없애려던 세 줄이 그대로 남는다. */
+    document.addEventListener('click', function(e){
+      if (gs.classList.contains('gs-open') && !gs.contains(e.target)) {
+        gs.classList.remove('gs-open');
+      }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();

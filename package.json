@@ -35,7 +35,8 @@
     "audit:tick": "node --experimental-sqlite --require tsx/cjs scripts/audit-tick.ts",
     "audit:tourney": "node --experimental-sqlite --require tsx/cjs scripts/audit-tourney.ts",
     "audit:pwa": "node --experimental-sqlite --require tsx/cjs scripts/audit-pwa.ts",
-    "check:installable": "node --require tsx/cjs scripts/check-installable.ts"
+    "check:installable": "node --require tsx/cjs scripts/check-installable.ts",
+    "check:mobile": "node --require tsx/cjs scripts/check-mobile.ts"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
