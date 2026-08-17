@@ -360,28 +360,45 @@ export interface HoldemRecordRow {
 
    행은 지우지 않는다. 지난 시즌 대회는 holdem_entries 에 그대로 남아 있고,
    범위만 좁혀서 보여 준다. */
-export function holdemRecords(limit = 20): HoldemRecordRow[] {
+/* 갈래. 랭킹 페이지의 홀덤 탭과 같은 기준이다(queries/season 의 HoldemGenre) —
+   두 곳이 다른 기준으로 나누면 같은 사람의 누적 상금이 화면마다 달라진다.
+   비워 두면 갈래를 나누지 않고 전부 센다. */
+export type RecordGenre = 'CLASSIC' | 'BOUNTY';
+const RECORD_MODE: Record<RecordGenre, string> = {
+  CLASSIC: `t.mode = 'CLASSIC'`,
+  BOUNTY: `t.mode IN ('PKO_BOUNTY', 'MYSTERY_BOUNTY')`,
+};
+
+export function holdemRecords(limit = 20, genre?: RecordGenre): HoldemRecordRow[] {
   const s = one<{ id: number; number: number; started_at: number; closed_at: number | null }>(
     `SELECT id, number, started_at, closed_at FROM seasons
       WHERE closed_at IS NULL ORDER BY number DESC LIMIT 1`);
   // 시즌이 아직 없으면(초기 상태) 예전처럼 전부 센다 — 빈 표를 보여줄 이유가 없다
-  if (!s) return holdemRecordsIn(null, null, limit);
+  if (!s) return holdemRecordsIn(null, null, limit, genre);
   const first = one<{ n: number }>(
     `SELECT COUNT(*) AS n FROM seasons WHERE number < ?`, s.number)!.n === 0;
-  return holdemRecordsIn(first ? null : s.started_at, s.closed_at, limit);
+  return holdemRecordsIn(first ? null : s.started_at, s.closed_at, limit, genre);
 }
 
-function holdemRecordsIn(from: number | null, to: number | null, limit: number): HoldemRecordRow[] {
+function holdemRecordsIn(
+  from: number | null, to: number | null, limit: number, genre?: RecordGenre
+): HoldemRecordRow[] {
+  /* 받아 간 돈은 순위 상금 + 바운티다. prize 만 세면 미스터리 바운티가 통째로 빠진다 —
+     바운티 몫이 100%면 순위 상금이 0 이라, 20,000P 씩 걸고 친 대회가 누적 0P 로 잡혔다.
+     입상(itm)도 같은 기준으로 센다: 사람이 세는 "돈 받은 판"은 그 둘의 합이다.
+     일반 대회에서는 bounty_paid 가 언제나 0 이라 예전과 값이 같다. */
+  const took = `(e.prize + e.bounty_paid)`;
   return all<HoldemRecordRow>(
     `SELECT e.user_id AS userId,
             MAX(e.username) AS username,
             COUNT(*) AS played,
             SUM(CASE WHEN e.finish_place = 1 THEN 1 ELSE 0 END) AS wins,
-            SUM(CASE WHEN e.prize > 0 THEN 1 ELSE 0 END) AS itm,
-            SUM(e.prize) AS prize
+            SUM(CASE WHEN ${took} > 0 THEN 1 ELSE 0 END) AS itm,
+            SUM(${took}) AS prize
        FROM holdem_entries e
        JOIN holdem_tournaments t ON t.id = e.tournament_id
       WHERE t.finished_at IS NOT NULL AND e.finish_place IS NOT NULL
+        AND ${genre ? RECORD_MODE[genre] : '1=1'}
         AND (? IS NULL OR t.finished_at >= ?)
         AND (? IS NULL OR t.finished_at < ?)
       GROUP BY e.user_id

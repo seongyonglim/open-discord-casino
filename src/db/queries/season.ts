@@ -283,22 +283,12 @@ function awardSeasonSweep(seasonId: number): void {
       tops.add(top.userId);
       if (tops.size > 1) return;              // 이미 갈렸다
     }
-    /* 대회는 장르가 둘이다(홀덤 토너먼트 · 바운티). 화면에 탭이 둘로 나오므로
-       "전 종목"도 둘 다를 뜻해야 한다 — 한쪽만 보면 바운티 랭킹 1위가 다른 사람인데도
-       전 종목 1위가 나간다.
-
-       그 시즌에 열리지 않은 장르는 세지 않는다. 탭도 그때는 안 붙으므로, 있지도 않은
-       종목 때문에 판정이 막히면 화면과 어긋난다. 둘 다 안 열렸으면 예전처럼 돌아간다 —
-       대회가 하나도 없는 시즌에는 이 과제가 나가지 않는다. */
-    const genres: HoldemGenre[] = ['CLASSIC', 'BOUNTY'];
-    const opened = genres.filter(g => seasonHoldemCount(seasonId, g) > 0);
-    if (!opened.length) return;
-    for (const g of opened) {
-      const ht = seasonHoldemRanking(seasonId, g, 1)[0];
-      if (!ht) return;
-      tops.add(ht.userId);
-      if (tops.size > 1) return;
-    }
+    /* 홀덤 토너먼트는 대상에서 뺀다.
+       한때 넣었다 — 화면에 탭이 둘(클래식 · 바운티)이니 "전 종목"도 둘 다여야 한다는
+       이유였다. 그런데 대회는 하루 한 판이고 사람이 열댓 명이라, 미니게임 다섯 종목을
+       전부 1위로 잡고도 그날 대회에서 한 번 미끄러지면 시즌 내내 못 따라잡는다.
+       달성이 실력이 아니라 그날 운에 걸리면 그건 목표가 아니라 벽이다.
+       지금은 상시로 도는 종목들만 본다 — RANK_GAMES 가 그 목록이다. */
     if (tops.size !== 1) return;
     unlockAchievement([...tops][0], 'all-first-1');
   } catch (e) {

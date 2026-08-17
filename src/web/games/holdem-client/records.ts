@@ -8,7 +8,33 @@
 
    조각들은 하나의 클로저를 공유한다 — 여기 있는 var·function 은 다른 조각에서도 보인다.
    그래서 파일이 나뉘어 있어도 스코프는 하나다. import 로 주고받는 것이 아니다. */
-export const RECORDS = `    var recRows = null, recAsked = false;
+export const RECORDS = `    var recData = null, recAsked = false;
+    /* 어느 갈래를 보고 있나. 두 자리(로비 카드 · 우측 탭)가 같은 값을 쓴다 —
+       한쪽에서 바꾸고 다른 쪽으로 갔더니 예전 갈래가 떠 있으면 무엇을 보는지 헷갈린다. */
+    var recGenre = 'classic';
+    var REC_TABS = [['classic', '홀덤 클래식'], ['bounty', '홀덤 바운티']];
+    /* 그 갈래에 기록이 있어야 탭을 붙인다. 한 번도 안 연 종류의 빈 표는 자리만 먹고,
+       탭이 하나뿐이면 그건 탭으로 읽히지도 않는다. */
+    function recLive(){
+      if (!recData) return [];
+      return REC_TABS.filter(function(t){ return (recData[t[0]] || []).length > 0; });
+    }
+    function recRowsNow(){
+      if (!recData) return [];
+      var live = recLive();
+      /* 보고 있던 갈래가 비어 버렸으면(시즌이 바뀌었거나 처음 열었거나) 살아 있는
+         첫 갈래로 옮긴다 — 안 그러면 빈 표를 보여주고 탭은 눌리지도 않는다. */
+      if (!live.some(function(t){ return t[0] === recGenre; }) && live.length) recGenre = live[0][0];
+      return recData[recGenre] || [];
+    }
+    function recTabsHtml(){
+      var live = recLive();
+      if (live.length < 2) return '';
+      return '<div class="ht-rec-tabs">' + live.map(function(t){
+        return '<button type="button" class="ht-rec-tab' + (t[0] === recGenre ? ' on' : '') +
+          '" data-recgen="' + t[0] + '">' + t[1] + '<\\/button>';
+      }).join('') + '<\\/div>';
+    }
     function recHtml(rows){
       if (!rows.length) return '<div class="empty" style="padding:16px 0">아직 끝난 대회가 없습니다</div>';
       /* 줄 세운 기준(누적 상금)을 오른쪽 굵은 자리에 놓는다. 우승·입상·판수는
@@ -38,28 +64,40 @@ export const RECORDS = `    var recRows = null, recAsked = false;
        빈 상태라도 그대로 말해 준다. */
     var recEmpty = true;
     function paintRecords(){
-      if (!recRows) return;
-      recEmpty = recRows.length === 0;
+      if (!recData) return;
+      /* 두 갈래가 다 비었을 때만 "기록 없음"이다 — 클래식만 열린 시즌에 로비 카드가
+         통째로 접히면 그동안의 대회 기록을 볼 자리가 사라진다. */
+      recEmpty = recLive().length === 0;
       // 다음 폴링(1초)까지 기다리지 않고 여기서 바로 접거나 펼친다
       if (lobbyRecEl) lobbyRecEl.hidden = recEmpty || !tableEl.hidden;
-      var html = recHtml(recRows);
+      var html = recTabsHtml() + recHtml(recRowsNow());
       ['htRecList', 'htLobbyRecList'].forEach(function(id){
         var el = document.getElementById(id);
         if (el) el.innerHTML = html;
       });
     }
     function loadRecords(force){
-      if (recRows && !force) { paintRecords(); return; }
+      if (recData && !force) { paintRecords(); return; }
       recAsked = true;
       fetch('/api/games/holdem/records')
         .then(function(r){ return r.json(); })
         .then(function(d){
           if (!d || !d.ok) return;
-          recRows = d.rows;
+          recData = { classic: d.classic || [], bounty: d.bounty || [] };
           paintRecords();
         })
         .catch(function(){ /* 실패하면 다음에 탭을 다시 누를 때 받는다 */ });
     }
+    /* 갈래 탭. 표 안쪽에 그려지므로 위임으로 받는다 — 표를 다시 그릴 때마다 버튼이
+       새로 생기고, 그때마다 리스너를 붙이면 두 벌 세 벌로 쌓인다. */
+    document.addEventListener('click', function(e){
+      var b = e.target.closest ? e.target.closest('.ht-rec-tab') : null;
+      if (!b) return;
+      var g = b.getAttribute('data-recgen');
+      if (!g || g === recGenre) return;
+      recGenre = g;
+      paintRecords();          // 두 자리를 함께 다시 그린다
+    });
     document.querySelector('.ht-tabs').addEventListener('click', function(e){
       var b = e.target.closest ? e.target.closest('.ht-tab') : null;
       if (!b) return;

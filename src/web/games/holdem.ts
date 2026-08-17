@@ -540,8 +540,14 @@ export async function handleSitIn(
 export async function handleRecords(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
-  const rows = holdemRecords(20);
-  return sendJson(res, 200, { ok: true, me: userId, rows });
+  /* 갈래를 나눠 한 번에 준다. 탭을 누를 때마다 받아 오면 그때마다 기다림이 생기는데,
+     스무 줄 두 벌은 수 KB 이고 이 경로는 탭을 열 때만 불린다.
+     빈 갈래는 화면이 탭 자체를 안 붙인다 — 한 번도 안 연 종류의 빈 표는 자리만 먹는다. */
+  return sendJson(res, 200, {
+    ok: true, me: userId,
+    classic: holdemRecords(20, 'CLASSIC'),
+    bounty: holdemRecords(20, 'BOUNTY'),
+  });
 }
 
 export async function handleShow(

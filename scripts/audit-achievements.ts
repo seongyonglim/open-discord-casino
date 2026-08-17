@@ -1976,14 +1976,16 @@ async function main(): Promise<void> {
     S2.closeSeason({ seed: 0, nextName: '다음' });
     ck('한 종목이라도 놓치면 안 열린다', !A.hasAchievement('k2', 'all-first-1'));
 
-    /* 홀덤 1위가 다른 사람이면 안 열린다 — 홀덤도 카테고리다. */
+    /* 홀덤 토너먼트는 대상이 아니다. 한때 넣었다가 뺐다 — 대회는 하루 한 판이고
+       사람이 열댓 명이라, 미니게임을 전부 1위로 잡고도 그날 대회에서 한 번 미끄러지면
+       시즌 내내 못 따라잡는다. 달성이 실력이 아니라 그날 운에 걸리면 목표가 아니라 벽이다. */
     wipe(); seedForWiring();
     newSeason();
     mkUser('k3', 10_000); mkUser('s3', 10_000);
     for (const g of GAMES) top('k3', g, 10_000);
-    holdemWin('s3');
+    holdemWin('s3');                                  // 대회 1위는 남이다
     S2.closeSeason({ seed: 0, nextName: '다음' });
-    ck('홀덤을 놓치면 안 열린다', !A.hasAchievement('k3', 'all-first-1'));
+    ck('대회 1위가 남이어도 열린다', A.hasAchievement('k3', 'all-first-1'));
 
     /* 아무도 안 한 종목이 있으면 "전 종목"이 성립하지 않는다. */
     wipe(); seedForWiring();
@@ -1994,13 +1996,13 @@ async function main(): Promise<void> {
     S2.closeSeason({ seed: 0, nextName: '다음' });
     ck('빈 종목이 있으면 안 열린다', !A.hasAchievement('k4', 'all-first-1'));
 
-    /* 홀덤 기록이 없는 시즌도 마찬가지다. */
+    /* 대회가 한 판도 없는 시즌에도 열린다 — 대상이 아니니 있고 없고가 판정을 안 바꾼다. */
     wipe(); seedForWiring();
     newSeason();
     mkUser('k5', 10_000);
     for (const g of GAMES) top('k5', g, 10_000);
     S2.closeSeason({ seed: 0, nextName: '다음' });
-    ck('홀덤 기록이 없으면 안 열린다', !A.hasAchievement('k5', 'all-first-1'));
+    ck('대회가 없어도 열린다', A.hasAchievement('k5', 'all-first-1'));
 
     /* 판정이 던져도 시즌은 닫혀야 한다 — 여기서 롤백되면 성적표도 초기화도 안 된다. */
     const sn = require('node:fs').readFileSync('src/db/queries/season.ts', 'utf8') as string;

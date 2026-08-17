@@ -1064,6 +1064,54 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
   ck('입상은 상금 > 0 인 판만 센다', of_('r_zero')?.itm === 0, String(of_('r_zero')?.itm));
   ck('진행 중인 대회는 참가 수에 안 들어간다', of_('r_zero')?.played === 3,
     String(of_('r_zero')?.played));
+
+  /* ── 바운티 상금도 누적에 든다 ────────────────────────────────────
+     예전에는 prize 만 셌다. 미스터리 바운티는 바운티 몫이 100% 라 순위 상금이 0 이고,
+     그래서 7명이 20,000P 씩 걸고 친 대회가 누적 0P 로 잡혔다 — 화면이 거짓말을 했다. */
+  {
+    const t2 = at + 6 * 3600;
+    const btid = Number(db3.prepare(`INSERT INTO holdem_tournaments
+      (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at, mode, bounty_pct)
+      VALUES (?, ?, ?, ?, ?, 3, ?, ?, 'MYSTERY_BOUNTY', 100)`)
+      .run('rec-bty', '미스터리 집계 검사', t2 - 60, t2, t2 + 60, t2, t2 + 600)
+      .lastInsertRowid);
+    /* 순위 상금은 0, 받아 간 것은 전부 바운티다 — 실제 미스터리 판의 모양이다. */
+    ([['b_hunter', 0, 30_000], ['b_prey', 0, 0]] as [string, number, number][])
+      .forEach(([uid, prize, bty], i) => {
+        db3.prepare(`INSERT INTO holdem_entries
+          (tournament_id, user_id, username, registered_at, finish_place, elim_seq,
+           prize, bounty_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(btid, uid, uid, t2 - 10, i + 1, 2 - i, prize, bty);
+      });
+    const all2 = HD.holdemRecords(50);
+    const hunter = all2.find(r => r.userId === 'b_hunter');
+    ck('순위 상금이 0 이어도 바운티가 누적에 잡힌다', hunter?.prize === 30_000,
+      String(hunter?.prize));
+    ck('바운티만 받아도 입상으로 센다', hunter?.itm === 1, String(hunter?.itm));
+    ck('아무것도 못 받으면 입상이 아니다',
+      all2.find(r => r.userId === 'b_prey')?.itm === 0);
+    /* 일반 대회에서는 bounty_paid 가 언제나 0 이라 예전과 값이 같아야 한다. */
+    ck('일반 대회 누적은 그대로다',
+      HD.holdemRecords(50).find(r => r.userId === 'r_steady')?.prize === 9000 + 900 + 900);
+
+    /* ── 갈래를 나눠 본다 (홀덤 클래식 · 홀덤 바운티) ─────────────
+       한 표에 섞으면 바운티로 크게 번 사람이 클래식 순위표 위에 앉아, 무엇으로 번
+       돈인지 알 수 없게 된다. 랭킹 페이지의 홀덤 탭과 같은 기준이어야 한다. */
+    const cls = HD.holdemRecords(50, 'CLASSIC');
+    const bty = HD.holdemRecords(50, 'BOUNTY');
+    ck('클래식 표에 바운티 대회 참가자가 없다', !cls.some(r => r.userId.startsWith('b_')),
+      cls.map(r => r.userId).join(','));
+    ck('바운티 표에 일반 대회 참가자가 없다', !bty.some(r => r.userId.startsWith('r_')),
+      bty.map(r => r.userId).join(','));
+    ck('바운티 표에서 사냥꾼이 1위', bty[0]?.userId === 'b_hunter', bty[0]?.userId);
+    ck('클래식 표는 갈래를 안 나눴을 때의 일반 대회와 같다',
+      cls.find(r => r.userId === 'r_steady')?.prize === 9000 + 900 + 900);
+    /* 나누지 않으면 둘을 합친 것이어야 한다 — 어느 쪽에도 안 들어가는 대회가 없어야 한다. */
+    const sumSplit = cls.reduce((n, r) => n + r.played, 0) + bty.reduce((n, r) => n + r.played, 0);
+    const sumAll = HD.holdemRecords(50).reduce((n, r) => n + r.played, 0);
+    ck('갈래를 합치면 전체와 같다', sumSplit === sumAll, `${sumSplit} vs ${sumAll}`);
+  }
   ck('진행 중인 대회 상금은 안 더한다', of_('r_zero')?.prize === 0, String(of_('r_zero')?.prize));
   ck('상금 순 내림차순', rows.every((r, i) => i === 0 || rows[i - 1].prize >= r.prize),
     rows.map(r => r.prize).join(','));

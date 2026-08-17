@@ -988,6 +988,29 @@ async function main(): Promise<void> {
     ck('"판정할 과제가 없다" 주석이 남아 있지 않다', !/판정할 과제가 없다/.test(mn));
   }
 
+  console.log('\n[13-b] app.css 조각 — 디렉터리에 있는 파일은 전부 실려야 한다');
+  {
+    const { readFileSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const dir = join(process.cwd(), 'src', 'web', 'assets', 'css');
+    const onDisk = readdirSync(dir).filter(f => f.endsWith('.css')).sort();
+    const listed = readFileSync(join(dir, 'ORDER.txt'), 'utf8')
+      .split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+    /* 빠뜨리면 그 파일은 한 번도 안 실린다 — 화면은 멀쩡히 뜨고 그 규칙만 조용히 없다.
+       12-notify.css 가 실제로 그랬고, 시즌 마감 경고 토스트(.toast.warn)가 붉은 테두리
+       대신 금색으로 나왔다. 금색은 이 사이트에서 "좋은 것"의 색이라 뜻이 정반대였다. */
+    const missing = onDisk.filter(f => !listed.includes(f));
+    ck('목록에서 빠진 조각이 없다', missing.length === 0,
+      missing.join(', ') + ' — 이 파일의 규칙은 한 번도 안 실린다');
+    /* 반대쪽도 본다: 목록에만 있고 파일이 없으면 app.css 조립이 통째로 죽는다. */
+    const ghost = listed.filter(f => !onDisk.includes(f));
+    ck('없는 파일을 가리키지 않는다', ghost.length === 0, ghost.join(', '));
+    ck('검사 대상이 있다', onDisk.length > 5, `${onDisk.length}개`);
+    // 실제로 그 규칙이 app.css 에 실렸는지까지 본다
+    const css = (await get('/app.css', cookie)).text;
+    ck('경고 토스트 규칙이 실제로 실린다', /\.toast\.warn/.test(css));
+  }
+
   console.log('\n[14] 운영자 왼쪽 메뉴 — 메뉴에 있으면 눌러서 열려야 한다');
   {
     const ad = (await get('/admin', cookie)).text;

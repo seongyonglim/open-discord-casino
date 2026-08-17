@@ -1354,6 +1354,20 @@
      오른쪽 굵은 자리에는 줄 세운 기준(누적 상금)을 놓는다. 순위를 만든 값과
      참고로 보는 값이 같은 무게로 보이면 표가 무엇을 말하는지 흐려진다. */
   .ht-rec{padding:4px 8px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+  /* ── 갈래 탭 (홀덤 클래식 · 홀덤 바운티) ──────────────────────────
+     대회 방식이 둘로 갈리면서 누적 상금도 갈렸다. 한 표에 섞으면 바운티로 크게 번 사람이
+     클래식 순위표 위에 앉아, 무엇으로 번 돈인지 알 수 없게 된다.
+     한 갈래만 열린 시즌에는 탭을 아예 안 붙인다(화면 쪽 recTabsHtml 이 판단한다) —
+     누를 것이 하나뿐인 탭바는 탭으로 읽히지 않는다. */
+  .ht-rec-tabs{display:flex;gap:5px;padding:2px 2px 8px;flex:none}
+  .ht-rec-tab{flex:1;padding:6px 4px;border-radius:8px;cursor:pointer;
+    font-family:inherit;font-size:11.5px;font-weight:700;letter-spacing:-.2px;
+    color:var(--muted);background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.08);
+    transition:color .12s,border-color .12s,background .12s}
+  .ht-rec-tab:hover{color:var(--txt)}
+  .ht-rec-tab.on{color:var(--gold);background:rgba(212,175,55,.12);
+    border-color:rgba(212,175,55,.42)}
   .ht-rec-row{display:grid;grid-template-columns:18px 1fr auto;gap:6px 8px;
     align-items:center;padding:6px;border-radius:8px;font-size:12px}
   .ht-rec-row.me{background:rgba(212,175,55,.1)}
