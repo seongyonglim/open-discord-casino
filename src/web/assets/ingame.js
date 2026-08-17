@@ -269,3 +269,71 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
+
+/* ── 인게임 격자의 마무리: 타이머를 헤더로, 채팅을 탭으로 ────────────────
+   타이머는 판 위에 떠 있었다. 판을 가리지 않으려고 절대 위치로 띄웠는데, 그러면
+   사다리 그림과 겹치는 자리를 계속 피해 다녀야 한다. 헤더에는 그 자리가 이미 있다 —
+   회차와 남은 시간은 "지금 무슨 판인가" 라서 게임 이름 옆이 제자리다.
+
+   채팅은 오른쪽 칸에 탭으로 넣는다. 지금까지는 상단바의 💬 로 열었는데, 참가자·랭킹과
+   같은 성격(옆에서 흐르는 것)이므로 같은 자리에서 고르는 것이 맞다. */
+(function(){
+  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+
+  function movedGrid(){ return document.querySelector('.ig-body'); }
+
+  /* 타이머를 상단바로 옮긴다. 원래 자리를 적어 두고 세로로 돌리면 되돌린다. */
+  var clockHome = null;
+  function moveClock(){
+    var bar = document.querySelector('.ig-bar');
+    var st = document.querySelector('.stage-status');
+    if (!bar || !st) return;
+    if (st.parentNode === bar) return;
+    clockHome = { parent: st.parentNode, next: st.nextSibling };
+    st.classList.add('ig-clock');
+    var name = bar.querySelector('.ig-name');
+    bar.insertBefore(st, name ? name.nextSibling : bar.firstChild);
+  }
+  function restoreClock(){
+    var st = document.querySelector('.ig-clock');
+    if (!st || !clockHome) return;
+    st.classList.remove('ig-clock');
+    clockHome.parent.insertBefore(st, clockHome.next);
+    clockHome = null;
+  }
+
+  /* 채팅 탭. 참가자·랭킹 탭 옆에 하나를 더 만들고, 누르면 채팅창을 연다. */
+  function addChatTab(){
+    var tabs = document.querySelector('.ig-side .sp-tabs');
+    if (!tabs || tabs.querySelector('.ig-chat-tab')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sp-tab ig-chat-tab';
+    b.textContent = '채팅';
+    b.addEventListener('click', function(){
+      if (window.casinoChat && window.casinoChat.open) window.casinoChat.open();
+    });
+    tabs.appendChild(b);
+  }
+  function removeChatTab(){
+    var b = document.querySelector('.ig-chat-tab');
+    if (b) b.remove();
+  }
+
+  function apply(){
+    if (movedGrid() && window.matchMedia(MQ).matches) { moveClock(); addChatTab(); }
+    else { restoreClock(); removeChatTab(); }
+  }
+
+  function start(){
+    apply();
+    var m = window.matchMedia(MQ);
+    if (m.addEventListener) m.addEventListener('change', apply);
+    window.addEventListener('orientationchange', apply);
+    window.addEventListener('resize', apply);
+    /* 조작부와 패널은 상태가 바뀌면 다시 그려진다 — 그때 붙인 것이 사라지므로 확인한다 */
+    setInterval(apply, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
