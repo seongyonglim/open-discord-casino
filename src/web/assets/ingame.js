@@ -109,3 +109,59 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
+
+/* ── MAX 단추 ─────────────────────────────────────────────────────────
+   빠른 금액 칩 줄(10·100·1000·1만)을 폰 가로에서 걷어냈다. 그 줄이 판이 쓸 높이를
+   통째로 차지하기 때문이다. 대신 인풋 옆에 MAX 를 붙인다 — 가진 만큼 거는 것은
+   자주 하는 동작인데, 칩을 여러 번 눌러 맞추던 것을 한 번으로 줄인다.
+
+   서버 HTML 은 여전히 안 바꾼다. 여기서 만들어 붙이고, 세로로 돌리면 걷는다.
+   잔액은 헤더에 이미 적혀 있으므로 그 글자에서 숫자만 뽑는다 — 값을 두 곳에서
+   따로 계산하면 언젠가 어긋난다. */
+(function(){
+  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+
+  function balance(){
+    var el = document.querySelector('.profwrap .num, .profwrap .bal, .profwrap');
+    if (!el) return null;
+    var m = (el.textContent || '').replace(/,/g, '').match(/(\d+)\s*P/);
+    return m ? Number(m[1]) : null;
+  }
+
+  function apply(){
+    var on = /^\/games\//.test(location.pathname) && window.matchMedia(MQ).matches;
+    var row = document.querySelector('.game-controls .bet-row');
+    var old = document.querySelector('.ig-max');
+    if (!on || !row) { if (old) old.remove(); return; }
+    if (old) return;
+
+    var input = row.querySelector('input');
+    if (!input) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-max';
+    b.textContent = 'MAX';
+    b.addEventListener('click', function(){
+      var v = balance();
+      if (v == null) return;
+      input.value = String(v);
+      /* 화면 쪽 계산(배당·예상 획득)이 input 을 지켜보므로 바뀐 것을 알린다 */
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    row.appendChild(b);
+  }
+
+  function start(){
+    apply();
+    var m = window.matchMedia(MQ);
+    if (m.addEventListener) m.addEventListener('change', apply);
+    window.addEventListener('orientationchange', apply);
+    window.addEventListener('resize', apply);
+    /* 조작부는 상태가 바뀌면 다시 그려진다 — 그때 단추가 사라지므로 주기적으로 확인한다.
+       폴링이 1초라 그보다 촘촘할 이유가 없다. */
+    setInterval(apply, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

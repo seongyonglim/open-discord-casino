@@ -800,3 +800,100 @@
     html.ingame .game-shell.mines-shell + .game-side,
     html.ingame .mines-shell .game-side{display:none}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 빠른 금액 칩 줄을 걷는다 ────────────────────────────────
+       10·100·1000·1만 네 개가 한 줄을 통째로 쓴다. 폰 가로에서 그 한 줄은 판이 쓸
+       높이다. 금액은 인풋에 직접 넣거나 옆의 ½·2×·MAX 로 맞추면 된다 —
+       누르는 횟수는 비슷한데 높이는 한 줄이 준다. */
+    html.ingame .mines-shell .quick-row,
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .quick-row{display:none}
+    /* 인풋 옆 버튼들은 손가락이 닿게 44px 을 지킨다 */
+    html.ingame .bet-row{gap:6px;align-items:stretch}
+    html.ingame .bet-row .chip-btn,
+    html.ingame .ig-max{height:44px;min-width:48px;padding:0 12px;font-size:12px;
+      display:inline-flex;align-items:center;justify-content:center}
+    html.ingame .bet-row .game-input{height:44px;font-size:14px}
+    /* MAX — ingame.js 가 만들어 붙인다(서버 HTML 은 그대로 둔다) */
+    html.ingame .ig-max{background:var(--panel2);border:1px solid var(--gold-dim);
+      border-radius:8px;color:var(--gold);font-weight:700;cursor:pointer;font-family:inherit}
+    html.ingame .ig-max:hover{border-color:var(--gold)}
+
+    /* ── 카드가 화면 바닥까지 꽉 찬다 ───────────────────────────
+       아래에 검은 여백이 남던 것을 없앤다. 카드 안쪽도 위아래로 벌려 붕 뜨지 않게 한다. */
+    html.ingame .game-shell .game-main > *{display:flex;flex-direction:column;
+      justify-content:space-between;min-height:0}
+    html.ingame .game-shell{height:100%}
+
+    /* ── 사다리 ─────────────────────────────────────────────────
+       최근 회차 결과를 되살린다 — 앞서 자리를 아끼려고 접었는데, 사다리에서 지난 흐름은
+       예측의 근거라 게임의 일부다. 판 위에 한 줄로 좁게 둔다. */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .bead{
+      display:flex;flex:none;gap:3px;overflow-x:auto;padding:0 0 5px;margin:0}
+    html.ingame .bead-row{gap:3px}
+    html.ingame .bead-cell{width:17px;height:17px;font-size:9.5px;flex:none}
+    html.ingame .bead-lbl{width:20px;font-size:10px}
+    /* 마감 타이머를 판 위 가운데에 뱃지로 */
+    html.ingame .stage-status{align-self:center;background:rgba(212,175,55,.12);
+      border:1px solid var(--gold-dim);border-radius:999px;padding:3px 12px;
+      color:var(--gold);font-weight:700}
+    /* 예측 버튼을 큼직하게 — 누르는 자리다 */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .field-grid button{
+      min-height:48px;font-size:14px}
+
+    /* ── 지뢰찾기 52 : 48 ───────────────────────────────────────
+       격자는 정사각이므로 높이에 맞춰 채우고, 조작부가 나머지 폭을 쓴다. */
+    html.ingame .mines-shell .game-main > :first-child{flex:0 0 52%}
+    html.ingame .mines-shell .game-main > :last-child{flex:1 1 0;justify-content:space-between}
+    html.ingame .mines-shell .game-controls .btn-primary{min-height:52px;font-size:15px}
+    html.ingame .mines-shell .game-controls .field-grid{gap:10px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 베팅 금액 인풋이 폭 0 으로 눌려 얇은 막대만 남았다. ½·2×·MAX 가 고정 폭을
+       요구하면서 인풋이 끝까지 짜부라진 것이다 — 금액을 못 넣는 화면이 됐다.
+       인풋에 최소 폭을 깔고 남는 폭을 갖게 한다. */
+    html.ingame .bet-row{flex-wrap:nowrap}
+    html.ingame .bet-row .game-input{flex:1 1 auto;min-width:96px;width:auto}
+    html.ingame .bet-row .chip-btn,
+    html.ingame .ig-max{flex:0 0 auto}
+
+    /* 사다리 판이 카드 위쪽에 작게 몰리고 아래가 비었다. 카드 높이를 다 쓰게 한다. */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .board-stage{
+      flex:1 1 auto;min-height:0;height:auto}
+    html.ingame .ladder-board{flex:1 1 auto;height:auto;min-height:0}
+    html.ingame .ladder-svg{height:100%;max-height:100%;width:auto}
+    /* 상태 뱃지가 판 위에 겹쳤다 — 판 위 한 줄로 뺀다 */
+    html.ingame .stage-status{position:static;order:-1;margin:0 auto 6px}
+    /* 최근 결과 줄이 오른쪽에서 잘렸다 — 옆으로 밀어 볼 수 있게 한다 */
+    html.ingame .bead{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* MAX 가 옆 칸([출발]·[좌])을 덮었다. 금액 줄(인풋 + ½ + 2× + MAX)이 든 칸이
+       예측 칸과 같은 폭을 받아 자리가 모자랐던 것이다. 금액 칸을 넓게 준다. */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .field-grid{
+      grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:start}
+    html.ingame .ig-max{min-width:44px;padding:0 8px;font-size:11px}
+    html.ingame .bet-row .chip-btn{min-width:40px;padding:0 8px}
+    /* 예측 칸(출발/도착)은 라벨과 버튼이 한 줄에 서야 한다 — 겹침의 반대편 원인이다 */
+    html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .predict-row{
+      display:flex;align-items:center;gap:8px;min-width:0}
+    html.ingame .predict-row button{flex:1 1 0;min-width:0}
+
+    /* 판 아래 "도착" 글자가 카드 경계에 걸려 잘렸다 — 아래 여백을 준다 */
+    html.ingame .ladder-board{padding-bottom:6px}
+    /* 마감 뱃지가 판 왼쪽에 붙었다 — 판 위 가운데로 */
+    html.ingame .stage-status{align-self:center;margin-left:auto;margin-right:auto}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 실측: 금액 칸이 211px 인데 안의 내용(인풋 96 + ½ 40 + 2× 40 + MAX 44 + 간격)이
+       236px 이라 25px 이 옆 칸으로 넘쳐 [출발] 라벨을 덮었다.
+       flex 항목은 min-width 아래로는 안 줄어들므로 그 값을 낮춰 칸 안에 들어가게 한다.
+       (76 + 34 + 34 + 40 + 간격 18 = 202 ≤ 211) */
+    html.ingame .bet-row{gap:5px;overflow:hidden}
+    html.ingame .bet-row .game-input{min-width:76px;padding:0 8px}
+    html.ingame .bet-row .chip-btn{min-width:34px;padding:0 6px;font-size:11px}
+    html.ingame .ig-max{min-width:40px;padding:0 6px;font-size:10.5px}
+  }
