@@ -592,3 +592,59 @@
     html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:40px;height:56px}
     html.ingame .game-shell:has(.bj-table) .pcard{width:40px;height:56px}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 마켓 배치를 게임별로 나눈다 ────────────────────────────
+       바카라(마켓 5개)를 한 줄로 편 규칙을 포커 플립(2 + 5 = 7개)에도 걸었더니
+       일곱 개가 한 줄에 눌려 "하이카드·원페어" 같은 이름이 잘렸다.
+       포커는 원래대로 두 줄(승부 2개 / 족보 5개)로 두고, 대신 남는 높이를 채우게
+       늘린다 — 아래가 비는데 상자를 작게 둘 이유가 없다. */
+    html.ingame .poker-shell .game-main .market-grid{
+      flex-direction:column;flex:1 1 auto;min-height:0;gap:6px}
+    html.ingame .poker-shell .game-main .market-row{flex:1 1 0;min-height:0}
+    html.ingame .poker-shell .game-main .market{height:auto;min-height:0}
+    html.ingame .poker-shell .game-main .m-pile{height:14px}
+    html.ingame .poker-shell .game-main .m-name{font-size:10.5px;white-space:normal;
+      line-height:1.2}
+    /* 보드(홀카드 + 커뮤니티)는 위에 붙이고 남는 높이는 마켓이 가져간다 */
+    html.ingame .poker-shell .poker-table{max-height:118px;flex:none}
+
+    /* ── 블랙잭: 액션 버튼이 나올 자리를 미리 비운다 ────────────
+       힛·스탠드·더블다운·서렌더가 나타나면 그만큼 아래가 밀려 칩 줄이 화면 밖으로
+       나갔다. 홀덤에만 자리를 예약해 두고 블랙잭은 빠뜨렸다.
+       비어 있어도 그 높이를 지키므로 버튼이 생겨도 화면이 안 움직인다. */
+    html.ingame .game-shell:has(.bj-table) .game-main > :last-child{min-height:96px}
+    html.ingame .game-shell:has(.bj-table) .bj-acts{margin:0}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 포커 플립: 판 카드에 걸린 높이 제한과 overflow:hidden 이 마켓을 반으로 잘랐고,
+       화면 아래 절반이 통째로 비었다. 레퍼런스(실제 카지노 앱)처럼 하려면 판 카드가
+       남는 높이를 전부 쓰고, 그 안에서 보드는 위에 붙고 마켓이 나머지를 채워야 한다. */
+    html.ingame .poker-shell .game-main > :first-child{
+      max-height:none;overflow:visible;flex:1 1 auto;min-height:0;
+      display:flex;flex-direction:column;justify-content:flex-start}
+    html.ingame .poker-shell .poker-table{max-height:none;flex:0 0 auto}
+    html.ingame .poker-shell .game-main .market-grid{flex:1 1 auto;min-height:0}
+    html.ingame .poker-shell .game-main .market-row{flex:1 1 0;min-height:0}
+    html.ingame .poker-shell .game-main .market{height:100%;min-height:0}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* height:100% 를 줬더니 마켓이 선처럼 눌렸다 — 부모(.market-row)가 min-height:0 인
+       flex 항목이라 100% 의 기준이 사실상 0 이었다. 높이를 직접 주지 말고 줄이 남는
+       공간을 나눠 갖게 두고, 상자에는 최소 높이만 깐다. */
+    html.ingame .poker-shell .game-main .market{height:auto;min-height:54px}
+    html.ingame .poker-shell .game-main .market-grid{flex:0 0 auto}
+    html.ingame .poker-shell .game-main .market-row{flex:0 0 auto}
+    /* 판 카드가 화면 아래 절반을 안 쓰고 남겨 두었다 — 세로로 늘어나게 한다. */
+    html.ingame .game-shell{align-items:stretch}
+    html.ingame .poker-shell .game-main{justify-content:flex-start}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 블랙잭 11px. 액션 자리를 96px 로 예약하면서 그만큼 넘쳤다 — 딜러 쪽 여백에서 낸다. */
+    html.ingame .game-shell:has(.bj-table) .bj-dealer{padding-top:0;padding-bottom:0}
+    html.ingame .game-shell:has(.bj-table) .bj-rule{margin:0}
+    html.ingame .game-shell:has(.bj-table) .bj-table{padding:2px 8px 4px}
+  }
