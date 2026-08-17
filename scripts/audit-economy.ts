@@ -1862,5 +1862,85 @@ section('[14] 안내 문구가 지금 규칙과 같은가');
     !/10,000P<\/b> 로 다섯 배/.test(nt) && nt.includes('${p(BUG_REPORT_BOUNTY)}'));
 }
 
+section('[15] 집계 키 — 그래프게임의 두 이름이 어긋나지 않는가');
+{
+  /* 그래프게임만 이름이 갈려 있다.
+       주소   /games/graph          집계·원장  graph
+       API    /api/games/crash/*    소스 파일  crash.ts
+     RANK_GAMES 의 `crash: 'graph'` 한 줄이 그 다리다.
+
+     어긋나면 조용히 어긋난다. 새 코드가 bumpGameStats 에 'crash' 를 넘기면 오류 없이
+     두 번째 버킷이 생기고, 랭킹에서 그만큼이 사라지는데 화면은 멀쩡히 뜬다 —
+     운영자가 알아챌 방법이 없다(운영 실측으로는 아직 안 어긋났다: game_stats 에
+     graph 1,702판만 있고 crash 버킷은 없다).
+
+     그래서 "집계 키로 쓰이는 값"과 "RANK_GAMES 가 아는 값"을 맞춰 본다. */
+  const { readFileSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+  const { join } = require('node:path') as typeof import('node:path');
+  const { RANK_GAMES } = require('../src/services/ranking') as typeof import('../src/services/ranking');
+
+  const srcFiles: string[] = [];
+  (function walk(d: string): void {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p); else if (e.name.endsWith('.ts')) srcFiles.push(p);
+    }
+  })('src');
+
+  const statKeys = new Set<string>();
+  const dynamic: string[] = [];
+  for (const f of srcFiles) {
+    const code = readFileSync(f, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    /* 선언부(export function bumpGameStats(userId: string, game: string, …))는 뺀다 —
+       안 빼면 타입 표기 `game: string` 이 "동적으로 넘기는 자리"로 잡힌다. */
+    for (const m of code.matchAll(/(?<!function )bumpGameStats\(\s*[^,]+,\s*([^,]+),/g)) {
+      const arg = m[1].trim();
+      const lit = /^'([^']+)'$/.exec(arg);
+      if (lit) statKeys.add(lit[1]); else dynamic.push(`${f}: ${arg}`);
+    }
+  }
+  ck('집계를 쓰는 자리를 찾았다', statKeys.size >= 5, [...statKeys].join(','));
+
+  const known = new Set(Object.values(RANK_GAMES));
+  const strays = [...statKeys].filter(k => !known.has(k));
+  ck('집계 키가 전부 RANK_GAMES 안에 있다', strays.length === 0,
+    strays.join(', ') + ' — 랭킹이 못 읽는 버킷이 생긴다');
+
+  /* 값이 상수로 들어오는 자리는 하나뿐이다(지뢰찾기). 그 상수까지 확인해 둔다 —
+     여기를 "동적이니 넘어간다"로 두면 그 경로만 검사에서 통째로 빠진다. */
+  ck('상수로 넘기는 자리는 지뢰찾기 하나다',
+    dynamic.length === 1 && /before\.game_type/.test(dynamic[0]), dynamic.join(' / '));
+  const mines = readFileSync(join('src', 'web', 'games', 'mines.ts'), 'utf8');
+  const gt = /const GAME_TYPE = '([^']+)'/.exec(mines);
+  ck('지뢰찾기 키도 RANK_GAMES 안에 있다', !!gt && known.has(gt[1]), gt?.[1]);
+
+  /* 반대쪽: RANK_GAMES 에만 있고 아무도 안 쌓는 종목이 있으면, 랭킹 탭이 영영 빈 채로
+     뜨고 "나 혼자만 1등"은 그 종목 때문에 절대 안 열린다. */
+  const written = new Set([...statKeys, gt?.[1] ?? '']);
+  const orphan = [...known].filter(k => !written.has(k));
+  ck('RANK_GAMES 의 종목은 전부 실제로 쌓인다', orphan.length === 0,
+    orphan.join(', ') + ' — 아무도 안 쌓는 종목이다');
+
+  /* 화면이 랭킹을 부를 때 쓰는 세그먼트는 RANK_GAMES 의 "키"다(값이 아니다).
+     그래프게임에서 이 둘을 바꿔 쓰면 랭킹이 통째로 빈다. */
+  const segs = new Set<string>();
+  for (const f of srcFiles) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/rankJs\(\s*'[^']*'\s*,\s*'([^']+)'\s*\)/g)) {
+      segs.add(m[1]);
+    }
+  }
+  ck('랭킹을 부르는 화면을 찾았다', segs.size >= 5, [...segs].join(','));
+  const badSeg = [...segs].filter(s => !(s in RANK_GAMES));
+  ck('랭킹 세그먼트가 전부 RANK_GAMES 의 키다', badSeg.length === 0, badSeg.join(', '));
+
+  /* 그래프게임 다리 자체를 못 박는다 — 이 줄이 사라지면 위 검사들이 전부 통과하면서도
+     랭킹만 조용히 빈다(세그먼트 crash 가 집계 키 crash 를 찾아가고, 그건 없다). */
+  ck('crash → graph 다리가 그대로다', RANK_GAMES.crash === 'graph', String(RANK_GAMES.crash));
+  ck('그래프게임 집계는 graph 로 쌓는다',
+    /bumpGameStats\([^,]+,\s*'graph'/.test(readFileSync(join('src', 'db', 'queries', 'crash.ts'), 'utf8')));
+  ck('그래프게임 화면은 crash 로 랭킹을 부른다', segs.has('crash'));
+}
+
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);
 process.exit(fail ? 1 : 0);
