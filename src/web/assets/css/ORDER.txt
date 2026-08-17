@@ -1,5 +1,9 @@
 # app.css 를 이 순서로 이어 붙인다. CSS 는 뒤에 오는 규칙이 이기므로 순서가 곧 동작이다.
 # 새 조각을 넣을 때는 이 파일에도 같은 자리에 적어야 한다.
+# 빠뜨리면 그 파일은 한 번도 안 실린다 — 화면은 멀쩡히 뜨고 그 규칙만 조용히 없다.
+# 12-notify.css 가 실제로 그렇게 빠져 있었고, 시즌 마감 경고 토스트가 붉은 테두리 대신
+# 금색으로 나왔다(금색은 이 사이트에서 "좋은 것"의 색이다). 감사가 이제 이 목록과
+# 디렉터리를 맞춰 본다 — audit-pages 의 "app.css 조각" 항목.
 01-base.css
 02-shell.css
 03-lobby.css
@@ -11,5 +15,7 @@
 09-holdem.css
 10-notice.css
 11-admin.css
+12-notify.css
 12-rank.css
 13-achieve.css
+14-chat.css

@@ -200,3 +200,18 @@
   .ad-ta{width:100%;font-size:13.5px;line-height:1.7;resize:vertical;margin-bottom:10px}
   .ad-tbl td button{padding:5px 9px;font-size:12px;margin-right:4px}
   .ad-card h2{display:flex;align-items:center;gap:8px}
+
+  /* ── 채팅 관리 ─────────────────────────────────────────────────
+     대회 기록과 같은 표를 쓰되, 내용 칸이 길어질 수 있으므로 폭을 그쪽에 몰아준다. */
+  .ad-chat td{vertical-align:top}
+  .ad-cm-t{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums;width:52px}
+  .ad-cm-w{white-space:nowrap;color:var(--muted);font-size:11.5px;width:64px}
+  .ad-cm-b{word-break:break-word}
+  .ad-cm-x{white-space:nowrap;width:1%}
+  .ad-cm-x button{margin-left:4px}
+  /* 재갈이 물린 사람은 이름 옆에 남은 시간을 적는다 — 목록만 보고 알 수 있어야 한다. */
+  .ad-cm-mute{font-style:normal;font-size:10.5px;font-weight:700;color:#e0a0a0;
+    padding:1px 5px;border-radius:4px;background:rgba(224,160,160,.12)}
+  /* 감춘 줄은 눌러 둔다. 지운 것이 아니라 가린 것이므로 남아 있어야 되돌릴 수 있다. */
+  .ad-chat tr.off{opacity:.42}
+  .ad-chat tr.off .ad-cm-b{text-decoration:line-through}

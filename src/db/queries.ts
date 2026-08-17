@@ -15,3 +15,4 @@ export * from './queries/poker';
 export * from './queries/bacc';
 export * from './queries/bj';
 export * from './queries/season';
+export * from './queries/chat';

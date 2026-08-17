@@ -528,7 +528,9 @@ async function main(): Promise<void> {
      아무 에러도 안 나고 그냥 없는 기능이 된다. 그런 실패는 눈으로 못 잡으므로 여기서 센다. */
   section('[5c] 운영자 화면 — 메뉴와 카드가 빠짐없이 짝지어졌는가');
   {
-    const PANES = ['tour', 'season', 'user', 'sys'];
+    /* 목록을 손으로 적지 않는다. 화면에 실린 PANES 를 그대로 읽어 온다 —
+       메뉴가 늘 때마다 여기와 audit-pages 와 화면, 세 곳을 같이 고쳐야 했고
+       실제로 채팅 화면을 넣었을 때 두 곳이 어긋났다. */
     const plain = mkSession('e_notadmin', 100);
     const r404 = await req('GET', '/admin', plain);
     ck('운영자가 아니면 못 본다', r404.status === 403 || r404.status === 404, String(r404.status));
@@ -538,6 +540,9 @@ async function main(): Promise<void> {
     ensureSeedAdmin('e_admin');
     const page = await req('GET', '/admin', admin);
     ck('운영자는 볼 수 있다', page.status === 200, String(page.status));
+    const panesJson = /var PANES = (\[[^\]]*\])/.exec(page.text);
+    const PANES: string[] = panesJson ? JSON.parse(panesJson[1]) : [];
+    ck('화면이 알려주는 메뉴 목록을 읽었다', PANES.length >= 4, panesJson?.[1] ?? '못 찾음');
 
     const cards = [...page.text.matchAll(/<section class="ad-card"([^>]*)>/g)].map(m => m[1]);
     ck('카드가 여럿 있다', cards.length >= 7, String(cards.length));
@@ -551,7 +556,8 @@ async function main(): Promise<void> {
     ck('빈 메뉴가 없다 (눌러도 아무것도 없는 자리)', empty.length === 0, empty.join(','));
 
     const navKeys = [...page.text.matchAll(/class="ad-nav-item" data-pane="([a-z]+)"/g)].map(m => m[1]);
-    ck('메뉴 버튼이 넷이다', navKeys.length === 4, navKeys.join(','));
+    ck('메뉴 버튼이 목록과 같은 수다', navKeys.length === PANES.length,
+      `버튼 ${navKeys.join(',')} · 목록 ${PANES.join(',')}`);
     ck('메뉴 버튼과 카드의 이름이 같다',
       navKeys.slice().sort().join(',') === PANES.slice().sort().join(','), navKeys.join(','));
 

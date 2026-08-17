@@ -408,6 +408,12 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
      스크립트를 <head>에 동기로 두는 이유: 게임 스크립트가 실행되는 시점에 window.casinoPoll을 쓴다.
      이 정의를 </body> 끝에 두었을 때는 첫 폴링이 실패해 화면이 1초 늦게 떴다. -->
 <link rel="stylesheet" href="/app.css?v=${ASSET_V}">
+${/* 로그인한 사람의 id 를 모든 화면에 심는다. 예전에는 게임 페이지들이 각자 박고 있어서
+     로비·랭킹·공지에는 없었는데, 채팅 도크가 "로그인했나"를 이 값으로 판단한다 —
+     없으면 그 화면에는 도크가 아예 안 붙었다.
+     잔액이나 역할은 넣지 않는다. 화면에 필요한 것은 "나인가"를 가리는 id 하나뿐이고,
+     그 이상은 새어 나갈 것만 늘린다. */''}
+${u ? `<script>window.__MEID__ = ${jsonForScript(u.id)};</script>` : ''}
 <script src="/app.js?v=${ASSET_V}"></script>
 </head>
 <body>

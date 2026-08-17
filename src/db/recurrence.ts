@@ -179,10 +179,22 @@ export function ensureRecurring(now: number = Math.floor(Date.now() / 1000)): vo
 
   /* 순환 참조를 피하려고 여기서 부른다 — admin 이 settings 를 읽고, 이 파일도 읽는다. */
   const { createTournament } = require('./admin') as typeof import('./admin');
+  /* 방식도 템플릿에서 가져온다. 예전에는 여기 칸이 없어서 자동으로 열리는 판은 언제나
+     일반 대회였고, 바운티는 운영자가 매번 손으로 열어야 했다.
+
+     이름도 템플릿이 정한다 — 평일과 주말을 따로 적을 수 있고, 주말 기준은 상금 배수와
+     같다(토·일). 비워 두었으면 빈 문자열이 그대로 나가고, 그때는 createTournament 가
+     방식을 보고 붙인다(미스터리 바운티 · 바운티 헌터 · 홀덤 토너먼트 · 홀덤 프리롤).
+     여기서 대신 채우지 않는 이유가 그것이다: 방식별 이름 규칙이 두 곳에 생기면
+     언젠가 갈라지고, 미스터리 대회에 "홀덤 프리롤"이 박힌다. */
+  const { getConfig, autoTitle } = require('./settings') as typeof import('./settings');
+  const cfg = getConfig();
   const made = createTournament({
-    title: '홀덤 프리롤',
     regOpenAt: next.regOpenAt,
     startAt: next.startAt,
+    title: autoTitle(next.startAt * 1000, cfg),
+    mode: cfg.mode,
+    bountyPct: cfg.bountyPct,
   });
   if (made.ok) put('recurLastAt', String(next.startAt));
 }

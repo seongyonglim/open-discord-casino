@@ -106,7 +106,13 @@ export const SEATS = `    var seatXY = {};
       }
       /* 누구 봉투인가 — 굴러가는 동안 이것만 보인다. 금액과 가져간 사람은 멈춘 뒤에 온다.
          셋을 한꺼번에 띄우면 굴러가는 숫자를 볼 이유가 없어진다. */
-      if (ofEl) ofEl.textContent = job.victim ? job.victim + ' 님의 바운티' : '바운티';
+      /* 우승자가 자기 봉투를 회수하는 줄은 문구가 달라야 한다. 남의 것과 같은 말로
+         적으면 우승자가 자기 자신을 잡은 것처럼 읽힌다 — 그건 다른 사건이다. */
+      if (ofEl) {
+        ofEl.textContent = !job.victim ? '바운티'
+          : job.self ? job.victim + ' 님이 지킨 바운티'
+          : job.victim + ' 님의 바운티';
+      }
       if (whoEl) whoEl.textContent = '';
       /* 봉투가 여럿이면 몇 번째인지 점으로 알려준다 — 안 그러면 두 번 도는 것이
          "버그로 다시 돌았다"로 읽힌다. */
@@ -143,19 +149,20 @@ export const SEATS = `    var seatXY = {};
             s += String(d === 0 ? 1 + Math.floor(Math.random() * 9)
               : Math.floor(Math.random() * 10));
           }
-          amtEl.textContent = Number(s).toLocaleString('ko-KR') + 'P';
+          amtEl.textContent = pointText(Number(s));
         }, MYS_TICK_MS);
       }, MYS_IN_MS);
       // 멈춤 — 당첨 금액에서 딱 선다. 여기가 결과다
       setTimeout(function(){
         if (mysRollTimer) { clearInterval(mysRollTimer); mysRollTimer = null; }
         box.className = 'ht-mysbox in land';
-        amtEl.textContent = stackText(job.amount) + 'P';
+        amtEl.textContent = pointText(job.amount);
         if (window.casinoSfx && casinoSfx.reelStop) casinoSfx.reelStop();
         /* 마지막 판에서는 우승자가 자기 봉투도 함께 회수한다. 그때 "가져갔습니다"만
            적으면 그 몫이 어디서 왔는지 설명이 없다. */
         if (whoEl) {
           whoEl.textContent = !job.takers.length ? ''
+            : job.self ? '끝까지 지켜 회수'
             : job.takers.join(' · ') + (job.takers.length > 1 ? ' 나눠 가집니다' : ' 획득');
         }
       }, MYS_IN_MS + MYS_ROLL_MS);
@@ -205,7 +212,7 @@ export const SEATS = `    var seatXY = {};
       if (window.casinoSfx && casinoSfx.bountyUp) casinoSfx.bountyUp();
       var gEl = seatEl.querySelector('.ht-bgain');
       if (!gEl) return;
-      gEl.textContent = '+' + stackText(amount) + 'P';
+      gEl.textContent = '+' + pointText(amount);
       gEl.hidden = false;
       gEl.classList.remove('rise');
       void gEl.offsetWidth;
@@ -384,6 +391,14 @@ export const SEATS = `    var seatXY = {};
       if (x > 74) return 'l';
       return x < 50 ? 'l' : 'r';
     }
+    /* 채팅 말풍선은 좌우에 더해 위아래도 갈린다.
+       기본은 아바타 위다. 그런데 위쪽 자리는 이미 펠트 밖으로 밀려 앉아 있어서, 거기서
+       위로 더 뻗으면 테이블을 벗어나 게임 탭 줄을 덮는다(실측: 12시 자리 말풍선이
+       "홀덤 토너먼트" 버튼 위에 얹혔다). 그런 자리는 아래 — 테이블 안쪽 — 에 단다.
+       법선이 위를 향하는 자리가 위쪽 자리다. */
+    function bubSide(p){
+      return eqSide(p) + (p.ny < -0.2 ? ' d' : '');
+    }
     function seatPos(pt){
       var nx = pt.nx, ny = pt.ny;
       var ax = Math.abs(nx), ay = Math.abs(ny);
@@ -445,6 +460,21 @@ export const SEATS = `    var seatXY = {};
          숫자가 없다 — 한동안 물음표를 띄워 뒀는데, 다섯 자리에 똑같은 "?" 가 걸린 화면은
          정보가 0 이면서 자리만 차지했다. 미스터리의 금액은 개봉 연출 한 곳에서만 나온다. */
       var badgeOn = pko && !mystery;
+      /* 우승자의 좌석. 대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로 내리므로
+         presence 만으로는 진 사람과 이긴 사람을 가를 수 없다 — 등수가 그것을 가른다.
+         busted 는 탈락 순서대로 오고 1위도 거기 들어 있다(등수를 매기려면 모두에게
+         탈락 순서가 있어야 한다). 그 사람의 좌석 번호를 찾아 둔다. */
+      var champSeat = null;
+      (function(){
+        var b = tb.busted || [];
+        for (var i = 0; i < b.length; i++) {
+          if (b[i].place !== 1) continue;
+          var seats = tb.seats || [];
+          for (var j = 0; j < seats.length; j++) {
+            if (seats[j].userId === b[i].userId) { champSeat = seats[j].seat; return; }
+          }
+        }
+      })();
       /* 보드를 깔고 있는 동안(정지 + 한 장씩 공개)에는 스트리트를 닫은 행동을 붙들고 있는다.
          syncBoard가 이 함수보다 먼저 돌아 boardRevealed를 정해 준다. */
       var holdActor = !boardRevealed ? tb.lastActor : null;
@@ -491,6 +521,13 @@ export const SEATS = `    var seatXY = {};
            테이블 밖이라 걸리는 것이 없다 — 그 예외 자체가 좌석을 안쪽에 두던 시절의
            증상이었다. */
         html += '<div class="ht-seat" data-seat="' + s.seat + '">' +
+            /* 흐려지는 것들을 한 겹 안으로 넣는다. 폴드·탈락한 자리는 좌석째 옅어지는데
+               (.ht-seat.folded{opacity:.62}), opacity 는 자식이 되돌릴 수 없다 — 그 안에
+               있으면 채팅 말풍선까지 같이 흐려져 글자가 안 읽혔다.
+               자식마다 따로 흐리는 방법도 있지만 그러면 카드·아바타·명찰이 서로 비쳐
+               보인다(그룹 불투명이 아니라 각자 반투명이 된다). 한 겹을 두어 그룹은
+               그대로 두고, 말풍선만 그 밖에 둔다. */
+            '<div class="ht-seat-in">' +
             '<div class="ht-hole"></div>' +
             '<div class="ht-avbox">' +
               avatarHtml(s.userId, s.avatar, s.username, 'ht-av') +
@@ -560,6 +597,11 @@ export const SEATS = `    var seatXY = {};
                                           9시 자리의 말풍선이 통째로 잘려 나갔다.
                |ny|가 큰 자리가 직선 구간이다 — 법선이 거의 수직이라는 뜻이다. */
             '<span class="ht-eq ' + eqSide(p) + '" hidden></span>' +
+            '</div>' +
+            /* 채팅 말풍선. 승률과 같은 쪽 규칙을 쓴다 — 좌우 끝자리에서 바깥쪽에
+               붙이면 화면 밖으로 잘려 나간다(승률에서 이미 겪었다).
+               흐림 겹(.ht-seat-in) 밖이다 — 폴드한 사람의 말도 읽혀야 한다. */
+            '<span class="ht-bub ' + bubSide(p) + '" hidden><i class="ht-bub-t"></i></span>' +
           '</div>';
 
         /* 골격 서명은 "누가 어느 자리에 앉았나"만 본다.
@@ -614,10 +656,15 @@ export const SEATS = `    var seatXY = {};
 
          정산이 끝난 판인지(settleDone)까지 함께 봐야 한다 — 안 그러면 카드가 열리는
          중에 미리 창을 열어 두고, 정작 총격은 나중에 시작된다. */
-      // 아래 루프의 koShow 와 같은 조건이어야 한다 — 어긋나면 창을 미리 열거나 못 연다
+      /* 아래 루프의 koShow 와 같은 조건이어야 한다 — 어긋나면 창을 미리 열거나 못 연다.
+         우승자를 빼는 조건이 여기 빠져 있어서 실제로 못 여는 쪽이 났다: 대회가 끝나면
+         우승자 자리도 OUT 이 되는데 그 자리는 koShow 가 false 라 koFired 가 영영 안 찍힌다.
+         그러면 fresh 가 매 폴링 참으로 남아 koBurstEndsAt 이 계속 미래로 밀리고,
+         "총격이 끝났나"를 보는 것들이 전부 멈춘다 — 미스터리 개봉(전광판)도, 상금 탭의
+         바운티 표도, 우승 팝업도. 첫 판에 끝나든 열 판째에 끝나든 마지막 판마다 그랬다. */
       if (pko && resultReady() && settleDone(tb)) {
         var fresh = seats.some(function(s){
-          return s.presence === 'OUT' && !koFired[s.seat];
+          return s.presence === 'OUT' && champSeat !== s.seat && !koFired[s.seat];
         });
         if (fresh && koSeen) {
           var end = Date.now() + KO_LEAD_MS + koBurstLen();
@@ -667,7 +714,7 @@ export const SEATS = `    var seatXY = {};
           var waiting = !settleDone(tb) || Date.now() < koBurstEndsAt;
           if (prev !== undefined && bv !== prev && waiting) bv = prev;
           if (bv > 0) {
-            bEl.textContent = stackText(bv) + 'P';
+            bEl.textContent = pointText(bv);
             bEl.hidden = false;
           } else {
             bEl.hidden = true;
@@ -722,7 +769,13 @@ export const SEATS = `    var seatXY = {};
            아직 깔리는 중에도 끝날 수 있고, 그러면 턴 카드가 떨어지자마자 화면이
            처형으로 넘어간다(제보로 확인). 카드가 다 나오고 칩이 옮겨진 뒤여야 한다.
            폴드로 끝난 판은 둘 다 즉시 참이라 곧바로 진행된다. */
-        var koShow = pko && s.presence === 'OUT' && resultReady() && settleDone(tb);
+        /* 우승자는 쏘지 않는다.
+           대회가 끝나면 서버가 살아 있던 자리까지 전부 OUT 으로 내린다(등수를 매기려면
+           모두에게 탈락 순서가 있어야 한다). 그래서 마지막 쇼다운에서 진 사람과 이긴
+           사람의 presence 가 같은 값이 되고, 둘 다 총을 맞았다 — 제보로 확인했다.
+           1위는 탈락한 것이 아니라 남은 사람이다. 등수로 가른다. */
+        var koShow = pko && s.presence === 'OUT' && champSeat !== s.seat
+          && resultReady() && settleDone(tb);
         if (koShow && !koFired[s.seat]) {
           koFired[s.seat] = 1;
           /* 처음 그리는 프레임에는 터뜨리지 않는다. 이미 탈락한 사람이 있는 판에
@@ -775,6 +828,10 @@ export const SEATS = `    var seatXY = {};
       });
       syncActBadges(tb, actNow);
       syncEquity(tb);
+      /* 좌석 골격이 다시 만들어졌으면 말풍선도 같이 지워졌다 — 기억에서 되살린다.
+         골격은 자주 바뀌지 않지만(누가 앉고 빠질 때뿐), 하필 그 순간에 말한 사람의
+         말풍선이 사라지는 것은 "채팅이 가끔 안 뜬다"로 보인다. */
+      paintBubbles();
       /* ── 미스터리 개봉 걸기 ──────────────────────────────────────
          좌석 루프 밖에서 한 번만 판단한다. 개봉은 좌석이 아니라 판에 붙은 사건이고
          (봉투 여러 개가 한 판에 열린다), 루프 안에서 걸면 좌석 순서에 따라 순서가
@@ -789,7 +846,7 @@ export const SEATS = `    var seatXY = {};
            자릿수가 들쭉날쭉해서 폭이 흔들리고, "있을 수 있는 금액"으로 보이지 않는다. */
         var pool = rv.map(function(r){ return r.a; });
         rv.forEach(function(r, i){
-          mysQueue.push({ victim: r.v, amount: r.a, takers: r.k || [],
+          mysQueue.push({ victim: r.v, amount: r.a, takers: r.k || [], self: !!r.self,
             idx: i, total: rv.length, pool: pool });
         });
         /* 이 묶음이 끝나는 시각을 여기서 잡아 둔다 — 우승 팝업과 상금 탭이 이 값을 보고
@@ -801,6 +858,112 @@ export const SEATS = `    var seatXY = {};
       /* 여기까지 한 번 돌았으면 다음부터는 "방금 바뀐 것"을 믿을 수 있다.
          맨 끝에 세우는 것이 요점이다 — 위에서 세우면 첫 프레임의 탈락자들이 그대로 터진다. */
       koSeen = true;
+    }
+
+    /* ── 테이블 채팅 말풍선 ────────────────────────────────────────────
+       채팅으로 들어온 말을 말한 사람의 자리 위에 잠깐 띄운다.
+
+       ── 왜 소켓이 아닌가
+       이 게임에는 서버 타이머도 상시 연결도 없다. 대신 모든 화면이 이미 1초마다
+       /state 를 부르고, 그 응답에 마지막 메시지 id 가 실려 온다 — 값이 늘면 채팅이
+       한 번 받아 오고(app.js), 받아 온 줄을 여기로 넘겨준다. 그래서 같은 테이블에
+       앉은 사람과 관전자 모두가 같은 줄을 같은 자리에 띄운다. 다만 각자의 폴 시점이
+       달라 최대 1초쯤 어긋난다. 4초짜리 말풍선에서 그 정도는 읽는 데 지장이 없고,
+       그 1초를 없애려면 상시 연결이 필요하다 — 512MB 짜리 기계에서 채팅 하나
+       때문에 치를 값이 아니다.
+
+       ── 왜 좌석에 그리나
+       도크만 있으면 "누가 한 말인가"를 읽으려고 목록에서 이름을 찾아야 하고, 그 사이
+       테이블에서 벌어지는 일을 놓친다. 말이 사람 옆에 뜨면 그 왕복이 사라진다.
+       자리에 없는 사람의 말은 붙일 곳이 없으니 자연히 안 뜬다 — 앉은 사람만 뜬다는
+       규칙을 따로 쓸 필요가 없다.
+
+       기억은 userId 로 잡는다. 좌석 번호로 잡으면 그 사람이 자리를 옮기거나 좌석이
+       다시 배치될 때 남의 머리 위에 남의 말이 걸린다. */
+    var BUB_MS = 4000;        // 떠 있는 시간
+    var BUB_FADE = 420;       // 사라지는 데 걸리는 시간 (.ht-bub.out 과 같아야 한다)
+    var bubbles = {};         // userId → { text, until }
+    var bubTimer = null;
+
+    function bubbleSay(userId, body, rank){
+      if (!userId || !body) return;
+      /* 같은 사람이 연달아 말하면 새 말풍선을 하나 더 띄우지 않는다 — 내용을 갈고
+         시계를 처음으로 되돌린다. 쌓아 올리면 두 줄이 겹쳐 둘 다 못 읽는다. */
+      bubbles[userId] = { text: String(body), top: rank === 1,
+        until: Date.now() + BUB_MS };
+      bubTick();
+    }
+
+    /* 다음에 할 일이 생기는 시각에 한 번만 깨어난다. 폴링(1초)에 맡기면 사라지는
+       시점이 최대 1초 늦고, setInterval 로 돌리면 아무 말도 없는 대부분의 시간에
+       계속 돈다. */
+    function bubTick(){
+      clearTimeout(bubTimer);
+      bubTimer = null;
+      paintBubbles();
+      /* 남은 일은 두 가지뿐이다 — 아직 떠 있는 것은 사라지기 시작할 때(until),
+         이미 사라지는 중인 것은 DOM 에서 걷힐 때(until + FADE). 둘 중 가장 이른
+         시각에 한 번 깨어난다. */
+      var now = Date.now(), next = 0;
+      for (var uid in bubbles) {
+        var b = bubbles[uid];
+        var t = b.until > now ? b.until : b.until + BUB_FADE;
+        if (!next || t < next) next = t;
+      }
+      if (next) bubTimer = setTimeout(bubTick, Math.max(60, next - Date.now()));
+    }
+
+    function paintBubbles(){
+      var tb = st && st.table;
+      if (!tb || !seatsEl) return;
+      var now = Date.now();
+      (tb.seats || []).forEach(function(s){
+        var seatEl = seatsEl.querySelector('.ht-seat[data-seat="' + s.seat + '"]');
+        if (!seatEl) return;
+        var bub = seatEl.querySelector('.ht-bub');
+        if (!bub) return;
+        var b = bubbles[s.userId];
+        if (!b || now > b.until + BUB_FADE) {
+          if (!bub.hidden) {
+            bub.hidden = true;
+            bub.classList.remove('in', 'out', 'k1');
+            bub.removeAttribute('data-t');
+          }
+          seatEl.classList.remove('bubon');
+          return;
+        }
+        seatEl.classList.add('bubon');
+        /* 1위만 테두리가 금색이다 — 채팅창의 순위 뱃지와 같은 약속이다.
+           매 프레임 맞춘다: 순위는 판마다 바뀌고, 같은 사람이 다시 말할 때 갈릴 수 있다. */
+        bub.classList.toggle('k1', !!b.top);
+        if (bub.hidden || bub.getAttribute('data-t') !== b.text) {
+          var tEl = bub.querySelector('.ht-bub-t');
+          if (tEl) tEl.textContent = b.text;
+          bub.setAttribute('data-t', b.text);
+          bub.hidden = false;
+          /* 애니메이션을 다시 튼다. 클래스만 떼었다 붙이면 한 프레임 안의 변화라
+             브라우저가 묶어 버려 재생되지 않는다 — 사이에 레이아웃을 한 번 읽어
+             끊어 준다. 말이 바뀔 때만이라 매 폴링의 비용이 아니다. */
+          bub.classList.remove('in', 'out');
+          void bub.offsetWidth;
+          bub.classList.add('in');
+        }
+        if (now >= b.until) bub.classList.add('out');
+      });
+      /* 자리에 없는 사람의 기억까지 여기서 정리한다. 위 루프는 앉은 사람만 돌기
+         때문에 그것만으로는 떠난 사람의 기록이 영영 남는다. */
+      for (var uid in bubbles) {
+        if (now > bubbles[uid].until + BUB_FADE) delete bubbles[uid];
+      }
+    }
+
+    /* 채팅이 새 줄을 받으면 알려 준다. 홀덤 화면에서 한 말만 본다 —
+       __CHAT_WHERE__ 가 'holdem' 인 화면(로비와 테이블)이 여기다. */
+    if (window.casinoChat && casinoChat.onMessage) {
+      casinoChat.onMessage(function(m){
+        if (!m || m.where !== 'holdem') return;
+        bubbleSay(m.userId, m.body, m.rank);
+      });
     }
 
     /* ── 쇼다운 승률 · 역전 카드 ───────────────────────────────────────

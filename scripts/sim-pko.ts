@@ -43,6 +43,10 @@ const P = (n: number): string => n.toLocaleString('ko-KR') + 'P';
 /* 배수 10,000P — 절반(5,000P)이 머리에 걸린다. 프리롤이라 참가비는 걷지 않는다:
    상금과 현상금 모두 서비스가 발행하는 돈이고, 발행 총액은 인원 × 배수로 예전과 같다. */
 const MULT = 10_000;
+/* 두 바운티 모드가 같은 각본을 쓴다 — 다른 것은 금액이 머리 위에 적히는지뿐이고,
+   봇의 판단과 정산 경로는 똑같다. 미스터리 개봉 연출(전광판)을 보려면:
+     SIM_MODE=MYSTERY_BOUNTY npx tsx scripts/sim-pko.ts */
+const MODE = process.env.SIM_MODE === 'MYSTERY_BOUNTY' ? 'MYSTERY_BOUNTY' : 'PKO_BOUNTY';
 /* 나(preview-user)도 한 자리를 차지하고 봇이 대신 친다 — 그래야 6시 자리에서 내 카드가
    보이는 평소 화면으로 관전할 수 있다. 관전만 하면 hero 자리가 없어 화면이 달라진다. */
 const ME = 'preview-user';
@@ -56,9 +60,9 @@ for (const u of ALL) {
 }
 
 const made = AD.createTournament({
-  title: '9인 현상금전 (시뮬레이션)',
+  title: MODE === 'MYSTERY_BOUNTY' ? '9인 미스터리 바운티 (시뮬레이션)' : '9인 바운티 헌터 (시뮬레이션)',
   regOpenAt: nowSec() - 60, startAt: nowSec() + 3,
-  buyIn: 0, prizeMultiplier: MULT, prizeFixed: 0, mode: 'PKO_BOUNTY',
+  buyIn: 0, prizeMultiplier: MULT, prizeFixed: 0, mode: MODE,
   /* 스택을 넉넉히, 레벨을 짧게 둔다 — 아홉이 다 떨어지려면 블라인드가 올라야 한다.
      스택이 크고 레벨이 길면 한 시간을 봐도 안 끝난다. */
   startingStack: 6_000, levelMin: 2, lateRegMin: 1, graceMin: 30,

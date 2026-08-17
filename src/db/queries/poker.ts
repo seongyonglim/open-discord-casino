@@ -107,7 +107,10 @@ function settlePokerBets(roundId: number, outcome: { winner: 'master' | 'shark' 
 // 공개 시각은 모두 betting_ends_at 기준으로 고정 계산하므로 누가 먼저 폴링했는지와 무관하게 동일하다.
 export function advancePokerRound(
   makeRound: () => { hole: number[]; board: number[]; odds: unknown },
-  resolve: (hole: number[], board: number[]) => { winner: 'master' | 'shark' | 'tie'; buckets: number[]; detail: unknown }
+  resolve: (hole: number[], board: number[]) => { winner: 'master' | 'shark' | 'tie'; buckets: number[]; detail: unknown },
+  /* 등급 칸 수. resolve 와 같은 이유로 인자로 받는다 — 이 파일은 services 를 모른다
+     (의존은 게임별 모듈 → core 한 방향이다). 칸이 하나 늘면 부르는 쪽이 알려 준다. */
+  bucketCount: number
 ): PokerRoundRow {
   return tx(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -123,10 +126,17 @@ export function advancePokerRound(
 
       if (phase !== round.phase) {
         if (phase === 'done' && round.phase !== 'done') {
+          /* 표가 비어 있으면 남은 기록으로 먼저 채운다 — 반드시 이 판이 «done» 이 되기
+             전에 해야 한다. 뒤에 두면 지금 정산 중인 판이 기록에 이미 들어가 있어서
+             그 판이 두 번 세어진다(실측: 한 판을 돌렸는데 미출현이 2 로 올랐다). */
+          seedPokerDrought(bucketCount);
           const outcome = resolve(JSON.parse(round.hole_json), JSON.parse(round.board_json));
           settlePokerBets(round.id, outcome);
           run(`UPDATE poker_rounds SET phase = 'done', result_json = ?, resolved_at = ? WHERE id = ? AND phase != 'done'`,
             JSON.stringify(outcome), now, round.id);
+          /* 미출현 판수를 여기서 센다 — 라운드가 «done» 이 되는 자리는 여기 하나뿐이라
+             한 판이 두 번 세어질 수 없다(위 UPDATE 의 phase != 'done' 이 그것을 지킨다). */
+          notePokerDrought(outcome.buckets, bucketCount);
         } else if (phase !== 'done') {
           run(`UPDATE poker_rounds SET phase = ? WHERE id = ?`, phase, round.id);
         }
@@ -227,6 +237,59 @@ export function getMyPokerBets(roundId: number, userId: string): PokerBetRow[] {
     `SELECT username, market, amount, odds, won, payout FROM poker_bets
      WHERE round_id = ? AND user_id = ? ORDER BY id ASC`, roundId, userId
   );
+}
+
+/* ── 등급별 미출현 판수 ───────────────────────────────────────────────
+   화면이 "몇 판째 안 나왔나"를 적는데, 그 값을 라운드 기록에서 세면 30판이 한계다 —
+   그 너머는 prunePokerRounds 가 지운다. 그래서 «29판+ 미출현» 으로 잘렸다.
+   판수 자체가 이 게임의 재미인데 상한에 걸려 뭉개지고 있었다.
+
+   그래서 세어 둔다. 라운드가 정산될 때 한 줄씩 갱신하면 30판이 지워져도 값이 남는다. */
+export interface PokerDroughtRow { bucket: number; since: number; best: number; exact: number }
+
+export function getPokerDrought(): PokerDroughtRow[] {
+  return all<PokerDroughtRow>(`SELECT bucket, since, best, exact FROM poker_drought ORDER BY bucket`);
+}
+
+/**
+ * 정산된 라운드 하나를 카운터에 반영한다.
+ *
+ * 적중한 등급은 0 으로 되돌리고 그때까지의 값을 최장 기록과 견준다. 나머지는 1 씩 올린다.
+ * 적중으로 리셋된 값은 이 순간부터 정확하므로 exact 를 세운다 — 표를 처음 만들 때 넣은
+ * "적어도 N판"이 그 등급에서는 사라진다.
+ */
+export function notePokerDrought(buckets: number[], bucketCount: number): void {
+  for (let b = 0; b < bucketCount; b++) {
+    if (buckets.includes(b)) {
+      run(`INSERT INTO poker_drought (bucket, since, best, exact) VALUES (?, 0, 0, 1)
+             ON CONFLICT(bucket) DO UPDATE SET best = MAX(best, since), since = 0, exact = 1`, b);
+    } else {
+      run(`INSERT INTO poker_drought (bucket, since, best, exact) VALUES (?, 1, 0, 0)
+             ON CONFLICT(bucket) DO UPDATE SET since = since + 1`, b);
+    }
+  }
+}
+
+/**
+ * 표가 비어 있으면 남아 있는 라운드로 채운다 — 배포 직후 다섯 칸이 «0판» 으로 보이면
+ * "방금 다 나왔다"는 거짓말이 된다.
+ *
+ * 남아 있는 것은 30판뿐이라 여기서 넣는 값은 «적어도 N판» 이다. 그래서 exact 를 세우지
+ * 않는다: 화면이 그동안은 예전처럼 «N판+» 로 적고, 그 등급이 한 번 적중하면 정확한
+ * 값으로 바뀐다.
+ */
+export function seedPokerDrought(bucketCount: number): void {
+  const has = one<{ n: number }>(`SELECT COUNT(*) AS n FROM poker_drought`)!.n;
+  if (has > 0) return;
+  const hist = getRecentPokerResults(POKER_KEEP_ROUNDS);
+  for (let b = 0; b < bucketCount; b++) {
+    const k = hist.findIndex(h => h.buckets.includes(b));
+    /* 못 찾았으면 가진 기록 전부가 미출현이다. 찾았으면 그 앞의 판 수가 미출현이고,
+       그 값은 정확하다 — 그 등급은 기록 안에서 실제로 적중했기 때문이다. */
+    const since = k < 0 ? hist.length : k;
+    run(`INSERT INTO poker_drought (bucket, since, best, exact) VALUES (?, ?, ?, ?)`,
+      b, since, since, k < 0 ? 0 : 1);
+  }
 }
 
 export interface PokerHistoryRow { winner: string; buckets: number[] }

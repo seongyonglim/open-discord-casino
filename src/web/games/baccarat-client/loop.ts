@@ -103,6 +103,9 @@ export function bcLoop(p0: string | number): string {
         pollFails = 0;
         st = d;
         render();
+        /* 채팅은 폴을 따로 돌지 않는다 — 응답의 마지막 메시지 id 만 넘겨주면 값이
+           늘었을 때만 채팅이 스스로 받아 간다(app.js 의 casinoChat). */
+        if (window.casinoChat) casinoChat.note(d.chatMax, d.chatMod);
       }
       poll();
       setInterval(poll, 1000);

@@ -17,7 +17,7 @@ import {
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
-import { getWebUser } from '../../db/queries';
+import { getWebUser, chatTick } from '../../db/queries';
 import { recentRecap } from '../../db/holdem-recap';
 import { upcomingHint } from '../../db/recurrence';
 import { getConfig } from '../../db/settings';
@@ -105,6 +105,9 @@ function statePayload(st: HoldemStatus, userId: string) {
     ok: true,
     me: userId,
     balance: getWebUser(userId)?.balance ?? 0,
+    /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
+       화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
+    ...chatTick(),
     serverNow: now,
     tournament: {
       id: t.id,
@@ -537,8 +540,14 @@ export async function handleSitIn(
 export async function handleRecords(
   _req: IncomingMessage, res: ServerResponse, userId: string
 ): Promise<void> {
-  const rows = holdemRecords(20);
-  return sendJson(res, 200, { ok: true, me: userId, rows });
+  /* 갈래를 나눠 한 번에 준다. 탭을 누를 때마다 받아 오면 그때마다 기다림이 생기는데,
+     스무 줄 두 벌은 수 KB 이고 이 경로는 탭을 열 때만 불린다.
+     빈 갈래는 화면이 탭 자체를 안 붙인다 — 한 번도 안 연 종류의 빈 표는 자리만 먹는다. */
+  return sendJson(res, 200, {
+    ok: true, me: userId,
+    classic: holdemRecords(20, 'CLASSIC'),
+    bounty: holdemRecords(20, 'BOUNTY'),
+  });
 }
 
 export async function handleShow(
@@ -822,8 +831,9 @@ export function holdemPage(user: WebUser): string {
       </div>
     </div>
 
-    ${helpDialog('htHelp', '홀덤 프리롤 규칙', helpBody())}
+    ${helpDialog('htHelp', '홀덤 토너먼트 규칙', helpBody())}
   <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
+    window.__CHAT_WHERE__ = 'holdem';
     window.__SFX_NEED__ = ['card','shuffle','deal','chipbet','chipwin','victory',
       'actallin','actbet','actcall','actcheck','actraise','actfold','foldslide','myturn',
       'potwin','clockwarn','allinbgm',
@@ -837,5 +847,5 @@ export function holdemPage(user: WebUser): string {
 ${stateFragment(jsonForScript(ASSET_V))}${CELEBRATE}${RECORDS}${FORMAT}${LOBBY_EMPTY}${LOBBY}${SEATS}${EQUITY}${BADGES}${CLOCK}${REVEAL}${CHIPS}${SIDE}${BOARD}${SETTLE}${DEAL}${TABLE}${CONTROLS}${LOOP}
   })();
   </script>`;
-  return layout('홀덤 프리롤', 'lobby', body);
+  return layout('홀덤 토너먼트', 'lobby', body);
 }

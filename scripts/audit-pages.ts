@@ -388,6 +388,61 @@ async function main(): Promise<void> {
       bad.length ? bad.join(', ') + ' — display 를 정해 둬서 hidden 이 안 먹는다' : '');
     // 이 검사가 실제로 무언가를 보고 있는지 (대상이 0개면 통과가 무의미하다)
     ck('검사 대상이 실제로 있다', checked > 0, `${checked}개 요소`);
+
+    /* ── id 가 아니라 클래스로 감추는 것들 ─────────────────────────────
+       위 검사는 getElementById 로 찾은 요소만 본다. app.js 는 자기가 만든 마크업을
+       querySelector('.x') 로 잡아 hidden 을 켜는데, 그러면 위 그물에 걸리지 않는다 —
+       채팅 도크의 본체와 안 읽은 배지가 그렇게 빠져나갔다. 둘 다 display 를 정해 둬서
+       최소화 버튼이 아무 일도 안 했고, 안 읽은 줄이 없어도 "0" 배지가 늘 붙어 있었다.
+       (그때도 el.hidden 은 true 였다. 그래서 속성이 아니라 규칙으로 본다.) */
+    const appJs = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'app.js'), 'utf8');
+    const clsIds = new Set<string>();
+    // querySelector('.x').hidden = …  /  var v = …querySelector('.x'); … v.hidden = …
+    for (const m of appJs.matchAll(/querySelector\('\.([\w-]+)'\)\s*\.hidden\s*=/g)) clsIds.add(m[1]);
+    const clsVar = new Map<string, string>();
+    for (const m of appJs.matchAll(/(?:var\s+)?([A-Za-z_$][\w$]*)\s*=\s*[\w.]*querySelector\('\.([\w-]+)'\)/g)) {
+      clsVar.set(m[1], m[2]);
+    }
+    for (const [v, cls] of clsVar) {
+      if (new RegExp(`\\b${v}\\.hidden\\s*=`).test(appJs)) clsIds.add(cls);
+    }
+    const clsBad: string[] = [];
+    let clsChecked = 0;
+    for (const cls of clsIds) {
+      if (!withDisplay.has(cls)) continue;      // display 를 정해 둔 규칙이 없으면 안전하다
+      clsChecked++;
+      if (!hasHiddenRule(cls)) clsBad.push('.' + cls);
+    }
+    ck('클래스로 감추는 요소에도 [hidden] 규칙이 있다', clsBad.length === 0,
+      clsBad.length ? clsBad.join(', ') + ' — display 를 정해 둬서 hidden 이 안 먹는다' : '');
+    ck('클래스 쪽 검사 대상도 있다', clsChecked > 0, `${clsChecked}개 클래스`);
+
+    /* ── <i> 는 기본이 이탤릭이다 ──────────────────────────────────
+       이 프로젝트는 작은 뱃지·태그·아이콘을 <i> 로 쓴다. 의미상 강조가 아니라 그냥
+       작은 조각이라 그런데, 브라우저 기본 스타일이 font-style:italic 이라 글자가
+       비스듬하게 나온다. CSS 에 transform 이 하나도 없으니 코드만 봐서는 원인이
+       안 보이고, 화면을 봐야만 안다 — 홀덤 말풍선이 실제로 그렇게 나갔다.
+       그래서 글자가 들어가는 <i> 의 클래스에는 font-style 을 반드시 적게 한다. */
+    const iSrc = appJs
+      + readdirSync(join(process.cwd(), 'src', 'web', 'games', 'holdem-client'))
+        .map(f => readFileSync(join(process.cwd(), 'src', 'web', 'games', 'holdem-client', f), 'utf8'))
+        .join('\n');
+    const iBad: string[] = [];
+    let iChecked = 0;
+    /* 판정은 클래스가 아니라 요소 단위다 — `class="ht-oc more"` 처럼 여럿을 달고 있으면
+       그중 하나만 font-style 을 가져도 그 요소는 안 기운다. 클래스별로 보면 곁다리
+       클래스가 전부 거짓 경보로 잡힌다(.more 가 실제로 그랬다). */
+    const hasFontStyle = (cls: string) =>
+      new RegExp(`\\.${cls}\\b[^{]*\\{[^}]*font-style`).test(css);
+    for (const m of iSrc.matchAll(/<i class=\\?"([a-zA-Z][\w -]*)\\?"/g)) {
+      const list = m[1].split(/\s+/).filter(Boolean);
+      if (!list.length) continue;
+      iChecked++;
+      if (!list.some(hasFontStyle)) iBad.push(m[1]);
+    }
+    ck('글자가 들어가는 <i> 에 font-style 이 정해져 있다', iBad.length === 0,
+      iBad.length ? Array.from(new Set(iBad)).join(', ') + ' — <i> 기본값이 이탤릭이라 기울어 나온다' : '');
+    ck('<i> 검사 대상도 있다', iChecked > 0, `${iChecked}개`);
   }
 
   console.log('\n[3] 대회가 없을 때의 홀덤 화면');
@@ -888,6 +943,38 @@ async function main(): Promise<void> {
       `sweep@${iSweep} closed@${iClosed}`);
   }
 
+  console.log('\n[12-b] 랭킹 탭 — 끌 수 있게 하면서 누를 수도 있어야 한다');
+  {
+    /* 게임이 늘면서 칩 줄이 화면 밖으로 넘쳤고(860px 칸에 983px), 끌어서 넘기게 했다.
+       그때 pointerdown 에서 곧바로 포인터를 잡았더니 랭킹 탭이 통째로 안 눌렸다(제보).
+
+       캡처가 걸려 있으면 브라우저가 이어지는 click 을 «잡은 요소»로 쏜다. 탭 리스너는
+       e.target.closest('.lb-chip') 으로 어느 칸인지 찾는데 그 값이 컨테이너라 늘 null 이
+       된다. 합성 이벤트(chip.click())로 짠 검사는 이 경로를 지나치지 않아 통과했다 —
+       그래서 여기서는 "언제 잡는가"를 글자로 못 박는다.
+
+       규칙: 누르는 순간에는 잡지 않는다. 끌기가 실제로 시작된 뒤(4px 초과)에만 잡는다. */
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const lb = readFileSync('src/web/leaderboard.ts', 'utf8');
+    const down = lb.slice(lb.indexOf("addEventListener('pointerdown'"),
+      lb.indexOf("addEventListener('pointermove'"));
+    ck('누르는 순간에는 포인터를 잡지 않는다', !/setPointerCapture/.test(down), down);
+    ck('끌기가 시작된 뒤에만 잡는다',
+      /if \(moved <= 4\) return;[\s\S]{0,200}?setPointerCapture/.test(lb));
+    ck('잡았을 때만 놓는다 (안 잡고 놓으면 예외가 난다)',
+      /if \(captured\) \{[\s\S]{0,160}?releasePointerCapture/.test(lb));
+    /* 끌고 놓은 것을 클릭으로 세지 않는 문은 그대로 있어야 한다 — 캡처를 늦게 걸어도
+       4px 를 갓 넘긴 드래그는 click 이 버튼에 그대로 도착한다. */
+    ck('끈 뒤의 클릭은 삼킨다',
+      /if \(moved > 4\) \{ e\.stopPropagation\(\); e\.preventDefault\(\); \}/.test(lb));
+    ck('탭 리스너는 여전히 closest 로 칸을 찾는다',
+      /closest\('\.lb-chip'\)/.test(lb));
+    // 넘친 쪽 표시와 세로 휠도 함께 남아 있어야 한다
+    ck('끝 흐림이 스크롤 위치를 따라간다',
+      /classList\.toggle\('more-l'/.test(lb) && /classList\.toggle\('more-r'/.test(lb));
+    ck('세로 휠을 가로로 돌린다', /chipsEl\.scrollLeft \+= e\.deltaY/.test(lb));
+  }
+
   console.log('\n[13] 지뢰찾기도 공통 과제를 본다');
   {
     /* 지뢰찾기에는 폴링하는 상태 엔드포인트가 없다(라우트가 page·start·reveal·cashout
@@ -899,6 +986,56 @@ async function main(): Promise<void> {
     ck('캐시아웃도 공통 과제를 본다',
       /\.\.\.withUnlocked\(commonAwards\(userId\)\)/.test(mn));
     ck('"판정할 과제가 없다" 주석이 남아 있지 않다', !/판정할 과제가 없다/.test(mn));
+  }
+
+  console.log('\n[13-b] app.css 조각 — 디렉터리에 있는 파일은 전부 실려야 한다');
+  {
+    const { readFileSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+    const { join } = require('node:path') as typeof import('node:path');
+    const dir = join(process.cwd(), 'src', 'web', 'assets', 'css');
+    const onDisk = readdirSync(dir).filter(f => f.endsWith('.css')).sort();
+    const listed = readFileSync(join(dir, 'ORDER.txt'), 'utf8')
+      .split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+    /* 빠뜨리면 그 파일은 한 번도 안 실린다 — 화면은 멀쩡히 뜨고 그 규칙만 조용히 없다.
+       12-notify.css 가 실제로 그랬고, 시즌 마감 경고 토스트(.toast.warn)가 붉은 테두리
+       대신 금색으로 나왔다. 금색은 이 사이트에서 "좋은 것"의 색이라 뜻이 정반대였다. */
+    const missing = onDisk.filter(f => !listed.includes(f));
+    ck('목록에서 빠진 조각이 없다', missing.length === 0,
+      missing.join(', ') + ' — 이 파일의 규칙은 한 번도 안 실린다');
+    /* 반대쪽도 본다: 목록에만 있고 파일이 없으면 app.css 조립이 통째로 죽는다. */
+    const ghost = listed.filter(f => !onDisk.includes(f));
+    ck('없는 파일을 가리키지 않는다', ghost.length === 0, ghost.join(', '));
+    ck('검사 대상이 있다', onDisk.length > 5, `${onDisk.length}개`);
+    // 실제로 그 규칙이 app.css 에 실렸는지까지 본다
+    const css = (await get('/app.css', cookie)).text;
+    ck('경고 토스트 규칙이 실제로 실린다', /\.toast\.warn/.test(css));
+  }
+
+  console.log('\n[14] 운영자 왼쪽 메뉴 — 메뉴에 있으면 눌러서 열려야 한다');
+  {
+    const ad = (await get('/admin', cookie)).text;
+    /* 화면 전환은 PANES 목록을 본다. 모르는 key 는 조용히 PANES[0] 으로 되돌아가므로,
+       메뉴에만 넣고 이 목록을 빠뜨리면 "눌리는데 첫 화면으로 튕긴다"가 된다 —
+       채팅 화면을 새로 넣었을 때 실제로 그랬다. 그래서 목록을 손으로 적지 않고
+       메뉴에서 뽑아 쓴다. 이 검사는 그 약속이 지켜지는지를 본다. */
+    ck('PANES 를 손으로 적지 않는다', !/var PANES = \['/.test(ad), 'PANES 가 하드코딩됐다');
+    const panes = /var PANES = (\[[^\]]*\])/.exec(ad);
+    const keys: string[] = panes ? JSON.parse(panes[1]) : [];
+    ck('PANES 를 읽어 왔다', keys.length > 0, panes?.[1]);
+    /* 메뉴 버튼 하나하나가 실제로 그 목록에 있어야 한다. */
+    const navKeys = [...ad.matchAll(/class="ad-nav-item" data-pane="(\w+)"/g)].map(m => m[1]);
+    ck('메뉴 버튼이 있다', navKeys.length >= 4, navKeys.join(','));
+    const orphanNav = navKeys.filter(k => !keys.includes(k));
+    ck('메뉴에 있는 화면은 전부 열 수 있다', orphanNav.length === 0,
+      orphanNav.join(', ') + ' — 눌러도 첫 화면으로 되돌아간다');
+    /* 반대쪽도 본다: 목록에만 있고 그릴 카드가 없으면 빈 화면이 열린다. */
+    const cardKeys = [...ad.matchAll(/class="ad-card" data-pane="(\w+)"/g)].map(m => m[1]);
+    const empty = keys.filter(k => !cardKeys.includes(k));
+    ck('빈 화면으로 가는 메뉴가 없다', empty.length === 0, empty.join(', '));
+    // 채팅은 대회 관리에서 빠져나왔다
+    ck('채팅이 제 화면을 갖는다', navKeys.includes('chat') && cardKeys.includes('chat'));
+    ck('채팅이 대회 관리에 남아 있지 않다',
+      !/data-pane="tour">\s*<h2>채팅<\/h2>/.test(ad));
   }
 
   console.log(`\n${'─'.repeat(50)}`);

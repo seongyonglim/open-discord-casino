@@ -13,7 +13,7 @@ import { layout, esc, jsonForScript } from './views';
 import { sendJson } from './http';
 import {
   listSeasons, getSeason, seasonGames, seasonOverall, seasonGameRanking, mySeasonRank,
-  seasonHoldemRanking, seasonHoldemCount, seasonHoldemPlayers, myHoldemRank,
+  seasonHoldemRanking, seasonHoldemCount, seasonHoldemPlayers, myHoldemRank, type HoldemGenre,
   type SeasonRow,
 } from '../db/queries';
 import type { WebUser } from '../db/queries';
@@ -57,21 +57,40 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
   /* 홀덤은 season_stats 에 없다 — 판마다 걸고 되받는 게임이 아니라 대회이고, 집계를
      대회 결과(holdem_entries)에서 시즌 구간으로 잘라 온다. 그래서 카테고리도 여기서 붙인다.
      그 시즌에 끝난 대회가 있을 때만 붙으므로, 다른 게임과 마찬가지로 데이터가 정한다. */
-  const htCount = seasonHoldemCount(s.id);
+  /* 대회는 장르로 가른다. 같은 홀덤이지만 "무엇으로 버느냐"가 달라서 한 표에 섞으면
+     한쪽이 통째로 0 으로 잡힌다 — 미스터리 바운티 우승자(72,800P)가 «상금 0P» 로
+     최하위권에 앉았던 것이 그 결과다(season.ts 의 GENRE_TOOK 주석에 자세히 적어 뒀다).
+       홀덤 토너먼트 — 순위 상금으로 겨룬다
+       바운티        — 순위 상금 + 잡아서 받은 바운티로 겨룬다
+     탭 옆 숫자는 "몇 명이 했나"다(다른 게임도 그렇다).
+     그 시즌에 그 장르의 대회가 있을 때만 붙으므로, 탭 구성은 데이터가 정한다.
+
+     이름에서 "토너먼트"를 뺀다. 이 줄의 다른 칸은 3~5글자(지뢰찾기·블랙잭·바카라)인데
+     "홀덤 클래식 토너먼트"는 10글자다 — 실측으로 칩 하나가 169px 이 되어 둘이 338px,
+     줄 전체가 1,058px 로 컨테이너(860px)를 198px 넘긴다. "홀덤 클래식"이면 112px 씩
+     224px 이고, 랭킹 화면에서 "토너먼트"는 어차피 홀덤이 대회라는 뜻 말고는 없다. */
+  const htBounty = seasonHoldemCount(s.id, 'BOUNTY');
+  if (htBounty > 0) {
+    games.unshift({ key: 'bounty', label: '홀덤 바운티',
+      rounds: htBounty, players: seasonHoldemPlayers(s.id, 'BOUNTY') });
+  }
+  const htCount = seasonHoldemCount(s.id, 'CLASSIC');
   if (htCount > 0) {
-    /* 탭 옆 숫자는 "몇 명이 했나"다(다른 게임도 그렇다). 예전에는 0을 넣어 두어
-       홀덤에만 배지가 안 붙었고, 그래서 이 탭만 다른 규칙인 것처럼 보였다. */
-    games.unshift({
-      key: 'holdem', label: '홀덤 토너먼트', rounds: htCount, players: seasonHoldemPlayers(s.id),
-    });
+    games.unshift({ key: 'holdem', label: '홀덤 클래식',
+      rounds: htCount, players: seasonHoldemPlayers(s.id, 'CLASSIC') });
   }
   // 요청한 탭이 그 시즌에 없으면 통합으로 되돌린다 — 시즌을 바꿨을 때 빈 화면이 나오지 않게
   const active = tab !== 'overall' && games.some(g => g.key === tab) ? tab : 'overall';
 
+  /* 두 대회 탭은 같은 표를 쓴다 — 열 구성(참가·우승·입상·상금)이 같고, 다른 것은
+     "상금"에 무엇을 세느냐뿐이다. 그 판단은 장르가 들고 있다. */
+  const genre: HoldemGenre | null =
+    active === 'holdem' ? 'CLASSIC' : active === 'bounty' ? 'BOUNTY' : null;
+
   const rows: RankRow[] = active === 'overall'
     ? seasonOverall(s.id, 100).map(r => ({ ...r }))
-    : active === 'holdem'
-      ? seasonHoldemRanking(s.id, 100).map(r => ({
+    : genre
+      ? seasonHoldemRanking(s.id, genre, 100).map(r => ({
           userId: r.userId, username: r.username, avatar: r.avatar, rank: r.rank,
           score: r.prize, entries: r.entries, wins: r.wins, itm: r.itm,
         }))
@@ -81,7 +100,7 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
         }));
 
   const mine = !me ? null
-    : active === 'holdem' ? myHoldemRank(s.id, me.id)
+    : genre ? myHoldemRank(s.id, me.id, genre)
     : mySeasonRank(s.id, me.id, active === 'overall' ? null : active);
   return {
     seasons: seasons.map(x => ({ id: x.id, number: x.number, name: x.name, closed: x.closed_at != null })),
@@ -91,7 +110,9 @@ export function buildRankPayload(seasonId: number | null, tab: string, me: WebUs
          지난 시즌 화면에 붙이면 다음 시즌 예약을 그 시즌의 종료일인 양 적게 된다. */
       closeAt: s.closed_at == null ? getSeasonSchedule().closeAt : null },
     games, tab: active,
-    kind: active === 'overall' ? 'overall' : active === 'holdem' ? 'holdem' : 'game',
+    /* 두 대회 탭은 kind 가 같다 — 화면이 이 값으로 열 구성을 고르는데, 둘은 같은
+       열(참가·우승·입상·상금)을 쓴다. 여기서 갈라 두면 바운티 탭만 다른 표가 된다. */
+    kind: active === 'overall' ? 'overall' : genre ? 'holdem' : 'game',
     rows,
     /* userId 를 함께 준다. 이게 없어서 화면의 "내 줄" 표시가 한 번도 켜진 적이 없었다 —
        표는 r.userId === data.me.userId 로 판단하는데 오른쪽이 늘 undefined 였다.
@@ -231,12 +252,93 @@ export function leaderboardPage(me: WebUser | null): string {
        줄바꿈으로 쌓으면 게임이 늘어날수록 표가 아래로 밀려 첫 화면에서 사라진다. */
     function paintChips(){
       var items = [{ key: 'overall', label: '통합 랭킹' }].concat(data.games);
-      document.getElementById('lbChips').innerHTML = items.map(function(g){
+      /* el 같은 흔한 이름을 쓰지 않는다. 화면 코드가 한 문자열로 이어 붙는 구조라
+         이름이 겹치기 쉽고, 실제로 감사가 이 자리의 el 을 다른 조각의 el.hidden 대입과
+         묶어 "hidden 이 안 먹는 요소"로 오탐했다.
+         (이 주석에 백틱을 쓰면 안 된다 — 이 조각 자체가 템플릿 문자열이라 거기서 끊긴다) */
+      chipsEl.innerHTML = items.map(function(g){
         return '<button type="button" class="lb-chip' + (g.key === data.tab ? ' on' : '')
           + '" role="tab" data-key="' + esc(g.key) + '">' + esc(g.label)
           + (g.players ? '<i>' + g.players + '<\\/i>' : '') + '<\\/button>';
       }).join('');
+      /* 고른 칸이 화면 밖이면 끌어와 보여준다. 넘친 줄에서는 [포커 플립]을 누르고
+         돌아왔을 때 그 칩이 오른쪽 밖에 있어 "어디가 켜졌는지" 보이지 않는다. */
+      var on = chipsEl.querySelector('.lb-chip.on');
+      if (on && on.scrollIntoView) {
+        on.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      }
+      chipEdges();
     }
+
+    /* ── 넘친 줄을 끌어서 넘긴다 ────────────────────────────────────
+       게임이 늘면서 칩 줄이 화면 밖으로 넘쳤다(실측: 860px 칸에 983px — [사다리게임]이
+       잘리고 [포커 플립]은 아예 안 보인다). 줄 하나에 가로 스크롤바가 붙으면 지저분해서
+       감춰 두었는데, 그러면 마우스로는 넘어간 것에 닿을 방법이 사라진다.
+
+       세 가지를 함께 둔다. 하나만으로는 부족하다:
+         · 끌기      — 손으로 미는 가장 직접적인 방법
+         · 세로 휠   — 휠 마우스는 가로 스크롤을 주지 않는다(트랙패드만 준다)
+         · 끝 흐림   — 넘어간 것이 있다는 신호. 없으면 끌어 볼 생각 자체를 못 한다 */
+    var chipsEl = document.getElementById('lbChips');
+    function chipEdges(){
+      var max = chipsEl.scrollWidth - chipsEl.clientWidth;
+      chipsEl.classList.toggle('more-l', chipsEl.scrollLeft > 2);
+      chipsEl.classList.toggle('more-r', chipsEl.scrollLeft < max - 2);
+    }
+    (function(){
+      var down = false, startX = 0, startLeft = 0, moved = 0, captured = false;
+      /* 누르는 순간에는 포인터를 잡지 않는다.
+         잡으면 그 뒤의 click 이 눌린 버튼이 아니라 «잡은 요소»로 날아간다 — 탭 리스너가
+         e.target.closest('.lb-chip') 으로 어느 칸인지 찾는데 그 값이 컨테이너라 늘 null 이
+         되고, 랭킹 탭이 통째로 안 눌렸다(제보).
+         끌기가 실제로 시작된 뒤에만 잡는다. 그래야 평범한 클릭은 캡처를 한 번도 거치지
+         않고, 손가락이 요소 밖으로 나가는 드래그는 그대로 따라온다. */
+      chipsEl.addEventListener('pointerdown', function(e){
+        if (e.button !== 0) return;
+        down = true; moved = 0; captured = false;
+        startX = e.clientX; startLeft = chipsEl.scrollLeft;
+      });
+      chipsEl.addEventListener('pointermove', function(e){
+        if (!down) return;
+        var dx = e.clientX - startX;
+        moved = Math.max(moved, Math.abs(dx));
+        /* 4px 안쪽은 끌기로 보지 않는다 — 누를 때 손가락은 늘 조금 움직인다.
+           그 구간에서는 스크롤도 하지 않는다. 1~2px 씩 밀리면 누르는 순간 줄이 떨린다. */
+        if (moved <= 4) return;
+        if (!captured) {
+          captured = true;
+          chipsEl.classList.add('dragging');
+          try { chipsEl.setPointerCapture(e.pointerId); } catch (err) { /* 구형 브라우저 */ }
+        }
+        chipsEl.scrollLeft = startLeft - dx;
+      });
+      function release(e){
+        if (!down) return;
+        down = false;
+        chipsEl.classList.remove('dragging');
+        if (captured) {
+          captured = false;
+          try { chipsEl.releasePointerCapture(e.pointerId); } catch (err) { /* 위와 같다 */ }
+        }
+      }
+      chipsEl.addEventListener('pointerup', release);
+      chipsEl.addEventListener('pointercancel', release);
+      /* 끌고 놓은 것을 클릭으로 세지 않는다 — 줄을 넘기려다 엉뚱한 탭이 열리면 그건
+         고장으로 읽힌다. 캡처 단계에서 막아 탭 리스너에 닿지 않게 한다.
+         4px 은 손떨림과 의도를 가르는 선이다(누를 때 손가락은 늘 조금 움직인다). */
+      chipsEl.addEventListener('click', function(e){
+        if (moved > 4) { e.stopPropagation(); e.preventDefault(); }
+        moved = 0;
+      }, true);
+      chipsEl.addEventListener('wheel', function(e){
+        if (chipsEl.scrollWidth <= chipsEl.clientWidth) return;
+        if (e.deltaX !== 0) return;              // 트랙패드는 가로를 직접 준다 — 건드리지 않는다
+        chipsEl.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }, { passive: false });
+      chipsEl.addEventListener('scroll', chipEdges);
+      window.addEventListener('resize', chipEdges);
+    })();
 
     function paintTable(){
       var overall = data.kind === 'overall';

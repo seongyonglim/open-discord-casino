@@ -37,12 +37,26 @@ export const PK_MARKETS_JS = `      var MARKET_DEFS = [
       }
       // 풀하우스 이상은 자주 안 나와서 점으로 보면 거의 다 꺼진 줄이 된다.
       // 그래서 이쪽은 점 대신 "몇 판째 안 나왔는지"만 보여준다.
+      /* 예전에는 이 값을 라운드 기록(st.history)에서 셌다. 보관이 30판이라 그 너머는
+         «29판+ 미출현» 으로 잘렸는데, 몇 판째인지가 이 칸의 전부다 — 상한에 걸려
+         가장 재미있는 숫자가 뭉개지고 있었다.
+         이제 서버가 세어 둔 값을 받는다(st.drought). 30판을 넘어도 정확하다.
+         exact 가 0 인 동안만 예전처럼 «N판+» 로 적는다 — 표를 처음 만들 때 남은 기록으로
+         채운 값이라 "적어도 N판"이 최선인 구간이고, 그 등급이 한 번 나오면 정확해진다. */
       function droughtHtml(bucketIdx){
-        var h=(st.history||[]), k=-1;
-        for (var i=0;i<h.length;i++){ if (h[i].buckets.indexOf(bucketIdx)>=0){ k=i; break; } }
-        if (k === 0) return '<span class="m-drought">직전 판 적중</span>';
-        if (k > 0) return '<span class="m-drought">'+k+'판째 미출현</span>';
-        return h.length ? '<span class="m-drought">'+h.length+'판+ 미출현</span>' : '<span class="m-drought">기록 없음</span>';
+        var d = null, arr = st.drought || [];
+        for (var i=0;i<arr.length;i++){ if (arr[i].bucket === bucketIdx){ d = arr[i]; break; } }
+        if (!d) return '<span class="m-drought">기록 없음</span>';
+        /* 최장 기록은 제목에 둔다. 칸이 좁아 한 줄에 둘을 적으면 둘 다 안 읽힌다 —
+           궁금한 사람은 올려 보면 나온다.
+           아직 정확하지 않은 동안에는 붙이지 않는다. 그때의 best 는 남아 있던 30판에서
+           나온 값이라 "역대"라고 부를 수 없다 — 틀린 기록을 적느니 안 적는 것이 낫다. */
+        var tip = (d.exact && d.best > 0) ? ' title="역대 최장 ' + d.best + '판"' : '';
+        if (d.since === 0) return '<span class="m-drought"'+tip+'>직전 판 적중</span>';
+        /* «N판+» 를 붙였다가 뺐다. 그 표시는 표를 처음 만든 뒤 그 등급이 한 번 나올
+           때까지만 붙는 임시 딱지인데(길어야 한 시간 남짓), 그 어색함을 상시로 지불할
+           이유가 없다. 그 구간의 값은 실제보다 작을 수 있지만 한 번 적중하면 정확해진다. */
+        return '<span class="m-drought"'+tip+'>'+d.since+'판째 미출현</span>';
       }
       // b0~b2는 점등 전적, b3~b4(풀하우스·포카드 이상)는 미출현 판수
       function bucketFoot(bucketIdx){

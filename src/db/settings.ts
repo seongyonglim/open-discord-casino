@@ -30,6 +30,36 @@ export interface TournamentConfig {
      어긋나는 상태(바이인인데 0원, 프리롤인데 500원)가 생기고, 그때 어느 쪽을 믿을지
      아무도 모른다. 금액 하나만 두면 0 인가 아닌가로 방식이 저절로 정해진다. */
   buyIn: number;
+  /* 판의 종류. 자동 개최가 이 값으로 대회를 연다 — 예전에는 여기 칸이 없어서 자동으로
+     열리는 판은 언제나 일반 대회였고, 바운티는 운영자가 매번 손으로 열어야 했다.
+
+     buyIn 과 달리 방식과 금액이 어긋날 여지가 없다: 이 값 하나가 곧 방식이고,
+     바운티 몫은 아래 bountyPct 가 따로 든다(일반 대회에서는 쓰이지 않는다). */
+  mode: 'CLASSIC' | 'PKO_BOUNTY' | 'MYSTERY_BOUNTY';
+  /* 1인당 금액 중 바운티로 갈 몫(%). 바운티 판에서만 쓴다.
+     미스터리도 이 값을 쓴다 — 100%면 순위 상금이 0 이 되고 전액이 봉투로 간다. */
+  bountyPct: number;
+  /* 자동으로 열리는 판에 붙일 이름. 평일과 주말을 따로 둔다 — 배수를 이미 그렇게
+     가르고 있어서 새 개념이 아니고, 주말 판을 다르게 부르고 싶다는 것이 요청이었다.
+     주말은 배수와 같은 기준(토·일)이다.
+
+     비워 두면 createTournament 가 방식을 보고 붙인다(미스터리 바운티 · 바운티 헌터 ·
+     홀덤 토너먼트 · 홀덤 프리롤). 빈 값을 "이름 없음"이 아니라 "알아서"로 읽는 것이
+     중요하다 — 그래야 한 번도 안 건드린 서버가 지금까지와 똑같이 동작한다. */
+  weekdayTitle: string;
+  weekendTitle: string;
+}
+/** 대회 이름 길이 상한. 로비 카드·기록 표·공지에 그대로 들어가는 글자다. */
+export const TITLE_MAX_LEN = 24;
+/* 화면을 무너뜨리거나 눈에 안 보이는 글자. 채팅의 scrub() 과 같은 목록이다 —
+   판정을 코드 포인트로 하는 이유는, 이 문자들을 정규식에 글자 그대로 적으면 소스에
+   그대로 박혀서 파일이 깨지기 때문이다(이 파일을 실제로 한 번 그렇게 깨뜨렸다). */
+function invisible(ch: string): boolean {
+  const c = ch.codePointAt(0) ?? 0;
+  return c < 0x20 || c === 0x7f
+    || (c >= 0x200b && c <= 0x200f)
+    || c === 0x2028 || c === 0x2029
+    || c === 0xfeff;
 }
 /* 순위별 분배 비율은 여기서 다루지 않는다. ITM 인원(참가자의 30%)과 순위별 비중은
    검증된 산식이라 그대로 둔다 — 운영자가 고치는 것은 "풀의 크기"까지다. */
@@ -58,6 +88,12 @@ export function defaultConfig(): TournamentConfig {
     weekendMultiplier: r.freerollPerHeadWeekend,
     prizeFixed: 0,
     buyIn: 0,
+    mode: 'CLASSIC',
+    bountyPct: T.BOUNTY_PCT_DEFAULT,
+    /* 기본은 비움 = 방식에 맞춰 자동. 여기에 '홀덤 프리롤'을 적어 두면 미스터리 판에도
+       그 이름이 박힌다 — 지금 이름이 방식을 따라가는 이유가 그것이다. */
+    weekdayTitle: '',
+    weekendTitle: '',
   };
 }
 
@@ -88,7 +124,23 @@ export function getConfig(): TournamentConfig {
     weekendMultiplier: numOf('weekendMultiplier', d.weekendMultiplier),
     prizeFixed: numOf('prizeFixed', d.prizeFixed),
     buyIn: numOf('buyIn', d.buyIn),
+    /* 저장된 적이 없거나 알 수 없는 값이면 일반 대회로 읽는다 — 자동 개최가 뜻하지 않게
+       바운티를 여는 것보다 아무 표시 없이 일반을 여는 쪽이 안전하다. */
+    mode: v.tmplMode === 'PKO_BOUNTY' || v.tmplMode === 'MYSTERY_BOUNTY' ? v.tmplMode : d.mode,
+    bountyPct: T.clampBountyPct(numOf('tmplBountyPct', d.bountyPct)),
+    weekdayTitle: (v.tmplWeekdayTitle ?? d.weekdayTitle).trim(),
+    weekendTitle: (v.tmplWeekendTitle ?? d.weekendTitle).trim(),
   };
+}
+
+/**
+ * 자동으로 열리는 판에 붙일 이름. 주말은 배수와 같은 기준(토·일)이다.
+ *
+ * 빈 문자열을 돌려주면 createTournament 가 방식을 보고 알아서 붙인다 — 여기서
+ * 대신 채우지 않는다. 방식별 이름 규칙이 두 곳에 생기면 언젠가 갈라진다.
+ */
+export function autoTitle(startAtMs: number, c: TournamentConfig = getConfig()): string {
+  return (T.isKstWeekend(startAtMs) ? c.weekendTitle : c.weekdayTitle).trim();
 }
 
 /**
@@ -125,6 +177,34 @@ export function validateConfig(c: TournamentConfig): string[] {
   /* 참가비는 사람 잔액에서 실제로 빠져나가는 돈이다. 음수·소수가 여기를 지나면
      그대로 원장에 남는다. */
   if (!int(c.buyIn) || c.buyIn < 0) bad.push('참가비는 0 이상의 정수여야 합니다');
+  if (!['CLASSIC', 'PKO_BOUNTY', 'MYSTERY_BOUNTY'].includes(c.mode)) {
+    bad.push('대회 방식이 올바르지 않습니다');
+  }
+  /* 바운티 몫은 일반 대회에서도 저장은 된다(방식을 바꿔도 값이 남아 있어야 한다).
+     다만 범위는 언제나 지킨다 — 0% 면 바운티가 없는 바운티 판이 되고, 100% 를 넘으면
+     상금 팟이 음수가 된다. */
+  if (!int(c.bountyPct) || c.bountyPct < T.BOUNTY_PCT_MIN || c.bountyPct > T.BOUNTY_PCT_MAX) {
+    bad.push(`바운티 몫은 ${T.BOUNTY_PCT_MIN}~${T.BOUNTY_PCT_MAX} 사이여야 합니다`);
+  }
+  /* 이름은 비워 둘 수 있다(= 방식에 맞춰 자동). 적었다면 한 줄에 들어가야 한다 —
+     로비 카드와 기록 표의 한 칸에 그대로 앉는 글자다. 길이는 코드 포인트로 센다:
+     이모지 하나가 둘로 잡히면 사람이 보는 글자 수와 달라진다. */
+  for (const [k, label] of [['weekdayTitle', '평일 이름'], ['weekendTitle', '주말 이름']] as const) {
+    const v = c[k];
+    if (typeof v !== 'string') { bad.push(`${label}이 올바르지 않습니다`); continue; }
+    if ([...v.trim()].length > TITLE_MAX_LEN) {
+      bad.push(`${label}은 ${TITLE_MAX_LEN}자까지 쓸 수 있습니다`);
+    }
+    /* 줄바꿈·탭이 들어오면 표와 카드가 그 자리에서 무너지고, 보이지 않는 글자로만 채운
+       이름은 저장은 되는데 화면에 아무것도 안 뜬다. 둘 다 막는다.
+
+       검사는 코드 포인트로 한다 — 제어 문자를 정규식에 글자 그대로 적으면 그 문자가
+       소스에 그대로 박혀서 파일이 깨진다(방금 이 파일을 그렇게 깨뜨렸다).
+       판정 규칙은 채팅의 scrub() 과 같다. */
+    if ([...v].some(invisible)) {
+      bad.push(`${label}에 줄바꿈이나 보이지 않는 문자를 넣을 수 없습니다`);
+    }
+  }
   return bad;
 }
 
@@ -145,6 +225,10 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
     put('weekendMultiplier', String(c.weekendMultiplier));
     put('prizeFixed', String(c.prizeFixed));
     put('buyIn', String(c.buyIn));
+    put('tmplMode', c.mode);
+    put('tmplBountyPct', String(c.bountyPct));
+    put('tmplWeekdayTitle', c.weekdayTitle.trim());
+    put('tmplWeekendTitle', c.weekendTitle.trim());
     return { ok: true as const };
   });
 }
@@ -153,6 +237,7 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
 const CONFIG_KEYS = [
   'regOpenMin', 'startMin', 'graceMin', 'lateRegMin', 'startingStack', 'levelMin',
   'weekdayMultiplier', 'weekendMultiplier', 'prizeFixed', 'buyIn',
+  'tmplMode', 'tmplBountyPct', 'tmplWeekdayTitle', 'tmplWeekendTitle',
   // 예전 표기(시 단위). 남아 있으면 되돌린 뒤에도 그 값이 읽히므로 함께 지운다
   'regOpenHour', 'startHour',
 ];

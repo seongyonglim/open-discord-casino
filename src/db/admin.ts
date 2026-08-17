@@ -28,8 +28,15 @@ export interface AdminTournamentRow {
   mode: string;
   /** 바운티 몫(%). 목록이 "바운티 70%" 처럼 적는 데 쓴다 */
   bounty_pct: number;
+  /** 걷은 바운티 펀드. 상금 팟과 별개의 갈래라 목록도 따로 적어야 한다 */
+  bounty_pool: number;
   entries: number;
-  /** 실제로 지급된 상금 합계. 0이면 이 대회는 경제에 아무 흔적도 남기지 않았다. */
+  /** 실제로 나간 돈 전부(순위 상금 + 바운티). 0이면 이 대회는 경제에 아무 흔적도 남기지 않았다.
+   *
+   *  한동안 순위 상금만 셌다. 그래서 바운티 100% 대회가 목록에 «지급 0P» 로 보였고,
+   *  140,000P 가 나간 판에 [지우기] 버튼이 붙었다 — 누르면 서버가 거절하므로(purgeTournament
+   *  가 bounty 도 본다) 돈이 새지는 않지만, 운영자에게 실패할 버튼을 내주는 것은
+   *  그 자체로 결함이다. 목록이 판단하는 근거와 서버가 판단하는 근거가 같아야 한다. */
   paid: number;
 }
 
@@ -37,7 +44,12 @@ export function listTournaments(limit = 30): AdminTournamentRow[] {
   return all<AdminTournamentRow>(
     `SELECT t.*,
             (SELECT COUNT(*) FROM holdem_entries e WHERE e.tournament_id = t.id) AS entries,
-            (SELECT COALESCE(SUM(e.prize), 0) FROM holdem_entries e WHERE e.tournament_id = t.id) AS paid
+            /* 나간 돈 전부. purgeTournament 가 거절하는 기준(prize·fees·bounty)과 같은
+               갈래를 봐야 목록의 버튼과 서버의 판단이 어긋나지 않는다.
+               갈래별로 나눠 두었다가 합쳤다 — 목록이 총액만 쓰고, 안 쓰는 값을 내려보내면
+               다음에 읽는 사람이 "이건 어디에 쓰나"를 쫓게 된다. */
+            (SELECT COALESCE(SUM(e.prize), 0) + COALESCE(SUM(e.bounty_paid), 0)
+               FROM holdem_entries e WHERE e.tournament_id = t.id) AS paid
        FROM holdem_tournaments t
       ORDER BY t.id DESC LIMIT ?`, limit);
 }
@@ -280,8 +292,13 @@ export function createTournament(o: {
       };
     }
     const fixed = Math.max(0, Math.floor(o.prizeFixed ?? cfg.prizeFixed));
-    /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이다. */
-    const title = (o.title ?? '').trim() || (buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
+    /* 이름을 성격에 맞춘다. "홀덤 프리롤"이라고 적힌 참가비 대회는 그 자체로 거짓말이고,
+       바운티 판도 마찬가지다 — 자동 개최가 방식까지 고르게 되면서 이름만 남아 있으면
+       목록에서 어느 판이 미스터리였는지 알 수 없다. */
+    const title = (o.title ?? '').trim()
+      || (mode === 'MYSTERY_BOUNTY' ? '미스터리 바운티'
+        : mode === 'PKO_BOUNTY' ? '바운티 헌터'
+        : buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤');
     /* date_str 은 이제 "하루 하나"의 열쇠가 아니다(유니크 인덱스를 걷어냈다).
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments

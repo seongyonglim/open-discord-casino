@@ -22,7 +22,8 @@ import {
 } from '../db/admin';
 import { prizePoolOf, isPko, isMystery } from '../db/holdem';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
-import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason } from '../db/settings';
+import { chatRecentAll, setChatHidden, setChatMute, chatMuteLeft } from '../db/queries';
+import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason, TITLE_MAX_LEN } from '../db/settings';
 import {
   getRecurrence, saveRecurrence, nextOccurrence, WEEKDAY_LABEL, MODE_LABEL,
   type RecurMode,
@@ -89,7 +90,15 @@ export function adminPage(user: WebUser): string {
         : isPko(t) ? ` <span class="ad-tag pko">바운티 ${t.bounty_pct}%</span>` : ''}</td>
       <td><span class="ad-st s-${st === '진행 중' ? 'run' : st === '종료' ? 'done' : st === '취소' ? 'cancel' : 'wait'}">${st}</span></td>
       <td class="r">${num(t.entries)}</td>
-      <td class="r">${num(pool)}P</td>
+      ${/* 바운티 판은 상금이 두 갈래로 나간다. 한동안 순위 상금만 적어서 바운티 100%
+            대회가 «0P» 로 보였고, 140,000P 가 나간 판이 흔적 없는 판으로 읽혔다.
+            그래서 총액을 적는다.
+
+            갈래별 내역(순위 N + 바운티 M)을 한 줄 더 붙였다가 걷어냈다 — 줄마다 두 줄이
+            되면서 표가 두 배로 길어졌는데, 이 표는 "언제·얼마짜리 판이었나"를 훑는
+            자리이지 정산 내역서가 아니다. 갈래가 궁금하면 방식 태그(바운티 70%·미스터리)가
+            옆에 이미 붙어 있다. */''}
+      <td class="r">${num(pool + t.bounty_pool)}P</td>
       <td class="r ${t.paid > 0 ? 'paid' : ''}">${num(t.paid)}P</td>
       <td>${live2(t)
         ? `<span class="ad-no">진행 중</span>`
@@ -97,6 +106,31 @@ export function adminPage(user: WebUser): string {
           ? `<button type="button" class="ad-revoke danger" data-id="${t.id}"
                data-label="${esc(t.date_str)} · ${esc(t.title)}" data-paid="${t.paid}">상금 회수 후 삭제</button>`
           : `<button type="button" class="ad-del" data-id="${t.id}" data-label="${esc(t.date_str)} · ${esc(t.title)}">지우기</button>`}</td>
+    </tr>`;
+  }).join('');
+
+  /* 최근 대화. 감춘 줄까지 함께 보여준다 — 운영자가 되돌릴 수 있어야 하기 때문이다.
+     WHERE_LABEL 은 화면 표기용이고, 모르는 값은 그대로 적는다(로비면 비어 있다). */
+  const WHERE_LABEL: Record<string, string> = {
+    holdem: '홀덤', baccarat: '바카라', blackjack: '블랙잭',
+    crash: '그래프', ladder: '사다리', poker: '포커', mines: '지뢰찾기',
+  };
+  const chatRows = chatRecentAll(60).map(m => {
+    const t = new Date(m.created_ms);
+    const hh = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const muted = chatMuteLeft(m.user_id);
+    return `<tr class="${m.hidden ? 'off' : ''}">
+      <td class="ad-cm-t">${esc(hh)}</td>
+      <td>${esc(m.username)}${muted > 0 ? ` <i class="ad-cm-mute">재갈 ${Math.ceil(muted / 60)}분</i>` : ''}</td>
+      <td class="ad-cm-w">${esc(m.where_at ? (WHERE_LABEL[m.where_at] ?? m.where_at) : '로비')}</td>
+      <td class="ad-cm-b">${esc(m.body)}</td>
+      <td class="ad-cm-x">
+        <button type="button" class="ad-chat-hide" data-id="${m.id}" data-hidden="${m.hidden ? 1 : 0}"
+          >${m.hidden ? '되돌리기' : '숨김'}</button>
+        <button type="button" class="ad-chat-mute" data-user="${esc(m.user_id)}"
+          data-name="${esc(m.username)}" data-muted="${muted > 0 ? 1 : 0}"
+          >${muted > 0 ? '재갈 풀기' : '재갈'}</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -174,6 +208,9 @@ export function adminPage(user: WebUser): string {
      그 묶기가 통째로 끊긴다 — 지금 잘 도는 것을 건드리지 않는 길이 이쪽이다. */
   const MENU: { key: string; label: string; sub: string }[] = [
     { key: 'tour', label: '대회 관리', sub: '개설 · 자동 개최 · 기록' },
+    /* 채팅은 대회 관리 안에 있었다. 대회를 여는 화면과 남의 말을 가리는 화면은 하는 일도
+       급한 순간도 다르다 — 도배가 났을 때 대회 기록을 지나 스크롤해 내려가야 했다. */
+    { key: 'chat', label: '채팅 관리', sub: '숨김 · 재갈' },
     { key: 'season', label: '시즌 / 랭킹', sub: '시즌 설정 · 마감' },
     { key: 'user', label: '유저 / 재화', sub: '조회 · 지급 · 원장' },
     { key: 'sys', label: '공지 / 시스템', sub: '공지 · 운영 토큰' },
@@ -286,6 +323,19 @@ export function adminPage(user: WebUser): string {
       </div>
     </section>
 
+    <section class="ad-card" data-pane="chat">
+      <h2>채팅</h2>
+      <p class="ad-note">최근 대화입니다. <b>[숨김]</b>은 되돌릴 수 있습니다 —
+        줄을 실제로 지우지 않고 가리기만 합니다(id 가 끊기면 화면이 그 자리를 영영 다시 받아
+        가지 않습니다). <b>[재갈]</b>은 그 사람의 채팅만 막고 게임에는 영향이 없습니다.</p>
+      <div class="ad-scroll">
+        <table class="ad-tbl ad-chat">
+          <thead><tr><th>시각</th><th>이름</th><th>위치</th><th>내용</th><th></th></tr></thead>
+          <tbody id="adChatBody">${chatRows}</tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="ad-card" data-pane="tour">
       <h2>대회 기록</h2>
       <p class="ad-note">상금이 나간 대회는 <b>[상금 회수 후 삭제]</b>로만 지울 수 있습니다 — 그냥 지우면
@@ -365,6 +415,16 @@ export function adminPage(user: WebUser): string {
           <option value="free" ${cfg.buyIn > 0 ? '' : 'selected'}>프리롤 (참가비 없음)</option>
           <option value="buyin" ${cfg.buyIn > 0 ? 'selected' : ''}>바이인 (참가비 있음)</option>
         </select><i>고른 쪽의 설정만 아래에 나옵니다</i></label>
+        <!-- 자동 개최가 방식까지 고른다. 예전에는 이 칸이 없어서 자동으로 열리는 판은
+             언제나 일반 대회였고, 바운티는 매번 손으로 열어야 했다. -->
+        <label>대회 방식<select id="cfMode">
+          <option value="CLASSIC" ${cfg.mode === 'CLASSIC' ? 'selected' : ''}>일반 (순위 상금만)</option>
+          <option value="PKO_BOUNTY" ${cfg.mode === 'PKO_BOUNTY' ? 'selected' : ''}>바운티 헌터 (금액 공개)</option>
+          <option value="MYSTERY_BOUNTY" ${cfg.mode === 'MYSTERY_BOUNTY' ? 'selected' : ''}>미스터리 바운티 (금액 비공개)</option>
+        </select><i>자동으로 열리는 판에 그대로 적용됩니다</i></label>
+        <label id="cfBtyRow">바운티 몫<span class="ad-inx"><input type="number" id="cfBtyPct"
+          min="${T.BOUNTY_PCT_MIN}" max="${T.BOUNTY_PCT_MAX}" step="5" value="${cfg.bountyPct}"><b>%</b></span>
+          <i>나머지가 순위 상금입니다 · 100%면 전액 바운티</i></label>
       </div>
       <!-- 방식에 따라 한 쪽만 보인다. 배수와 참가비는 상금 풀을 정하는 서로 다른 방법이라
            나란히 두면 어느 것이 지금 쓰이는지 알 수 없다. -->
@@ -377,6 +437,20 @@ export function adminPage(user: WebUser): string {
         <label>참가비<span class="ad-inx"><input type="number" id="cfBuyIn" min="0" step="100" value="${cfg.buyIn}"><b>P</b></span><i>5명이면 상금 ${num(Math.max(cfg.buyIn, 0) * 5)}P · 취소되면 전액 환불</i></label>
         <label>보장 상금 (GTD)<span class="ad-inx"><input type="number" id="cfGtd" min="0" step="1000" value="${cfg.prizeFixed}"><b>P</b></span><i>걷은 돈이 이보다 적으면 모자란 만큼 채웁니다</i></label>
       </div>
+      <!-- 대회 이름. 평일과 주말을 따로 두는 것은 배수와 같은 축이라 새 개념이 아니다.
+           비워 두면 방식이 이름을 정한다 — 그것이 지금까지의 동작이고 기본값이다. -->
+      <div class="ad-grid">
+        <label>평일 이름<input type="text" id="cfTitleWd" maxlength="${TITLE_MAX_LEN}"
+          placeholder="비우면 방식에 맞춰 자동" value="${esc(cfg.weekdayTitle)}">
+          <i>월~금에 자동으로 열리는 판의 이름입니다</i></label>
+        <label>주말 이름<input type="text" id="cfTitleWe" maxlength="${TITLE_MAX_LEN}"
+          placeholder="비우면 방식에 맞춰 자동" value="${esc(cfg.weekendTitle)}">
+          <i>토·일에 자동으로 열리는 판의 이름입니다</i></label>
+      </div>
+      <p class="ad-note">이름을 비워 두면 방식이 정합니다 —
+        <b>미스터리 바운티</b> · <b>바운티 헌터</b> · 참가비가 있으면 <b>홀덤 토너먼트</b> ·
+        없으면 <b>홀덤 프리롤</b>. 손으로 여는 판은 [새 대회 열기]에 적은 이름을 그대로 쓰므로
+        여기 값의 영향을 받지 않습니다.</p>
       <div class="ad-row">
         <button type="button" id="cfSave" class="primary">템플릿 저장</button>
         <button type="button" id="cfReset">기본값으로</button>
@@ -505,7 +579,10 @@ export function adminPage(user: WebUser): string {
        카드는 전부 그려져 있고 여기서 보이기만 바꾼다. 고른 화면은 주소(#)에 남긴다 —
        새로고침하거나 저장 뒤 location.reload() 가 걸려도 보던 자리로 돌아온다.
        이 화면은 저장할 때마다 새로고침하므로, 이게 없으면 매번 첫 화면으로 튕긴다. */
-    var PANES = ['tour', 'season', 'user', 'sys'];
+    /* 목록을 여기 손으로 적지 않는다. 왼쪽 메뉴(MENU)에서 그대로 뽑아 온다 —
+       예전에는 두 곳에 따로 적혀 있었고, 채팅 화면을 새로 넣었을 때 이쪽을 빠뜨려서
+       메뉴에는 보이는데 눌러도 첫 화면으로 되돌아왔다(모르는 key 는 PANES[0] 이 된다). */
+    var PANES = ${jsonForScript(MENU.map(m => m.key))};
     var navEl = document.getElementById('adNav');
     function showPane(key){
       if (PANES.indexOf(key) < 0) key = PANES[0];
@@ -759,6 +836,28 @@ export function adminPage(user: WebUser): string {
         function(){ post('/api/admin/tournament/abort', {}).then(function(r){ if (shout(r)) location.reload(); }); });
     });
 
+    /* 채팅 — 숨김과 재갈. 둘 다 되돌릴 수 있으므로 확인 모달을 두지 않는다.
+       되돌릴 수 없는 것(대회 삭제·상금 회수)에만 확인을 두어야 그 확인이 무게를 갖는다. */
+    var adChat = document.getElementById('adChatBody');
+    if (adChat) adChat.addEventListener('click', function(ev){
+      var h = ev.target.closest ? ev.target.closest('.ad-chat-hide') : null;
+      if (h) {
+        post('/api/admin/chat/hide', { id: Number(h.getAttribute('data-id')),
+          hidden: h.getAttribute('data-hidden') !== '1' })
+          .then(function(r){ if (shout(r)) location.reload(); });
+        return;
+      }
+      var m = ev.target.closest ? ev.target.closest('.ad-chat-mute') : null;
+      if (m) {
+        var on = m.getAttribute('data-muted') === '1';
+        /* 기본 10분. 길게 물릴 일이 드물고, 모자라면 다시 누르면 된다 —
+           반대로 길게 물린 것을 알아채는 데는 시간이 걸린다. */
+        post('/api/admin/chat/mute', { userId: m.getAttribute('data-user'), sec: on ? 0 : 600 })
+          .then(function(r){ if (shout(r)) location.reload(); });
+        return;
+      }
+    });
+
     document.getElementById('adTBody').addEventListener('click', function(ev){
       var b = ev.target.closest ? ev.target.closest('.ad-del') : null;
       if (b) {
@@ -919,6 +1018,16 @@ export function adminPage(user: WebUser): string {
     cfKind.addEventListener('change', cfSyncRows);
     cfSyncRows();
 
+    /* 바운티 몫은 바운티 판에서만 뜻이 있다. 일반 대회에서 숫자를 띄워 두면 "이게 뭘
+       바꾸나"를 묻게 되고, 답은 "아무것도"다.
+       값 자체는 지우지 않는다 — 방식을 되돌리면 예전 몫이 그대로 나와야 한다. */
+    var cfMode = document.getElementById('cfMode');
+    function cfSyncMode(){
+      document.getElementById('cfBtyRow').hidden = cfMode.value === 'CLASSIC';
+    }
+    cfMode.addEventListener('change', cfSyncMode);
+    cfSyncMode();
+
     function cfRead(){
       var buyin = cfBuyin();
       return {
@@ -931,6 +1040,14 @@ export function adminPage(user: WebUser): string {
         weekdayMultiplier: buyin ? 0 : cfNum('cfWd'),
         weekendMultiplier: buyin ? 0 : cfNum('cfWe'),
         prizeFixed: buyin ? cfNum('cfGtd') : cfNum('cfFixed'),
+        /* 방식과 바운티 몫은 참가 방식과 무관하게 늘 보낸다 — 일반 대회를 골라 두어도
+           값은 남아 있어야 나중에 바운티로 되돌릴 때 예전 몫이 그대로 나온다. */
+        mode: document.getElementById('cfMode').value,
+        bountyPct: cfNum('cfBtyPct'),
+        /* 이름은 다듬지 않고 그대로 보낸다 — 자르고 지우는 규칙이 화면과 서버 두 곳에
+           있으면 언젠가 갈라진다. 마지막 문은 saveConfig 이다. */
+        weekdayTitle: document.getElementById('cfTitleWd').value,
+        weekendTitle: document.getElementById('cfTitleWe').value,
       };
     }
     function cfCheck(c){
@@ -939,8 +1056,14 @@ export function adminPage(user: WebUser): string {
       var LABEL = { regOpenMin: '등록 시작', startMin: '대회 시작', graceMin: '최소 인원 대기',
         lateRegMin: '레이트 레지', startingStack: '시작 칩', levelMin: '블라인드 주기',
         weekdayMultiplier: '평일 배수', weekendMultiplier: '주말 배수',
-        prizeFixed: '고정 상금 풀', buyIn: '참가비' };
-      for (var k in c) if (!isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
+        prizeFixed: '고정 상금 풀', buyIn: '참가비', bountyPct: '바운티 몫' };
+      /* 숫자가 아닌 칸은 건너뛴다 — isFinite 로 걸면 언제나 "값을 확인해 주세요"가 뜬다.
+         목록을 손으로 적는 대신 값의 종류로 가른다: 나중에 문자열 칸이 또 늘어도
+         여기를 고칠 일이 없다(이름 두 칸을 넣을 때 실제로 여기서 걸렸다). */
+      for (var k in c) {
+        if (typeof c[k] === 'string') continue;
+        if (!isFinite(c[k])) bad.push((LABEL[k] || k) + ' 값을 확인해 주세요');
+      }
       /* 분 단위로 바뀐 뒤에도 시(regOpenHour/startHour)를 보고 있었다 — 없는 값이라
          비교가 전부 false 가 되어 화면 검증이 조용히 아무것도 안 했다. 서버가 막아 주긴
          하지만, 저장을 눌러 봐야 알게 되는 것이 이 검사를 둔 이유를 지운다. */
@@ -1204,6 +1327,14 @@ export async function handleAdminConfig(req: IncomingMessage, res: ServerRespons
     weekdayMultiplier: n('weekdayMultiplier'), weekendMultiplier: n('weekendMultiplier'),
     prizeFixed: n('prizeFixed'),
     buyIn: n('buyIn'),
+    /* 방식은 문자열이라 n() 을 태우면 NaN 이 된다. 알 수 없는 값은 일반 대회로 읽는다 —
+       자동 개최가 뜻하지 않게 바운티를 여는 것보다 그쪽이 안전하다(saveConfig 이 다시 막는다). */
+    mode: b?.mode === 'PKO_BOUNTY' || b?.mode === 'MYSTERY_BOUNTY' ? b.mode : 'CLASSIC',
+    bountyPct: n('bountyPct'),
+    /* 이름은 문자열이다. 빈 값은 "이름 없음"이 아니라 "방식에 맞춰 자동"이라 그대로
+       통과시킨다 — 여기서 기본 이름을 채워 넣으면 미스터리 판에도 그 이름이 박힌다. */
+    weekdayTitle: String(b?.weekdayTitle ?? ''),
+    weekendTitle: String(b?.weekendTitle ?? ''),
   });
   if (!r.ok) return sendJson(res, 400, { error: r.errors.join(' · ') });
   return sendJson(res, 200, { ok: true });
@@ -1288,6 +1419,28 @@ export async function handleAdminNoticeDelete(req: IncomingMessage, res: ServerR
   const r = deleteNotice(String(b?.id ?? ''));
   if (!r.ok) return sendJson(res, 400, { error: NOTICE_MSG[r.error] });
   return sendJson(res, 200, { ok: true });
+}
+
+/* ── 채팅 ────────────────────────────────────────────────────────────
+   지우기와 재갈. 둘 다 되돌릴 수 있어야 한다 — 실수로 누른 것이 영구가 되면 그 버튼은
+   무서워서 못 쓴다. 줄을 실제로 지우지 않는 이유는 chat_messages 표 주석에 있다. */
+export async function handleAdminChatHide(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { id?: unknown; hidden?: unknown } | null;
+  const id = Math.floor(Number(b?.id));
+  if (!Number.isFinite(id) || id <= 0) return sendJson(res, 400, { error: '줄을 찾을 수 없습니다' });
+  setChatHidden(id, !!b?.hidden);
+  return sendJson(res, 200, { ok: true });
+}
+
+export async function handleAdminChatMute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const b = await readJson(req) as { userId?: unknown; sec?: unknown } | null;
+  const userId = String(b?.userId ?? '');
+  if (!userId) return sendJson(res, 400, { error: '대상을 찾을 수 없습니다' });
+  /* 상한을 둔다. 실수로 0 을 하나 더 붙이면 그 사람은 사흘 뒤에야 말할 수 있게 되고,
+     그때쯤엔 아무도 왜 그랬는지 기억하지 못한다. 더 필요하면 다시 누르면 된다. */
+  const sec = Math.max(0, Math.min(24 * 3600, Math.floor(Number(b?.sec ?? 0))));
+  setChatMute(userId, sec);
+  return sendJson(res, 200, { ok: true, sec });
 }
 
 /** 돈으로 쓰일 값은 정수 0 이상만 받는다. NaN·음수·소수가 원장까지 흘러가면 안 된다. */

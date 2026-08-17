@@ -467,6 +467,48 @@ function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_notices_order ON notices(active, sort_at DESC);
 
+    /* ── 포커 플립: 등급별 미출현 판수 ──────────────────────────────
+       "몇 판째 안 나왔나"를 라운드 기록에서 세면 30판이 한계다 — 그 너머는
+       prunePokerRounds 가 지운다(보관 30판). 그래서 화면이 «29판+ 미출현» 으로 잘렸다.
+       판수 자체가 이 게임의 재미인데 상한에 걸려 뭉개지고 있었다.
+
+       기록을 더 오래 보관하는 대신 세어 둔 값을 남긴다. 라운드 하나가 정산될 때마다
+       한 줄씩 갱신하면 되고, 30판이 지워져도 값은 남는다. 응답에 실리는 것도 다섯 줄뿐이라
+       보관을 늘리는 쪽(라운드 200개를 매 초 내려보내기)보다 훨씬 싸다.
+
+       exact — 이 값이 정확한가. 표를 처음 만들 때는 남아 있는 30판으로 채울 수밖에 없어서
+       "적어도 N판"이 최선이다(그때는 화면이 예전처럼 «N판+» 로 적는다). 그 뒤에 한 번
+       적중해서 0 으로 리셋되면 그때부터는 정확한 값이라 1 로 올린다 — 스스로 낫는다. */
+    CREATE TABLE IF NOT EXISTS poker_drought (
+      bucket INTEGER PRIMARY KEY,            -- 0..4 (BUCKET_NAMES 의 번호)
+      since INTEGER NOT NULL DEFAULT 0,      -- 마지막 적중 이후 지나간 판 수
+      best INTEGER NOT NULL DEFAULT 0,       -- 역대 최장 미출현
+      exact INTEGER NOT NULL DEFAULT 0       -- 1이면 since 가 정확한 값이다
+    );
+
+    /* ── 채팅 ────────────────────────────────────────────────────────
+       카지노 전체가 한 방을 쓴다. 게임마다 방을 나누면 동시 접속이 다섯 명인 서비스에서
+       전부 빈 방이 된다 — 어느 화면에 있든 같은 대화가 보이고, 줄마다 그 사람이 어디
+       있었는지(where)를 작게 붙여 구분한다.
+
+       이 표는 자란 만큼 그대로 두지 않는다. 최근 것만 보여주는 화면이라 오래된 줄은
+       아무도 읽지 않는다 — 넣을 때마다 지운다(투척·포커 미출현과 같은 방식이다).
+       서버 타이머가 없어서 "나중에 지운다"를 걸 데가 없다는 사정도 같다.
+
+       hidden — 운영자가 지운 줄. 실제로 지우지 않는 이유는 id 가 연속이어야 하기
+       때문이다: 화면은 "내가 가진 것보다 큰 id"만 받아 가는데, 중간이 사라지면
+       그 자리를 영영 다시 요청하지 않는다. */
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,          -- 그때의 이름. 나중에 바뀌어도 대화는 그대로 남는다
+      body TEXT NOT NULL,
+      where_at TEXT,                   -- 'holdem' | 'baccarat' … 없으면 로비
+      hidden INTEGER NOT NULL DEFAULT 0,
+      created_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id, created_ms DESC);
+
     CREATE TABLE IF NOT EXISTS holdem_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -546,6 +588,13 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE ladder_bets ADD COLUMN parity_guess TEXT`); } catch {}
   // 개인회생 지원금(파산 구제)을 마지막으로 받은 시각(unix초). 쿨다운 판정에 쓴다.
   try { d.exec(`ALTER TABLE users ADD COLUMN last_relief_at INTEGER`); } catch {}
+  /* 채팅 재갈이 풀리는 시각(초). 표를 따로 만들지 않는다 — 사람마다 하나뿐인 값이고,
+     읽는 자리가 "이 사람이 지금 말할 수 있나" 한 곳뿐이다. */
+  try { d.exec(`ALTER TABLE users ADD COLUMN chat_muted_until INTEGER`); } catch {}
+  /* 시스템이 적는 줄의 종류. 비어 있으면 사람이 한 말이다.
+     'mute' 는 붉게, 'unmute' 는 초록으로 그린다 — 재갈이 물리고 풀린 것을 방에 있는
+     사람이 다 같이 알아야 조치가 조치로 읽힌다(혼자만 못 쓰면 고장으로 읽힌다). */
+  try { d.exec(`ALTER TABLE chat_messages ADD COLUMN kind TEXT`); } catch {}
   // 홀덤: 마지막 행동 표시 (이미 만들어진 DB에도 붙인다)
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hand_seats ADD COLUMN last_amount INTEGER NOT NULL DEFAULT 0`); } catch {}

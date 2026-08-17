@@ -381,6 +381,7 @@
        7  행동 배지        .ht-abadge        — 1.7초짜리라 무엇보다 위에 보여야 한다
                                               자리 비움 태그(z6)를 잠깐 덮었다 물러난다
        9  WIN 배지         .ht-win-b
+      10  채팅 말풍선      .ht-bub           — 4초짜리라 카드·태그 위에 떠야 읽힌다
      번호를 한곳에 적어 두는 이유: 예전에는 puck 4 · blind 4 · clock 5 · out-tag 5 처럼
      같은 번호가 흩어져 있어서 무엇이 무엇을 덮는지 코드를 다 읽어야 알 수 있었다. */
   .ht-seats{position:absolute;inset:0;z-index:2}
@@ -391,6 +392,93 @@
      6시 자리의 말풍선이 옆 좌석의 프로필·카드 뒤로 묻혔다. 좌석 안에서 z-index를
      올려 봐야 소용없다(다른 좌석은 다른 쌓임 문맥이다). 올려야 하는 것은 좌석 자체다. */
   .ht-seat.eqon{z-index:12}
+  /* 채팅 말풍선도 같은 이유로 좌석째 올린다. 승률보다 한 칸 위다 — 승률은 계속 떠
+     있는 정보고 말풍선은 방금 일어난 일이라, 겹치면 방금 쪽이 보여야 한다. */
+  .ht-seat.bubon{z-index:13}
+
+  /* ── 테이블 채팅 말풍선 ────────────────────────────────────────────
+     누가 말했는지가 목록이 아니라 자리에서 읽혀야 한다. 오른쪽 아래 도크만 있으면
+     "누가 한 말인가"를 읽으려고 이름을 찾아 눈을 옮겨야 하고, 그 사이에 테이블에서
+     벌어지는 일을 놓친다. 말이 사람 옆에 뜨면 그 왕복이 사라진다.
+
+     자리는 승률 말풍선과 같은 규칙(eqSide)으로 고른다 — 테이블 바깥쪽이 곧 화면
+     밖인 좌우 끝자리에서는 안쪽에 붙어야 잘리지 않는다. 이미 한 번 겪어서 나온 규칙이라
+     새로 만들지 않고 그대로 쓴다.
+
+     높이는 아바타 위다. 홀 카드도 위로 자라지만 카드는 좌석 한가운데를 지나가고
+     말풍선은 좌우로 비켜 있어 서로 비껴간다.
+
+     pointer-events:none — 4초 뒤에 사라질 것이 그동안 클릭을 먹으면, 하필 그 자리에
+     있던 좌석이나 카드를 못 누른다. */
+  /* width:max-content 가 반드시 있어야 한다. 좌석 상자는 아바타 지름(72px)이고 말풍선은
+     그 안의 절대 배치라, 폭을 정해 주지 않으면 "남은 자리"(좌석 폭 − right 오프셋)에
+     맞춰 줄어든다 — 실측 34px, 한 글자씩 세로로 떨어졌다. max-content 는 남은 자리를
+     보지 않고 내용 폭을 잡으므로 좌석 밖으로 자연스럽게 뻗는다.
+     (승률 말풍선은 white-space:nowrap 이라 같은 함정을 피해 갔다. 여기는 세 줄까지
+     접히므로 nowrap 을 쓸 수 없어 max-content 가 필요하다.) */
+  .ht-bub{position:absolute;bottom:74%;z-index:10;width:max-content;
+    /* 좁은 창에서는 테이블 자체가 300px 아래로 줄어든다 — 그때도 154px 이면
+       말풍선 하나가 테이블 절반이다. 화면 폭에 같이 묶어 둔다. */
+    max-width:min(154px,40vw);min-width:34px;padding:6px 9px;border-radius:10px;
+    /* 오른쪽 아래 채팅창과 같은 딥 차콜이다. 한때 금색 상자였는데, 펠트 위에서 금색은
+       이미 임자가 있는 색이다 — 딜러 버튼, 블라인드 배지, 바운티 명찰, 팟 금액이 전부
+       금색이라 말풍선이 그 사이에 끼면 "또 하나의 게임 정보"로 읽혔다.
+       어두운 상자는 무엇도 흉내 내지 않아서 그 자체로 "사람이 한 말"이 된다. */
+    background:rgba(22,25,32,.95);
+    border:1px solid #2e3440;
+    box-shadow:0 4px 16px rgba(0,0,0,.7);
+    font-size:12px;line-height:1.34;font-weight:500;color:#f8fafc;
+    text-align:left;word-break:break-word;pointer-events:none}
+  .ht-bub[hidden]{display:none}
+  /* 1위만 테두리가 금색이다. 채팅창의 순위 뱃지와 같은 규칙 — 색이 있는 것이 곧
+     상위권이라는 뜻이고, 테이블에서도 같은 약속이 통해야 두 화면이 한 벌로 읽힌다. */
+  .ht-bub.k1{border-color:#f59e0b}
+  .ht-bub.l{right:52%}
+  .ht-bub.r{left:52%}
+  /* 100자까지 들어올 수 있다. 상자가 그만큼 자라면 테이블 절반을 덮으므로 세 줄에서
+     자르고 말줄임을 붙인다 — 못다 한 말은 오른쪽 아래 도크에 전부 남아 있다.
+     글자 수가 아니라 줄 수로 자르는 이유: 한글 40자와 영문 40자는 폭이 두 배 다르다. */
+  /* font-style:normal 이 반드시 있어야 한다. 이 요소는 <i> 라서 브라우저 기본값이
+     이탤릭이다 — 펠트 위의 말이 통째로 비스듬하게 나왔고, CSS 에 transform 이 하나도
+     없으니 코드만 봐서는 원인이 안 보였다. 이 프로젝트의 다른 <i>(.chat-w · .chat-badge
+     · .chat-ico)는 전부 이 한 줄을 갖고 있다. */
+  .ht-bub-t{font-style:normal;display:-webkit-box;-webkit-line-clamp:3;
+    -webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis}
+  /* 꼬리는 말한 사람을 가리킨다 — 말풍선이 붙은 반대쪽 아래 모서리에서 아바타로 내려간다.
+     테두리와 채우기를 두 겹으로 겹쳐 그린다(삼각형에는 border 를 쓸 수 없다).
+     채우기는 몸통과 같은 #161920 이다. 몸통의 반투명 값을 그대로 쓰면 두 겹이 겹치는
+     자리만 알파가 두 배로 진해져 이음매에 선이 그어진다 — 승률 말풍선이 SVG 한 장으로
+     간 이유가 그것이다. 여기서는 꼬리만 불투명으로 두어 같은 문제를 피한다. */
+  .ht-bub::before,.ht-bub::after{content:"";position:absolute;width:0;height:0;
+    border-left:6px solid transparent;border-right:6px solid transparent}
+  .ht-bub::before{bottom:-8px;border-top:8px solid #2e3440}
+  .ht-bub::after{bottom:-6px;border-top:7px solid #161920}
+  .ht-bub.k1::before{border-top-color:#f59e0b}
+  .ht-bub.l::before,.ht-bub.l::after{right:13px}
+  .ht-bub.r::before,.ht-bub.r::after{left:13px}
+  /* 위쪽 자리 — 아바타 아래(테이블 안쪽)에 달고 꼬리를 위로 세운다. */
+  .ht-bub.d{bottom:auto;top:74%}
+  .ht-bub.d::before{bottom:auto;top:-8px;border-top:0;border-bottom:8px solid #2e3440}
+  .ht-bub.d::after{bottom:auto;top:-6px;border-top:0;border-bottom:7px solid #161920}
+  .ht-bub.d.k1::before{border-bottom-color:#f59e0b}
+  /* 등장은 튀어나오듯, 퇴장은 조용히. 들어올 때 눈이 가야 하고 나갈 때는 가면 안 된다. */
+  .ht-bub.in{animation:htBubIn .2s cubic-bezier(.2,.9,.3,1.35) both}
+  .ht-bub.out{animation:htBubOut .42s ease-in both}
+  @keyframes htBubIn{from{opacity:0;transform:translateY(6px) scale(.86)}
+    to{opacity:1;transform:none}}
+  @keyframes htBubOut{from{opacity:1}to{opacity:0;transform:translateY(-5px)}}
+  /* 아래에 달린 말풍선은 반대 방향으로 움직인다 — 아바타에서 나와 아바타 쪽으로
+     사라져야 "저 사람이 한 말"로 읽힌다. */
+  .ht-bub.d.in{animation-name:htBubInD}
+  .ht-bub.d.out{animation-name:htBubOutD}
+  @keyframes htBubInD{from{opacity:0;transform:translateY(-6px) scale(.86)}
+    to{opacity:1;transform:none}}
+  @keyframes htBubOutD{from{opacity:1}to{opacity:0;transform:translateY(5px)}}
+  @media (prefers-reduced-motion:reduce){
+    .ht-bub.in{animation:none}
+    .ht-bub.out{animation:htBubOut .42s linear both}
+    .ht-bub.d.out{animation:htBubOutD .42s linear both}
+  }
 
   /* 아바타 — 좌석 박스를 그대로 채운다. 시계 고리·행동 배지가 이 원을 기준으로 붙는다.
 
@@ -464,13 +552,19 @@
      아홉 자리에 초록 막대가 아홉 개 서 있으면 그것 자체가 소음이다. */
 
   /* 팟에 남은 사람 vs 폴드한 사람 — 카드를 버린 모습 + 아바타 흑백 + F 배지 세 겹 */
-  .ht-seat.folded{opacity:.62;transition:opacity .15s}
+  /* 흐림은 좌석이 아니라 안쪽 겹에 건다. 좌석에 걸면 그 안의 모든 것이 함께 옅어지는데,
+     채팅 말풍선은 그러면 안 된다 — 접었다고 한 말까지 안 읽히면 곤란하다.
+     opacity 는 자식이 되돌릴 수 없으므로(부모의 불투명은 자식이 이길 수 없다) 겹을
+     하나 두어 말풍선만 밖으로 뺐다. 좌석 골격의 .ht-seat-in 이 그것이다. */
+  .ht-seat-in{position:absolute;inset:0}
+  .ht-seat.folded .ht-seat-in{opacity:.62;transition:opacity .15s}
   /* 내가 접었어도 내 카드는 다시 볼 수 있어야 한다. 접었다는 표시로 좌석 전체를
      흐리게 하는데, 그러면 내가 무엇을 들고 접었는지 확인할 방법이 사라진다 —
      실제로 그 순간이 가장 궁금한 때다. 내 카드 위에 마우스를 올리면 그동안만 밝아진다.
      내 화면의 CSS hover라 남에게는 아무 일도 일어나지 않는다.
-     :has()로 부모를 되짚는다 — 흐리게 만드는 opacity가 좌석에 걸려 있어서
-     자식만 밝게 해서는 되돌릴 수 없다(부모의 opacity는 자식이 이길 수 없다). */
+     되돌리는 방법은 흐림 자체를 걷는 것이 아니라 카드를 다시 드러내는 것이다 —
+     흐림은 안쪽 겹(.ht-seat-in)의 opacity 라 그 안의 자식이 이길 수 없다.
+     아래 규칙들은 접혀 내려간 카드를 제자리로 올리고 밝기만 되살린다. */
   .ht-seat.hero .ht-hole{pointer-events:auto}
   .ht-seat.folded .ht-av{filter:grayscale(1) brightness(.6)}
   .ht-seat.folded .ht-plate-bg{
@@ -1092,7 +1186,10 @@
      상한을 넘을 때만 접힌다. */
   .ht-oc-row{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;
     width:max-content;max-width:97px}
-  .ht-oc{display:inline-flex;flex-direction:column;align-items:center;
+  /* <i> 라서 font-style 을 정해 두지 않으면 랭크 글자가 기울어 나온다 — 카드에 인쇄된
+     글자가 이탤릭인 트럼프는 없다. 홀덤 말풍선이 같은 함정에 빠져서 찾았다. */
+  .ht-oc{font-style:normal;
+    display:inline-flex;flex-direction:column;align-items:center;
     justify-content:space-between;
     width:17px;height:24px;padding:2.5px 0 2px;border-radius:3px;
     background:linear-gradient(180deg,#fffefb,#e8e4da);color:#16181a;
@@ -1257,6 +1354,20 @@
      오른쪽 굵은 자리에는 줄 세운 기준(누적 상금)을 놓는다. 순위를 만든 값과
      참고로 보는 값이 같은 무게로 보이면 표가 무엇을 말하는지 흐려진다. */
   .ht-rec{padding:4px 8px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+  /* ── 갈래 탭 (홀덤 클래식 · 홀덤 바운티) ──────────────────────────
+     대회 방식이 둘로 갈리면서 누적 상금도 갈렸다. 한 표에 섞으면 바운티로 크게 번 사람이
+     클래식 순위표 위에 앉아, 무엇으로 번 돈인지 알 수 없게 된다.
+     한 갈래만 열린 시즌에는 탭을 아예 안 붙인다(화면 쪽 recTabsHtml 이 판단한다) —
+     누를 것이 하나뿐인 탭바는 탭으로 읽히지 않는다. */
+  .ht-rec-tabs{display:flex;gap:5px;padding:2px 2px 8px;flex:none}
+  .ht-rec-tab{flex:1;padding:6px 4px;border-radius:8px;cursor:pointer;
+    font-family:inherit;font-size:11.5px;font-weight:700;letter-spacing:-.2px;
+    color:var(--muted);background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.08);
+    transition:color .12s,border-color .12s,background .12s}
+  .ht-rec-tab:hover{color:var(--txt)}
+  .ht-rec-tab.on{color:var(--gold);background:rgba(212,175,55,.12);
+    border-color:rgba(212,175,55,.42)}
   .ht-rec-row{display:grid;grid-template-columns:18px 1fr auto;gap:6px 8px;
     align-items:center;padding:6px;border-radius:8px;font-size:12px}
   .ht-rec-row.me{background:rgba(212,175,55,.1)}
@@ -1768,7 +1879,8 @@
   }
   /* 탈락한 자리 — 폴드와 같은 흑백 처리를 쓰지만 더 깊게 누른다.
      폴드는 "이 판에서 빠졌다"이고 KO 는 "대회가 끝났다"라서 같은 세기면 구분이 안 된다. */
-  .ht-seat.koed{opacity:.72}
+  /* 폴드와 같은 이유로 안쪽 겹에 건다 — 털린 사람의 말도 읽혀야 한다. */
+  .ht-seat.koed .ht-seat-in{opacity:.72}
   .ht-seat.koed .ht-av{filter:grayscale(1) brightness(.42)}
   .ht-seat.koed .ht-nm,.ht-seat.koed .ht-stk{color:#7a7a7a}
   /* 총성이 울릴 때 테이블이 한 번 흔들린다. 좌석이 아니라 테이블에 걸어야

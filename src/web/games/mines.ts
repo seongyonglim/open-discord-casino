@@ -294,6 +294,10 @@ export function minesPage(user: WebUser): string {
     </div>
     <script>window.__MINES_ACTIVE__ = ${active ? JSON.stringify(active) : 'null'};
       window.__SFX_NEED__ = ['minecoin','explode','gain','mineperfect'];
+      /* 지뢰찾기에는 폴링이 없다(혼자 하는 게임이라 상태를 물을 이유가 없다).
+         그래서 채팅은 도크가 열려 있는 동안만 스스로 5초 폴을 돈다 — 이 값은 말한 자리를
+         적는 데만 쓴다. */
+      window.__CHAT_WHERE__ = 'mines';
       window.__MINES_ICONS__ = ${JSON.stringify({ bomb: bombIcon, coin: coinIcon, mark: mysteryMark })};</script>
     <script>
     (function(){

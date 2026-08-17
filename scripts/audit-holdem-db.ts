@@ -1064,6 +1064,54 @@ console.log('\n[1c] 자리 비움 좌석은 즉시 넘어간다');
   ck('입상은 상금 > 0 인 판만 센다', of_('r_zero')?.itm === 0, String(of_('r_zero')?.itm));
   ck('진행 중인 대회는 참가 수에 안 들어간다', of_('r_zero')?.played === 3,
     String(of_('r_zero')?.played));
+
+  /* ── 바운티 상금도 누적에 든다 ────────────────────────────────────
+     예전에는 prize 만 셌다. 미스터리 바운티는 바운티 몫이 100% 라 순위 상금이 0 이고,
+     그래서 7명이 20,000P 씩 걸고 친 대회가 누적 0P 로 잡혔다 — 화면이 거짓말을 했다. */
+  {
+    const t2 = at + 6 * 3600;
+    const btid = Number(db3.prepare(`INSERT INTO holdem_tournaments
+      (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at, mode, bounty_pct)
+      VALUES (?, ?, ?, ?, ?, 3, ?, ?, 'MYSTERY_BOUNTY', 100)`)
+      .run('rec-bty', '미스터리 집계 검사', t2 - 60, t2, t2 + 60, t2, t2 + 600)
+      .lastInsertRowid);
+    /* 순위 상금은 0, 받아 간 것은 전부 바운티다 — 실제 미스터리 판의 모양이다. */
+    ([['b_hunter', 0, 30_000], ['b_prey', 0, 0]] as [string, number, number][])
+      .forEach(([uid, prize, bty], i) => {
+        db3.prepare(`INSERT INTO holdem_entries
+          (tournament_id, user_id, username, registered_at, finish_place, elim_seq,
+           prize, bounty_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(btid, uid, uid, t2 - 10, i + 1, 2 - i, prize, bty);
+      });
+    const all2 = HD.holdemRecords(50);
+    const hunter = all2.find(r => r.userId === 'b_hunter');
+    ck('순위 상금이 0 이어도 바운티가 누적에 잡힌다', hunter?.prize === 30_000,
+      String(hunter?.prize));
+    ck('바운티만 받아도 입상으로 센다', hunter?.itm === 1, String(hunter?.itm));
+    ck('아무것도 못 받으면 입상이 아니다',
+      all2.find(r => r.userId === 'b_prey')?.itm === 0);
+    /* 일반 대회에서는 bounty_paid 가 언제나 0 이라 예전과 값이 같아야 한다. */
+    ck('일반 대회 누적은 그대로다',
+      HD.holdemRecords(50).find(r => r.userId === 'r_steady')?.prize === 9000 + 900 + 900);
+
+    /* ── 갈래를 나눠 본다 (홀덤 클래식 · 홀덤 바운티) ─────────────
+       한 표에 섞으면 바운티로 크게 번 사람이 클래식 순위표 위에 앉아, 무엇으로 번
+       돈인지 알 수 없게 된다. 랭킹 페이지의 홀덤 탭과 같은 기준이어야 한다. */
+    const cls = HD.holdemRecords(50, 'CLASSIC');
+    const bty = HD.holdemRecords(50, 'BOUNTY');
+    ck('클래식 표에 바운티 대회 참가자가 없다', !cls.some(r => r.userId.startsWith('b_')),
+      cls.map(r => r.userId).join(','));
+    ck('바운티 표에 일반 대회 참가자가 없다', !bty.some(r => r.userId.startsWith('r_')),
+      bty.map(r => r.userId).join(','));
+    ck('바운티 표에서 사냥꾼이 1위', bty[0]?.userId === 'b_hunter', bty[0]?.userId);
+    ck('클래식 표는 갈래를 안 나눴을 때의 일반 대회와 같다',
+      cls.find(r => r.userId === 'r_steady')?.prize === 9000 + 900 + 900);
+    /* 나누지 않으면 둘을 합친 것이어야 한다 — 어느 쪽에도 안 들어가는 대회가 없어야 한다. */
+    const sumSplit = cls.reduce((n, r) => n + r.played, 0) + bty.reduce((n, r) => n + r.played, 0);
+    const sumAll = HD.holdemRecords(50).reduce((n, r) => n + r.played, 0);
+    ck('갈래를 합치면 전체와 같다', sumSplit === sumAll, `${sumSplit} vs ${sumAll}`);
+  }
   ck('진행 중인 대회 상금은 안 더한다', of_('r_zero')?.prize === 0, String(of_('r_zero')?.prize));
   ck('상금 순 내림차순', rows.every((r, i) => i === 0 || rows[i - 1].prize >= r.prize),
     rows.map(r => r.prize).join(','));
@@ -1167,6 +1215,121 @@ console.log('\n[13] 반복 개최 (자동 생성은 켰을 때만 · 지운 판�
      로비의 "다음 대회" 배너가 이 값을 쓴다. */
   const hint = R.upcomingHint();
   ck('행이 없어도 다음 대회를 안내한다', hint != null && hint.startAt === far.startAt);
+
+  /* ── 자동 개최가 방식도 고른다 ─────────────────────────────────
+     예전에는 템플릿에 방식 칸이 없어서 자동으로 열리는 판은 언제나 일반 대회였고,
+     바운티는 운영자가 매번 손으로 열어야 했다. 그 칸을 두었으니 실제로 그 방식으로
+     열리는지, 그리고 몫과 이름까지 따라오는지 확인한다.
+
+     조용히 어긋나면 알아채기 어려운 종류다 — 바운티로 열린 줄 알았는데 일반이면
+     대회가 끝날 때까지 아무도 모른다(참가자는 명찰이 없는 것을 미스터리로 읽는다). */
+  const openNow = (cfg: Parameters<typeof S.saveConfig>[0]) => {
+    wipe();
+    S.saveConfig(cfg);
+    R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+    const sm2 = S.getConfig().startMin;
+    const day0 = T.kstTimeToUnix(T.kstDateStr(Date.now()), Math.floor(sm2 / 60), sm2 % 60);
+    R.ensureRecurring(day0 - 3600);
+    return db.prepare(`SELECT title, mode, bounty_pct, buy_in FROM holdem_tournaments
+      ORDER BY id DESC LIMIT 1`).get() as
+      { title: string; mode: string; bounty_pct: number; buy_in: number } | undefined;
+  };
+
+  const base = S.defaultConfig();
+  const mys = openNow({ ...base, mode: 'MYSTERY_BOUNTY', bountyPct: 100 });
+  ck('템플릿이 미스터리면 미스터리로 열린다', mys?.mode === 'MYSTERY_BOUNTY',
+    JSON.stringify(mys));
+  ck('바운티 몫도 그대로 따라온다', mys?.bounty_pct === 100, String(mys?.bounty_pct));
+  /* 이름도 방식을 따라야 한다 — "홀덤 프리롤"이라고 적힌 미스터리 대회는 목록에서
+     어느 판이 무엇이었는지 알 수 없게 만든다. */
+  ck('이름이 방식을 말한다', mys?.title === '미스터리 바운티', mys?.title);
+
+  const pko = openNow({ ...base, mode: 'PKO_BOUNTY', bountyPct: 70 });
+  ck('템플릿이 바운티 헌터면 그렇게 열린다', pko?.mode === 'PKO_BOUNTY', JSON.stringify(pko));
+  ck('그 몫도 따라온다', pko?.bounty_pct === 70, String(pko?.bounty_pct));
+  ck('바운티 헌터 이름이 붙는다', pko?.title === '바운티 헌터', pko?.title);
+
+  const cls = openNow({ ...base, mode: 'CLASSIC' });
+  ck('일반이면 예전 그대로 열린다', cls?.mode === 'CLASSIC', JSON.stringify(cls));
+  ck('프리롤 이름은 그대로다', cls?.title === '홀덤 프리롤', cls?.title);
+
+  /* 저장을 거치지 않은 옛 설정은 일반으로 읽어야 한다 — 자동 개최가 뜻하지 않게
+     바운티를 여는 것보다 그쪽이 안전하다. */
+  wipe();
+  db.prepare(`INSERT INTO holdem_settings (key, value) VALUES ('tmplMode', 'GARBAGE')
+    ON CONFLICT(key) DO UPDATE SET value = 'GARBAGE'`).run();
+  ck('알 수 없는 방식은 일반으로 읽는다', S.getConfig().mode === 'CLASSIC', S.getConfig().mode);
+  ck('바운티 몫은 범위를 벗어날 수 없다',
+    S.saveConfig({ ...base, mode: 'PKO_BOUNTY', bountyPct: 0 }).ok === false
+    && S.saveConfig({ ...base, mode: 'PKO_BOUNTY', bountyPct: 101 }).ok === false);
+  ck('없는 방식은 저장을 거절한다',
+    S.saveConfig({ ...base, mode: 'NOPE' as never }).ok === false);
+  /* [기본값으로]가 방식도 되돌려야 한다 — 안 지우면 되돌린 뒤에도 바운티로 열린다. */
+  S.saveConfig({ ...base, mode: 'MYSTERY_BOUNTY', bountyPct: 90 });
+  S.resetConfig();
+  ck('기본값으로 되돌리면 일반으로 돌아간다', S.getConfig().mode === 'CLASSIC');
+  ck('바운티 몫도 기본값으로 돌아간다', S.getConfig().bountyPct === base.bountyPct,
+    String(S.getConfig().bountyPct));
+
+  /* ── 자동 개최 대회 이름 (평일 / 주말) ─────────────────────────
+     주말 기준은 상금 배수와 같아야 한다(토·일). 두 곳이 다르면 "주말 배수를 받는데
+     평일 이름이 붙은 판"이 생기고, 그건 화면만 보고는 절대 못 찾는 종류다. */
+  {
+    /* 하루를 지정해 여는 도우미. 위 openNow 는 오늘로 고정이라 요일을 고를 수 없다. */
+    const openOn = (cfg: Parameters<typeof S.saveConfig>[0], dateStr: string) => {
+      wipe();
+      S.saveConfig(cfg);
+      R.saveRecurrence({ enabled: true, mode: 'daily', weekday: 0, day: 1 });
+      const sm = S.getConfig().startMin;
+      const at = T.kstTimeToUnix(dateStr, Math.floor(sm / 60), sm % 60);
+      R.ensureRecurring(at - 3600);
+      return db.prepare(`SELECT title FROM holdem_tournaments ORDER BY id DESC LIMIT 1`)
+        .get() as { title: string } | undefined;
+    };
+    /* 2026-08-19 은 수요일, 08-22 는 토요일, 08-23 은 일요일이다. */
+    const WED = '2026-08-19', SAT = '2026-08-22', SUN = '2026-08-23';
+    ck('고른 날짜의 요일이 맞다',
+      T.isKstWeekend(T.kstTimeToUnix(SAT, 12, 0) * 1000)
+      && T.isKstWeekend(T.kstTimeToUnix(SUN, 12, 0) * 1000)
+      && !T.isKstWeekend(T.kstTimeToUnix(WED, 12, 0) * 1000));
+
+    const named = { ...base, weekdayTitle: '데일리 프리롤', weekendTitle: '위켄드 메인이벤트' };
+    ck('평일에는 평일 이름이 붙는다', openOn(named, WED)?.title === '데일리 프리롤',
+      openOn(named, WED)?.title);
+    ck('토요일에는 주말 이름이 붙는다', openOn(named, SAT)?.title === '위켄드 메인이벤트',
+      openOn(named, SAT)?.title);
+    ck('일요일도 주말이다', openOn(named, SUN)?.title === '위켄드 메인이벤트',
+      openOn(named, SUN)?.title);
+    /* 이름을 적어 두면 방식보다 이름이 이긴다 — 운영자가 명시한 것을 코드가 덮으면 안 된다. */
+    ck('이름을 적으면 방식 이름을 덮는다',
+      openOn({ ...named, mode: 'MYSTERY_BOUNTY', bountyPct: 100 }, WED)?.title === '데일리 프리롤');
+    /* 비워 두면 지금까지의 동작 그대로 — 한 번도 안 건드린 서버가 달라지면 안 된다. */
+    ck('비워 두면 방식이 이름을 정한다',
+      openOn({ ...base, mode: 'MYSTERY_BOUNTY', bountyPct: 100 }, WED)?.title === '미스터리 바운티');
+    ck('한쪽만 적으면 그쪽만 바뀐다',
+      openOn({ ...base, weekendTitle: '주말판' }, WED)?.title === '홀덤 프리롤'
+      && openOn({ ...base, weekendTitle: '주말판' }, SAT)?.title === '주말판');
+    /* 공백만 적은 것은 비운 것과 같아야 한다 — 아니면 이름 없는 대회가 열린다. */
+    ck('공백만 적으면 비운 것과 같다', openOn({ ...base, weekdayTitle: '   ' }, WED)?.title === '홀덤 프리롤');
+
+    // 문지기 — 화면이 아니라 여기가 마지막 문이다
+    ck(`${S.TITLE_MAX_LEN}자를 넘기면 거절한다`,
+      S.saveConfig({ ...base, weekdayTitle: '가'.repeat(S.TITLE_MAX_LEN + 1) }).ok === false);
+    ck('딱 맞는 길이는 통과한다',
+      S.saveConfig({ ...base, weekdayTitle: '가'.repeat(S.TITLE_MAX_LEN) }).ok === true);
+    /* 길이는 코드 포인트로 센다 — 이모지 하나가 둘로 잡히면 사람이 세는 글자 수와 다르다. */
+    ck('이모지도 한 글자로 센다',
+      S.saveConfig({ ...base, weekdayTitle: '\u{1F3B0}'.repeat(S.TITLE_MAX_LEN) }).ok === true);
+    ck('줄바꿈은 거절한다', S.saveConfig({ ...base, weekdayTitle: '앞\n뒤' }).ok === false);
+    ck('보이지 않는 글자도 거절한다',
+      S.saveConfig({ ...base, weekendTitle: '주말\u200b판' }).ok === false);
+    /* [기본값으로]가 이름도 지워야 한다 — 안 지우면 되돌린 뒤에도 그 이름으로 열린다. */
+    S.saveConfig({ ...base, weekdayTitle: '남는 이름', weekendTitle: '남는 주말' });
+    S.resetConfig();
+    ck('기본값으로 되돌리면 이름도 비워진다',
+      S.getConfig().weekdayTitle === '' && S.getConfig().weekendTitle === '',
+      JSON.stringify([S.getConfig().weekdayTitle, S.getConfig().weekendTitle]));
+  }
 
   // 진행 중 대회 중단 — 자동으로 정리되던 장치가 없어졌으므로 사람이 풀 수 있어야 한다
   wipe();
@@ -1515,7 +1678,9 @@ console.log('\n[14] 참가비 대회 (걷고 · 돌려주고 · 잔액 = 원장 
     ck('대회 수와는 다른 값이다 (인원이지 판수가 아니다)',
       SE.seasonHoldemCount(sid) === 1 && SE.seasonHoldemPlayers(sid) === users.length);
 
-    const rank = SE.seasonHoldemRanking(sid, 100);
+    /* 이 절이 세운 대회는 일반(CLASSIC)이다 — holdemRecords 와 맞춰 보는 자리이므로
+       같은 장르의 표를 읽어야 한다. */
+    const rank = SE.seasonHoldemRanking(sid, 'CLASSIC', 100);
     const rec = HD.holdemRecords(100);
     const byUser = new Map(rec.map(r => [r.userId, r]));
     ck('두 랭킹의 사람 수가 같다', rank.length === rec.length, `${rank.length} vs ${rec.length}`);

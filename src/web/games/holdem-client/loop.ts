@@ -86,6 +86,9 @@ export const LOOP = `    function render(){
       render();
       nextHandPoke();
       if (st.table && st.table.legal) runPreAction();
+      /* 채팅은 폴을 따로 돌지 않는다 — 응답에 실려 온 마지막 메시지 id 를 넘겨주면
+         그 값이 늘었을 때만 채팅이 스스로 한 번 받아 간다(app.js 의 casinoChat). */
+      if (window.casinoChat) casinoChat.note(d.chatMax, d.chatMod);
     }
     function flushQueued(){
       if (!queued) return;

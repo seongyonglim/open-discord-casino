@@ -13,6 +13,7 @@ import {
   getCrashBets, getMyCrashBet, getRecentCrashResults, getWebUser, seasonGameProfit,
   CRASH_REVEAL_SEC,
   type CrashRoundRow, type WebUser,
+  chatTick,
 } from '../../db/queries';
 import { readJson, sendJson } from '../http';
 import { award, withUnlocked, withCommon, commonAwards } from '../achieve-hook';
@@ -106,6 +107,9 @@ function statePayload(round: CrashRoundRow, userId: string) {
     myBet: myBet ?? null,
     history: getRecentCrashResults(15),
     balance: getWebUser(userId)?.balance ?? 0,
+    /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
+       화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
+    ...chatTick(),
   };
 }
 
@@ -320,7 +324,8 @@ export function crashPage(user: WebUser): string {
         <div id="cFeed" class="roster"><div class="empty" style="padding:16px 0">아직 베팅이 없습니다</div></div>
       `, rankPane('c'))}
     </div>
-    <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)}; window.__SFX_NEED__ = ['fanfare'];</script>
+    <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)}; window.__SFX_NEED__ = ['fanfare'];
+      window.__CHAT_WHERE__ = 'crash';</script>
     <script>
     (function(){
     ${ROSTER_JS}
@@ -640,6 +645,9 @@ export function crashPage(user: WebUser): string {
         clockOffset = d.round.serverNowMs - Date.now();
         st = d;
         render();
+        /* 채팅은 폴을 따로 돌지 않는다 — 응답의 마지막 메시지 id 만 넘겨주면 값이 늘었을
+           때만 채팅이 스스로 받아 간다(app.js 의 casinoChat). */
+        if (window.casinoChat) casinoChat.note(d.chatMax, d.chatMod);
       }
 
       async function bet(){

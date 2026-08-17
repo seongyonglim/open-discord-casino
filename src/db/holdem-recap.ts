@@ -37,15 +37,20 @@ export function recentRecap(): Recap | null {
       ORDER BY finished_at DESC LIMIT 1`);
   if (!t) return null;
 
+  /* 받아 간 돈은 순위 상금 + 바운티다. 예전에는 prize 만 셌는데, 미스터리 바운티는
+     바운티 몫이 100% 라 순위 상금이 0 이다 — 7명이 20,000P 씩 걸고 친 대회가
+     "총 상금 0P"로, 우승자가 "0P"로 나왔다. 화면이 거짓말을 한 셈이다. */
   const rows = all<{ user_id: string; username: string; finish_place: number; prize: number; avatar: string | null }>(
-    `SELECT e.user_id, e.username, e.finish_place, e.prize, u.avatar
+    `SELECT e.user_id, e.username, e.finish_place,
+            (e.prize + e.bounty_paid) AS prize, u.avatar
        FROM holdem_entries e LEFT JOIN users u ON u.id = e.user_id
       WHERE e.tournament_id = ? AND e.finish_place IS NOT NULL
       ORDER BY e.finish_place ASC`, t.id);
   if (rows.length === 0) return null;
 
   const total = one<{ n: number }>(
-    `SELECT COALESCE(SUM(prize), 0) AS n FROM holdem_entries WHERE tournament_id = ?`, t.id)!.n;
+    `SELECT COALESCE(SUM(prize + bounty_paid), 0) AS n
+       FROM holdem_entries WHERE tournament_id = ?`, t.id)!.n;
 
   return {
     id: t.id,

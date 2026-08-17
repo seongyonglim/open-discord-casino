@@ -246,7 +246,7 @@ section('[3] 포커 플립');
     return { winner, buckets: [Math.max(mb, sb)], detail: null };
   };
 
-  const round = advancePokerRound(makeRound, resolve);
+  const round = advancePokerRound(makeRound, resolve, 5);
   mkUser('p_a', 2000); mkUser('p_b', 2000);
   const mo = odds.master!;
 
@@ -265,7 +265,7 @@ section('[3] 포커 플립');
 
   // betting → 공개 단계 → 정산까지 밀어붙인다
   expire('poker_rounds', round.id, 60);
-  advancePokerRound(makeRound, resolve);
+  advancePokerRound(makeRound, resolve, 5);
   const out = resolve(hole, board);
   const expected = out.winner === 'master' ? 1200 + Math.floor(800 * mo)
     : out.winner === 'tie' ? 1200 + 800 : 1200;
@@ -279,6 +279,88 @@ section('[3] 포커 플립');
 }
 auditLedger('포커 후');
 auditStats('포커 후');
+
+section('[3-b] 포커 플립 — 미출현 판수가 보관 한도를 넘어도 정확하다');
+{
+  /* 화면이 "몇 판째 안 나왔나"를 적는데, 그 값을 라운드 기록에서 세면 30판이 한계였다 —
+     그 너머는 prunePokerRounds 가 지운다. 그래서 «29판+ 미출현» 으로 잘렸고, 판수 자체가
+     이 칸의 전부인데 가장 재미있는 숫자가 상한에 뭉개졌다.
+
+     이 절이 확인하는 것은 하나다: 30판을 훌쩍 넘겨 돌려도 값이 정확한가. */
+  const PK = require('../src/db/queries/poker') as typeof import('../src/db/queries/poker');
+  const db = getDb();
+  db.exec(`DELETE FROM poker_rounds; DELETE FROM poker_bets; DELETE FROM poker_drought;`);
+
+  /* 카드는 쓰지 않는다 — 이 절이 보는 것은 세는 규칙이지 족보가 아니다.
+     대신 "이번 판에 어느 등급이 나왔나"를 각본으로 직접 준다. */
+  let scripted: number[] = [];
+  const mk = () => ({ hole: [0, 1, 2, 3], board: [4, 5, 6, 7, 8], odds: {} });
+  const rs = () => ({ winner: 'master' as const, buckets: scripted, detail: null });
+  /* 라운드 하나를 열고 정산까지 민다. 시각으로 페이즈를 판정하므로 시각을 당겨 준다.
+     지난 판의 여운(POKER_REVEAL_SEC)도 지워야 새 라운드가 곧바로 열린다 — 안 그러면
+     같은 판을 계속 붙들고 있어 아무리 불러도 판수가 안 는다(실제로 그렇게 헛돌았다). */
+  const play = (buckets: number[]) => {
+    scripted = buckets;
+    db.prepare(`UPDATE poker_rounds SET resolved_at = resolved_at - ? WHERE resolved_at IS NOT NULL`)
+      .run(PK.POKER_REVEAL_SEC + 1);
+    const r = PK.advancePokerRound(mk, rs, 5);
+    db.prepare(`UPDATE poker_rounds SET betting_ends_at = ? WHERE id = ?`)
+      .run(Math.floor(Date.now() / 1000) - PK.POKER_SETTLE_SEC - 1, r.id);
+    PK.advancePokerRound(mk, rs, 5);
+  };
+  const d = (b: number) => PK.getPokerDrought().find(x => x.bucket === b)!;
+
+  play([4]);                                  // 첫 판에 포카드 이상이 나왔다
+  ck('적중한 등급은 0 이 된다', d(4).since === 0 && d(4).exact === 1,
+    JSON.stringify(d(4)));
+  ck('안 나온 등급은 1 이 된다', d(3).since === 1, JSON.stringify(d(3)));
+
+  for (let i = 0; i < 80; i++) play([0]);      // 80판 동안 하이카드만
+  const keep = PK.POKER_KEEP_ROUNDS;
+  const left = (db.prepare(`SELECT COUNT(*) AS n FROM poker_rounds`).get() as { n: number }).n;
+  ck(`검사 전제: 기록은 ${keep}판까지만 남는다`, left <= keep + 1, String(left));
+  /* 여기가 핵심이다 — 기록은 30판뿐인데 카운터는 80 을 안다. */
+  ck('보관 한도를 넘어도 판수가 정확하다', d(4).since === 80, String(d(4).since));
+  ck('그 값이 정확하다고 표시된다 (최장 기록을 붙일 자격이 생긴다)', d(4).exact === 1);
+  ck('기록에서 세면 30판에 걸린다 (예전 방식)',
+    PK.getRecentPokerResults(keep).findIndex(h => h.buckets.includes(4)) === -1);
+
+  play([4]);                                  // 다시 나왔다
+  ck('적중하면 0 으로 돌아간다', d(4).since === 0, String(d(4).since));
+  ck('최장 기록이 남는다', d(4).best === 80, String(d(4).best));
+  play([1]);
+  ck('그 뒤로 다시 센다', d(4).since === 1, String(d(4).since));
+
+  /* 한 판에 두 등급이 함께 나올 수 있다(마스터·샤크가 서로 다른 등급). 둘 다 0 이어야 한다. */
+  play([2, 3]);
+  ck('한 판에 둘이 나오면 둘 다 리셋된다', d(2).since === 0 && d(3).since === 0);
+
+  /* 표가 비어 있을 때는 남은 기록으로 채운다 — 배포 직후 다섯 칸이 "0판"이면
+     "방금 다 나왔다"는 거짓말이 된다. 그때 값은 "적어도 N판"이라 exact 를 세우지 않는다.
+     보관 기록을 하이카드로 가득 채워 나머지 등급이 기록에서 사라진 상태를 만든다. */
+  for (let i = 0; i < keep + 1; i++) play([0]);
+  db.exec(`DELETE FROM poker_drought`);
+  PK.seedPokerDrought(5);
+  const seeded = PK.getPokerDrought();
+  ck('비어 있으면 남은 기록으로 채운다', seeded.length === 5, String(seeded.length));
+  const b0 = seeded.find(x => x.bucket === 0)!;
+  ck('기록 안에서 적중한 등급은 정확하다', b0.exact === 1 && b0.since === 0, JSON.stringify(b0));
+  /* 기록 안에 한 번도 없는 등급은 "적어도 N판" 이다 — 그동안만 화면이 + 를 붙인다. */
+  ck('기록에 없는 등급은 정확하지 않다고 표시된다',
+    [1, 2, 3, 4].every(b => seeded.find(x => x.bucket === b)!.exact === 0),
+    JSON.stringify(seeded));
+  ck('그 값은 가진 기록만큼이다 (적어도 N판)',
+    seeded.find(x => x.bucket === 4)!.since === PK.getRecentPokerResults(keep).length,
+    JSON.stringify(seeded.find(x => x.bucket === 4)));
+  PK.seedPokerDrought(5);
+  ck('이미 있으면 다시 채우지 않는다',
+    JSON.stringify(PK.getPokerDrought()) === JSON.stringify(seeded));
+
+  // 돈을 만지지 않는다 — 연출용 숫자다
+  const bad = db.prepare(
+    `SELECT COUNT(*) AS n FROM points_ledger WHERE reason LIKE '%drought%'`).get() as { n: number };
+  ck('원장에 흔적을 남기지 않는다', bad.n === 0);
+}
 
 /* ── 4. 지뢰찾기 ─────────────────────────────────────────────── */
 section('[4] 지뢰찾기');
@@ -1357,7 +1439,7 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
 
   ck('끝난 대회만 센다 (취소된 대회 제외)', S.seasonHoldemCount(s.id) === 2,
     String(S.seasonHoldemCount(s.id)));
-  const r = S.seasonHoldemRanking(s.id);
+  const r = S.seasonHoldemRanking(s.id, 'CLASSIC');
   ck('프리롤 상금 순으로 줄 선다',
     r.length === 3 && r[0].userId === 'ht_b' && r[1].userId === 'ht_a',
     JSON.stringify(r.map(x => x.userId + ':' + x.prize)));
@@ -1368,10 +1450,10 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
     r[2].userId === 'ht_c' && r[2].prize === 0 && r[2].entries === 1, JSON.stringify(r[2]));
   ck('취소된 대회의 상금은 안 잡힌다', r[2].prize === 0);
 
-  const mine = S.myHoldemRank(s.id, 'ht_a');
+  const mine = S.myHoldemRank(s.id, 'ht_a', 'CLASSIC');
   ck('내 홀덤 순위가 나온다',
     mine != null && mine.rank === 2 && mine.total === 3 && mine.score === 2600, JSON.stringify(mine));
-  ck('안 나간 사람은 순위가 없다', S.myHoldemRank(s.id, 'se_a') == null);
+  ck('안 나간 사람은 순위가 없다', S.myHoldemRank(s.id, 'se_a', 'CLASSIC') == null);
 
   /* 시즌 경계는 둘째 시즌부터 의미가 있다.
      첫 시즌에는 앞선 시즌이 없으므로, 그 전에 끝난 대회를 가져갈 다른 주인도 없다.
@@ -1380,8 +1462,8 @@ section('[10c] 홀덤 — 프리롤 상금 순위');
      아예 안 떴고, 아무 에러도 없이 그냥 없는 카테고리가 됐다. */
   mk(4, s.started_at - 100); ent(4, 'ht_a', 1, 5000);
   ck('첫 시즌은 시작 전에 끝난 대회도 담는다 (앞 시즌이 없으니 다른 주인이 없다)',
-    S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize === 7600,
-    String(S.seasonHoldemRanking(s.id).find(x => x.userId === 'ht_a')!.prize));
+    S.seasonHoldemRanking(s.id, 'CLASSIC').find(x => x.userId === 'ht_a')!.prize === 7600,
+    String(S.seasonHoldemRanking(s.id, 'CLASSIC').find(x => x.userId === 'ht_a')!.prize));
   ck('그래서 홀덤 카테고리가 뜬다', S.seasonHoldemCount(s.id) === 3,
     String(S.seasonHoldemCount(s.id)));
 
@@ -1465,10 +1547,96 @@ section('[10b] 첫 시즌으로 지난 기록 가져오기');
       S.currentSeason().started_at <= long, `${S.currentSeason().started_at} vs ${long}`);
     ck('그래서 홀덤 카테고리가 뜬다', S.seasonHoldemCount(s2.id) === 1,
       String(S.seasonHoldemCount(s2.id)));
-    const hr = S.seasonHoldemRanking(s2.id);
+    const hr = S.seasonHoldemRanking(s2.id, 'CLASSIC');
     ck('홀덤 순위에 옛 대회가 들어온다',
       hr.length === 1 && hr[0].prize === 3000 && hr[0].wins === 1, JSON.stringify(hr[0]));
   }
+}
+
+section('[10e] 홀덤 — 장르별 랭킹 (일반 / 바운티)');
+{
+  /* 실제로 일어난 일을 그대로 세워 확인한다.
+     운영 대회 #44 「위캔드 미스터리 바운티 프리롤」(2026-08-16, 7인 · 인당 20,000P ·
+     바운티 100%)에서 우승자가 72,800P, 2위가 53,200P 를 가져갔는데 랭킹에는 둘 다
+     «상금 0P» 로 찍혀 최하위권에 앉았다. 그 대회는 순위 상금이 0 이고 돈이 전부
+     bounty_paid 로 나가는데 집계가 SUM(e.prize) 만 보고 있었기 때문이다.
+
+     그래서 장르를 갈랐다. 이 절이 확인하는 것은 세 가지다:
+       · 두 표가 서로의 대회를 섞지 않는다
+       · 바운티 표에서는 바운티가 상금으로 잡힌다 (0P 로 사라지지 않는다)
+       · 입상(ITM)도 그 장르 기준으로 센다 */
+  const S = require('../src/db/queries/season') as typeof import('../src/db/queries/season');
+  const db = getDb();
+  for (const t of ['season_stats', 'season_results', 'seasons',
+    'holdem_entries', 'holdem_tournaments']) db.prepare(`DELETE FROM ${t}`).run();
+  mkUser('gn_win', 0); mkUser('gn_2nd', 0); mkUser('gn_cls', 0);
+  const s = S.currentSeason();
+
+  const mkT = (id: number, mode: string) =>
+    db.prepare(`INSERT INTO holdem_tournaments
+      (id, date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
+       started_at, finished_at, mode) VALUES (?, ?, ?, 0, 0, 0, 20000, 1, ?, ?)`)
+      .run(id, '2026-08-1' + id, mode, Math.floor(Date.now() / 1000), mode);
+  const ent = (tid: number, uid: string, place: number, prize: number, paid: number) =>
+    db.prepare(`INSERT INTO holdem_entries
+      (tournament_id, user_id, username, registered_at, finish_place, prize, bounty_paid)
+      VALUES (?, ?, ?, 0, ?, ?, ?)`).run(tid, uid, uid, place, prize, paid);
+
+  // #44 재현 — 미스터리 바운티 100%: 순위 상금 0, 바운티만 나간다
+  mkT(1, 'MYSTERY_BOUNTY');
+  ent(1, 'gn_win', 1, 0, 72_800);
+  ent(1, 'gn_2nd', 2, 0, 53_200);
+  ent(1, 'gn_cls', 3, 0, 0);
+  // 일반 대회 — 순위 상금만 있다
+  mkT(2, 'CLASSIC');
+  ent(2, 'gn_cls', 1, 26_750, 0);
+  ent(2, 'gn_win', 2, 0, 0);
+
+  ck('탭이 장르별로 갈린다', S.seasonHoldemCount(s.id, 'CLASSIC') === 1
+    && S.seasonHoldemCount(s.id, 'BOUNTY') === 1
+    && S.seasonHoldemCount(s.id) === 2);
+  ck('사람 수도 장르별이다', S.seasonHoldemPlayers(s.id, 'CLASSIC') === 2
+    && S.seasonHoldemPlayers(s.id, 'BOUNTY') === 3);
+
+  const cls = S.seasonHoldemRanking(s.id, 'CLASSIC');
+  ck('일반 표에 바운티 대회가 섞이지 않는다', cls.length === 2
+    && cls.every(r => r.entries === 1), JSON.stringify(cls.map(r => [r.userId, r.entries])));
+  ck('일반 표 1위는 순위 상금이 가장 많은 사람',
+    cls[0].userId === 'gn_cls' && cls[0].prize === 26_750, JSON.stringify(cls[0]));
+
+  const bty = S.seasonHoldemRanking(s.id, 'BOUNTY');
+  ck('바운티 표에 일반 대회가 섞이지 않는다', bty.length === 3
+    && bty.every(r => r.entries === 1), JSON.stringify(bty.map(r => [r.userId, r.entries])));
+  /* 여기가 제보의 핵심이다 — 예전에는 이 값이 0 이었다. */
+  ck('바운티가 상금으로 잡힌다 (0P 로 사라지지 않는다)',
+    bty[0].userId === 'gn_win' && bty[0].prize === 72_800, JSON.stringify(bty[0]));
+  ck('2위도 받은 만큼 잡힌다',
+    bty[1].userId === 'gn_2nd' && bty[1].prize === 53_200, JSON.stringify(bty[1]));
+  ck('한 푼도 못 받은 사람은 0 이다',
+    bty[2].userId === 'gn_cls' && bty[2].prize === 0, JSON.stringify(bty[2]));
+  ck('입상(ITM)도 장르 기준으로 센다 (예전엔 전원 0 이었다)',
+    bty[0].itm === 1 && bty[1].itm === 1 && bty[2].itm === 0,
+    JSON.stringify(bty.map(r => [r.userId, r.itm])));
+  ck('우승 수는 그대로다', bty[0].wins === 1 && bty[1].wins === 0);
+
+  // 내 순위도 장르를 따라간다 — 같은 사람이 두 표에서 다른 등수다
+  const mineB = S.myHoldemRank(s.id, 'gn_win', 'BOUNTY');
+  const mineC = S.myHoldemRank(s.id, 'gn_win', 'CLASSIC');
+  ck('내 순위가 표마다 따로 나온다',
+    mineB!.rank === 1 && mineB!.score === 72_800 && mineC!.rank === 2 && mineC!.score === 0,
+    JSON.stringify({ mineB, mineC }));
+  ck('그 장르에 안 나간 사람은 순위가 없다',
+    S.myHoldemRank(s.id, 'se_a', 'BOUNTY') == null);
+
+  /* 순위 상금과 바운티가 섞여 있는 PKO 는 둘을 합쳐 센다 — 한쪽만 세면 같은 대회에서
+     번 돈의 절반이 사라진다. */
+  mkT(3, 'PKO_BOUNTY');
+  ent(3, 'gn_2nd', 1, 10_000, 5_000);
+  const bty2 = S.seasonHoldemRanking(s.id, 'BOUNTY');
+  ck('PKO 는 순위 상금 + 바운티를 합쳐 센다',
+    bty2.find(r => r.userId === 'gn_2nd')!.prize === 53_200 + 15_000,
+    JSON.stringify(bty2.find(r => r.userId === 'gn_2nd')));
+  ck('PKO 도 바운티 표에 들어간다', S.seasonHoldemCount(s.id, 'BOUNTY') === 2);
 }
 auditLedger('시즌 후');
 
@@ -1692,6 +1860,86 @@ section('[14] 안내 문구가 지금 규칙과 같은가');
   ck('패치노트에 제보 보상이 있다', nt.includes('BUG_REPORT_BOUNTY'));
   ck('패치노트가 숫자를 손으로 적지 않는다',
     !/10,000P<\/b> 로 다섯 배/.test(nt) && nt.includes('${p(BUG_REPORT_BOUNTY)}'));
+}
+
+section('[15] 집계 키 — 그래프게임의 두 이름이 어긋나지 않는가');
+{
+  /* 그래프게임만 이름이 갈려 있다.
+       주소   /games/graph          집계·원장  graph
+       API    /api/games/crash/*    소스 파일  crash.ts
+     RANK_GAMES 의 `crash: 'graph'` 한 줄이 그 다리다.
+
+     어긋나면 조용히 어긋난다. 새 코드가 bumpGameStats 에 'crash' 를 넘기면 오류 없이
+     두 번째 버킷이 생기고, 랭킹에서 그만큼이 사라지는데 화면은 멀쩡히 뜬다 —
+     운영자가 알아챌 방법이 없다(운영 실측으로는 아직 안 어긋났다: game_stats 에
+     graph 1,702판만 있고 crash 버킷은 없다).
+
+     그래서 "집계 키로 쓰이는 값"과 "RANK_GAMES 가 아는 값"을 맞춰 본다. */
+  const { readFileSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+  const { join } = require('node:path') as typeof import('node:path');
+  const { RANK_GAMES } = require('../src/services/ranking') as typeof import('../src/services/ranking');
+
+  const srcFiles: string[] = [];
+  (function walk(d: string): void {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p); else if (e.name.endsWith('.ts')) srcFiles.push(p);
+    }
+  })('src');
+
+  const statKeys = new Set<string>();
+  const dynamic: string[] = [];
+  for (const f of srcFiles) {
+    const code = readFileSync(f, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    /* 선언부(export function bumpGameStats(userId: string, game: string, …))는 뺀다 —
+       안 빼면 타입 표기 `game: string` 이 "동적으로 넘기는 자리"로 잡힌다. */
+    for (const m of code.matchAll(/(?<!function )bumpGameStats\(\s*[^,]+,\s*([^,]+),/g)) {
+      const arg = m[1].trim();
+      const lit = /^'([^']+)'$/.exec(arg);
+      if (lit) statKeys.add(lit[1]); else dynamic.push(`${f}: ${arg}`);
+    }
+  }
+  ck('집계를 쓰는 자리를 찾았다', statKeys.size >= 5, [...statKeys].join(','));
+
+  const known = new Set(Object.values(RANK_GAMES));
+  const strays = [...statKeys].filter(k => !known.has(k));
+  ck('집계 키가 전부 RANK_GAMES 안에 있다', strays.length === 0,
+    strays.join(', ') + ' — 랭킹이 못 읽는 버킷이 생긴다');
+
+  /* 값이 상수로 들어오는 자리는 하나뿐이다(지뢰찾기). 그 상수까지 확인해 둔다 —
+     여기를 "동적이니 넘어간다"로 두면 그 경로만 검사에서 통째로 빠진다. */
+  ck('상수로 넘기는 자리는 지뢰찾기 하나다',
+    dynamic.length === 1 && /before\.game_type/.test(dynamic[0]), dynamic.join(' / '));
+  const mines = readFileSync(join('src', 'web', 'games', 'mines.ts'), 'utf8');
+  const gt = /const GAME_TYPE = '([^']+)'/.exec(mines);
+  ck('지뢰찾기 키도 RANK_GAMES 안에 있다', !!gt && known.has(gt[1]), gt?.[1]);
+
+  /* 반대쪽: RANK_GAMES 에만 있고 아무도 안 쌓는 종목이 있으면, 랭킹 탭이 영영 빈 채로
+     뜨고 "나 혼자만 1등"은 그 종목 때문에 절대 안 열린다. */
+  const written = new Set([...statKeys, gt?.[1] ?? '']);
+  const orphan = [...known].filter(k => !written.has(k));
+  ck('RANK_GAMES 의 종목은 전부 실제로 쌓인다', orphan.length === 0,
+    orphan.join(', ') + ' — 아무도 안 쌓는 종목이다');
+
+  /* 화면이 랭킹을 부를 때 쓰는 세그먼트는 RANK_GAMES 의 "키"다(값이 아니다).
+     그래프게임에서 이 둘을 바꿔 쓰면 랭킹이 통째로 빈다. */
+  const segs = new Set<string>();
+  for (const f of srcFiles) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/rankJs\(\s*'[^']*'\s*,\s*'([^']+)'\s*\)/g)) {
+      segs.add(m[1]);
+    }
+  }
+  ck('랭킹을 부르는 화면을 찾았다', segs.size >= 5, [...segs].join(','));
+  const badSeg = [...segs].filter(s => !(s in RANK_GAMES));
+  ck('랭킹 세그먼트가 전부 RANK_GAMES 의 키다', badSeg.length === 0, badSeg.join(', '));
+
+  /* 그래프게임 다리 자체를 못 박는다 — 이 줄이 사라지면 위 검사들이 전부 통과하면서도
+     랭킹만 조용히 빈다(세그먼트 crash 가 집계 키 crash 를 찾아가고, 그건 없다). */
+  ck('crash → graph 다리가 그대로다', RANK_GAMES.crash === 'graph', String(RANK_GAMES.crash));
+  ck('그래프게임 집계는 graph 로 쌓는다',
+    /bumpGameStats\([^,]+,\s*'graph'/.test(readFileSync(join('src', 'db', 'queries', 'crash.ts'), 'utf8')));
+  ck('그래프게임 화면은 crash 로 랭킹을 부른다', segs.has('crash'));
 }
 
 console.log(`\n${'─'.repeat(52)}\n통과 ${pass} · 실패 ${fail}`);

@@ -177,7 +177,7 @@ const ITEMS: Parameters<typeof upsertAchievement>[0][] = [
     id: 'all-first-1',
     gameType: 'ALL',
     title: '나 혼자만 1등',
-    description: '한 시즌이 끝나는 시점에 모든 게임의 랭킹 1위를 동시에 차지합니다.',
+    description: '한 시즌이 끝나는 시점에 홀덤 토너먼트를 제외한 모든 게임의 랭킹 1위를 동시에 차지합니다.',
     /* 시즌 마감에 딱 한 번 판정된다. 그 판의 베팅액이라는 것이 없다. */
     minBet: 0,
     sortAt: 91,
