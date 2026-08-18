@@ -7,7 +7,7 @@
    의존은 한 방향이다: 게임별 모듈 → core. 반대 방향은 없고, 만들지도 말 것.
    core 가 특정 게임을 알게 되면 순환이 생기고, 그때부터는 어느 파일을 먼저 읽어야
    하는지가 사라진다. */
-import { one, all, run, tx, bumpGameStats, pruneStaleData } from './core';
+import { one, all, run, tx, bumpGameStats, pruneStaleData, payoutAt } from './core';
 
 export const CRASH_BETTING_SEC = 10;
 export const CRASH_REVEAL_SEC = 3; // 버스트 표시 후 다음 라운드까지
@@ -185,13 +185,22 @@ export function cancelCrashBet(userId: string, roundId: number):
 export function cashoutCrashBet(userId: string, roundId: number, multiplier: number):
   { ok: true; balance: number; payout: number } | { ok: false; error: 'no_bet' | 'already_cashed' } {
   return tx(() => {
-    const bet = one<{ id: number; amount: number; cashout_multiplier: number | null }>(
-      `SELECT id, amount, cashout_multiplier FROM crash_bets WHERE round_id = ? AND user_id = ?`, roundId, userId
+    const bet = one<{ id: number; amount: number; cashout_multiplier: number | null;
+                      payout: number | null }>(
+      `SELECT id, amount, cashout_multiplier, payout FROM crash_bets
+        WHERE round_id = ? AND user_id = ?`, roundId, userId
     );
     if (!bet) return { ok: false, error: 'no_bet' };
-    if (bet.cashout_multiplier !== null) return { ok: false, error: 'already_cashed' };
-    const payout = Math.floor(bet.amount * multiplier);
-    run(`UPDATE crash_bets SET cashout_multiplier = ?, payout = ? WHERE id = ? AND cashout_multiplier IS NULL`,
+    /* 끝난 베팅인가를 cashout_multiplier 하나로 가리면 안 된다. 터져서 진 베팅은 그
+       칸이 NULL 인 채로 payout 에 0 이 적히기 때문이다(라운드 마감이 그렇게 적는다).
+       그래서 이미 잃은 베팅에 대고 캐시아웃을 부르면 그대로 통과해 돈이 나갔다 —
+       걸지 않은 포인트가 생기는 자리다. payout 이 채워졌으면 그 베팅은 끝난 것이다. */
+    if (bet.cashout_multiplier !== null || bet.payout !== null) {
+      return { ok: false, error: 'already_cashed' };
+    }
+    const payout = payoutAt(bet.amount, multiplier);
+    run(`UPDATE crash_bets SET cashout_multiplier = ?, payout = ?
+          WHERE id = ? AND cashout_multiplier IS NULL AND payout IS NULL`,
       multiplier, payout, bet.id);
     if (one<{ n: number }>(`SELECT changes() AS n`)!.n !== 1) return { ok: false, error: 'already_cashed' };
     run(`UPDATE users SET balance = balance + ? WHERE id = ?`, payout, userId);

@@ -32,6 +32,39 @@ export function calcMultiplier(mineCount: number, revealedCount: number): number
   return m * (1 - HOUSE_EDGE);
 }
 
+/** n 개에서 k 개를 고르는 경우의 수. 정확해야 하므로 BigInt 로 센다. */
+function comb(n: number, k: number): bigint {
+  if (k < 0 || k > n) return 0n;
+  let r = 1n;
+  for (let i = 0n; i < BigInt(k); i++) r = (r * BigInt(n) - r * i) / (i + 1n);
+  return r;
+}
+
+/**
+ * 실제로 지급할 금액. 화면의 배수가 아니라 이 함수가 돈의 근거다.
+ *
+ * calcMultiplier 는 분수를 하나씩 곱해 쌓는다. double 안에서 그렇게 하면 참값보다
+ * 아주 조금 작은 값이 나오는 조합이 있고(지뢰 1개 · 10칸이면 1.65 가 아니라
+ * 1.6499999999999997), 그걸 내림하면 한 칸 더 내려간다 — 1,000P 를 걸고 화면이
+ * "1.65배 · 1,650P" 라고 적어 둔 자리에서 1,649P 가 나갔다. 32개 조합이 그랬고
+ * 오차는 언제나 유저 손해 쪽이었다.
+ *
+ * 곱을 정리하면 소수가 아예 안 나온다:
+ *   ∏(25-i)/(25-M-i) = C(25,k) / C(25-M,k)
+ * 이므로 지급액은 bet × 99 × C(25,k) / (100 × C(25-M,k)) 이고, 이 값을 정수로만
+ * 계산해 마지막에 한 번 내린다. 화면 배수는 표시용으로 그대로 둔다.
+ */
+export function minesPayout(bet: number, mineCount: number, revealedCount: number): number {
+  const b = Math.max(0, Math.floor(bet));
+  const k = Math.max(0, Math.floor(revealedCount));
+  // 한 칸도 안 열었으면 배당이 정확히 1.00 배다 — 원금 그대로 돌려준다
+  if (k <= 0) return b;
+  const den = comb(TILE_COUNT - mineCount, k);
+  if (den <= 0n) return b;
+  const pct = BigInt(Math.round((1 - HOUSE_EDGE) * 100));   // 99
+  return Number((BigInt(b) * pct * comb(TILE_COUNT, k)) / (100n * den));
+}
+
 // 암호학적으로 안전한 셔플(Fisher-Yates)로 지뢰 위치를 뽑는다 — Math.random 금지
 function generateMinePositions(mineCount: number): number[] {
   const positions = Array.from({ length: TILE_COUNT }, (_, i) => i);
@@ -57,6 +90,13 @@ function publicRound(round: GameRound, state: MinesState, revealMines: boolean) 
     revealed: state.revealed,
     multiplier: Number(calcMultiplier(state.mineCount, revealedCount).toFixed(4)),
     nextMultiplier: revealedCount < maxSafe ? Number(calcMultiplier(state.mineCount, revealedCount + 1).toFixed(4)) : null,
+    /* 화면이 적을 «획득» 금액. 배수를 넘겨 주고 화면에서 곱하게 두면 두 계산이
+       갈라진다 — 배수는 네 자리로 자른 표시용 값이라 실제 지급액과 몇 P 씩 어긋났다.
+       나갈 금액을 그대로 실어 보내면 화면이 약속한 숫자와 통장에 찍히는 숫자가
+       같아진다. 그게 이 칸의 유일한 쓸모다. */
+    potAmount: minesPayout(round.bet_amount, state.mineCount, revealedCount),
+    nextPotAmount: revealedCount < maxSafe
+      ? minesPayout(round.bet_amount, state.mineCount, revealedCount + 1) : null,
     status: round.status,
     payout: round.payout,
     minePositions: revealMines ? state.minePositions : undefined,
@@ -115,7 +155,7 @@ export async function handleReveal(req: IncomingMessage, res: ServerResponse, us
 
   if (newState.revealed.length === maxSafe) {
     const multiplier = calcMultiplier(state.mineCount, newState.revealed.length);
-    const payout = Math.floor(round.bet_amount * multiplier);
+    const payout = minesPayout(round.bet_amount, state.mineCount, newState.revealed.length);
     const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`);
     const settled: GameRound = { ...round, status: 'settled', payout, multiplier };
     /* ── 도전과제 둘 ─────────────────────────────────────────────────
@@ -156,7 +196,7 @@ export async function handleCashout(_req: IncomingMessage, res: ServerResponse, 
   // 아무 칸도 열지 않은 상태의 캐시아웃은 배당이 정확히 1.00x이므로 베팅액 전액 환불과 동일하게 동작한다.
   // (칸을 열지 않았다면 유저가 얻은 정보가 없으므로 환불해도 악용 여지가 없다 — 별도 취소 버튼이 필요 없는 이유)
   const multiplier = calcMultiplier(state.mineCount, state.revealed.length);
-  const payout = Math.floor(round.bet_amount * multiplier);
+  const payout = minesPayout(round.bet_amount, state.mineCount, state.revealed.length);
   // 0칸 캐시아웃은 전액 환불과 같으므로 랭킹의 판수에 넣지 않는다 (위 주석 참조)
   const balance = settleGameRound(round.id, userId, payout, multiplier, `game:${GAME_TYPE}`,
     state.revealed.length > 0);
@@ -342,7 +382,15 @@ export function minesPage(user: WebUser): string {
       });
 
       // 베팅 중엔 조건을 못 바꾸게 잠그고, 끝나면 바로 다음 베팅을 받을 수 있게 연다 (재입력 없이 이어서 플레이)
+      /* 라운드가 끝났으면 남은 칸을 더 못 누르게 한다.
+         예전에는 잠그지 않아서, 캐시아웃한 뒤 아무 칸이나 누르면 서버가 400 을 주고
+         그 문구("진행 중인 라운드가 없습니다")가 방금 딴 금액을 덮어썼다 — 이 게임에서
+         가장 보고 싶은 줄이 실수 한 번에 사라졌다. */
+      function lockBoard(){
+        tiles.forEach(function(b){ if (b) b.disabled = true; });
+      }
       function setIdle(){
+        lockBoard();
         betInput.disabled=false; mineSelect.disabled=false;
         halfBtn.disabled=doubleBtn.disabled=false;
         document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){ b.disabled=false; });
@@ -474,7 +522,11 @@ export function minesPage(user: WebUser): string {
 
       function updateStats(round){
         multiEl.textContent = round.multiplier.toFixed(2) + 'x';
-        potEl.textContent = fmt(round.betAmount * round.multiplier);
+        /* 서버가 보낸 실제 지급액을 그대로 적는다. 예전에는 여기서 베팅액 × 배수를
+           다시 곱했는데, 그 배수는 네 자리로 자른 표시용이라 실제로 나가는 금액과
+           달랐다 — 화면이 적어 둔 금액과 통장이 어긋나면 그건 화면의 잘못이다. */
+        potEl.textContent = fmt(round.potAmount != null ? round.potAmount
+          : Math.floor(round.betAmount * round.multiplier));
         // 0칸 캐시아웃은 1.00x = 전액 환불이므로, 버튼 문구로 그 의미를 분명히 알려준다
         cashoutBtn.textContent = round.revealed.length === 0 ? '베팅 취소 (전액 환불)' : '캐시아웃';
       }
@@ -522,6 +574,15 @@ export function minesPage(user: WebUser): string {
             }, delay));
             delay += 90;
           });
+          /* 지뢰가 다 드러난 뒤 남은 안전 칸도 연다 — 판이 어떻게 생겼었는지 한눈에
+             보이게 하는 마무리다. 예전에는 지뢰만 열려서 나머지 칸이 안 눌리는
+             빈칸으로 남았고, 그게 "아직 뭔가 할 수 있나" 처럼 보였다. */
+          pendingTimers.push(setTimeout(function(){
+            for (var t = 0; t < tiles.length; t++) {
+              if (mines.indexOf(t) >= 0) continue;
+              if (tiles[t] && !tiles[t].classList.contains('safe')) markTile(t, 'safe');
+            }
+          }, delay + 120));
           msg.innerHTML = '<span style="color:var(--lose);font-weight:700">지뢰 적중</span> — 베팅액을 잃었습니다.';
           setBalance(res.data.balance); setIdle();
         } else if (res.data.autoCashedOut) {
@@ -559,6 +620,12 @@ export function minesPage(user: WebUser): string {
           msg.innerHTML = '베팅을 취소하고 ' + fmt(round.payout) + '를 환불했습니다.';
           return;
         }
+        /* 지뢰가 어디 있었는지 보여 준다. 안 보여 주면 "운이 좋았나"를 알 수가 없고,
+           그걸 확인하려고 안 연 칸을 누르다가 딴 금액 문구를 지우곤 했다.
+           폭발음은 얹지 않는다 — 이긴 판이다. */
+        (round.minePositions || []).forEach(function(m, idx){
+          pendingTimers.push(setTimeout(function(){ markTile(m, 'mine'); }, 60 + idx * 70));
+        });
         msg.innerHTML = '<span style="color:var(--win);font-weight:700">캐시아웃 성공</span> — +' + fmt(round.payout) + ' (잔액 ' + fmt(res.data.balance) + ')';
         if (card) replay(card, 'gold-flash');
         if (pbal) replay(pbal, 'bump');

@@ -24,7 +24,7 @@
  */
 import { one, all, run, tx, settleGameRound, type GameRound } from '../db/queries';
 import { seasonLockdown, type SeasonLockdown } from '../db/season-schedule';
-import { calcMultiplier } from './games/mines';
+import { calcMultiplier, minesPayout } from './games/mines';
 
 export { seasonLockdown, type SeasonLockdown };
 
@@ -76,7 +76,9 @@ function cashOutMines(round: GameRound): number {
   }
   const opened = state.revealed?.length ?? 0;
   const mult = calcMultiplier(state.mineCount, opened);
-  const payout = Math.floor(round.bet_amount * mult);
+  /* 강제 정산도 "지금 캐시아웃을 눌렀다면 받았을 금액" 그대로여야 한다 — 그래서
+     캐시아웃과 같은 함수를 쓴다. mult 는 기록·화면용으로만 남긴다. */
+  const payout = minesPayout(round.bet_amount, state.mineCount, opened);
   /* 칸을 하나도 안 열었으면 배당이 정확히 1.00 이라 원금 전액 환불과 같다. 그 판은
      판수에 넣지 않는다 — 캐시아웃 자리와 같은 규칙이다(아무 일도 일어나지 않은 판이다). */
   settleGameRound(round.id, round.user_id, payout, mult, REASON, opened > 0);

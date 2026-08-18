@@ -99,7 +99,12 @@
   .lb-psub{font-size:11px;color:var(--muted);margin-top:3px}
 
   /* 4위부터의 표 */
-  .lb-listwrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  /* 표가 칸보다 넓어지면 이 상자 안에서 옆으로 밀린다.
+     예전에는 overflow:hidden 이라 넘친 열이 그냥 잘려 나갔다 — 페이지에는 가로
+     스크롤이 안 생기니 점검도 초록이었고, 화면에서는 순수익·판수·승률이 통째로
+     사라졌다. 보이지 않는 것과 없는 것은 화면에서 구별되지 않는다. */
+  .lb-listwrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    overflow-x:auto;overflow-y:hidden}
   .lb-tbl{width:100%;border-collapse:collapse;font-size:13px}
   .lb-tbl th{text-align:left;color:var(--muted);font-size:11.5px;font-weight:700;
     padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel2)}
@@ -120,6 +125,9 @@
   /* 색만으로 알리지 않는다 — 색을 구별하기 어려운 사람에게도 글자가 남아야 한다 */
   .lb-youtag{flex:none;font-size:11px;font-weight:800;color:var(--me);letter-spacing:.2px}
   .lb-who{display:flex;align-items:center;gap:8px;min-width:0}
+  /* 긴 닉네임 하나가 표 전체를 밀어내던 자리. 이름은 남는 만큼만 쓰고 넘치면 줄인다
+     — 포디움의 .lb-pname 이 이미 같은 처리를 하고 있었는데 표만 빠져 있었다. */
+  .lb-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lb-av{width:24px;height:24px;border-radius:7px;flex:none;object-fit:cover;
     background:#5865f2;color:#fff;align-items:center;justify-content:center;font-size:11px;font-weight:800}
   .lb-av.ph{display:inline-flex}

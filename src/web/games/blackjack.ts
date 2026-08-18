@@ -16,7 +16,7 @@ import { randomInt } from 'node:crypto';
 import {
   advanceBlackjackRound, seatBlackjackBet, clearBlackjackBet, blackjackAction,
   getBlackjackHands, getBlackjackPlayers, getMyBlackjackHand, getWebUser,
-  BJ_SEATS, BJ_REVEAL_SEC, bjSchedule,
+  BJ_SEATS, BJ_REVEAL_SEC, BJ_BETTING_SEC, bjSchedule,
   type BjRoundRow, type BjHelpers, type WebUser,
   chatTick,
 } from '../../db/queries';
@@ -272,10 +272,11 @@ const RULES_HTML = `
 
   <h4>진행</h4>
   <ul>
-    <li><b>자리 선택</b> — 빈 자리를 눌러 앉고 칩을 올립니다 (12초)</li>
+    <li><b>자리 선택</b> — 빈 자리를 눌러 앉고 칩을 올립니다 (${BJ_BETTING_SEC}초)</li>
     <li><b>힛 / 스탠드</b> — 모두 같은 15초 안에 각자 결정합니다. 힛은 한 장 더 받기, 스탠드는 여기서 멈추기입니다</li>
     <li>시간이 지나면 <b>자동으로 스탠드</b>됩니다 (마음대로 카드를 더 받지 않습니다)</li>
     <li><b>딜러</b> — 16 이하면 반드시 더 받고, 17 이상이면 반드시 멈춥니다. 딜러에게는 선택권이 없습니다</li>
+    <li>다만 <b>살아남은 손패가 하나도 없으면</b>(전원 버스트·서렌더) 딜러는 카드를 더 받지 않습니다 — 상대가 없으므로 칠 이유가 없습니다</li>
   </ul>
 
   <h4>더블다운</h4>

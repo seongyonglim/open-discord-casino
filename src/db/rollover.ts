@@ -87,7 +87,23 @@ function put(n: number): void {
  * 참가비 대회에는 이월이 없다 — 걷은 돈이 상금이라 서비스가 얹는 배수가 없다.
  * 보장 상금(prize_fixed)만 있는 판도 마찬가지다: 배수가 0 이면 곱해도 0 이다.
  */
+/**
+ * 이 판이 이월을 지고 있는가.
+ *
+ * 이월은 "참가비 없는 판에 서비스가 얹어 주는 1인당 금액" 을 키우는 장치다. 그러니
+ * 두 조건이 다 맞아야 한다 — 참가비가 없고(그래야 얹을 자리가 있다), 얹을 금액이
+ * 0 보다 커야 한다(0 에 몇 배를 곱해도 0 이라 이월이 실릴 데가 없다).
+ *
+ * 이 판단이 한 곳에 없어서 쌓는 쪽과 지우는 쪽이 서로 다른 기준을 쓰고 있었다:
+ * 상금 0 짜리 테스트 판을 열었다 넘기면 이월이 한 칸 올랐고(다음 프리롤이 2배가
+ * 된다), 참가비 대회나 테스트 판이 정상 종료하면 쌓아 둔 이월이 통째로 지워졌다
+ * (그 판은 이월을 한 푼도 쓰지 않았는데도). 둘 다 이 함수를 보게 한다.
+ */
+export function carriesRollover(t: { prize_multiplier: number; buy_in: number }): boolean {
+  return t.buy_in <= 0 && Math.floor(t.prize_multiplier) > 0;
+}
+
 export function rolledMultiplier(t: { prize_multiplier: number; buy_in: number }): number {
-  if (t.buy_in > 0) return Math.max(0, Math.floor(t.prize_multiplier));
+  if (!carriesRollover(t)) return Math.max(0, Math.floor(t.prize_multiplier));
   return Math.max(0, Math.floor(t.prize_multiplier)) * rolloverFactor();
 }

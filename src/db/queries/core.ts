@@ -111,6 +111,26 @@ export function deleteSession(token: string): void {
 
 // ----- 포인트 이코노미 -----
 
+/**
+ * 배당을 곱해 지급액을 낸다. 언제나 내림이다.
+ *
+ * amount * odds 를 그대로 내림하면 안 된다. 배당은 소수 둘째 자리까지 쓰는데(16.83,
+ * 1.95, 1.13 …) 그 값을 double 로 담으면 참값보다 아주 조금 작아지는 것이 있고,
+ * 그러면 내림이 한 칸 더 내려간다 — 100P 를 16.83 배로 받으면 1,683P 가 아니라
+ * 1,682P 가 나갔다. 1~200,000P 사이에서 1,761개 금액이 그랬고 오차는 언제나 유저
+ * 손해 쪽이었다. 크래시 정산도 같은 병을 앓았다(100P × 1.13 → 112P).
+ *
+ * 내림 규칙을 어긴 것은 아니라고 볼 수도 있지만, 어긴 것이 맞다 — 우리가 내리기로
+ * 한 것은 참값이지 참값을 잘못 담은 근사값이 아니다.
+ *
+ * 그래서 배당을 1/100 단위 정수로 되돌린 뒤 곱한다. 곱셈이 정수 안에서 끝나므로
+ * 자리가 새지 않는다.
+ */
+export function payoutAt(amount: number, odds: number): number {
+  const basis = Math.round(odds * 100);
+  return Math.floor((Math.floor(amount) * basis) / 100);
+}
+
 export interface PointsGrant { reason: string; delta: number }
 
 // 베팅/게임 정산 등 단발성 포인트 증감 (게임 라운드에서 사용)

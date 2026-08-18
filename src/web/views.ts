@@ -380,7 +380,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
         <button class="prof" id="profBtn" type="button" aria-haspopup="true" aria-expanded="false">
           ${ava}<span class="pname">${esc(u.username)}</span>
           ${u.role === 'admin' ? '<span class="adm">ADMIN</span>' : ''}
-          <span class="pbal">${esc(pts(u.balance))}</span>
+          <span class="pbal" data-balance="${u.balance}">${esc(pts(u.balance))}</span>
           <svg class="caret" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
         </button>
         <div class="profmenu" id="profMenu" hidden>${adminMenuItem}

@@ -697,8 +697,14 @@ async function main(): Promise<void> {
     const auto = mn.slice(mn.indexOf('res.data.autoCashedOut'), mn.indexOf('} else {', mn.indexOf('res.data.autoCashedOut')));
 
     ck('자동 정산 자리에서 배당·획득을 갱신한다', /updateStats\(round\)/.test(auto), auto.slice(0, 120));
+    /* 예전에는 이 검사가 "베팅액 × 배수" 를 화면에서 다시 곱하라고 요구했다. 그런데
+       그 배수는 네 자리로 자른 표시용 값이라, 곱한 결과가 실제로 나가는 금액과
+       몇 P 씩 달랐다 — 검사 이름이 말하는 "서버가 준 최종값" 과 정반대다.
+       이제 서버가 나갈 금액(potAmount)을 그대로 실어 보내고 화면은 그것만 적는다. */
     ck('갱신에 쓰는 값이 서버가 준 최종값이다',
-      /multiEl\.textContent = round\.multiplier/.test(mn) && /potEl\.textContent = fmt\(round\.betAmount \* round\.multiplier\)/.test(mn));
+      /multiEl\.textContent = round\.multiplier/.test(mn) && /round\.potAmount/.test(mn));
+    ck('화면이 금액을 스스로 다시 곱하지 않는다',
+      !/potEl\.textContent = fmt\(round\.betAmount \* round\.multiplier\)/.test(mn));
     ck('남은 칸의 지뢰를 공개한다', /revealAllMines\(round\)/.test(auto));
     ck('터진 지뢰와 다른 모양이다 (.dud)', /classList\.add\('dud'\)/.test(mn));
     const css4 = readFileSync('src/web/assets/css/04-board.css', 'utf8') as string;

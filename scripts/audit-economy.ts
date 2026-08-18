@@ -9,6 +9,7 @@ if (!process.env.DB_PATH) {
 }
 
 import { randomInt as rnd } from 'node:crypto';
+import { HOUSE_EDGE as POKER_EDGE } from '../src/web/games/poker';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDb } from '../src/db/schema';
@@ -232,10 +233,10 @@ section('[3] 포커 플립');
 
   const p = computeFlipProbabilities(hole[0], hole[1], hole[2], hole[3]);
   const odds = {
-    master: oddsForWinMarket(p.masterWin, p.tie, 0.05),
-    shark: oddsForWinMarket(p.sharkWin, p.tie, 0.05),
-    tie: oddsFromProbability(p.tie, 0.05),
-    buckets: p.buckets.map(b => oddsFromProbability(b, 0.05)),
+    master: oddsForWinMarket(p.masterWin, p.tie, POKER_EDGE),
+    shark: oddsForWinMarket(p.sharkWin, p.tie, POKER_EDGE),
+    tie: oddsFromProbability(p.tie, POKER_EDGE),
+    buckets: p.buckets.map(b => oddsFromProbability(b, POKER_EDGE)),
   };
   const makeRound = () => ({ hole, board, odds });
   const resolve = (h: number[], b: number[]) => {
@@ -444,8 +445,8 @@ section('[6] 배당률 — 확률 합과 하우스 엣지');
   ck('승/패/무 확률 합 = 1', Math.abs(sum - 1) < 1e-9, String(sum));
   ck('전수 보드 수 = C(48,5) = 1,712,304', p.totalBoards === 1712304, String(p.totalBoards));
 
-  const om = oddsForWinMarket(p.masterWin, p.tie, 0.05)!;
-  const os = oddsForWinMarket(p.sharkWin, p.tie, 0.05)!;
+  const om = oddsForWinMarket(p.masterWin, p.tie, POKER_EDGE)!;
+  const os = oddsForWinMarket(p.sharkWin, p.tie, POKER_EDGE)!;
   const implied = 1 / om + 1 / os;
   ck('승패 배당 역수 합 > 1 (하우스 엣지 존재)', implied > 1, String(implied));
   ck('하우스 엣지가 과하지 않음 (<15%)', implied < 1.15, String(implied));
@@ -1826,7 +1827,15 @@ section('[14] 안내 문구가 지금 규칙과 같은가');
   ck('지원금판에도 같은 안내가 붙는다',
     (dc.match(/\+ buffHint/g) ?? []).length >= 1 && /buffHint,/.test(dc));
   ck('출석 응답이 버프율을 말한다', /result\.buffPercent > 0/.test(dc));
-  ck('지원금 로그가 실지급액을 적는다', /reliefAmountFor\(caller\.id\)/.test(dc));
+  /* 이 검사는 한동안 버그를 못 박고 있었다 — 이름은 "실지급액을 적는다" 인데,
+     정작 요구한 것은 로그가 reliefAmountFor 로 금액을 *다시 계산하는* 코드였다.
+     지급 직후에 도전과제 판정이 돌고 그때 새 과제가 열리면 버프가 올라가므로,
+     다시 계산한 값은 방금 나간 돈보다 크다(원장 290P · 로그 300P 를 실측했다).
+     이제 요구하는 것은 반대다: 지급이 돌려준 값만 쓰고, 다시 계산하지 말 것. */
+  ck('지원금 로그가 지급이 돌려준 값을 쓴다',
+    /signedPts\(r\.granted\)/.test(dc) && /r\.buffPercent/.test(dc));
+  ck('지원금 로그가 금액을 다시 계산하지 않는다',
+    !/reliefAmountFor\(caller\.id\)/.test(dc));
   ck('내점수도 버프를 알려 준다', /내점수[\s\S]{0,320}보상 버프/.test(dc));
 
   /* 도전과제 화면은 "무엇을 해야 하나"만 적고 "그래서 뭐가 좋아지나"는 없었다.

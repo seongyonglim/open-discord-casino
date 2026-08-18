@@ -277,10 +277,23 @@ window.__IG = (function(){
 (function(){
   var IG = window.__IG;
 
+  /* 잔액 한 칸만 본다.
+
+     예전에는 .profwrap 전체의 글자에서 "숫자 + P" 를 정규식으로 처음 하나 집었다.
+     그 안에는 알림 목록도 들어 있어서, 종에 "대회 우승 72,800P" 가 떠 있으면 MAX 가
+     잔액 대신 그 금액을 넣었다. 잔액보다 크면 그대로 베팅해서 "잔액 부족"으로
+     거절당한다 — 누른 사람은 왜 거절인지 알 길이 없다.
+
+     이제 서버가 그 칸에 data-balance 로 숫자를 실어 준다. 글자를 파싱하지 않으므로
+     천 단위 구분자나 문구가 바뀌어도 안 깨지고, 옆의 다른 숫자를 집을 수도 없다. */
   function balance(){
-    var el = document.querySelector('.profwrap .num, .profwrap .bal, .profwrap');
+    var el = document.querySelector('.prof .pbal');
     if (!el) return null;
-    var m = (el.textContent || '').replace(/,/g, '').match(/(\d+)\s*P/);
+    var v = Number(el.getAttribute('data-balance'));
+    if (isFinite(v) && v >= 0) return v;
+    /* 옛 페이지가 캐시에 남아 있으면 그 속성이 없다. 그때만 글자를 읽는다 —
+       이 한 칸 안에는 잔액 말고 다른 숫자가 없다. */
+    var m = (el.textContent || '').replace(/,/g, '').match(/(d+)/);
     return m ? Number(m[1]) : null;
   }
 

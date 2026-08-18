@@ -33,7 +33,10 @@ import { PK_CHIPS_JS } from './poker-client/chips';
 import { PK_MARKETS_JS } from './poker-client/markets';
 import { pkLoop } from './poker-client/loop';
 
-const HOUSE_EDGE = 0.01;
+/* 감사(scripts/audit-economy.ts)가 이 값을 그대로 읽는다. 예전에는 감사가 0.05 를
+   손으로 적어 두어서, 실제로 팔리는 배당을 한 번도 검사하지 않았다 — 여기를
+   고쳐도 감사는 옛 값으로 계속 통과했다. */
+export const HOUSE_EDGE = 0.01;
 // 앞의 3단(10·100·500)은 동전, 뒤의 3단(1000·5000·1만)은 골드바로 그린다
 export const COIN_SIZES = [10, 100, 500, 1000, 5000, 10000];
 

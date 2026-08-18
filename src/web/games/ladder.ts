@@ -298,10 +298,18 @@ export function ladderPage(user: WebUser): string {
       // 첫 상태인지 여부 — 페이지 진입 직후에는 하강 연출을 건너뛰고 결과를 즉시 보여준다
       var firstState = true;
 
-      // 아직 공개 전이면 결과 컬럼을 "진행 중"으로 가려서 스포일러를 막는다
-      // 공이 도착하기 전까지 승패만 가린다. 참가자 패널에 쓰는 정보(아이디·아바타·잔액)는 그대로 둔다.
+      /* 공이 도착하기 전에는 결과를 가린다.
+
+         한동안 "승패만 가리고 잔액은 그대로 둔다" 였는데, 그게 곧 결과를 말해 주고
+         있었다 — 참가자 패널은 잔액이 오르면 초록으로 번쩍이므로, 공이 아직 내려오는
+         중에 누가 맞았는지가 그 반짝임으로 먼저 새어 나갔다. 연출을 끝까지 보는 사람만
+         손해를 보는 셈이다.
+
+         그래서 잔액도 정산 전 값으로 되돌려 둔다. 베팅액은 걸 때 이미 빠졌으므로
+         지급액만 빼면 그 값이 나온다. 공이 도착하면 진짜 값으로 한 번에 오른다. */
       function maskResult(b){
-        return { user_id:b.user_id, username:b.username, avatar:b.avatar, balance:b.balance,
+        var back = (b.balance || 0) - (b.payout || 0);
+        return { user_id:b.user_id, username:b.username, avatar:b.avatar, balance:back,
                  start_guess:b.start_guess, parity_guess:b.parity_guess,
                  amount:b.amount, won:null, payout:null };
       }

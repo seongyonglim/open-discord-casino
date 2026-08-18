@@ -7,7 +7,7 @@ import {
   getMyToday, getBalanceRank, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
   type LeaderboardRow, type WebUser,
 } from '../db/queries';
-import { recentHoldemWinners, prizePoolOf, getEntries, type HoldemStatus } from '../db/holdem';
+import { recentHoldemWinners, totalPoolOf, getEntries, type HoldemStatus } from '../db/holdem';
 import { rolloverSkips } from '../db/rollover';
 import * as T from '../services/tournament';
 import { rewardBuff } from '../services/buff';
@@ -209,7 +209,8 @@ function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; ct
     return { badge: '예정 없음', desc: '다음 대회가 열리면 여기에 안내됩니다', cta: '둘러보기' };
   }
   const n = st.registered;
-  const pool = prizePoolOf(t, n, t.prize_fixed > 0 ? t.prize_fixed : 0);
+  // 배너와 같은 값을 쓴다 — 한쪽만 순위 팟이면 같은 화면이 두 금액을 말한다
+  const pool = totalPoolOf(t, n, t.prize_fixed > 0 ? t.prize_fixed : 0);
   const now = Math.floor(Date.now() / 1000);
   const left = (at: number) => {
     const s = Math.max(0, at - now);
@@ -504,7 +505,10 @@ function eventBanner(ht: HoldemStatus | null, joined = false): string {
   let facts = o?.desc ?? g.short ?? g.desc;
   if (t && ht) {
     const n = ht.registered;
-    const pool = prizePoolOf(t, n, t.prize_fixed > 0 ? t.prize_fixed : 0);
+    /* 순위 상금만 세면 안 된다 — 바운티 판은 1인당 금액의 대부분(미스터리는 전부)이
+       바운티 통으로 가 있어서, 그 통을 빼놓으면 미스터리 대회가 "총 상금 풀 0P" 로
+       광고된다. totalPoolOf 가 둘을 합쳐 준다. */
+    const pool = totalPoolOf(t, n, t.prize_fixed > 0 ? t.prize_fixed : 0);
     const head = t.buy_in > 0
       ? `참가비 ${t.buy_in.toLocaleString('ko-KR')}P`
       : `1인당 ${Math.max(0, Math.floor(t.prize_multiplier)).toLocaleString('ko-KR')}P`;

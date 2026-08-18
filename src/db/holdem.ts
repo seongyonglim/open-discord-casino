@@ -23,7 +23,7 @@ import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
 import { ensureRecurring } from './recurrence';
-import { bumpRollover, clearRollover } from './rollover';
+import { bumpRollover, clearRollover, carriesRollover } from './rollover';
 import { notifyAll } from './notifications';
 
 /* 알림 문구에 쓸 KST 시:분. 화면이 아니라 알림 본문에 들어가는 값이라 여기서 만든다 —
@@ -217,6 +217,26 @@ export function prizePoolOf(
   return t.buy_in > 0
     ? T.prizePool(entryCount, t.prize_multiplier, prizeFixed, keep)
     : T.prizePool(entryCount, keep, prizeFixed, 0);
+}
+
+/**
+ * 이 대회가 내보낼 **전체** 금액 — 순위 상금 + 바운티 펀드.
+ *
+ * prizePoolOf 는 이름 그대로 순위 상금 팟만 준다. 바운티 판에서는 1인당 금액의 상당
+ * 부분(미스터리는 전부)이 바운티로 빠져 있어서, 그 값만 "총 상금"이라고 적으면 실제
+ * 지급액보다 적게 광고하게 된다 — 미스터리는 순위 상금이 0 이라 "총 상금 풀 0P" 가
+ * 됐다. 실제로 로비 배너가 그러고 있었다.
+ *
+ * 화면 쪽에서 매번 두 값을 더하게 두면 언젠가 한 곳이 빠진다(그래서 빠졌다).
+ * "총액" 을 묻는 자리는 전부 이 함수 하나를 부른다.
+ */
+export function totalPoolOf(
+  t: { prize_multiplier: number; prize_fixed?: number; buy_in: number; mode?: string;
+       bounty_pool?: number },
+  entryCount: number, prizeFixed = t.prize_fixed ?? 0
+): number {
+  const ranked = prizePoolOf(t, entryCount, prizeFixed);
+  return ranked + (isPko(t) ? Math.max(0, Math.floor(t.bounty_pool ?? 0)) : 0);
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -732,7 +752,10 @@ export function advanceHoldem(userId?: string): HoldemStatus {
          여기만 센다. 운영자가 손으로 접은 판(admin.ts)은 세지 않는다: 실수로 연 판을
          접을 때마다 이월이 쌓이면 그건 이월이 아니라 사고다.
          참가비 대회는 걷은 돈이 곧 상금이라 서비스가 얹는 배수가 없어 해당이 없다. */
-      if (t.buy_in <= 0) bumpRollover();
+      /* 상금이 0 인 판(운영자가 화면을 보려고 여는 테스트 판)은 세지 않는다.
+         예전에는 참가비만 봐서, 그런 판을 열었다 넘기는 것만으로 다음 프리롤이
+         2배가 됐다 — 경제에 흔적을 남기지 않기로 한 판이 가장 큰 흔적을 남겼다. */
+      if (carriesRollover(t)) bumpRollover();
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
@@ -1494,7 +1517,10 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
   /* 판이 열려 상금이 나갔다 — 이월은 여기서 갚아진 것이므로 다음 판은 제 값으로
      돌아간다. 지급 뒤에 부르는 이유는 순서가 곧 뜻이기 때문이다: 지급이 도중에
      실패하면 이월도 그대로 남아 다음 판이 그 몫을 다시 진다. */
-  clearRollover();
+  /* 이월을 실제로 지고 있던 판이 끝났을 때만 지운다. 참가비 대회나 테스트 판은
+     쌓인 이월을 한 푼도 쓰지 않으므로, 그 판이 끝났다고 지우면 프리롤을 기다리던
+     사람들의 이월이 남의 판에 딸려 사라진다(실측: 3배가 1배로 떨어졌다). */
+  if (carriesRollover(t)) clearRollover();
   announceWinner(fresh);
 }
 

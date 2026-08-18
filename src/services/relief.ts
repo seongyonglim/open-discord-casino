@@ -14,7 +14,10 @@
 //  · 지급 조건 검사와 실제 지급은 queries.claimRelief가 한 트랜잭션에서 처리한다(이중 지급 방지).
 import { claimRelief } from '../db/queries';
 import { rewards } from './rewards';
-import { buffed } from './buff';
+import { buffed, rewardBuff } from './buff';
+/* 지급 시점의 버프. claim 안에서만 쓴다 — 밖에서 다시 읽으면 그 사이에 열린
+   과제가 섞여 들어간다. */
+const buffPercentOf = (userId: string) => rewardBuff(userId).percent;
 
 /* 지급액은 시즌마다 다르다 — services/rewards 의 표를 보라. 여기서 곱하지 않는다.
    반드시 reliefAmount() 로 읽는다: 어딘가에 숫자를 직접 적으면 안내에 쓰인 금액과
@@ -28,6 +31,15 @@ export const reliefAmount = () => rewards().relief;
    이 값을 알려 준다. 두 함수를 나눠 두는 이유가 그것이다. */
 export const reliefAmountFor = (userId: string) => buffed(reliefAmount(), userId);
 
+/* 실제로 지급한 금액과 그때의 버프를 함께 돌려준다.
+
+   부르는 쪽에서 금액을 다시 계산하면 안 되기 때문이다. 지원금을 준 직후에 도전과제
+   판정이 돌고, 그 자리에서 새 과제가 열리면 버프가 올라간다 — 그 뒤에 다시 계산한
+   값은 방금 들어간 돈보다 크다. 실제로 원장에는 290P 가 들어갔는데 채널 로그는
+   "+300P · 버프 +50%" 로 나갔다. 로그가 원장을 이기는 일은 없어야 한다. */
 export function claim(userId: string) {
-  return claimRelief(userId, reliefAmountFor(userId), RELIEF_COOLDOWN_SEC);
+  const granted = reliefAmountFor(userId);
+  const buffPercent = buffPercentOf(userId);
+  const r = claimRelief(userId, granted, RELIEF_COOLDOWN_SEC);
+  return r.ok ? { ...r, granted, buffPercent } : r;
 }
