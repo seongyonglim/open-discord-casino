@@ -412,6 +412,15 @@ ${/* 앱으로 설치되기 위한 세 줄. 매니페스트가 이름·아이콘
      예전에는 Noto Sans KR 3종까지 동기 로드해서 CSS 한 개가 340KB였고 그게 렌더를 막았다. -->
 <link rel="stylesheet" media="print" onload="this.media='all'"
   href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
+<!-- 본문 글꼴. 예전에 Noto Sans KR 을 걷어낸 이유는 CSS 한 개가 340KB 였고 그게 렌더를
+     막았기 때문인데, 여기서는 두 가지가 다르다.
+       · 동적 서브셋(dynamic-subset)이라 브라우저가 실제로 쓴 글자 범위만 받아 간다.
+         한글 전체를 미리 받지 않는다.
+       · media="print" → onload 로 비동기로 받는다. 첫 페인트는 이 요청을 안 기다린다.
+     그래서 늦거나 실패해도 화면은 아래 시스템 글꼴로 정상 표시된다 — 모양만 달라진다. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <!-- CSS와 공용 스크립트는 모든 페이지에서 완전히 동일하다. 인라인이면 게임을 오갈 때마다
      44KB를 다시 받고 다시 파싱하므로 외부 파일로 빼서 브라우저 캐시에 맡긴다(?v= 로 갱신).
      스크립트를 <head>에 동기로 두는 이유: 게임 스크립트가 실행되는 시점에 window.casinoPoll을 쓴다.

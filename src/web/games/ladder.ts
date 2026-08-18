@@ -213,6 +213,9 @@ const RULES_HTML = `
 
   <div class="warn"><b>주의 —</b> 둘 다 골랐으면 <b>둘 다</b> 맞아야 이깁니다.
   하나만 맞으면 못 맞힌 것과 같습니다 — 부분 지급은 없습니다.</div>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">단일 1.95배 · 양쪽 3.95배</p>
 `;
 
 export function ladderPage(user: WebUser): string {

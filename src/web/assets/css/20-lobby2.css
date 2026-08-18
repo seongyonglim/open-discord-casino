@@ -13,15 +13,9 @@
      움직이는 것은 transform 과 opacity 만 쓴다 — 레이아웃을 다시 계산하지 않아
      폰에서도 프레임이 안 떨어진다. */
 
-  /* ── 카드 안의 진입 표시 ──────────────────────────────────────────
-     단추를 걷은 자리에 남기는 한 줄. 단추처럼 보이면 안 되므로 배경도 테두리도 없이
-     글자와 화살표만 둔다 — "여기를 누르면 들어간다" 는 사실만 전한다. */
-  .game-card .gc-go{flex:none;display:inline-flex;align-items:center;gap:5px;
-    margin-top:2px;font-size:12px;font-weight:700;color:var(--muted);
-    transition:color .2s ease,transform .2s ease}
-  .game-card .gc-go::after{content:'›';font-size:15px;line-height:1;
-    transform:translateY(-1px)}
-  .game-card.ready:hover .gc-go{color:var(--gold);transform:translateX(2px)}
+  /* 카드에서 규격 줄과 진입 문구를 걷어냈다. 설명 한 줄만 남으므로 아래로 늘어나던
+     여백을 줄이고, 설명이 카드 바닥까지 자리를 채우게 둔다. */
+  .game-card p{margin:0;flex:none}
 
   /* ── 라이브 뱃지 ──────────────────────────────────────────────────
      지금 보고 있는 사람 수. 1명 이상일 때만 서버가 내려보내므로 여기는 "있으면 이렇게
@@ -78,11 +72,14 @@
     font-size:21px;letter-spacing:.3px;color:#fff}
   .ev-desc{margin:0;font-size:13px;color:var(--muted)}
 
+  /* 오른쪽은 "언제" 와 "무엇을 누르는가" 를 세로로 쌓는다. 예전에는 남은 시간과 단추가
+     좌우로 흩어져 눈이 두 번 오갔다. */
   .ev-right{flex:none;display:flex;flex-direction:column;align-items:flex-end;
-    gap:4px;position:relative;z-index:1}
+    gap:8px;position:relative;z-index:1}
+  .ev-when{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .ev-lbl{font-size:11px;color:var(--muted);letter-spacing:.2px}
-  .ev-val{font-family:var(--mono);font-size:19px;font-weight:800;color:var(--gold);
-    letter-spacing:-.3px}
+  .ev-val{font-size:20px;font-weight:800;color:var(--gold);letter-spacing:-.3px;
+    font-variant-numeric:tabular-nums}
   .ev-cta{margin-top:6px;padding:9px 18px;border-radius:10px;
     background:linear-gradient(180deg,var(--gold-hi) 0%,var(--gold) 100%);
     color:#1a1608;font-size:13px;font-weight:800;white-space:nowrap;

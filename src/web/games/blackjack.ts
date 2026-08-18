@@ -302,6 +302,9 @@ const RULES_HTML = `
 
   <div class="warn"><b>주의 —</b> 내가 먼저 21을 넘기면, 그 뒤에 딜러가 21을 넘겨도 <b>내가 집니다.</b>
   카지노가 블랙잭에서 이익을 보는 이유가 사실상 이것 하나입니다. 높은 끗수에서 무리하게 받지 마세요.</div>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">1덱 · 블랙잭 2.5배</p>
 `;
 
 export function blackjackPage(user: WebUser): string {

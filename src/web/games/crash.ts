@@ -256,6 +256,9 @@ const RULES_HTML = `
 
   <div class="warn"><b>주의 —</b> 배율은 <b>1.00배에서도</b> 터질 수 있습니다.
   "조금만 더"가 이 게임에서 돈을 잃는 유일한 방법입니다.</div>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">최대 배율 10,000배 · 자동 캐시아웃</p>
 `;
 
 export function crashPage(user: WebUser): string {

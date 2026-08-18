@@ -240,6 +240,9 @@ const RULES_HTML = `
 
   <div class="warn"><b>주의 —</b> 지뢰를 밟으면 그때까지 쌓인 배수는 <b>전부 사라집니다.</b>
   캐시아웃을 눌러야 내 것이 됩니다.</div>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">25칸 · 지뢰 1·3·5·10·24개</p>
 `;
 
 export function minesPage(user: WebUser): string {

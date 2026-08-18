@@ -64,24 +64,24 @@ const GAMES: GameDef[] = [
     /* 배지에 고정 시각을 적지 않는다. 예전에는 '매일 22:00'이었는데, 대회를 운영자가
        직접 여는 방식으로 바뀌면서 그 문장이 사실이 아니게 됐다. 실제 시각은 아래
        freerollOverride 가 대회 상태에서 읽어 갈아끼운다 — 없으면 '예정 없음'이 나온다. */
-    short: '모여서 한 판, 상위 입상자가 상금을 나눈다',
+    short: '모여서 한 판에 겨루고 상위 입상자가 상금을 나눕니다.',
     cta: '참가 신청', badge: '토너먼트', ready: true },
 
   { key: 'baccarat', name: '바카라', icon: baccaratIcon, group: 'table',
     desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어에도 걸 수 있어요.',
     // web/games/baccarat.ts baccaratOdds() — 페어 16.83이 최대(타이 10.57) · services/baccarat.ts DECKS 1
-    short: '9에 가까운 쪽에 건다',
+    short: '플레이어와 뱅커 중 9에 가까운 쪽에 베팅하세요.',
     fact: '1덱 · 최대 배당 16.83배 (페어)', cta: '입장하기', ready: true },
   { key: 'blackjack', name: '블랙잭', icon: blackjackIcon, group: 'table',
     desc: '5석 테이블에서 딜러를 함께 상대합니다. 21을 넘기지 않고 이기면 승리!',
     // services/blackjack.ts settleHand() — 블랙잭 배수 2.5 (3:2 + 원금) · DECKS 1
-    short: '5석 테이블에서 딜러를 함께 상대한다',
+    short: '딜러와 승부하여 21을 넘기지 않고 승리하세요.',
     fact: '1덱 · 블랙잭 2.5배', cta: '자리 잡기', ready: true },
   { key: 'poker', name: '포커 플립', icon: flipIcon, group: 'table',
     desc: '두 핸드가 맞붙습니다. 승자와 완성될 족보에 칩을 올려보세요.',
     /* services/poker.ts MAX_ODDS 3000 — 공정 배당이 이 값을 넘는 시장은 팔지 않고 막는다.
        그래서 3,000배는 "볼 수 있는 최대 배당"이 맞다(매치업마다 값이 달라진다). */
-    short: '두 핸드의 승자와 족보에 칩을 올린다',
+    short: '두 핸드의 승자와 완성될 족보를 예측해 보세요.',
     fact: '매치업마다 배당 재계산 · 최대 3,000배', cta: '베팅하기', ready: true },
 
   { key: 'mines', name: '지뢰찾기', icon: bombIcon, group: 'mini',
@@ -90,17 +90,18 @@ const GAMES: GameDef[] = [
        최대 배당은 적지 않는다. 이론상 최대(지뢰 10개에서 15칸 전부)가 3,236,072배인데,
        참이지만 확률이 300만분의 1이라 "최대 배당"으로 내놓으면 복권 문구가 된다.
        처음엔 24.75배로 적었다가 감사가 잡았다 — 그 값은 지뢰 1개·24개일 때의 최대다. */
-    short: '열수록 배당이 오른다, 원할 때 캐시아웃',
+    short: '지뢰를 피해 칸을 열고 원할 때 캐시아웃하세요.',
     fact: '25칸 · 지뢰 1·3·5·10·24개', cta: '도전하기', ready: true },
   { key: 'graph', name: '그래프게임', icon: chartIcon, group: 'mini',
     desc: '배율이 계속 오릅니다. 터지기 전에 빠져나오세요. 늦으면 전액 손실!',
     // web/games/crash.ts MAX_CRASH 10_000 — 이론상 무한이라 둔 상한
-    short: '터지기 전에 빠져나온다',
+    short: '배율이 폭발하기 전에 멈추고 수익을 실현하세요.',
     fact: '최대 배율 10,000배 · 자동 캐시아웃', cta: '베팅하기', ready: true },
   { key: 'ladder', name: '사다리게임', icon: ladderIcon, group: 'mini',
     /* 설명에서 배당 숫자를 뺐다 — 아래 사실 줄과 같은 값을 두 번 말하고 있었다.
        설명은 무엇을 하는 게임인지, 사실 줄은 얼마를 받는지로 나눈다. */
     desc: '출발과 도착을 예측하세요. 하나만 맞혀도 되고, 둘 다 맞히면 배당이 커집니다.',
+    short: '출발과 도착을 예측하여 배당을 노려보세요.',
     // 이 두 값만은 db/queries.ts에서 직접 가져온다(순환 없이 import된다) — 손으로 적을 이유가 없다
     fact: `단일 ${LADDER_MULTIPLIER}배 · 양쪽 ${LADDER_DOUBLE_MULTIPLIER}배`,
     cta: '예측하기', ready: true },
@@ -159,23 +160,23 @@ function gameCard(
      장이 나란히 서면 그 문장들이 서로 비슷해 보여 구분에도 도움이 안 된다.
      프리롤처럼 상태가 설명을 갈아끼우는 카드는 그 문구가 이미 수치를 담으므로 사실
      줄을 빼고 설명에 맡긴다 — 숫자가 두 줄로 겹치면 어느 쪽이 지금인지 흐려진다. */
+  /* 카드에는 설명 한 줄만 둔다.
+     예전에는 그 아래 규격 줄("1덱 · 최대 배당 16.83배")이 한 줄 더 있었다. 참인 값이고
+     고르는 데 도움이 되기는 하는데, 여섯 장이 나란히 서면 그 줄들이 먼저 눈에 들어와
+     로비가 안내가 아니라 사양표처럼 읽혔다. 그 수치는 게임마다 규칙 도움말(?)로
+     옮겼다 — 자세히 알고 싶은 사람이 가는 자리다(감사도 거기를 본다). */
   const sub = o.desc ?? g.short ?? g.desc;
-  const factText = o.desc ? undefined : g.fact;
-  const fact = factText ? `<p class="gc-fact">${esc(factText)}</p>` : '';
   const inner = `<div class="gc-top"><div class="icon">${g.icon}</div>
       <span class="gc-tags">${badge}${liveBadge}</span></div>
     <h3>${esc(g.name)}</h3>
-    <p>${esc(sub)}</p>${fact}`;
+    <p>${esc(sub)}</p>`;
   if (!g.ready) {
     return `<div class="game-card">${inner}<span class="soon">출시 예정</span></div>`;
   }
-  /* 카드 안에 큰 노란 단추를 두지 않는다. 카드 여섯 장이 저마다 단추를 달고 있으면
-     화면에서 제일 눈에 띄는 색이 여섯 번 반복돼 어느 것도 강조가 되지 않았다 —
-     그 색은 이제 위 이벤트 배너 하나만 쓴다.
-     카드 전체가 이미 링크이므로 어디를 눌러도 들어간다. */
-  return `<a class="game-card ready${o.hot ? ' live' : ''}" href="/games/${g.key}">${inner}
-    <span class="gc-go" aria-hidden="true">${esc(o.cta ?? g.cta)}</span>
-  </a>`;
+  /* 단추도, 단추를 대신하던 "입장하기 ›" 도 두지 않는다. 카드 여섯 장이 저마다 그것을
+     달고 있으면 같은 말이 여섯 번 반복되는데, 카드 전체가 이미 링크라 아무 데나 눌러도
+     들어간다 — 마우스를 올리면 떠오르고 테두리가 밝아지는 것이 이미 그 말을 한다. */
+  return `<a class="game-card ready${o.hot ? ' live' : ''}" href="/games/${g.key}">${inner}</a>`;
 }
 
 /* ── 프리롤 카드는 대회 상태를 그대로 비춘다 ────────────────────────────
@@ -440,6 +441,11 @@ function eventBanner(ht: HoldemStatus | null, live = 0): string {
   const stat = nextFreerollStat(ht);
   const liveBadge = live > 0
     ? `<span class="gc-live"><i class="gc-dot"></i>${live}명 참여 중</span>` : '';
+  /* 왼쪽은 "이 판이 무엇인가", 오른쪽은 "언제이고 무엇을 누르는가" 로 나눈다.
+     예전에는 상태 뱃지·인원·상금·남은 시간이 좌우로 흩어져 있어서 눈이 두 번 오갔다.
+
+     서브 정보는 대회 상태에서 온 문구를 그대로 쓴다(freerollOverride) — 인원과 상금
+     풀이 이미 그 안에 있고, 여기서 다시 조립하면 같은 값을 두 곳에서 만들게 된다. */
   return `<a class="ev-banner" href="/games/${g.key}">
     <span class="ev-shine" aria-hidden="true"></span>
     <div class="ev-left">
@@ -448,8 +454,10 @@ function eventBanner(ht: HoldemStatus | null, live = 0): string {
       <p class="ev-desc">${esc(o?.desc ?? g.short ?? g.desc)}</p>
     </div>
     <div class="ev-right">
-      <div class="ev-lbl">${esc(stat.label)}</div>
-      <div class="ev-val">${esc(stat.value)}</div>
+      <div class="ev-when">
+        <span class="ev-lbl">${esc(stat.label)}</span>
+        <span class="ev-val num">${esc(stat.value)}</span>
+      </div>
       <span class="ev-cta">${esc(o?.cta ?? g.cta)}</span>
     </div>
   </a>`;

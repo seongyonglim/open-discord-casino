@@ -229,10 +229,19 @@ async function main(): Promise<void> {
      그래서 여기서 게임 모듈을 직접 불러 값을 다시 계산하고, 그 숫자가 렌더된 로비
      화면에 실제로 들어 있는지 본다. 배당 상수를 고치고 카드를 잊으면 이 검사가 깨진다 —
      "카드에 적힌 숫자가 거짓이 되는" 실패는 조용히 지나가면 안 되는 종류다. */
-  console.log('\n[2] 로비 카드의 수치 = 게임 코드의 값');
+  console.log('\n[2] 규칙 도움말의 수치 = 게임 코드의 값');
   {
-    const lobby = (await get('/', cookie)).text;
-    const has = (s: string) => lobby.includes(s);
+    /* 예전에는 로비 카드의 한 줄 사실을 봤다. 그 줄을 걷으면서(여섯 장이 나란히 서면
+       규격 줄이 먼저 읽혀 로비가 사양표처럼 보였다) 수치를 게임마다 규칙 도움말로
+       옮겼고, 검사도 같이 옮긴다 — 표시하는 자리가 바뀌었을 뿐 "적힌 숫자가 거짓이
+       되면 안 된다" 는 그대로다.
+       지우지 않는 이유가 그것이다. 표시를 옮겼다고 보증까지 없애면, 배당 상수를 고치고
+       문구를 잊는 실패가 다시 조용해진다. */
+    const pages: string[] = [];
+    for (const g of ['baccarat', 'blackjack', 'poker', 'mines', 'graph', 'ladder']) {
+      pages.push((await get(`/games/${g}`, cookie)).text);
+    }
+    const has = (s: string) => pages.some(t => t.includes(s));
 
     const B = require('../src/web/games/baccarat') as typeof import('../src/web/games/baccarat');
     const C = require('../src/web/games/crash') as typeof import('../src/web/games/crash');
@@ -274,8 +283,11 @@ async function main(): Promise<void> {
     /* 대회가 없는 것도 정상 상태가 됐다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
        그때는 "예정 없음"이나 다음 대회 안내가 나온다. 어느 쪽이든 사람에게 할 말이
        있어야 한다는 것이 이 검사의 요지다. */
-    ck('홀덤 카드는 대회 상태를 비춘다',
-      /등록은 .*후에 열립니다|등록 중|명 신청|진행 중|오늘 대회|인원 대기|예정 없음|다음 대회/.test(lobby));
+    /* 로비를 여기서 다시 받는다 — 위 검사가 게임 페이지로 옮겨 가면서 lobby 를 안 읽게
+       됐다. 이 검사는 여전히 로비를 봐야 한다(홀덤 배너가 대회 상태를 비추는가). */
+    const lobbyHtml = (await get('/', cookie)).text;
+    ck('홀덤 배너는 대회 상태를 비춘다',
+      /등록은 .*후에 열립니다|등록 중|명 신청|진행 중|오늘 대회|인원 대기|예정 없음|다음 대회/.test(lobbyHtml));
   }
 
   /* 대회가 없을 때의 화면. 이 감사 환경에는 대회가 하나도 없으므로(자동 생성이 없다)

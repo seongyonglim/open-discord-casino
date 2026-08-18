@@ -293,6 +293,9 @@ const RULES_HTML = `
 
   <p class="tip"><b>꿀팁 —</b> 배당이 높다는 건 그만큼 잘 안 나온다는 뜻입니다.
      확률에서 만든 값이라 어느 쪽을 골라도 기대값은 같습니다.</p>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">매치업마다 배당 재계산 · 최대 3,000배</p>
 `;
 
 export function pokerPage(user: WebUser): string {

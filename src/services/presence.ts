@@ -53,6 +53,19 @@ export function activeCounts(now = Date.now()): Record<string, number> {
   sweep(now);
   const out: Record<string, number> = {};
   for (const v of seen.values()) out[v.game] = (out[v.game] ?? 0) + 1;
+
+  /* ── 개발용 가짜 인원 ──────────────────────────────────────────
+     혼자 띄워 보면 언제나 1명이라 뱃지가 어떻게 보이는지 확인할 수가 없다.
+     MOCK_PRESENCE 를 켜면 몇 게임에 사람이 있는 것처럼 보인다.
+
+     환경변수가 없으면 이 블록은 통째로 지나간다 — 운영에는 그 변수가 없고, 켤 이유도
+     없다. 코드에 조건 없이 섞어 두면 언젠가 운영에서 켜진다는 것이 이 방식의 요점이다.
+     실제 인원이 있으면 그쪽이 이긴다: 가짜가 진짜를 덮으면 확인이 아니라 착각이 된다. */
+  const mock = process.env.MOCK_PRESENCE;
+  if (mock) {
+    const fake: Record<string, number> = { baccarat: 3, graph: 7 };
+    for (const [g, n] of Object.entries(fake)) out[g] = Math.max(out[g] ?? 0, n);
+  }
   return out;
 }
 
