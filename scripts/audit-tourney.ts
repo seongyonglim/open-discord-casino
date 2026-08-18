@@ -129,6 +129,12 @@ const watch = setInterval(() => {
     ck('나간 상금 = 참가자 수 × 상금 배수', prize === PEOPLE.length * mult,
       `${prize} vs ${PEOPLE.length} × ${mult}`);
 
+    /* 대회가 정상적으로 끝났으면 이월은 갚아진 것이다 — 다음 판은 제 값으로
+       돌아가야 한다. 이 검사가 여기 있는 이유는 완주하는 경로가 여기뿐이기 때문이다
+       (audit-rollover 는 쌓이는 규칙만 본다). */
+    const R = require('../src/db/rollover') as typeof import('../src/db/rollover');
+    ck('끝난 뒤 이월이 0 으로 돌아간다', R.rolloverFactor() === 1, `${R.rolloverFactor()}배`);
+
     console.log(`\n${'─'.repeat(50)}`);
     console.log(`통과 ${pass} · 실패 ${fail} · ${((Date.now() - startedAt) / 1000).toFixed(0)}초`);
     process.exit(fail ? 1 : 0);

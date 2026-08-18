@@ -23,6 +23,7 @@ import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
 import { ensureRecurring } from './recurrence';
+import { bumpRollover, clearRollover } from './rollover';
 import { notifyAll } from './notifications';
 
 /* 알림 문구에 쓸 KST 시:분. 화면이 아니라 알림 본문에 들어가는 값이라 여기서 만든다 —
@@ -201,6 +202,11 @@ export function prizePoolOf(
   t: { prize_multiplier: number; prize_fixed?: number; buy_in: number; mode?: string },
   entryCount: number, prizeFixed = t.prize_fixed ?? 0
 ): number {
+  /* 이월 배수는 여기서 곱하지 않는다. 대회를 만들 때 prize_multiplier 에 이미 굳혀
+     넣기 때문이다(db/rollover.ts).
+     실행 시점에 곱하면 끝난 대회를 다시 그릴 때 값이 달라진다 — 지급은 이월이 걸린
+     금액으로 나갔는데, 그 뒤 clearRollover 가 돌고 나면 결과 화면이 원래 값으로
+     계산해 "받은 돈보다 적은 상금표"를 그린다. 굳혀 두면 그 시차가 없다. */
   if (!isPko(t)) return T.prizePool(entryCount, t.prize_multiplier, prizeFixed, t.buy_in);
   /* 갈라내는 자리는 참가비냐 배수냐로 다르다 — prizePool 이 그 둘을 다른 인자로 받는다.
      어느 쪽이든 "1인당 금액에서 바운티 몫을 뺀 나머지"를 넘긴다. */
@@ -710,6 +716,11 @@ export function advanceHoldem(userId?: string): HoldemStatus {
       /* 참가비를 걷었으면 돌려준다. 판이 열리지 않았고, 인원 미달은 참가자 잘못이 아니다.
          돌려주지 않으면 3명이 안 모여 취소된 판에 돈만 잃는 사람이 생긴다. */
       refundEntries(t.id, 'holdem:cancel:');
+      /* 프리롤이 인원 미달로 못 열렸다 — 다음 판으로 배수를 넘긴다.
+         여기만 센다. 운영자가 손으로 접은 판(admin.ts)은 세지 않는다: 실수로 연 판을
+         접을 때마다 이월이 쌓이면 그건 이월이 아니라 사고다.
+         참가비 대회는 걷은 돈이 곧 상금이라 서비스가 얹는 배수가 없어 해당이 없다. */
+      if (t.buy_in <= 0) bumpRollover();
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
@@ -1468,6 +1479,10 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
   if (fresh.finished_at !== now) return;
   payPrizes(fresh, now);
   awardBounty(fresh);
+  /* 판이 열려 상금이 나갔다 — 이월은 여기서 갚아진 것이므로 다음 판은 제 값으로
+     돌아간다. 지급 뒤에 부르는 이유는 순서가 곧 뜻이기 때문이다: 지급이 도중에
+     실패하면 이월도 그대로 남아 다음 판이 그 몫을 다시 진다. */
+  clearRollover();
   announceWinner(fresh);
 }
 

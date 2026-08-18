@@ -159,7 +159,10 @@ export const LOBBY = `    function renderLobby(){
             var needed = si < t.minPlayers;
             slots += '<div class="ht-reg empty' + (needed ? ' need' : '') + '">' +
               '<span class="ht-reg-av ph"></span>' +
-              '<span class="ht-reg-nm">' + (needed ? '더 필요' : '빈자리') + '</span></div>';
+              /* "더 필요" 는 무엇이 더 필요한지 안 적혀 있어 말이 끊긴 것처럼 읽혔다.
+                 이 칸이 뜻하는 것은 "여기까지 차야 판이 열린다" 이므로 그 기준의
+                 이름을 그대로 쓴다 — 아래 정보 카드의 [최소 인원 3명] 과 같은 말이다. */
+              '<span class="ht-reg-nm">' + (needed ? '최소 인원' : '빈자리') + '</span></div>';
           }
         }
         /* 최소 인원을 채운 것과 자리가 다 찬 것은 다른 말이다. 3/9 에 "인원이 찼습니다"라고
@@ -217,6 +220,19 @@ export const LOBBY = `    function renderLobby(){
           '<\/div>';
       }
 
+      /* ── 이월 배너 ────────────────────────────────────────────────
+         못 열린 회차만큼 프리롤 배수가 커진다(db/rollover.ts). 금액에는 이미 반영돼
+         있으므로 여기서 다시 계산하지 않고, "왜 평소보다 큰가"만 말한다 — 안 적으면
+         상금이 갑자기 네 배가 된 이유를 아무도 모른다. 이모지는 안 쓴다. */
+      var skips = t.rolloverSkips || 0;
+      var rollBanner = skips > 0
+        ? '<div class="ht-roll">' +
+            '<span class="ht-roll-ico">' + (window.__ICON ? window.__ICON.flame : '') + '<\/span>' +
+            '<span class="ht-roll-txt">이월 <b>' + skips + '회<\/b> 누적 — 이번 판 상금이 '
+              + '<b>' + (skips + 1) + '배<\/b>입니다<\/span>' +
+          '<\/div>'
+        : '';
+
       var payTable = '';
       if (rowCount) {
         var rows = '';
@@ -270,6 +286,7 @@ export const LOBBY = `    function renderLobby(){
             '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
               ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p>' +
           '</div>' +
+          rollBanner +
           /* 여섯 지표를 2×3 미니 카드로 나눈다. 줄 형태(k ····· v)로 쌓았을 때는
              여섯 줄이 같은 무게로 늘어서서 무엇을 봐야 할지 정해지지 않았다. */
           '<div class="ht-grid">' +

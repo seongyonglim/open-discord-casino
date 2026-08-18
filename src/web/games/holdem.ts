@@ -19,6 +19,7 @@ import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
 import { getWebUser, chatTick } from '../../db/queries';
 import { recentRecap } from '../../db/holdem-recap';
+import { rolloverSkips } from '../../db/rollover';
 import { upcomingHint } from '../../db/recurrence';
 import { getConfig } from '../../db/settings';
 import { readJson, sendJson } from '../http';
@@ -147,6 +148,9 @@ function statePayload(st: HoldemStatus, userId: string) {
         : undefined,
       /* 바운티 몫(%) — 상금 탭이 "1인당 금액의 몇 %가 바운티인가"를 적는 데 쓴다 */
       bountyPct: isPko(t) ? bountyPctOf(t) : undefined,
+      /* 이월이 걸린 판인가. 배수는 대회를 만들 때 이미 굳혀 넣었으므로(db/rollover.ts)
+         금액에는 반영돼 있고, 화면은 "왜 평소보다 큰가"를 말하기 위해 횟수만 받는다. */
+      rolloverSkips: t.buy_in <= 0 ? rolloverSkips() : 0,
       /* 미스터리에서 봉투 하나가 받을 수 있는 최대 금액. 개별 봉투가 얼마인지는
          감추지만(위의 bountyBySeat), "얼마까지 나올 수 있나"는 감출 것이 아니다 —
          그게 이 모드를 고르는 이유이고, 규칙에서 계산되는 공개 값이다. */

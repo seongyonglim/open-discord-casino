@@ -87,6 +87,18 @@
   .ht-bty-top b{font-family:var(--mono);font-size:14px;color:var(--gold)}
   .ht-bty-banner.mys .ht-bty-top b{color:#e9d5ff}
   .ht-bty-split{flex:none;font-size:11.5px;opacity:.85}
+
+  /* ── 이월 배너 ──────────────────────────────────────────────────
+     상금이 평소보다 큰 이유를 말한다. 카드 머리 바로 아래, 금액을 보기 전에 읽히는
+     자리다 — 숫자를 먼저 보고 놀란 뒤에 설명이 오면 순서가 거꾸로다.
+     불꽃은 이모지가 아니라 SVG 다(app.js 의 __ICON.flame). */
+  .ht-roll{display:flex;align-items:center;gap:8px;margin:10px 0 0;
+    padding:8px 12px;border-radius:10px;
+    background:linear-gradient(90deg,rgba(234,88,12,.16),rgba(234,88,12,.04));
+    border:1px solid rgba(234,88,12,.38);font-size:12.5px;color:#ffd0a8}
+  .ht-roll-ico{flex:none;display:inline-flex;color:#fb923c}
+  .ht-roll-ico svg{width:15px;height:15px;display:block}
+  .ht-roll-txt b{color:#ffb35c;font-weight:800}
   /* 상태 배지와 같은 줄에 선다 — 한 줄짜리 문장 하나에 위아래 여백을 두 겹 주면
      카드가 그만큼 늘어진다 */
   .ht-badge-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}
