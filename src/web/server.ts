@@ -56,6 +56,8 @@ import { advanceHoldem } from '../db/holdem';
 import { ensureSeasonClosed } from '../db/season-schedule';
 import { ensureLockdown, lockedPath, LOCKDOWN_MSG } from './lockdown';
 import { rankingGameOf, handleRanking } from './ranking';
+/* 지금 어느 게임을 보고 있는가 — 기존 상태 폴링에 얹어 세는 메모리 집계 */
+import { touchPresence, activeCounts } from '../services/presence';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
@@ -336,7 +338,7 @@ export function startWebServer(): void {
          상태 판정을 로비에서 따로 계산하면 로비 표시와 실제 대회가 갈라진다.
          지연 진행 구조라 이 호출이 밀린 일을 처리하기도 한다(그게 원래 설계다). */
       if (path === '/' || path === '/lobby') {
-        return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null));
+        return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null, activeCounts()));
       }
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(me));
 
@@ -458,6 +460,17 @@ export function startWebServer(): void {
           error: LOCKDOWN_MSG,
           lockdown: { active: true, secondsLeft: lock.secondsLeft },
         });
+      }
+
+      /* ── 지금 누가 어느 게임을 보고 있는가 ──────────────────────────
+         게임마다 따로 적으면 언젠가 하나가 빠지고, 그러면 그 게임만 조용히 0명이 된다.
+         상태 폴링이 지나는 이 한 자리에서 한 번에 적는다.
+
+         새 요청을 만들지 않는다는 것이 요점이다 — 화면은 이미 1초마다 이 경로를 부르고
+         있고, 우리는 그 요청에 이미 실려 온 것(누가 · 어느 게임)을 기록할 뿐이다. */
+      {
+        const m = /^\/api\/games\/([a-z]+)\/state$/.exec(path);
+        if (m && me && req.method === 'GET') touchPresence(me.id, m[1]);
       }
 
       if (path === '/games/mines') {

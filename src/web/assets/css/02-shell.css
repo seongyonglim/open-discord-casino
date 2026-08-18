@@ -79,7 +79,6 @@
     box-shadow:0 14px 32px rgba(0,0,0,.55),0 0 0 1px rgba(212,175,55,.25),
       inset 0 1px 0 rgba(212,175,55,.28)}
   .game-card.ready:active{transform:translateY(-1px) scale(1)}
-  .game-card.ready:hover .btn{background:var(--gold-hi);border-color:var(--gold-hi)}
   .game-card.ready:hover .icon{color:var(--gold-hi)}
   .game-card .icon{width:30px;height:30px;color:var(--gold)}
   .game-card .icon svg{width:100%;height:100%}
@@ -97,7 +96,6 @@
   .game-card .gc-fact{flex:none;margin:0 0 6px;padding-top:6px;
     border-top:1px solid rgba(255,255,255,.055);
     font-size:11.5px;color:#82828a;letter-spacing:-.1px}
-  .game-card .btn{justify-content:center}
 
   /* 아이콘 줄 — 왼쪽 아이콘, 오른쪽 배지 */
   .gc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}

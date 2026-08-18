@@ -33,6 +33,9 @@ interface GameDef {
   key: string; name: string; icon: string; group: GameGroup;
   /** 한 줄 소개 */
   desc: string;
+  /** 카드용 짧은 한 줄. desc 는 로그인 화면 등 설명이 필요한 자리에서 계속 쓰고,
+   *  카드에서는 이것을 쓴다 — 여섯 장이 나란히 서면 두세 줄짜리 문장은 안 읽힌다. */
+  short?: string;
   /** 버튼 문구. 게임마다 하는 일이 다르므로 "플레이"로 뭉뚱그리지 않는다 */
   cta: string;
   /** 시간·성격 배지 (없으면 표시하지 않는다) */
@@ -61,20 +64,24 @@ const GAMES: GameDef[] = [
     /* 배지에 고정 시각을 적지 않는다. 예전에는 '매일 22:00'이었는데, 대회를 운영자가
        직접 여는 방식으로 바뀌면서 그 문장이 사실이 아니게 됐다. 실제 시각은 아래
        freerollOverride 가 대회 상태에서 읽어 갈아끼운다 — 없으면 '예정 없음'이 나온다. */
+    short: '모여서 한 판, 상위 입상자가 상금을 나눈다',
     cta: '참가 신청', badge: '토너먼트', ready: true },
 
   { key: 'baccarat', name: '바카라', icon: baccaratIcon, group: 'table',
     desc: '플레이어와 뱅커 중 9에 가까운 쪽이 이깁니다. 타이와 페어에도 걸 수 있어요.',
     // web/games/baccarat.ts baccaratOdds() — 페어 16.83이 최대(타이 10.57) · services/baccarat.ts DECKS 1
+    short: '9에 가까운 쪽에 건다',
     fact: '1덱 · 최대 배당 16.83배 (페어)', cta: '입장하기', ready: true },
   { key: 'blackjack', name: '블랙잭', icon: blackjackIcon, group: 'table',
     desc: '5석 테이블에서 딜러를 함께 상대합니다. 21을 넘기지 않고 이기면 승리!',
     // services/blackjack.ts settleHand() — 블랙잭 배수 2.5 (3:2 + 원금) · DECKS 1
+    short: '5석 테이블에서 딜러를 함께 상대한다',
     fact: '1덱 · 블랙잭 2.5배', cta: '자리 잡기', ready: true },
   { key: 'poker', name: '포커 플립', icon: flipIcon, group: 'table',
     desc: '두 핸드가 맞붙습니다. 승자와 완성될 족보에 칩을 올려보세요.',
     /* services/poker.ts MAX_ODDS 3000 — 공정 배당이 이 값을 넘는 시장은 팔지 않고 막는다.
        그래서 3,000배는 "볼 수 있는 최대 배당"이 맞다(매치업마다 값이 달라진다). */
+    short: '두 핸드의 승자와 족보에 칩을 올린다',
     fact: '매치업마다 배당 재계산 · 최대 3,000배', cta: '베팅하기', ready: true },
 
   { key: 'mines', name: '지뢰찾기', icon: bombIcon, group: 'mini',
@@ -83,10 +90,12 @@ const GAMES: GameDef[] = [
        최대 배당은 적지 않는다. 이론상 최대(지뢰 10개에서 15칸 전부)가 3,236,072배인데,
        참이지만 확률이 300만분의 1이라 "최대 배당"으로 내놓으면 복권 문구가 된다.
        처음엔 24.75배로 적었다가 감사가 잡았다 — 그 값은 지뢰 1개·24개일 때의 최대다. */
+    short: '열수록 배당이 오른다, 원할 때 캐시아웃',
     fact: '25칸 · 지뢰 1·3·5·10·24개', cta: '도전하기', ready: true },
   { key: 'graph', name: '그래프게임', icon: chartIcon, group: 'mini',
     desc: '배율이 계속 오릅니다. 터지기 전에 빠져나오세요. 늦으면 전액 손실!',
     // web/games/crash.ts MAX_CRASH 10_000 — 이론상 무한이라 둔 상한
+    short: '터지기 전에 빠져나온다',
     fact: '최대 배율 10,000배 · 자동 캐시아웃', cta: '베팅하기', ready: true },
   { key: 'ladder', name: '사다리게임', icon: ladderIcon, group: 'mini',
     /* 설명에서 배당 숫자를 뺐다 — 아래 사실 줄과 같은 값을 두 번 말하고 있었다.
@@ -132,23 +141,40 @@ export function gameSwitcher(currentKey: string, helpDialogId?: string): string 
    버튼 문구는 게임마다 다르다. 전부 "플레이"였는데, 홀덤은 바로 플레이가 아니라
    대회에 신청하는 것이고 바카라·블랙잭은 테이블에 들어가는 것이라 하는 일이 서로 다르다.
    문구가 다르면 누르기 전에 무슨 일이 일어날지 알 수 있다. */
-function gameCard(g: GameDef, override?: { badge?: string; desc?: string; cta?: string; hot?: boolean }): string {
+function gameCard(
+  g: GameDef,
+  override?: { badge?: string; desc?: string; cta?: string; hot?: boolean },
+  live = 0,
+): string {
   const o = override ?? {};
   const badgeText = o.badge ?? g.badge;
   const badge = badgeText ? `<span class="gc-badge">${esc(badgeText)}</span>` : '';
-  /* 프리롤은 상태에 따라 설명이 바뀌는데, 그 문구가 이미 인원·상금 풀 같은 수치를 담는다.
-     그 위에 고정 사실 줄까지 얹으면 숫자가 두 줄로 겹쳐서 어느 쪽이 지금인지 흐려진다.
-     그래서 override로 설명이 갈아끼워진 카드에서는 사실 줄을 빼고 설명에 맡긴다. */
+  /* 지금 보고 있는 사람 수. 0 이면 아예 안 그린다 — "0명 플레이 중" 은 정직하지만
+     아무에게도 도움이 안 되고, 처음 온 사람을 돌려세운다. 사람이 없을 때는 그 자리에
+     게임의 성질(사실 줄)이 대신 선다. */
+  const liveBadge = live > 0
+    ? `<span class="gc-live"><i class="gc-dot"></i>${live}명 플레이 중</span>`
+    : '';
+  /* 설명은 한 줄로 줄인다. 두세 줄짜리 문장은 고르는 동안 끝까지 안 읽히고, 카드 여섯
+     장이 나란히 서면 그 문장들이 서로 비슷해 보여 구분에도 도움이 안 된다.
+     프리롤처럼 상태가 설명을 갈아끼우는 카드는 그 문구가 이미 수치를 담으므로 사실
+     줄을 빼고 설명에 맡긴다 — 숫자가 두 줄로 겹치면 어느 쪽이 지금인지 흐려진다. */
+  const sub = o.desc ?? g.short ?? g.desc;
   const factText = o.desc ? undefined : g.fact;
   const fact = factText ? `<p class="gc-fact">${esc(factText)}</p>` : '';
-  const inner = `<div class="gc-top"><div class="icon">${g.icon}</div>${badge}</div>
+  const inner = `<div class="gc-top"><div class="icon">${g.icon}</div>
+      <span class="gc-tags">${badge}${liveBadge}</span></div>
     <h3>${esc(g.name)}</h3>
-    <p>${esc(o.desc ?? g.desc)}</p>${fact}`;
+    <p>${esc(sub)}</p>${fact}`;
   if (!g.ready) {
     return `<div class="game-card">${inner}<span class="soon">출시 예정</span></div>`;
   }
+  /* 카드 안에 큰 노란 단추를 두지 않는다. 카드 여섯 장이 저마다 단추를 달고 있으면
+     화면에서 제일 눈에 띄는 색이 여섯 번 반복돼 어느 것도 강조가 되지 않았다 —
+     그 색은 이제 위 이벤트 배너 하나만 쓴다.
+     카드 전체가 이미 링크이므로 어디를 눌러도 들어간다. */
   return `<a class="game-card ready${o.hot ? ' live' : ''}" href="/games/${g.key}">${inner}
-    <span class="btn btn-gold">${esc(o.cta ?? g.cta)}</span>
+    <span class="gc-go" aria-hidden="true">${esc(o.cta ?? g.cta)}</span>
   </a>`;
 }
 
@@ -289,6 +315,14 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
      하루라도 쌓였을 때부터 초록이 되어야 색이 정보를 전달한다. */
   const streakCls = user.current_streak > 0 ? 'val hi' : 'val';
 
+  /* 잔액은 상단바가 이미 늘 보여주고 있다 — 로비 첫 칸이 같은 숫자를 한 번 더 적으면
+     네 칸 중 하나를 쓰고도 새로 알려주는 것이 없다. 그 자리에 순위를 둔다.
+     상위 몇 %인지는 등수보다 위치를 빨리 알려준다("312명 중 8위"는 세어 봐야 안다).
+     혼자일 때는 백분율이 뜻을 잃으므로(언제나 상위 100%) 그때는 안 적는다. */
+  const pct = rank.total > 1
+    ? `상위 ${Math.max(1, Math.round(rank.rank / rank.total * 100))}%`
+    : '첫 참가자';
+
   // 오늘 아직 한 판도 안 했으면 0을 초록/빨강으로 칠하지 않는다 — 아직 아무 일도 없었다
   const netCls = today.rounds === 0 ? 'val' : today.net > 0 ? 'val hi' : today.net < 0 ? 'val lo' : 'val';
   const netText = today.rounds === 0 ? '–'
@@ -302,9 +336,9 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
   const buff = rewardBuff(user.id);
 
   return `<div class="stat-row">
-    <div class="stat"><div class="lbl">내 잔액</div>
-      <div class="val gold">${esc(pts(user.balance))}</div>
-      <div class="sub">${rank.rank}위 / ${rank.total}명</div></div>
+    <div class="stat"><div class="lbl">내 순위</div>
+      <div class="val gold">${rank.rank}위</div>
+      <div class="sub">${rank.total}명 중 ${pct}</div></div>
     <div class="stat"><div class="lbl">오늘 손익</div>
       <div class="${netCls}">${esc(netText)}</div>
       <div class="sub">${esc(netSub)}</div></div>
@@ -326,8 +360,23 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
   /* 예정된 대회가 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
      예전에는 '매일 22:00'을 적어 뒀는데, 이제 그건 사실이 아니다.
      없는 일정을 적으면 기다린 사람이 헛걸음한다. */
-  if (!ht || !ht.schedule) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
   const now = Math.floor(Date.now() / 1000);
+  /* 대회 행이 없어도 반복 개최 일정은 있을 수 있다. 예전에는 여기서 곧바로 "예정 없음"
+     으로 빠졌는데, 그러면 내일 열릴 판이 잡혀 있는데도 로비가 없다고 말한다 —
+     실제로 그 상태를 봤다. 아래 FINISHED 갈래가 이미 하던 일을 여기서도 한다. */
+  if (!ht || !ht.schedule) {
+    const up = upcomingHint(now);
+    if (!up) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
+    const s = Math.max(0, up.regOpenAt - now);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return {
+      label: '다음 대회 등록까지',
+      value: h > 0 ? `${h}시간 ${m}분` : `${m}분`,
+      sub: `${up.dateStr} · ${new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+      }).format(new Date(up.startAt * 1000))} 시작`,
+    };
+  }
   const short = (at: number) => {
     const s = Math.max(0, at - now);
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
@@ -362,14 +411,13 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
 
 /* 섹션으로 나눠 그린다. 한 격자에 일곱 개를 늘어놓으면 둘째 줄이 반만 차서 미완성처럼
    보이고, 게임이 늘수록 "무엇을 고를지" 판단할 근거가 사라진다. */
-function gameSections(ht: HoldemStatus | null): string {
-  const order: GameGroup[] = ['event', 'table', 'mini'];
-  const htOverride = ht ? freerollOverride(ht) : undefined;
+function gameSections(ht: HoldemStatus | null, live: Record<string, number> = {}): string {
+  /* 이벤트는 카드가 아니라 배너로 낸다 — 아래 참조. */
+  const order: GameGroup[] = ['table', 'mini'];
   return order.map(gr => {
     const list = GAMES.filter(g => g.group === gr);
     if (!list.length) return '';
-    const cards = list.map(g =>
-      g.key === 'holdem' ? gameCard(g, htOverride) : gameCard(g)).join('');
+    const cards = list.map(g => gameCard(g, undefined, live[g.key] ?? 0)).join('');
     return `<div class="card">
       <h2>${esc(GROUP_TITLE[gr])}</h2>
       <div class="game-grid">${cards}</div>
@@ -377,7 +425,42 @@ function gameSections(ht: HoldemStatus | null): string {
   }).join('');
 }
 
-export function lobbyPage(user: WebUser | null, ht: HoldemStatus | null = null): string {
+/* ── 이벤트 배너 ────────────────────────────────────────────────────────
+   토너먼트는 나머지 여섯과 성격이 다르다. 언제나 열려 있는 방이 아니라 시각이 정해진
+   행사이고, 놓치면 그날은 없다. 같은 크기의 카드로 여섯 장 사이에 끼워 두면 그 차이가
+   사라진다 — 배너 하나로 따로 세운다.
+
+   그리고 이 화면에서 금색 단추는 여기 하나뿐이다. 예전에는 카드 여섯 장이 저마다
+   금색 단추를 달고 있어서 제일 눈에 띄는 색이 여섯 번 반복됐고, 그러면 어느 것도
+   강조가 아니게 된다. */
+function eventBanner(ht: HoldemStatus | null, live = 0): string {
+  const g = GAMES.find(x => x.group === 'event');
+  if (!g) return '';
+  const o = ht ? freerollOverride(ht) : undefined;
+  const stat = nextFreerollStat(ht);
+  const liveBadge = live > 0
+    ? `<span class="gc-live"><i class="gc-dot"></i>${live}명 참여 중</span>` : '';
+  return `<a class="ev-banner" href="/games/${g.key}">
+    <span class="ev-shine" aria-hidden="true"></span>
+    <div class="ev-left">
+      <div class="ev-tags"><span class="gc-badge">${esc(o?.badge ?? g.badge ?? '토너먼트')}</span>${liveBadge}</div>
+      <h3 class="ev-title">${esc(g.name)}</h3>
+      <p class="ev-desc">${esc(o?.desc ?? g.short ?? g.desc)}</p>
+    </div>
+    <div class="ev-right">
+      <div class="ev-lbl">${esc(stat.label)}</div>
+      <div class="ev-val">${esc(stat.value)}</div>
+      <span class="ev-cta">${esc(o?.cta ?? g.cta)}</span>
+    </div>
+  </a>`;
+}
+
+export function lobbyPage(
+  user: WebUser | null,
+  ht: HoldemStatus | null = null,
+  live: Record<string, number> = {},
+): string {
+  const inviteUrl = (process.env.DISCORD_INVITE_URL ?? '').trim();
   // 로그인 전에는 보여줄 게 없으므로 화면 가운데에 로그인만 크게 놓는다
   // (좁은 카드 안에 작은 버튼을 넣으면 빈 화면에 덩그러니 남아 허전해 보인다).
   if (!user) {
@@ -393,13 +476,26 @@ export function lobbyPage(user: WebUser | null, ht: HoldemStatus | null = null):
       </div>`, 'login-page');
   }
 
+  /* 최근 소식과 출석체크를 가로로 묶는다. 세로로 쌓아 두었을 때는 둘 다 짧은데 화면
+     두 칸을 차지해서, 게임 카드까지 보려면 그만큼 더 굴려야 했다. */
   const body = `
     ${statRow(user, ht)}
-    ${gameSections(ht)}
-    ${newsSection()}
-    <div class="card">
-      <h2>출석체크</h2>
-      <p style="color:var(--muted);font-size:13.5px;margin:0">디스코드 서버의 출석체크 채널에서 버튼을 눌러 매일 포인트를 받으세요. KST 자정이 지나면 다시 누를 수 있습니다.</p>
+    ${eventBanner(ht, live.holdem ?? 0)}
+    ${gameSections(ht, live)}
+    <div class="lobby-foot">
+      ${newsSection()}
+      <div class="card">
+        <h2>출석체크</h2>
+        <p class="lf-note">디스코드 서버의 출석체크 채널에서 버튼을 눌러 매일 포인트를 받으세요.
+          KST 자정이 지나면 다시 누를 수 있습니다.</p>
+        ${inviteUrl
+          ? `<a class="lf-go" href="${esc(inviteUrl)}" target="_blank" rel="noopener noreferrer">
+               ${discordIcon(16)}디스코드 바로가기</a>`
+          /* 초대 주소는 지어내지 않는다. 안 정해 두었으면 단추를 아예 그리지 않는다 —
+             눌러도 아무 데도 안 가는 단추는 없느니만 못하다.
+             DISCORD_INVITE_URL 환경변수에 넣으면 그때부터 나온다. */
+          : ''}
+      </div>
     </div>`;
   return layout('로비', 'lobby', body);
 }
