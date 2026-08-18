@@ -19,7 +19,7 @@ import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
 import { getWebUser, chatTick } from '../../db/queries';
 import { recentRecap } from '../../db/holdem-recap';
-import { rolloverSkips } from '../../db/rollover';
+import { rolloverSkips, rolledMultiplier } from '../../db/rollover';
 import { upcomingHint } from '../../db/recurrence';
 import { getConfig } from '../../db/settings';
 import { readJson, sendJson } from '../http';
@@ -89,11 +89,37 @@ function statePayload(st: HoldemStatus, userId: string) {
     /* 빈 화면 대신 두 가지를 준다 — 지난 판이 어땠는지(recap)와 다음이 언제인지(upcoming).
        둘 다 없을 수도 있고, 그때는 화면이 안내 문구만 그린다. */
     const up = upcomingHint(now);
+    const cfg = getConfig();
     return {
       ok: true, me: userId, balance: getWebUser(userId)?.balance ?? 0,
       serverNow: now, tournament: null, results: [], table: null,
       recap: recentRecap(),
-      upcoming: up ? { regOpenAt: up.regOpenAt, startAt: up.startAt, dateStr: up.dateStr } : null,
+      /* 다음 대회 카드에 "언제" 만 적었더니, 갈지 말지를 정하는 데 필요한 것들 —
+         얼마짜리 판인지 · 몇 명이 모여야 열리는지 · 어떤 방식인지 — 을 알 길이 없었다.
+         등록이 안 열렸을 뿐이지 규칙은 이미 정해져 있으므로 같이 내려보낸다.
+
+         대회 행이 아직 없어서 참가자 수와 상금 풀은 존재하지 않는다. 그래서 그 둘은
+         안 보낸다 — 0 을 보내면 화면이 "상금 0P 짜리 판" 으로 그리고, 그건 없는 것보다
+         나쁘다. 대신 인당 금액과 최소 인원을 주어 "3명이면 얼마" 를 읽을 수 있게 한다. */
+      upcoming: up ? {
+        regOpenAt: up.regOpenAt, startAt: up.startAt, dateStr: up.dateStr,
+        mode: cfg.mode,
+        buyIn: cfg.buyIn,
+        /* 주말 여부는 시작 시각으로 정해진다 — 지금 요일이 아니라 그 판이 열리는 날이다.
+           이월 배수도 함께 얹는다. 실제 대회는 만들어질 때 곱해진 값으로 생기는데
+           (db/admin.ts 의 rolledMultiplier), 예고 카드가 곱하기 전 값을 적으면
+           "이월 2회 — 3배" 라고 써 놓고 바로 아래에 원래 금액이 적히는 모순이 된다. */
+        perHead: rolledMultiplier({
+          prize_multiplier: T.isKstWeekend(up.startAt * 1000)
+            ? cfg.weekendMultiplier : cfg.weekdayMultiplier,
+          buy_in: cfg.buyIn,
+        }),
+        startingStack: cfg.startingStack,
+        minPlayers: T.MIN_PLAYERS,
+        maxPlayers: T.MAX_PLAYERS,
+        /* 이월은 다음 판에 걸린다 — 지금 화면이 바로 그 다음 판이다 */
+        rolloverSkips: cfg.buyIn <= 0 ? rolloverSkips() : 0,
+      } : null,
     };
   }
   const table = getTable(t.id);

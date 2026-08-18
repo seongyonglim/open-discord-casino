@@ -127,6 +127,21 @@ const PROBE = `(() => {
      무의미해지므로 "변형으로 통째로 화면 밖에 나가 있는 조상" 으로만 좁힌다.
      카드 안에서 아래로 밀려 잘린 버튼(블랙잭 액션이 그랬다)은 조상이 화면 안에
      있으므로 그대로 걸린다. */
+  /* 스크롤해서 닿을 수 있으면 \"화면 밖\" 이 아니다. 대회 전 로비처럼 한 화면에 안
+     들어가는 것이 정상인 화면이 있고, 거기서는 아래 내용이 잘린 것이 아니라 밀어서
+     보는 것이다. 다만 overflow 가 걸려 있기만 하면 넘어가지 않는다 — 실제로 스크롤
+     여지가 있어야(scrollHeight > clientHeight) 도달 가능하다. overflow:hidden 으로
+     잘려 영영 못 보는 단추는 그대로 잡힌다. */
+  const reachableByScroll = el => {
+    let p = el.parentElement;
+    while (p && p !== document.documentElement) {
+      const o = getComputedStyle(p).overflowY;
+      if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight + 2) return true;
+      p = p.parentElement;
+    }
+    return document.documentElement.scrollHeight > document.documentElement.clientHeight + 2;
+  };
+
   const inClosedDrawer = el => {
     let p = el.parentElement;
     while (p && p !== document.body) {
@@ -146,6 +161,7 @@ const PROBE = `(() => {
     if (b.width < 3 || b.height < 3) continue;
     if (b.bottom > vh + 1 || b.top < 0 || b.right > vw + 1) {
       if (inClosedDrawer(el)) continue;
+      if (reachableByScroll(el)) continue;
       btnOut.push((el.className || el.tagName) + ' ' + Math.round(b.top) + '~' + Math.round(b.bottom));
     }
   }

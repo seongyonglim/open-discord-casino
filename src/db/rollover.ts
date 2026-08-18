@@ -64,6 +64,17 @@ export function clearRollover(): void {
   put(0);
 }
 
+/**
+ * 운영자가 값을 직접 맞춘다.
+ *
+ * 평소에는 서버가 알아서 센다. 이 길이 필요한 경우는 하나뿐이다 — 이 기능이 생기기
+ * 전에 이미 못 열린 회차가 있을 때. 서버는 그것을 모르므로 사람이 알려 줘야 한다.
+ * 상한은 여기서도 지킨다: 화면이 막아도 API 를 직접 부르면 뚫리기 때문이다.
+ */
+export function setRollover(skips: number): void {
+  put(Math.min(Math.max(0, Math.floor(skips)), ROLLOVER_MAX - 1));
+}
+
 function put(n: number): void {
   run(`INSERT INTO holdem_settings (key, value, updated_at) VALUES (?, ?, unixepoch())
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,

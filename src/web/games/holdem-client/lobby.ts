@@ -13,7 +13,28 @@
    그때 빈 카드만 남으면 서비스가 죽은 것처럼 보이므로 세 조각을 순서대로 채운다 —
    다음 대회 안내(있으면) · 지난 대회 결과(있으면) · 마지막으로 안내 문구.
    셋 다 없을 수는 없다. 안내 문구는 언제나 나온다. */
-export const LOBBY_EMPTY = `    function renderNoTournament(){
+export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 이월 배너를 쓴다. renderLobby 안에서 만드는 것과
+       모양이 같아야 "같은 판을 미리 보는 것" 으로 읽힌다 — 두 카드가 서로 다르게 생기면
+       등록이 열리는 순간 화면이 갈아치워진 것처럼 느껴진다. */
+    function nextModeBadge(up){
+      var mys = up.mode === 'MYSTERY_BOUNTY';
+      var pko = mys || up.mode === 'PKO_BOUNTY';
+      return '<div class="ht-next-badges">' + (mys
+        ? '<span class="ht-mode mys">미스터리 바운티<\\/span>'
+        : (pko ? '<span class="ht-mode bty">바운티<\\/span>'
+               : '<span class="ht-mode cls">클래식<\\/span>')) + '<\\/div>';
+    }
+    function nextRollBanner(up){
+      var s = up.rolloverSkips || 0;
+      if (!s) return '';
+      return '<div class="ht-roll">' +
+        '<span class="ht-roll-ico">' + (window.__ICON ? window.__ICON.flame : '') + '<\\/span>' +
+        '<span class="ht-roll-txt">이월 <b>' + s + '회<\\/b> 누적 — 다음 판 상금이 '
+          + '<b>' + (s + 1) + '배<\\/b>입니다<\\/span>' +
+      '<\\/div>';
+    }
+
+    function renderNoTournament(){
       var now = st.serverNow, html = '';
       var up = st.upcoming, rc = st.recap;
 
@@ -30,6 +51,33 @@ export const LOBBY_EMPTY = `    function renderNoTournament(){
               esc(opened ? '시작까지 남았습니다' : '등록 시작까지 남았습니다') + ' · 등록 ' +
               esc(kstClock(up.regOpenAt)) + ' · 시작 ' + esc(kstClock(up.startAt)) + ' (KST)' +
             '<\/div>' +
+            /* ── 등록 전에도 규칙은 보여준다 ────────────────────────
+               예전에는 남은 시간만 적었다. 그런데 갈지 말지를 정하는 데 필요한 것은
+               "언제" 가 아니라 "얼마짜리 판인가 · 몇 명이 모여야 열리나 · 어떤 방식인가"
+               이고, 그건 등록이 안 열렸을 뿐 이미 정해져 있다.
+
+               참가자 수와 상금 풀은 안 적는다 — 대회 행이 아직 없어 존재하지 않는 값이다.
+               0 을 적으면 "상금 0P 짜리 판" 으로 읽혀 없는 것보다 나쁘다. 대신 인당
+               금액과 최소 인원을 나란히 두어 "3명이면 얼마" 를 셀 수 있게 한다. */
+            (up.perHead != null
+              ? nextModeBadge(up) + nextRollBanner(up) +
+                '<div class="ht-grid ht-next-grid">' +
+                  (up.buyIn > 0
+                    ? '<div><span class="k">참가비<\/span><span class="v warn">'
+                        + num(up.buyIn) + 'P<\/span><\/div>'
+                    : '<div><span class="k">1인당<\/span><span class="v gold">'
+                        + num(up.perHead) + 'P<\/span><\/div>') +
+                  '<div><span class="k">최소 인원<\/span><span class="v">'
+                    + up.minPlayers + '명<\/span><\/div>' +
+                  '<div><span class="k">정원<\/span><span class="v">'
+                    + up.maxPlayers + '명<\/span><\/div>' +
+                  '<div><span class="k">시작 스택<\/span><span class="v">'
+                    + num(up.startingStack) + '<\/span><\/div>' +
+                '<\/div>'
+                /* 못 누르는 단추는 두지 않는다. 위에 이미 "등록 시작까지 9시간 8분" 이
+                   적혀 있어 지금 신청할 수 없다는 것은 그 줄이 말하고, 회색 단추는
+                   같은 말을 한 번 더 하면서 누를 수 있을 것처럼 보이기만 한다. */
+              : '') +
           '<\/div>';
       }
 

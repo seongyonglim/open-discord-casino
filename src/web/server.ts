@@ -19,7 +19,7 @@ import {
   handleAdminUsers, handleAdminLedger, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
   handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill, handleAdminSeasonSchedule,
   handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
-  handleAdminRecurrence, handleAdminTournamentAbort,
+  handleAdminRecurrence, handleAdminRollover, handleAdminTournamentAbort,
   handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
   handleAdminChatHide, handleAdminChatMute,
 } from './admin';
@@ -409,6 +409,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/season/backfill' && req.method === 'POST') return await handleAdminSeasonBackfill(req, res);
         if (path === '/api/admin/config' && req.method === 'POST') return await handleAdminConfig(req, res);
         if (path === '/api/admin/recurrence' && req.method === 'POST') return await handleAdminRecurrence(req, res);
+        if (path === '/api/admin/rollover' && req.method === 'POST') return await handleAdminRollover(req, res);
         if (path === '/api/admin/config/reset' && req.method === 'POST') return await handleAdminConfigReset(req, res);
         if (path === '/api/admin/notice/create' && req.method === 'POST') return await handleAdminNoticeCreate(req, res);
         if (path === '/api/admin/notice/update' && req.method === 'POST') return await handleAdminNoticeUpdate(req, res);
