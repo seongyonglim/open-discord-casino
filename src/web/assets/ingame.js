@@ -695,11 +695,29 @@ window.__IG = (function(){
     setHome.push([el, el.parentNode, el.nextSibling]);
     var row = document.createElement('div');
     row.className = 'ig-set-row';
+    /* 줄 전체가 하나의 누를 자리다. 규칙은 오른쪽 끝 물음표(30px)만 눌러야 열렸는데,
+       폰에서 그건 조준해서 눌러야 하는 크기다. 이름을 눌러도, 가운데 빈 자리를 눌러도
+       열려야 한다. div 를 쓰는 이유는 안에 진짜 단추가 들어가기 때문이다 —
+       단추 안에 단추는 못 넣는다. 대신 역할과 키보드 조작을 직접 붙인다. */
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
     var t = document.createElement('span');
     t.className = 'ig-set-lbl';
     t.textContent = label;
     row.appendChild(t);
     row.appendChild(el);
+
+    function fire(e){
+      /* 진짜 조작을 직접 눌렀으면 그대로 둔다 — 여기서 또 부르면 두 번 눌린 것이 되어
+         소리가 껐다 켜졌다 하고, 슬라이더는 끌 수도 없게 된다. */
+      if (e.target !== row && e.target.closest('button, input, a, select')) return;
+      var hit = el.tagName === 'BUTTON' ? el : el.querySelector('button');
+      if (hit) hit.click();
+    }
+    row.addEventListener('click', fire);
+    row.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(e); }
+    });
     box.appendChild(row);
   }
   /* 세로에 들어서는 즉시 접는다. 누를 때 접으면 그전까지는 상단바에 그대로 남아

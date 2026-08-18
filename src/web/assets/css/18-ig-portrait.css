@@ -280,18 +280,38 @@
 
     /* ── ⚙️ 설정 — 음량과 규칙을 접어 둔 자리 ────────────────
        상단바 오른쪽 아래에 붙는 작은 판이다. 항목이 둘뿐이라 시트까지 갈 필요가 없다. */
+    /* 줄마다 제 여백을 가지므로 판에는 안쪽 여백을 두지 않는다 — 그래야 줄을 눌렀을 때
+       밝아지는 면이 판 가장자리까지 닿아 "이 줄 전체가 눌리는 자리" 로 읽힌다. */
     html.ig-port .ig-set{position:fixed;top:46px;right:8px;z-index:62;
-      display:none;flex-direction:column;gap:10px;padding:12px;
+      display:none;flex-direction:column;padding:0;overflow:hidden;
       background:#131316;border:1px solid var(--line);border-radius:12px;
-      box-shadow:0 12px 30px rgba(0,0,0,.6);min-width:170px}
+      box-shadow:0 12px 30px rgba(0,0,0,.6);min-width:236px}
     html.ig-port .ig-set.on{display:flex}
-    html.ig-port .ig-set-row{display:flex;align-items:center;justify-content:space-between;
-      gap:10px}
-    html.ig-port .ig-set-lbl{flex:none;font-size:12.5px;color:var(--muted);
+    /* 누를 자리는 44px 아래로 내려가면 안 된다 — 그보다 작으면 옆 줄이 눌린다 */
+    html.ig-port .ig-set-row{display:flex;width:100%;box-sizing:border-box;
+      align-items:center;justify-content:space-between;gap:12px;
+      min-height:46px;padding:8px 14px;cursor:pointer;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      transition:background-color .12s ease}
+    html.ig-port .ig-set-row:last-child{border-bottom:none}
+    html.ig-port .ig-set-row:active{background:rgba(255,255,255,.10)}
+    html.ig-port .ig-set-row:focus-visible{outline:2px solid var(--gold-dim);outline-offset:-2px}
+    html.ig-port .ig-set-lbl{flex:none;font-size:13px;font-weight:500;color:#e4e4e7;
       white-space:nowrap}
     /* 접힌 안에서는 제 크기를 되찾는다 — 상단바용으로 눌러 둔 값이 아니다 */
-    html.ig-port .ig-set .ig-vol{flex:1 1 auto;min-width:0;height:32px;display:flex;
-      align-items:center;justify-content:flex-end;gap:8px;transform:none}
+    html.ig-port .ig-set .ig-vol{flex:0 1 auto;min-width:0;height:32px;display:flex;
+      align-items:center;justify-content:flex-end;gap:6px;transform:none}
     html.ig-port .ig-set .ig-help{flex:none;width:34px;height:32px;border-radius:8px;
       display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+
+    /* 음량 슬라이더는 원래 hover 로 펴진다(01-base.css). 폰에는 hover 가 없으니
+       그대로 두면 켜고 끄기만 되고 크기 조절은 아예 못 한다. 이 메뉴 안에서는
+       띄우지 말고 줄 안에 그대로 펼친다 — 여기는 헤더가 아니라 설정 판이라
+       폭을 밀어낼 걱정이 없다. */
+    html.ig-port .ig-set .ig-vol .volpop{position:static;opacity:1;visibility:visible;
+      transform:none;padding:0;background:none;border:none;box-shadow:none;
+      display:flex;align-items:center;gap:8px;z-index:auto}
+    html.ig-port .ig-set .ig-vol .volpop::before{display:none}
+    html.ig-port .ig-set .ig-vol .volrange{width:84px}
+    html.ig-port .ig-set .ig-vol .volpct{font-size:11.5px;min-width:32px;text-align:right}
   }
