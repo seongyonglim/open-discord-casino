@@ -197,6 +197,26 @@ export const LOBBY = `    function renderLobby(){
             + num(btyPool) + 'P<\/span>'
         : '';
 
+      /* ── 바운티 배너 ──────────────────────────────────────────────
+         전에는 상금표 맨 아래에 작은 한 줄로 있었다. 그 자리는 표를 다 읽고 나서야
+         닿는 곳이라, 정작 이 대회를 고를 이유(잭팟이 얼마까지 나오나)가 맨 나중에
+         읽혔다. 상금 구조의 머리로 올린다.
+
+         이모지는 안 쓴다 — 대괄호 표지와 색으로 구분한다. */
+      var btyPct = t.bountyPct || 50;
+      var splitBanner = '';
+      if (isPko) {
+        splitBanner =
+          '<div class="ht-bty-banner' + (isMys ? ' mys' : '') + '">' +
+            '<span class="ht-bty-tag">' + (isMys ? 'MYSTERY BOUNTY' : 'BOUNTY') + '<\/span>' +
+            (isMys && t.mysteryTop
+              ? '<span class="ht-bty-top">최고 잭팟 바운티 <b>' + num(t.mysteryTop) + 'P<\/b><\/span>'
+              : '') +
+            '<span class="ht-bty-split">순위 상금 ' + (100 - btyPct)
+              + '% / 바운티 풀 ' + btyPct + '%<\/span>' +
+          '<\/div>';
+      }
+
       var payTable = '';
       if (rowCount) {
         var rows = '';
@@ -219,18 +239,14 @@ export const LOBBY = `    function renderLobby(){
         /* 바운티 판은 표 아래에 분배율을 적는다. 표에 적힌 등수별 금액이 전부가
            아니라는 것을 말해 주지 않으면, 순위 상금만 보고 "이 판은 절반짜리" 로
            읽힌다. 미스터리는 봉투 최고액도 함께 알린다 — 그게 이 모드를 고르는 이유다. */
-        var split = '';
-        if (isPko) {
-          var btyPct = t.bountyPct || 50;
-          split = '<p class="ht-split-note">총 상금 분배: 순위 상금 <b>' + (100 - btyPct)
-            + '%<\/b> / 바운티 풀 <b>' + btyPct + '%<\/b>'
-            + (isMys && t.mysteryTop ? ' · 최고 잭팟 바운티 <b class="bty">'
-                + num(t.mysteryTop) + 'P<\/b>' : '')
-            + '<\/p>';
-        }
         payTable = '<h3 class="ht-h3">' + (resList.length ? '결과' : '상금 구조') + '</h3>' +
+          splitBanner +
           '<table class="ht-prize"><thead><tr><th>순위</th><th>플레이어</th><th>상금</th></tr></thead>' +
-          '<tbody>' + rows + '<\/tbody><\/table>' + split;
+          '<tbody>' + rows + '<\/tbody><\/table>';
+      } else if (splitBanner) {
+        /* 등수표가 아직 없어도(참가자가 적어 지급 인원이 안 잡힌 때) 배너는 띄운다 —
+           이 대회가 어떤 판인지는 표와 상관없이 알려야 한다. */
+        payTable = '<h3 class="ht-h3">상금 구조</h3>' + splitBanner;
       }
 
       /* 안내 문구는 배지 옆으로 붙인다. 한 줄짜리 <p>로 따로 두면 그 줄 하나 때문에
@@ -238,12 +254,21 @@ export const LOBBY = `    function renderLobby(){
          상태 배지와 같은 줄에 있는 것이 읽기에도 맞다. */
       lobbyEl.innerHTML =
         '<div class="ht-card">' +
-          '<div class="ht-card-top">' +
-            '<div><h2>' + modeBadge + esc(t.title) + '</h2>' +
-              '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
-                ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p></div>' +
-            '<div class="ht-badge-wrap">' + badge +
-              (note ? '<span class="ht-note">' + esc(note) + '</span>' : '') + '</div>' +
+          /* 머리를 세 줄로 나눈다.
+             예전에는 제목 왼쪽에 모드 뱃지가 붙고 오른쪽에 상태 뱃지와 남은 시간이
+             따로 떠 있어서, 한 줄에 성격이 다른 네 가지가 섞였다 — 눈이 제목을
+             찾으려면 뱃지를 먼저 지나야 했다.
+               1행  무슨 판인가(모드·상태)          |  언제까지인가(남은 시간)
+               2행  대회 이름 — 이 카드의 주인공이라 혼자 쓴다
+               3행  날짜와 시각 */
+          '<div class="ht-head">' +
+            '<div class="ht-head-meta">' +
+              '<span class="ht-head-badges">' + modeBadge + badge + '</span>' +
+              (note ? '<span class="ht-note">' + esc(note) + '</span>' : '') +
+            '</div>' +
+            '<h2 class="ht-title">' + esc(t.title) + '</h2>' +
+            '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
+              ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p>' +
           '</div>' +
           /* 여섯 지표를 2×3 미니 카드로 나눈다. 줄 형태(k ····· v)로 쌓았을 때는
              여섯 줄이 같은 무게로 늘어서서 무엇을 봐야 할지 정해지지 않았다. */

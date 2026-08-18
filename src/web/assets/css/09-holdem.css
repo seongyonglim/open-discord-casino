@@ -49,8 +49,18 @@
      제목만으로는 이 판이 클래식인지 바운티인지 알 수 없었다. 참가를 정하기 전에
      알아야 하는 정보라 제목 앞에 붙인다. 색으로 구분한다 — 셋을 같은 회색으로 두면
      글자를 읽어야만 알 수 있고, 그러면 뱃지를 둔 뜻이 없다. */
+  /* ── 카드 머리 세 줄 ────────────────────────────────────────────
+     1행 뱃지 + 남은 시간 · 2행 대회 이름 · 3행 날짜.
+     한 줄에 다 늘어놓았을 때는 제목을 찾으려면 뱃지를 먼저 지나야 했다. */
+  .ht-head{display:flex;flex-direction:column;gap:2px}
+  .ht-head-meta{display:flex;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;gap:6px 10px}
+  .ht-head-badges{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+  /* 제목은 이 카드의 주인공이라 혼자 한 줄을 쓴다 */
+  .ht-title{margin:2px 0 0;font-size:22px;font-weight:800;letter-spacing:-.3px;color:#fff}
+
   .ht-mode{display:inline-flex;align-items:center;vertical-align:middle;
-    margin-right:8px;padding:3px 9px;border-radius:7px;
+    padding:3px 9px;border-radius:7px;
     font-size:11px;font-weight:800;letter-spacing:.2px;line-height:1.5}
   .ht-mode.cls{background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.34);
     color:#cbd5e1}
@@ -59,10 +69,24 @@
   .ht-mode.mys{background:rgba(168,110,240,.16);border:1px solid rgba(168,110,240,.5);
     color:#c9a2ff}
 
-  /* 상금 구조표 아래 분배율. 표에 적힌 등수별 금액이 전부가 아니라는 것을 말해 준다 */
-  .ht-split-note{margin:8px 0 0;font-size:11.5px;color:var(--muted);line-height:1.6}
-  .ht-split-note b{color:#e4e4e7}
-  .ht-split-note b.bty{color:#f0a868}
+  /* ── 바운티 배너 ────────────────────────────────────────────────
+     상금 구조의 머리에 선다. 표를 다 읽고 나서야 닿던 정보를 앞으로 옮긴 것이라
+     표보다 먼저 눈에 들어와야 하는데, 그렇다고 상금 총액보다 세면 위계가 뒤집힌다 —
+     테두리와 옅은 배경만으로 구분하고 글자는 키우지 않는다. 이모지는 안 쓴다. */
+  .ht-bty-banner{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;
+    margin:6px 0 10px;padding:9px 12px;border-radius:10px;
+    background:rgba(234,140,60,.08);border:1px solid rgba(234,140,60,.30);
+    font-size:12px;color:var(--muted)}
+  .ht-bty-banner.mys{background:rgba(120,70,190,.14);border-color:rgba(168,110,240,.34)}
+  .ht-bty-tag{flex:none;padding:3px 8px;border-radius:6px;
+    font-size:10px;font-weight:800;letter-spacing:.6px;
+    background:rgba(234,140,60,.18);color:#f0a868}
+  .ht-bty-banner.mys .ht-bty-tag{background:rgba(168,110,240,.20);color:#c9a2ff}
+  /* 잭팟 금액이 이 배너의 주인공이다 — 여기만 밝게 둔다 */
+  .ht-bty-top{flex:1 1 auto;color:#e4e4e7}
+  .ht-bty-top b{font-family:var(--mono);font-size:14px;color:var(--gold)}
+  .ht-bty-banner.mys .ht-bty-top b{color:#e9d5ff}
+  .ht-bty-split{flex:none;font-size:11.5px;opacity:.85}
   /* 상태 배지와 같은 줄에 선다 — 한 줄짜리 문장 하나에 위아래 여백을 두 겹 주면
      카드가 그만큼 늘어진다 */
   .ht-badge-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}
@@ -72,7 +96,23 @@
      없어서 문장 쪽이 얇게 떨어졌다. tabular-nums 는 본문 폰트에서 숫자만 같은 폭으로
      잡아 주므로 흔들림은 그대로 막으면서 한글이 제 폰트로 나온다. */
   .ht-note{font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--gold-hi);text-align:right}
-  .ht-actions{display:flex;gap:10px;flex-wrap:wrap}
+  /* 이 카드에서 실제로 누르는 것은 여기 하나다. 예전에는 87px 짜리 단추가 왼쪽에
+     붙어 있어 여섯 개 정보 카드보다 작았고 눈이 마지막에 닿았다.
+     그렇다고 카드 폭(670px)을 다 채우니 금색 덩어리가 화면을 눌러 촌스러웠다 —
+     크기로 세우는 것과 커 보이는 것은 다르다. 눌러야 할 만큼만 키운다:
+     높이 46px 은 손가락 기준을 넘기고, 폭은 글자에 맞추되 너무 좁아지지 않게
+     아래끝만 잡는다. */
+  .ht-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
+  .ht-actions .btn{flex:0 1 auto;min-width:184px;min-height:46px;
+    font-size:14px;font-weight:700;
+    display:inline-flex;align-items:center;justify-content:center}
+  /* 금색은 이미 이 화면에서 제일 눈에 띄는 색이라 그림자까지 두면 과하다.
+     테두리 한 겹으로만 다른 단추와 위계를 나눈다. */
+  .ht-actions .btn-gold{box-shadow:0 0 0 1px rgba(212,175,55,.45)}
+  .ht-actions .btn-gold:hover{box-shadow:0 0 0 1px var(--gold)}
+  .ht-actions .btn-gold:disabled{box-shadow:none}
+  /* 신청 완료 표시는 단추가 아니라 상태다 — 늘리지 않고 옆에 붙는다 */
+  .ht-actions .ht-joined{flex:0 0 auto;display:inline-flex;align-items:center;min-height:46px}
   .ht-h3{margin:18px 0 6px;font-size:13px;color:var(--muted);letter-spacing:.4px}
   /* 상금 구조와 결과를 합친 한 표. 상금을 받는 자리만 밝고, 나머지는 가라앉힌다 —
      이 표의 유일한 의미가 입상 여부인데 예전에는 그게 표에서 안 보였다. */
@@ -1749,8 +1789,15 @@
      "누가 있나"가 갈지 말지를 정하는 정보이고, 빈 자리를 함께 그리면 몇 명 더 오면
      열리는지가 숫자보다 빨리 읽힌다. */
   .ht-h3sub{margin-left:8px;font-size:11px;color:var(--dim);letter-spacing:0}
-  .ht-regs{display:grid;gap:8px;
-    grid-template-columns:repeat(auto-fill,minmax(84px,1fr))}
+  /* 아홉 자리를 5 + 4 로 나누고 가운데 정렬한다.
+     예전에는 auto-fill minmax(84px,1fr) 이라 칸 폭이 컨테이너에 따라 정해졌고,
+     670px 짜리 카드에서는 한 줄에 일곱 개가 들어가 7 + 2 로 쪼개졌다 — 아래 줄
+     두 개가 왼쪽에 매달려 판이 기울어 보였다.
+     한 줄에 아홉을 다 넣는 방법도 있지만 칸이 67px 이 되어 "최레이즈" 같은 이름이
+     거의 다 잘린다. 5 + 4 는 칸이 124px 이라 이름이 살고, 아래 줄이 가운데 있어
+     테이블처럼 읽힌다. */
+  .ht-regs{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+  .ht-regs > .ht-reg{flex:0 0 calc((100% - 32px) / 5);max-width:calc((100% - 32px) / 5)}
   .ht-reg{display:flex;flex-direction:column;align-items:center;gap:5px;
     padding:10px 4px;border-radius:10px;
     background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}

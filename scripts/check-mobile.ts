@@ -98,6 +98,11 @@ const PROBE = `(() => {
        "없음"으로 나와 전부 실패처럼 보인다 — 운영 주소로 돌렸다가 42개가 빨갛게
        나왔는데 전부 이 이유였다. 고장이 아니라 잴 수 없는 상태다. */
     loggedIn: !!window.__MEID__,
+    /* 대회가 아직 안 열린 상태(등록 중)에서는 홀덤 테이블이 만들어져 있어도 비어
+       있어 0x0 이다. 그때 판을 재면 \"판이 0px\" 이 되는데, 그건 화면이 깨진 것이
+       아니라 아직 판이 없는 것이다 — 로비 카드가 대신 떠 있다. 로그인 안 한 화면을
+       \"잴 수 없음\" 으로 두는 것과 같은 이유로 구분한다. */
+    preTable: !!document.querySelector('.ht-card'),
     vw: innerWidth, vh: innerHeight,
     scrollW: de.scrollWidth,
     navBottom: nav ? Math.round(nav.bottom) : null,
@@ -266,7 +271,9 @@ async function main(): Promise<void> {
         /* 40% 로 둔다. 처음에 45% 로 잡았는데 사다리가 42% 에서 걸렸다 — 그 판은
            출발 둘과 도착 둘, 선 두 개가 전부라 넓은 면적이 필요하지 않다. 기준이
            현실보다 앞서면 맞추려고 다른 것을 망가뜨리게 된다(조작부를 더 눌렀을 것이다). */
-        ck(`${g} 판이 화면 높이의 40% 이상`, (m.boardFill ?? 0) >= 40, `${m.boardFill}%`);
+        /* 대회 전에는 판이 아직 없다 — 위와 같은 이유로 이 항목도 건너뛴다 */
+        if (m.preTable) console.log(`  --   ${g} 판 비율 — 대회 전이라 잴 수 없음`);
+        else ck(`${g} 판이 화면 높이의 40% 이상`, (m.boardFill ?? 0) >= 40, `${m.boardFill}%`);
         /* 그리고 읽을 수 있어야 한다. 판을 줄여 "들어가게" 만들어 놓고 글자를 4.6px 로
            만들면 들어간 것이 아니다 — 그동안 이 항목이 없어서 전부 통과했다.
            9px 은 폰에서 겨우 읽히는 하한이다. */
@@ -284,6 +291,11 @@ async function main(): Promise<void> {
         m.mainBottom !== null ? `${m.mainBottom - (바닥 ?? 0)}px 넘침 (판 ${m.mainTop}~${m.mainBottom} · 바닥 ${바닥})` : '.game-main 없음');
       /* 눌러서 맞춘 것이 아닌지. 화면 폭의 3할도 안 되는 판은 게임이 아니라 막대다. */
       const 최소폭 = Math.round(m.vw * 0.3);
+      /* 대회 전(등록 중)에는 홀덤 테이블이 비어 있어 0x0 이다 — 깨진 것이 아니라
+         아직 판이 없는 것이다. 그 상태는 재지 않고 넘어간다. */
+      if (m.preTable) {
+        console.log(`  --   ${g} 판/조작부 — 대회 전이라 잴 수 없음`);
+      } else {
       ck(`${g} 판이 찌그러지지 않았다`, m.boardW !== null && m.boardW >= 최소폭,
         `판 폭 ${m.boardW}px < ${최소폭}px`);
       /* 조작부도 같이 본다. 눌린 칸은 안의 내용이 들어갈 자리를 못 얻어 겹친다 —
@@ -291,6 +303,7 @@ async function main(): Promise<void> {
       if (m.ctlW !== null) {
         ck(`${g} 조작부가 눌리지 않았다`, m.ctlW >= 280 && m.ctlNeed <= m.ctlW + 2,
           `폭 ${m.ctlW}px · 필요 ${m.ctlNeed}px`);
+      }
       }
     }
 
