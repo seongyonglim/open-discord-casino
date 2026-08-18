@@ -39,7 +39,11 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* 도전과제 보상 버프. 이 줄만은 안내가 아니라 "지금 켜져 있는 것"이라 금색으로 둔다 —
      흐린 회색으로 두면 옆의 안내 문구와 구분되지 않아 켜져 있다는 사실이 전달되지 않는다. */
-  .buff-badge{color:var(--gold);font-weight:700}
+  /* 트로피 이모지를 선 아이콘으로 바꿨다 — 이모지는 OS 마다 다른 그림이 나오고,
+     컬러 하나가 글줄 안에서 혼자 튄다. 아이콘은 글자 색을 따라가므로 줄에 녹는다. */
+  .buff-badge{color:var(--gold);font-weight:700;
+    display:inline-flex;align-items:center;gap:4px}
+  .buff-badge svg{width:12px;height:12px;flex:none}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th{text-align:left;color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;
     letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid var(--line)}

@@ -151,7 +151,25 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
     }
 `;
 
-export const LOBBY = `    function renderLobby(){
+export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자리표. 화면에 절대 나올 수 없는
+       글자여야 뼈대 비교가 어긋나지 않는다. */
+    var NOTE_SLOT = String.fromCharCode(0);
+    var lastShell = '', noteEl = null;
+    /* ── 참가 완료 = 취소 단추 ──────────────────────────────────────
+       예전에는 "신청 완료" 라벨과 "신청 취소" 단추가 따로 있었다. 라벨은 누를 수 없는데
+       단추처럼 생겨서 그것을 누르는 사람이 있었고, 둘이 나란히 놓이니 어느 쪽이 지금
+       상태이고 어느 쪽이 행동인지도 한눈에 안 갈렸다.
+
+       이제 하나다. 평소에는 초록 테두리로 "되어 있다"를 말하고, 손을 올리면 붉게 바뀌어
+       "누르면 물린다"를 말한다 — 상태와 행동이 한 칸을 나눠 쓴다. */
+    function joinedBtn(){
+      return '<button type="button" class="btn ht-done" id="htLeave">'
+        + '<svg class="ht-done-i" width="15" height="15" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2.6" stroke-linecap="round"'
+        + ' stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/><\/svg>'
+        + '참가 완료 <span class="ht-done-x">(등록 취소)<\/span><\/button>';
+    }
+    function renderLobby(){
       var t = st.tournament, now = st.serverNow;
       if (!t) { renderNoTournament(); return; }
       var badge = '', action = '', note = '';
@@ -167,9 +185,7 @@ export const LOBBY = `    function renderLobby(){
         /* 시작 전에는 신청을 되돌릴 수 있다. 좌석과 스택은 대회가 시작될 때
            한꺼번에 만들어지므로, 이 시점의 취소는 등록 행 하나를 지우는 것뿐이다.
            시작한 뒤에는 이미 칩을 들고 앉아 있어 취소가 성립하지 않는다. */
-        action = t.iRegistered
-          ? '<span class="ht-joined">신청 완료</span>'
-            + ' <button type="button" class="btn ht-leave" id="htLeave">신청 취소</button>'
+        action = t.iRegistered ? joinedBtn()
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'WAITING_MIN_PLAYERS') {
         badge = '<span class="ht-badge wait">최소 인원 대기</span>';
@@ -177,9 +193,7 @@ export const LOBBY = `    function renderLobby(){
         /* 시작 전에는 신청을 되돌릴 수 있다. 좌석과 스택은 대회가 시작될 때
            한꺼번에 만들어지므로, 이 시점의 취소는 등록 행 하나를 지우는 것뿐이다.
            시작한 뒤에는 이미 칩을 들고 앉아 있어 취소가 성립하지 않는다. */
-        action = t.iRegistered
-          ? '<span class="ht-joined">신청 완료</span>'
-            + ' <button type="button" class="btn ht-leave" id="htLeave">신청 취소</button>'
+        action = t.iRegistered ? joinedBtn()
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'RUNNING') {
         if (t.lateRegLeft != null) {
@@ -344,7 +358,20 @@ export const LOBBY = `    function renderLobby(){
       /* 안내 문구는 배지 옆으로 붙인다. 한 줄짜리 <p>로 따로 두면 그 줄 하나 때문에
          위아래 여백이 두 겹 생겨 카드가 늘어졌다 — 상태를 말하는 짧은 문장이므로
          상태 배지와 같은 줄에 있는 것이 읽기에도 맞다. */
-      lobbyEl.innerHTML =
+      /* ── 왜 통째로 다시 그리지 않는가 ────────────────────────────────
+         이 함수는 1초마다 불린다. 예전에는 그때마다 lobbyEl.innerHTML 을 새로 대입해서
+         카드 안의 모든 노드가 사라지고 다시 태어났다 — 단추도 포함이다.
+
+         그래서 누르는 동안 틱이 한 번 끼면, 눌렀던 그 노드가 없어진 채로 손을 떼게 되고
+         브라우저는 click 을 아예 만들지 않는다. 누른 사람 눈에는 "눌렀는데 아무 일도
+         없었다"로 보인다. 사람이 단추를 누르는 데 걸리는 시간이 100ms 안팎이니
+         열 번에 한 번꼴로 삼켜졌고, 망설이다 누르는 [등록 취소]에서 특히 잦았다.
+
+         고치는 방법은 안 지우는 것이다. 매 초 바뀌는 값은 남은 시간 하나뿐이므로,
+         그 자리를 표식으로 비운 "뼈대"를 만들어 지난번 것과 견준다. 같으면 DOM 은
+         손대지 않고 남은 시간 글자만 갈아 끼운다 — 단추는 계속 같은 노드로 살아 있다.
+         상태가 실제로 바뀌었을 때만(신청·취소·인원 변동) 다시 그린다. */
+      var shell =
         '<div class="ht-card">' +
           /* 머리를 세 줄로 나눈다.
              예전에는 제목 왼쪽에 모드 뱃지가 붙고 오른쪽에 상태 뱃지와 남은 시간이
@@ -356,7 +383,10 @@ export const LOBBY = `    function renderLobby(){
           '<div class="ht-head">' +
             '<div class="ht-head-meta">' +
               '<span class="ht-head-badges">' + modeBadge + badge + '</span>' +
-              (note ? '<span class="ht-note">' + esc(note) + '</span>' : '') +
+              /* 시간은 여기 한 곳에만 들어간다. 아래 뼈대 비교가 이 자리를 표식으로
+                 비워 두고 견주므로, 다른 곳에 초 단위 값이 새로 생기면 뼈대가 매 초
+                 달라져서 단추가 다시 1초마다 무너진다 — 새 값은 반드시 이 note 로. */
+              (note ? '<span class="ht-note">' + NOTE_SLOT + '</span>' : '') +
             '</div>' +
             '<h2 class="ht-title">' + esc(t.title) + '</h2>' +
             '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
@@ -384,6 +414,17 @@ export const LOBBY = `    function renderLobby(){
           payTable +
         '</div>';
 
+      /* 뼈대가 그대로면 남은 시간만 바꾸고 끝낸다. 여기서 돌아가면 아래 바인딩도
+         건너뛰는데, 그래도 되는 이유는 단추가 지워진 적이 없어서 예전에 붙인 리스너가
+         그대로 살아 있기 때문이다. 다시 붙이면 오히려 한 번 누른 것이 두 번 실행된다. */
+      if (shell === lastShell) {
+        if (noteEl && noteEl.isConnected) noteEl.textContent = note;
+        return;
+      }
+      lastShell = shell;
+      lobbyEl.innerHTML = shell.replace(NOTE_SLOT, function(){ return esc(note); });
+      noteEl = lobbyEl.querySelector('.ht-note');
+
       var join = document.getElementById('htJoin');
       if (join) join.addEventListener('click', function(){
         /* 돈이 나가는 신청이면 먼저 묻는다. 프리롤은 잃을 것이 없어 그냥 넣지만,
@@ -394,7 +435,7 @@ export const LOBBY = `    function renderLobby(){
         join.disabled = true;
         post('/api/games/holdem/register', {}).then(function(r){
           if (!r.ok) { alert(r.d && r.d.error ? r.d.error : '등록할 수 없습니다'); join.disabled = false; }
-          poll();
+          pollNow();
         });
       });
       var spec = document.getElementById('htSpectate');
@@ -402,11 +443,23 @@ export const LOBBY = `    function renderLobby(){
       if (leave) leave.addEventListener('click', function(){
         if (!confirm('참가 신청을 취소할까요?'
           + (t.buyIn > 0 ? '\\n참가비 ' + num(t.buyIn) + 'P는 돌려드립니다.' : ''))) return;
+        /* 누른 것이 닿았다는 표시를 즉시 준다. 응답까지 아무 변화가 없으면 안 눌린 줄
+           알고 한 번 더 누르는데, 두 번째는 이미 지워진 등록을 지우려다 "신청하지
+           않으셨습니다" 경고를 띄운다 — 사실 첫 번째가 성공한 것인데도. */
         leave.disabled = true;
+        leave.classList.add('is-busy');
         post('/api/games/holdem/unregister', {}).then(function(r){
-          if (!r.ok) alert(r.d && r.d.error ? r.d.error : '취소할 수 없습니다');
-          leave.disabled = false;
-          poll();
+          if (!r.ok) {
+            alert(r.d && r.d.error ? r.d.error : '취소할 수 없습니다');
+            leave.disabled = false;
+            leave.classList.remove('is-busy');
+            return;
+          }
+          /* 성공했으면 서버 상태를 곧바로 다시 받는다. 다음 폴링을 기다리면 최대 1초
+             동안 [참가 완료]가 남아 있어서, 취소가 된 것인지 아닌지 알 수 없다.
+             참가자 수·내 참가 여부·좌석은 전부 이 한 번의 상태 응답에서 온다 —
+             화면이 저 혼자 앞서 나가서 서버와 어긋나는 길을 만들지 않는다. */
+          pollNow();
         });
       });
       if (spec) spec.addEventListener('click', function(){ spectate = true; render(); });

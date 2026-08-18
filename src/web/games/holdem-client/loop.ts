@@ -38,6 +38,8 @@ export const LOOP = `    function render(){
         .catch(function(){ return { ok: false, d: null }; });
     }
     var polling = false;
+
+    var pollAgain = false;
     /* ── 다음 판을 제때 깨운다 ───────────────────────────────────────
        이 게임에는 서버 타이머가 없다. 판이 끝나면 서버는 "다음 판은 이 시각 이후"만
        적어 두고(next_hand_at), 실제 진행은 누군가 요청을 보낼 때 일어난다.
@@ -122,7 +124,45 @@ export const LOOP = `    function render(){
           apply(d);
         })
         .catch(function(){ /* 일시적 실패는 다음 폴링에서 회복된다 */ })
-        .then(function(){ polling = false; });
+        .then(function(){
+          polling = false;
+          /* 기다리던 요청이 있으면 곧바로 한 번 더 간다 — 아래 pollNow 를 보라 */
+          if (pollAgain) { pollAgain = false; poll(); }
+        });
     }
-    poll();
-    setInterval(poll, 1000);`;
+
+    /* 방금 뭔가를 바꿨으니 지금 상태를 다시 받아 달라 — 신청·취소처럼 화면이
+       즉시 바뀌어야 하는 자리가 쓴다.
+
+       그냥 poll() 을 부르면 안 되는 이유: 위 재진입 가드는 이미 날아간 요청이 있으면
+       조용히 돌아간다. 그런데 그 날아간 요청은 내가 바꾸기 *전에* 떠난 것이라,
+       돌아오는 답에는 내 취소가 안 들어 있다. 그걸로 화면을 그리면 [참가 완료]가
+       그대로 남고, 누른 사람은 취소가 안 된 줄 안다.
+
+       그래서 비행 중이면 표식만 남기고, 그 요청이 끝나는 즉시 한 번 더 간다. */
+    function pollNow(){ if (polling) pollAgain = true; else poll(); }
+
+    /* ── 안 보고 있으면 묻지 않는다 ────────────────────────────────
+       이 화면은 1초마다 서버에 상태를 물었다. 조건이 하나도 없어서, 탭을 다른 데로
+       옮겨 두거나 폰을 주머니에 넣어도 그대로 계속 물었다 — 하루 종일 열어 둔 탭 하나가
+       8만 6천 번을 부른다. 다른 게임(사다리·그래프·바카라·블랙잭·포커)은 진작에
+       document.hidden 에서 멈추고 있었는데 홀덤만 빠져 있었다.
+
+       유휴 타이머(몇 분 안 만지면 정지)는 여기에 두지 않는다. 포커 테이블에서는
+       아무것도 안 누르고 남의 차례를 보고 있는 것이 정상 상태다 — 그때 멈추면
+       판이 굴러가는 것을 못 본다. 탭이 가려졌다는 것은 그와 달리 애매하지 않다.
+
+       가려진 동안 서버가 멈추는 것은 아니다. 내 차례가 지나면 서버가 대신 처리하고,
+       돌아오면 그 결과를 한 번에 받는다 — 폴링은 보여 주기 위한 것이지 참여의 조건이
+       아니다. */
+    var loopTimer = null;
+    function startLoop(){
+      if (loopTimer || document.hidden) return;
+      poll();
+      loopTimer = setInterval(poll, 1000);
+    }
+    function stopLoop(){ if (loopTimer) { clearInterval(loopTimer); loopTimer = null; } }
+    document.addEventListener('visibilitychange', function(){
+      if (document.hidden) stopLoop(); else startLoop();
+    });
+    startLoop();`;

@@ -518,10 +518,14 @@ export async function handleUnregister(
 ): Promise<void> {
   const r = unregisterHoldem(userId);
   if (!r.ok) {
+    /* auto_cancelled 는 실패가 아니라 "내가 누르는 사이에 판이 없어졌고 돈은 돌아갔다"이다.
+       예전에는 이것도 '지금은 취소할 수 없습니다' 로 묶여 나가서, 참가비가 묶인 줄 알게 했다. */
     const msg = r.error === 'not_registered' ? '신청하지 않으셨습니다'
       : r.error === 'already_started' ? '대회가 이미 시작되어 취소할 수 없습니다'
+      : r.error === 'auto_cancelled'
+        ? '대회가 최소 인원 미달로 취소됐습니다. 참가비가 있었다면 전액 돌려드렸습니다.'
       : '지금은 취소할 수 없습니다';
-    return sendJson(res, 400, { error: msg });
+    return sendJson(res, r.error === 'auto_cancelled' ? 409 : 400, { error: msg });
   }
   return sendJson(res, 200, { ok: true, registered: r.registered });
 }

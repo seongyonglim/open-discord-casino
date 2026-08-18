@@ -7,7 +7,8 @@ import {
   getMyToday, getBalanceRank, LADDER_MULTIPLIER, LADDER_DOUBLE_MULTIPLIER,
   type LeaderboardRow, type WebUser,
 } from '../db/queries';
-import { recentHoldemWinners, prizePoolOf, type HoldemStatus } from '../db/holdem';
+import { recentHoldemWinners, prizePoolOf, getEntries, type HoldemStatus } from '../db/holdem';
+import { rolloverSkips } from '../db/rollover';
 import * as T from '../services/tournament';
 import { rewardBuff } from '../services/buff';
 import { listNotices, noticeNeighbors, type Notice } from '../db/notices';
@@ -251,9 +252,17 @@ function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; ct
         cta: '자세히 보기',
       };
     default:
+      /* 예약은 됐지만 등록이 아직 안 열린 상태(SCHEDULED).
+         여기 뱃지가 오래도록 '매일 22:00' 이었다. 자동 개최를 없앤 뒤로는 사실이
+         아니다 — 운영자가 열어야 생기고, 시각도 대회마다 다르다. 감사에도 이 문구를
+         금지하는 검사가 있는데(audit-pages), 그 환경에는 대회 행이 없어서 이 갈래를
+         안 타는 바람에 통과하고 있었다.
+         참가비도 단정하지 않는다 — 참가비가 걸린 대회를 운영자가 열 수 있다. */
       return {
-        badge: '매일 22:00',
-        desc: `등록은 ${left(st.schedule.regOpenAt)} 후에 열립니다. 참가비 없이 상금만 걸린 대회예요.`,
+        badge: '예정',
+        desc: t.buy_in > 0
+          ? `등록은 ${left(st.schedule.regOpenAt)} 후에 열립니다 · 참가비 ${t.buy_in.toLocaleString('ko-KR')}P`
+          : `등록은 ${left(st.schedule.regOpenAt)} 후에 열립니다 · 참가비 없이 상금만 걸린 대회예요`,
         cta: '자세히 보기',
       };
   }
@@ -346,10 +355,10 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
     <div class="stat"><div class="lbl">연속 출석</div>
       <div class="${streakCls}">${user.current_streak}일</div>
       <div class="sub">${buff.percent > 0
-        ? `<span class="buff-badge">🏆 도전과제 버프 +${buff.percent}%</span>`
+        ? `<span class="buff-badge">${trophyIcon}도전과제 버프 +${buff.percent}%</span>`
         : '디스코드에서 출석'}</div></div>
     <div class="stat"><div class="lbl">${esc(ff.label)}</div>
-      <div class="val">${esc(ff.value)}</div>
+      <div class="val num"${ff.until != null ? ` data-countdown="${ff.until}"` : ''}>${esc(ff.value)}</div>
       <div class="sub">${esc(ff.sub)}</div></div>
   </div>`;
 }
@@ -357,7 +366,12 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
 /* 프리롤 칸. 상태 판정은 advanceHoldem이 이미 해 뒀으므로 문구로만 옮긴다.
    오늘 대회가 끝났거나 취소됐으면 내일 일정을 계산해서 보여준다 — 그래야
    하루 중 언제 들어와도 "다음이 언제인가"에 답이 있다. */
-function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: string; sub: string } {
+/* 네 번째 스탯 카드와 이벤트 배너가 같이 쓰는 한 줄 요약.
+   until 은 세어 내려갈 목표 시각(epoch 초)이다. 값이 있는 갈래만 붙는다 —
+   "진행 중"이나 "예정 없음"처럼 셀 것이 없는 상태에 0 을 넣으면 화면이 00:00 을
+   그리고, 그건 곧 시작한다는 뜻으로 읽힌다. */
+function nextFreerollStat(ht: HoldemStatus | null):
+  { label: string; value: string; sub: string; until?: number } {
   /* 예정된 대회가 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
      예전에는 '매일 22:00'을 적어 뒀는데, 이제 그건 사실이 아니다.
      없는 일정을 적으면 기다린 사람이 헛걸음한다. */
@@ -372,16 +386,21 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
     return {
       label: '다음 대회 등록까지',
+      until: up.regOpenAt,
       value: h > 0 ? `${h}시간 ${m}분` : `${m}분`,
       sub: `${up.dateStr} · ${new Intl.DateTimeFormat('ko-KR', {
         timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
       }).format(new Date(up.startAt * 1000))} 시작`,
     };
   }
+  /* 한 시간 안쪽이면 MM:SS. 예전에는 분까지만 적어서 "1분"이 60초 동안 그대로 서
+     있었고, 그 사이에 판이 시작되기도 했다. 한 시간을 넘으면 초는 의미가 없어
+     H:MM:SS 로 늘린다 — 자릿수가 고정이라 숫자가 좌우로 흔들리지 않는다. */
   const short = (at: number) => {
     const s = Math.max(0, at - now);
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${p2(m)}:${p2(ss)}` : `${p2(m)}:${p2(ss)}`;
   };
   const hhmm = (at: number) => new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -389,11 +408,13 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
 
   switch (ht.status) {
     case 'REGISTRATION_OPEN':
-      return { label: '프리롤 시작까지', value: short(ht.schedule.scheduledStartAt),
+      return { label: '시작까지', value: short(ht.schedule.scheduledStartAt),
+        until: ht.schedule.scheduledStartAt,
         sub: `등록 중 · ${ht.registered}명 신청` };
     case 'WAITING_MIN_PLAYERS':
-      return { label: '프리롤 인원 대기', value: `${ht.registered} / ${T.MIN_PLAYERS}명`,
-        sub: `${hhmm(ht.schedule.graceEndsAt)}까지 안 차면 취소` };
+      return { label: '인원 대기 마감까지', value: short(ht.schedule.graceEndsAt),
+        until: ht.schedule.graceEndsAt,
+        sub: `${ht.registered} / ${T.MIN_PLAYERS}명 · 안 차면 취소` };
     case 'RUNNING':
       return { label: '토너먼트', value: '진행 중', sub: `${ht.registered}명 참가` };
     case 'FINISHED': case 'CANCELLED': {
@@ -402,10 +423,12 @@ function nextFreerollStat(ht: HoldemStatus | null): { label: string; value: stri
       const up = upcomingHint(now);
       if (!up) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
       return { label: '다음 대회 등록까지', value: short(up.regOpenAt),
+        until: up.regOpenAt,
         sub: `${up.dateStr} · ${hhmm(up.startAt)} 시작` };
     }
     default:
-      return { label: '대회 등록까지', value: short(ht.schedule.regOpenAt),
+      return { label: '등록까지', value: short(ht.schedule.regOpenAt),
+        until: ht.schedule.regOpenAt,
         sub: `${hhmm(ht.schedule.scheduledStartAt)} 시작 · ${ht.schedule.title}` };
   }
 }
@@ -434,31 +457,86 @@ function gameSections(ht: HoldemStatus | null, live: Record<string, number> = {}
    그리고 이 화면에서 금색 단추는 여기 하나뿐이다. 예전에는 카드 여섯 장이 저마다
    금색 단추를 달고 있어서 제일 눈에 띄는 색이 여섯 번 반복됐고, 그러면 어느 것도
    강조가 아니게 된다. */
-function eventBanner(ht: HoldemStatus | null, live = 0): string {
+/* 이월 태그 앞에 붙는 표식. 불꽃 이모지를 쓰던 자리인데, OS 마다 다른 그림이 나오고
+   컬러 이모지 하나가 글줄 안에서 혼자 튀어서 선 아이콘으로 바꿨다 — 글자 색을 따라간다. */
+const SPARK_SVG = '<svg class="ev-spark" width="11" height="11" viewBox="0 0 24 24" fill="none"'
+  + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+  + ' aria-hidden="true"><path d="M12 3 14.5 9.5 21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></svg>';
+/* ── 이 판이 무엇이고 언제인가 ────────────────────────────────────────
+   왼쪽은 "무엇", 오른쪽은 "언제 · 무엇을 누르는가". 두 가지만 둔다.
+
+   ── 라이브 뱃지를 여기에는 달지 않는다
+   게임 카드의 "N명 플레이 중"은 지금 그 방을 보고 있는 사람 수다. 대회는 방이 아니라
+   시각이 정해진 행사라, 지금 페이지를 보고 있는 사람 수는 갈지 말지를 정하는 데
+   아무 도움이 안 된다. 여기서 세어야 하는 것은 신청한 사람 수(3 / 9)이고 그건 아래
+   줄이 이미 말한다 — 성격이 다른 두 숫자를 나란히 두면 어느 쪽이 참가 인원인지 흐려진다.
+
+   ── 시간은 오른쪽 하나뿐이다
+   예전에는 뱃지가 "등록 중 · 6분 후 시작"이라 말하고 오른쪽이 다시 "시작까지 6분"을
+   말했다. 같은 값이 한 화면에 두 번 있으면 읽는 쪽은 둘이 다른 값인지 확인하느라
+   한 번 더 본다. 뱃지는 상태만 말하고, 시간은 오른쪽 타이머가 혼자 맡는다. */
+function eventBanner(ht: HoldemStatus | null, joined = false): string {
   const g = GAMES.find(x => x.group === 'event');
   if (!g) return '';
   const o = ht ? freerollOverride(ht) : undefined;
   const stat = nextFreerollStat(ht);
-  const liveBadge = live > 0
-    ? `<span class="gc-live"><i class="gc-dot"></i>${live}명 참여 중</span>` : '';
-  /* 왼쪽은 "이 판이 무엇인가", 오른쪽은 "언제이고 무엇을 누르는가" 로 나눈다.
-     예전에는 상태 뱃지·인원·상금·남은 시간이 좌우로 흩어져 있어서 눈이 두 번 오갔다.
+  const t = ht?.tournament ?? null;
 
-     서브 정보는 대회 상태에서 온 문구를 그대로 쓴다(freerollOverride) — 인원과 상금
-     풀이 이미 그 안에 있고, 여기서 다시 조립하면 같은 값을 두 곳에서 만들게 된다. */
+  /* 뱃지는 둘. 상태(등록 중)와 성격(클래식·바운티) — 참가를 정하기 전에 알아야 하는
+     것이 이 둘뿐이다. 상태 문구에 시각이 섞여 있으면(예전의 "등록 중 · 6분 후 시작")
+     오른쪽 타이머와 겹치므로 가운뎃점 뒤를 잘라 낸다. */
+  const state = (o?.badge ?? g.badge ?? '토너먼트').split(' · ')[0];
+  const mode = t?.mode === 'MYSTERY_BOUNTY' ? '미스터리 바운티'
+    : t?.mode === 'PKO_BOUNTY' ? '바운티' : '클래식';
+  const modeTag = t ? `<span class="ev-mode">${esc(mode)}</span>` : '';
+
+  /* 제목은 대회 이름을 그대로 쓴다. 게임 이름("홀덤 토너먼트")은 왼쪽 뱃지와 아래 카드
+     목록이 이미 말하고 있어서, 이 자리까지 같은 말을 하면 배너가 무엇을 알리는지 모른다. */
+  const title = t?.title?.trim() || g.name;
+
+  /* 아래 한 줄이 "지금 얼마나 모였고 얼마가 걸려 있나"를 맡는다.
+     아무도 없을 때는 총액을 적지 않는다 — 0P 로 나오면 상금이 없는 대회로 읽힌다.
+     그때는 이 판이 보장하는 값(1인당 금액)을 말하는 편이 사실에 가깝다. */
+  /* 문장을 먼저 짓고, 화면에 넣기 직전에 한 번만 이스케이프한다. 예전 초안은 한쪽
+     갈래만 esc 를 거치고 다른 갈래는 날것으로 두었는데, 지금은 숫자뿐이라 괜찮아도
+     여기에 대회 이름을 한 줄 더 붙이는 순간 조용히 구멍이 된다. 두 갈래가 같은 길로
+     나가게 해 두면 그런 편집이 위험해질 수가 없다. */
+  let facts = o?.desc ?? g.short ?? g.desc;
+  if (t && ht) {
+    const n = ht.registered;
+    const pool = prizePoolOf(t, n, t.prize_fixed > 0 ? t.prize_fixed : 0);
+    const head = t.buy_in > 0
+      ? `참가비 ${t.buy_in.toLocaleString('ko-KR')}P`
+      : `1인당 ${Math.max(0, Math.floor(t.prize_multiplier)).toLocaleString('ko-KR')}P`;
+    facts = n > 0
+      ? `현재 ${n} / ${T.MAX_PLAYERS}명 등록 완료 · 총 상금 풀 ${pool.toLocaleString('ko-KR')}P`
+      : `${T.MAX_PLAYERS}명 정원 · ${head} · 최소 ${T.MIN_PLAYERS}명이 모이면 시작합니다`;
+  }
+
+  /* 이월은 이 판이 평소보다 큰 이유다. 배수는 대회를 만들 때 이미 금액에 굳혀 넣었으므로
+     여기서는 "왜 큰가"만 말한다 — 횟수를 곱하지 않는다(db/rollover.ts). */
+  const skips = t && t.buy_in <= 0 ? (rolloverSkips()) : 0;
+  const rollTag = skips > 0
+    ? `<span class="ev-roll">${SPARK_SVG}${skips}회 이월 누적 적용</span>` : '';
+
+  /* 남은 시간은 서버가 그린 순간 멈춘 글자다. 분 단위였을 때는 그래도 견뎠지만 초까지
+     적으면 보고 있는 동안 틀린 값이 된다 — 목표 시각을 같이 실어 보내 화면이 세게 한다.
+     스크립트가 안 돌아도 서버가 넣어 둔 값이 그대로 남으므로 빈칸이 되지는 않는다. */
+  const until = stat.until != null ? ` data-countdown="${stat.until}"` : '';
+
   return `<a class="ev-banner" href="/games/${g.key}">
     <span class="ev-shine" aria-hidden="true"></span>
     <div class="ev-left">
-      <div class="ev-tags"><span class="gc-badge">${esc(o?.badge ?? g.badge ?? '토너먼트')}</span>${liveBadge}</div>
-      <h3 class="ev-title">${esc(g.name)}</h3>
-      <p class="ev-desc">${esc(o?.desc ?? g.short ?? g.desc)}</p>
+      <div class="ev-tags"><span class="gc-badge">${esc(state)}</span>${modeTag}</div>
+      <h3 class="ev-title">${esc(title)}</h3>
+      <p class="ev-desc">${esc(facts)}${rollTag}</p>
     </div>
     <div class="ev-right">
       <div class="ev-when">
         <span class="ev-lbl">${esc(stat.label)}</span>
-        <span class="ev-val num">${esc(stat.value)}</span>
+        <span class="ev-val num"${until}>${esc(stat.value)}</span>
       </div>
-      <span class="ev-cta">${esc(o?.cta ?? g.cta)}</span>
+      <span class="ev-cta${joined ? ' is-done' : ''}">${esc(joined ? '참가 완료' : (o?.cta ?? g.cta))}</span>
     </div>
   </a>`;
 }
@@ -486,9 +564,15 @@ export function lobbyPage(
 
   /* 최근 소식과 출석체크를 가로로 묶는다. 세로로 쌓아 두었을 때는 둘 다 짧은데 화면
      두 칸을 차지해서, 게임 카드까지 보려면 그만큼 더 굴려야 했다. */
+  /* 배너의 단추가 [참가 신청]인지 [참가 완료]인지 가른다. 대회 화면까지 들어가야
+     알 수 있던 것을 로비에서 먼저 말해 준다 — 이미 신청했는데 [참가 신청]이 계속
+     보이면 신청이 안 된 줄 알고 한 번 더 들어간다. */
+  const htJoined = !!(ht?.tournament && user &&
+    getEntries(ht.tournament.id).some(e => e.user_id === user.id));
+
   const body = `
     ${statRow(user, ht)}
-    ${eventBanner(ht, live.holdem ?? 0)}
+    ${eventBanner(ht, htJoined)}
     ${gameSections(ht, live)}
     <div class="lobby-foot">
       ${newsSection()}

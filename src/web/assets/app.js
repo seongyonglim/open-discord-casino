@@ -1854,3 +1854,56 @@ window.__ICON = (function(){
      가로가 아닐 때는 fit 이 첫 줄에서 곧바로 돌아오므로 값이 싸다. */
   setInterval(fit, 1000);
 })();
+
+/* ── 로비의 카운트다운 ─────────────────────────────────────────────────
+   서버가 그린 "07:24"는 그린 순간의 값이라, 로비를 열어 두고 있으면 곧 거짓이 된다.
+   분 단위였을 때는 그럭저럭 견뎠지만 초까지 적기로 한 이상 세지 않으면 안 된다.
+
+   목표 시각(epoch 초)은 서버가 data-countdown 에 실어 보낸다. 스크립트가 안 돌아도
+   서버가 넣어 둔 글자가 그대로 남으므로 빈칸이 되지는 않는다 — 세는 것은 덧붙이는 일이다.
+
+   시계는 브라우저 것을 쓰지 않는다. 폰 시계가 몇 분씩 어긋나 있는 일이 드물지 않고,
+   그러면 남은 시간이 음수가 되거나 몇 분 더 남은 것처럼 보인다. 페이지를 받은 순간의
+   서버 시각을 기준으로 잡고 그 뒤로는 경과 시간만 더한다. */
+(function(){
+  /* app.js 는 <head> 에서 실행된다 — 이 시점에는 <body> 가 아직 없어서 지금 찾으면
+     언제나 빈손이다. 문서를 다 읽은 뒤에 시작한다. */
+  function start(){
+  var els = document.querySelectorAll('[data-countdown]');
+  if (!els.length) return;
+
+  /* 서버가 응답에 실어 준 시각. 없으면 브라우저 시계로 물러난다 — 어긋나 있을 수는
+     있어도, 아예 안 세는 것보다는 낫다. */
+  var meta = document.querySelector('meta[name="server-now"]');
+  var base = meta ? Number(meta.content) : Math.floor(Date.now() / 1000);
+  if (!isFinite(base) || base <= 0) base = Math.floor(Date.now() / 1000);
+  var mark = Date.now();
+
+  function p2(n){ return n < 10 ? '0' + n : String(n); }
+  function fmt(s){
+    if (s <= 0) return '00:00';
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return h > 0 ? h + ':' + p2(m) + ':' + p2(x) : p2(m) + ':' + p2(x);
+  }
+
+  function tick(){
+    var now = base + Math.floor((Date.now() - mark) / 1000);
+    for (var i = 0; i < els.length; i++) {
+      var at = Number(els[i].getAttribute('data-countdown'));
+      if (!isFinite(at)) continue;
+      var left = at - now;
+      els[i].textContent = fmt(left);
+      /* 다 셌으면 화면을 새로 받는다. 00:00 인 채로 그대로 두면 등록이 이미 닫혔는데도
+         [참가 신청]이 남아 있어, 누른 사람이 거절만 당한다. 한 번만 부른다. */
+      if (left <= 0 && !els[i].dataset.done) {
+        els[i].dataset.done = '1';
+        setTimeout(function(){ location.reload(); }, 1500);
+      }
+    }
+  }
+  tick();
+  setInterval(tick, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

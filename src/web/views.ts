@@ -404,6 +404,9 @@ ${/* 앱으로 설치되기 위한 세 줄. 매니페스트가 이름·아이콘
      iOS 는 매니페스트의 아이콘을 안 보고 이 태그만 본다. */''}
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="${THEME_BG}">
+<!-- 페이지를 만든 순간의 서버 시각(epoch 초). 카운트다운이 이걸 기준으로 센다 —
+     폰 시계가 몇 분씩 어긋나 있으면 남은 시간이 음수가 되거나 더 남은 것처럼 보인다. -->
+<meta name="server-now" content="${Math.floor(Date.now() / 1000)}">
 <link rel="apple-touch-icon" href="/icon/apple-touch-icon.png?v=${ASSET_V}">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- 브랜드용 Black Han Sans 하나만 받고, 그마저도 렌더를 막지 않게 비동기로 로드한다.

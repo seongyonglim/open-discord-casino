@@ -587,14 +587,26 @@ export interface HoldemStatus {
  * 넘기면 진행 중인 판이 화면에서 사라지는 문제가 있었다(그걸 막는 특별 규칙이 따로 있었다).
  * 이제 살아 있는 판을 곧바로 고르므로 그 문제가 생길 자리가 없다.
  *
- * 살아 있는 판이 여럿일 수는 없다 — 만드는 쪽(db/admin.ts 의 createTournament)이 막는다.
- * 그래도 최근 것을 고르게 해 둔다. 어긋난 데이터가 화면을 죽이는 것보다는 낫다.
+ * 살아 있는 판이 여럿일 수 있다. 오래도록 주석에 "만드는 쪽이 막는다"고 적혀 있었지만
+ * 사실이 아니었다 — createTournament 의 live_exists 는 *이미 시작된* 판만 보고,
+ * too_close 는 기존 대기 판의 시작 시각을 "지금"과 견줄 뿐 새로 만드는 판과 비교하지
+ * 않는다. 그래서 +3시간 판이 있어도 +6시간 판이 그대로 만들어진다.
+ *
+ * 그 상태에서 id 가 큰 쪽(나중에 만든 판)을 고르면 실제 사고가 난다: 먼저 열릴 판에
+ * 신청한 사람이 취소를 눌러도 "신청하지 않으셨습니다"로 거절당하고, 그 판은 아무도
+ * 전진시키지 않아 인원 미달 자동 취소·환불도 안 일어난다 — 참가비가 묶인다.
+ *
+ * 그래서 "지금 다뤄야 할 판"의 정의를 순서대로 적는다.
+ *   1. 이미 시작한 판이 있으면 그것이다 — 사람들이 지금 앉아 있다.
+ *   2. 아니면 가장 먼저 시작할 판. 곧 열릴 판이 지금 다룰 판이다.
+ *   3. 같으면 먼저 만든 것(id ASC).
  */
 function activeTournament(): HtRow | null {
   const live = one<HtRow>(
     `SELECT * FROM holdem_tournaments
       WHERE finished_at IS NULL AND cancelled_at IS NULL
-      ORDER BY id DESC LIMIT 1`);
+      ORDER BY (started_at IS NOT NULL) DESC, scheduled_start_at ASC, id ASC
+      LIMIT 1`);
   if (live) return live;
   /* 막 끝난 판. 결과 화면을 띄울 시간을 준다 — 끝나는 순간 화면이 대회를 떠나면
      우승 연출도 마지막 쇼다운도 못 본다.
@@ -1674,7 +1686,12 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
 
 export type RegisterError =
   'not_open' | 'late_reg_closed' | 'table_full' | 'closed' | 'already' | 'no_funds';
-export type UnregisterError = 'not_registered' | 'already_started' | 'closed';
+export type UnregisterError =
+  | 'not_registered' | 'already_started' | 'closed'
+  /* 취소를 누르는 사이에 그 판이 인원 미달로 자동 취소된 경우. 돈은 이미 돌아갔다 —
+     이걸 'closed' 와 한 덩어리로 두면 "지금은 취소할 수 없습니다" 가 떠서,
+     참가비가 묶인 줄 알고 문의가 온다. */
+  | 'auto_cancelled';
 
 /**
  * 참가 신청 취소 — 대회가 시작되기 전에만 된다.
@@ -1691,10 +1708,25 @@ export type UnregisterError = 'not_registered' | 'already_started' | 'closed';
 export function unregisterHoldem(userId: string):
   { ok: true; registered: number } | { ok: false; error: UnregisterError } {
   return tx(() => {
+    /* 전진시키기 전에 내가 어느 판에 걸려 있었는지 적어 둔다.
+       advanceHoldem 은 그냥 읽는 함수가 아니다 — 유예가 지나고 인원이 모자라면 그 자리에서
+       판을 취소하고 참가비를 전부 돌려준다. 그러고 나서 보면 나는 등록한 적 없는 사람이
+       되어 있고, 화면에는 "지금은 취소할 수 없습니다" 가 뜬다. 돈은 돌아왔는데 실패로 읽힌다. */
+    const prev = activeTournament();
+    const wasMine = prev != null && one<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+      prev.id, userId)!.n > 0;
+
     const st = advanceHoldem();
     const t = st.tournament;
     // 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다
-    if (!t || t.finished_at != null || t.cancelled_at != null) return { ok: false, error: 'closed' };
+    if (!t || t.finished_at != null || t.cancelled_at != null) {
+      if (wasMine && prev) {
+        const after = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, prev.id);
+        if (after?.cancelled_at != null) return { ok: false, error: 'auto_cancelled' };
+      }
+      return { ok: false, error: 'closed' };
+    }
 
     /* 지우기 전에 얼마를 냈는지 읽어 둔다 — 지운 뒤에는 알 방법이 없다.
        설정의 참가비를 다시 읽지 않는 이유는, 그 사이에 값이 바뀌었으면 걷은 것과 다른
