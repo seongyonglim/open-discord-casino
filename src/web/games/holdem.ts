@@ -147,6 +147,12 @@ function statePayload(st: HoldemStatus, userId: string) {
         : undefined,
       /* 바운티 몫(%) — 상금 탭이 "1인당 금액의 몇 %가 바운티인가"를 적는 데 쓴다 */
       bountyPct: isPko(t) ? bountyPctOf(t) : undefined,
+      /* 미스터리에서 봉투 하나가 받을 수 있는 최대 금액. 개별 봉투가 얼마인지는
+         감추지만(위의 bountyBySeat), "얼마까지 나올 수 있나"는 감출 것이 아니다 —
+         그게 이 모드를 고르는 이유이고, 규칙에서 계산되는 공개 값이다. */
+      mysteryTop: isMystery(t) && entries.length > 0
+        ? Math.floor(t.bounty_pool * T.envelopeRange(entries.length).hi / 100)
+        : undefined,
       /* 누가 얼마를 벌었나. 상금 탭이 규칙 설명 대신 이 표를 보여준다 — 규칙은 공지에
          적어 두고, 화면은 "지금 누가 앞서 있나"만 말하는 편이 읽힌다.
 

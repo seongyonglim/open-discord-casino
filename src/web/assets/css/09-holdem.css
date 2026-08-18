@@ -40,6 +40,29 @@
   /* 참가비 — 내 잔액에서 나가는 돈이다. 상금(금색)과 같은 색으로 두면 받는 돈인지
      내는 돈인지 구별이 안 된다. */
   .ht-grid .v.warn{color:#ffb35c}
+  /* 상금 풀 칸의 갈래 줄. 총액이 주인공이라 그 아래 작게 붙인다 — 순위와 바운티를
+     같은 크기로 적으면 셋 중 무엇이 총액인지 눈이 못 고른다. */
+  .ht-grid .ht-sub{font-size:10px;color:var(--muted);letter-spacing:-.1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* ── 모드 뱃지 ──────────────────────────────────────────────────
+     제목만으로는 이 판이 클래식인지 바운티인지 알 수 없었다. 참가를 정하기 전에
+     알아야 하는 정보라 제목 앞에 붙인다. 색으로 구분한다 — 셋을 같은 회색으로 두면
+     글자를 읽어야만 알 수 있고, 그러면 뱃지를 둔 뜻이 없다. */
+  .ht-mode{display:inline-flex;align-items:center;vertical-align:middle;
+    margin-right:8px;padding:3px 9px;border-radius:7px;
+    font-size:11px;font-weight:800;letter-spacing:.2px;line-height:1.5}
+  .ht-mode.cls{background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.34);
+    color:#cbd5e1}
+  .ht-mode.bty{background:rgba(234,140,60,.14);border:1px solid rgba(234,140,60,.45);
+    color:#f0a868}
+  .ht-mode.mys{background:rgba(168,110,240,.16);border:1px solid rgba(168,110,240,.5);
+    color:#c9a2ff}
+
+  /* 상금 구조표 아래 분배율. 표에 적힌 등수별 금액이 전부가 아니라는 것을 말해 준다 */
+  .ht-split-note{margin:8px 0 0;font-size:11.5px;color:var(--muted);line-height:1.6}
+  .ht-split-note b{color:#e4e4e7}
+  .ht-split-note b.bty{color:#f0a868}
   /* 상태 배지와 같은 줄에 선다 — 한 줄짜리 문장 하나에 위아래 여백을 두 겹 주면
      카드가 그만큼 늘어진다 */
   .ht-badge-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}

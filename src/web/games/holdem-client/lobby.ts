@@ -173,6 +173,30 @@ export const LOBBY = `    function renderLobby(){
           '<div class="ht-regs">' + slots + '</div>';
       }
 
+      /* ── 모드 뱃지 ────────────────────────────────────────────────
+         제목만 보면 이 판이 클래식인지 바운티인지 알 수 없었다. 참가를 정하기 전에
+         알아야 하는 정보다 — 바운티는 순위 상금이 절반으로 줄고 대신 남을 떨어뜨려
+         버는 판이라, 같은 "프리롤" 이라도 성격이 다르다. */
+      var isPko = t.mode === 'PKO_BOUNTY' || t.mode === 'MYSTERY_BOUNTY';
+      var isMys = t.mode === 'MYSTERY_BOUNTY';
+      var modeBadge = isMys
+        ? '<span class="ht-mode mys">미스터리 바운티<\/span>'
+        : (isPko ? '<span class="ht-mode bty">바운티<\/span>'
+                 : '<span class="ht-mode cls">클래식<\/span>');
+
+      /* ── 상금 풀 ──────────────────────────────────────────────────
+         여기는 순위 상금만 적고 있었다(t.prizePool). 바운티 대회에서는 참가비의 절반이
+         바운티로 빠지므로, 그 값은 실제로 걸린 돈의 절반이다 — 10,000P 짜리 판이
+         5,000P 로 보였다. 인게임 사이드 패널은 이미 합계로 그리고 있어서 같은 대회가
+         두 화면에서 다른 금액으로 보이기까지 했다.
+         총액을 크게 적고 갈래는 아래 작은 줄로 둔다. */
+      var btyPool = isPko ? (t.bountyPool || 0) : 0;
+      var poolTotal = (t.prizePool || 0) + btyPool;
+      var poolSub = isPko
+        ? '<span class="ht-sub">순위 ' + num(t.prizePool || 0) + 'P + 바운티 '
+            + num(btyPool) + 'P<\/span>'
+        : '';
+
       var payTable = '';
       if (rowCount) {
         var rows = '';
@@ -192,9 +216,21 @@ export const LOBBY = `    function renderLobby(){
             '<td class="nm">' + (res ? esc(res.username) : '<i>—<\i>') + '</td>' +
             '<td class="pz">' + num(amt) + 'P</td></tr>';
         }
+        /* 바운티 판은 표 아래에 분배율을 적는다. 표에 적힌 등수별 금액이 전부가
+           아니라는 것을 말해 주지 않으면, 순위 상금만 보고 "이 판은 절반짜리" 로
+           읽힌다. 미스터리는 봉투 최고액도 함께 알린다 — 그게 이 모드를 고르는 이유다. */
+        var split = '';
+        if (isPko) {
+          var btyPct = t.bountyPct || 50;
+          split = '<p class="ht-split-note">총 상금 분배: 순위 상금 <b>' + (100 - btyPct)
+            + '%<\/b> / 바운티 풀 <b>' + btyPct + '%<\/b>'
+            + (isMys && t.mysteryTop ? ' · 최고 잭팟 바운티 <b class="bty">'
+                + num(t.mysteryTop) + 'P<\/b>' : '')
+            + '<\/p>';
+        }
         payTable = '<h3 class="ht-h3">' + (resList.length ? '결과' : '상금 구조') + '</h3>' +
           '<table class="ht-prize"><thead><tr><th>순위</th><th>플레이어</th><th>상금</th></tr></thead>' +
-          '<tbody>' + rows + '<\/tbody><\/table>';
+          '<tbody>' + rows + '<\/tbody><\/table>' + split;
       }
 
       /* 안내 문구는 배지 옆으로 붙인다. 한 줄짜리 <p>로 따로 두면 그 줄 하나 때문에
@@ -203,7 +239,7 @@ export const LOBBY = `    function renderLobby(){
       lobbyEl.innerHTML =
         '<div class="ht-card">' +
           '<div class="ht-card-top">' +
-            '<div><h2>' + esc(t.title) + '</h2>' +
+            '<div><h2>' + modeBadge + esc(t.title) + '</h2>' +
               '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
                 ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p></div>' +
             '<div class="ht-badge-wrap">' + badge +
@@ -213,7 +249,8 @@ export const LOBBY = `    function renderLobby(){
              여섯 줄이 같은 무게로 늘어서서 무엇을 봐야 할지 정해지지 않았다. */
           '<div class="ht-grid">' +
             '<div><span class="k">참가자</span><span class="v">' + t.registered + ' / ' + t.maxPlayers + '</span></div>' +
-            '<div><span class="k">상금 풀</span><span class="v gold">' + num(t.prizePool) + 'P</span></div>' +
+            '<div><span class="k">상금 풀</span><span class="v gold">' + num(poolTotal) + 'P</span>'
+              + poolSub + '</div>' +
             /* 참가비가 있으면 그 자리에 참가비를 적는다. "1인당 배수"는 프리롤에서
                서비스가 얹어 주는 금액이라 참가비 대회에서는 뜻이 없다 — 두 값을 나란히
                두면 어느 쪽이 내 돈인지 헷갈린다. */
