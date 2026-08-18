@@ -25,18 +25,22 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
                : '<span class="ht-mode cls">클래식<\\/span>');
     }
     /* 이월 배너 문구.
-       금액은 "총 상금" 이 아니라 1인당으로 적는다 — 등록 전에는 몇 명이 올지 모르므로
-       총액이 존재하지 않는다. 총액을 적으려면 인원을 가정해야 하고, 그 가정이 틀리면
-       화면이 거짓말을 한 것이 된다. 인당 금액은 지금 확정된 값이다. */
+       "최소 인원 미달로" 대신 "열리지 못한 회차가 얹혀" 를 쓴다 — 미달은 원인의 이름일
+       뿐이고, 읽는 사람이 알고 싶은 것은 "지난번에 안 열려서 그만큼 쌓였다" 는 사실이다.
+
+       "총 상금" 은 쓰지 않는다. 등록 전에는 몇 명이 올지 모르므로 총액이 아직 없는 값이고,
+       적으려면 인원을 가정해야 한다 — 그 가정이 틀리면 화면이 거짓말을 한 것이 된다.
+       대신 이 제품이 이미 쓰는 말로 적는다: 규칙 안내가 "참가자 1인당 N P 가 상금 풀에
+       쌓입니다" 라고 하고 있으므로 여기서도 1인당 · 적립이다. 배수는 뒤에 붙여 "평소의
+       몇 배" 로 맥락만 준다 — 숫자가 먼저 오고 이유가 뒤에 오는 것이 읽기 순서다. */
     function nextRollBanner(up){
       var s = up.rolloverSkips || 0;
       if (!s) return '';
       return '<div class="ht-roll">' +
-        '<span class="ht-roll-ico">' + (window.__ICON ? window.__ICON.flame : '') + '<\\/span>' +
-        '<span class="ht-roll-txt">이월 <b>' + s + '회<\\/b> 누적 — 미달 이월로 상금이 '
-          + '<b>' + (s + 1) + '배<\\/b>'
-          + (up.perHead ? ' · 1인당 <b>' + num(up.perHead) + 'P<\\/b>' : '')
-          + ' 적용됩니다<\\/span>' +
+        '<span class="ht-roll-tag">이월 ' + s + '회<\\/span>' +
+        '<span class="ht-roll-txt">열리지 못한 회차가 얹혀 '
+          + (up.perHead ? '1인당 <b>' + num(up.perHead) + 'P<\\/b> 적립' : '상금이 커집니다')
+          + ' — 평소의 <b>' + (s + 1) + '배<\\/b><\\/span>' +
       '<\\/div>';
     }
 
@@ -61,11 +65,15 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
             /* 2행 — 대회 이름. 예고 카드에는 이름이 아예 없어서 무슨 대회를 기다리는지
                알 수 없었다(로비 카드에는 있는데 여기만 빠져 있었다). */
             (up.title ? '<h2 class="ht-next-title">' + esc(up.title) + '<\/h2>' : '') +
+            /* 3행 — 라벨 · 숫자 · 일정 순으로 쌓는다.
+               예전에는 "8시간 21분" 아래에 "등록 시작까지 남았습니다 · 등록 09:00 …" 가
+               한 줄로 붙어 있었다. 무엇까지 남은 시간인지가 숫자 뒤에 오니 숫자를 먼저
+               읽고 나서 되짚어야 했고, 그 뒤에 일정까지 이어 붙어 한 줄이 세 가지를
+               말했다. 라벨을 위로 올리면 읽는 순서가 뜻의 순서와 같아진다. */
+            '<div class="ht-next-label">' + esc(opened ? '시작까지' : '등록 시작까지') + '<\/div>' +
             '<div class="ht-next-count">' + esc(dur((opened ? up.startAt : up.regOpenAt) - now)) + '<\/div>' +
-            '<div class="ht-next-sub">' +
-              esc(opened ? '시작까지 남았습니다' : '등록 시작까지 남았습니다') + ' · 등록 ' +
-              esc(kstClock(up.regOpenAt)) + ' · 시작 ' + esc(kstClock(up.startAt)) + ' (KST)' +
-            '<\/div>' +
+            '<div class="ht-next-sub">등록 ' + esc(kstClock(up.regOpenAt)) +
+              ' · 시작 ' + esc(kstClock(up.startAt)) + ' (KST)<\/div>' +
             /* ── 등록 전에도 규칙은 보여준다 ────────────────────────
                예전에는 남은 시간만 적었다. 그런데 갈지 말지를 정하는 데 필요한 것은
                "언제" 가 아니라 "얼마짜리 판인가 · 몇 명이 모여야 열리나 · 어떤 방식인가"
@@ -287,12 +295,17 @@ export const LOBBY = `    function renderLobby(){
          못 열린 회차만큼 프리롤 배수가 커진다(db/rollover.ts). 금액에는 이미 반영돼
          있으므로 여기서 다시 계산하지 않고, "왜 평소보다 큰가"만 말한다 — 안 적으면
          상금이 갑자기 네 배가 된 이유를 아무도 모른다. 이모지는 안 쓴다. */
+      /* 상금 풀 총액이 아니라 1인당으로 적는다. 총액은 인원에 비례하므로 아직 아무도
+         신청하지 않았으면 0P 다 — "상금 풀 0P · 평소의 3배" 는 이월을 알리려던 배너가
+         정반대로 읽히는 문장이다. 1인당 금액은 인원과 무관하게 지금 확정돼 있고,
+         예고 카드와도 같은 말이 된다. */
       var skips = t.rolloverSkips || 0;
       var rollBanner = skips > 0
         ? '<div class="ht-roll">' +
-            '<span class="ht-roll-ico">' + (window.__ICON ? window.__ICON.flame : '') + '<\/span>' +
-            '<span class="ht-roll-txt">이월 <b>' + skips + '회<\/b> 누적 — 이번 판 상금이 '
-              + '<b>' + (skips + 1) + '배<\/b>입니다<\/span>' +
+            '<span class="ht-roll-tag">이월 ' + skips + '회<\/span>' +
+            '<span class="ht-roll-txt">열리지 못한 회차가 얹혀 1인당 <b>'
+              + num(t.multiplier || 0) + 'P<\/b> 적립 — 평소의 <b>'
+              + (skips + 1) + '배<\/b><\/span>' +
           '<\/div>'
         : '';
 
