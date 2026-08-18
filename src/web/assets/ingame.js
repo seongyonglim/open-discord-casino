@@ -79,26 +79,9 @@ window.__IG = (function(){
     } catch (e) { /* 지원하지 않는 기기 — 사용자가 돌리는 대로 보여 준다 */ }
   }
 
-  /* 아이콘은 그림 문자를 안 쓴다. 이모지는 기기마다 제 글꼴로 그려져서 — 안드로이드와
-     iOS 가 서로 다른 그림을 내고, 크기·굵기·색이 우리 화면과 따로 논다. 선 굵기와
-     색(currentColor)을 우리가 정하는 SVG 로 둔다. 이 사이트의 다른 아이콘과 같은 규격
-     (24 격자 · stroke 2 · 둥근 끝)이다. */
-  function ico(d, extra){
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
-      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-      + (extra || '') + '<path d="' + d + '"/></svg>';
-  }
-  var ICON = {
-    chat: ico('M20.5 11.7a7.7 7.7 0 0 1-8.2 7.7 8.6 8.6 0 0 1-2.9-.5L4.5 20.5l1.6-4.6a7.5 7.5 0 0 1-.8-3.4 7.7 7.7 0 0 1 7.7-7.7 7.7 7.7 0 0 1 7.5 6.9z'),
-    /* 톱니를 선으로 그렸더니 해처럼 보였다. 조절 손잡이(슬라이더)로 바꾼다 —
-       선이 적어 작은 크기에서도 뭉개지지 않고 "설정" 으로 바로 읽힌다. */
-    gear: ico('M3.5 8h9M16.5 8h4M3.5 16h4M11.5 16h9',
-      '<circle cx="14.5" cy="8" r="2.3"/><circle cx="9.5" cy="16" r="2.3"/>'),
-    close: ico('M17.5 6.5l-11 11M6.5 6.5l11 11'),
-    people: ico('M2.8 19.2c0-3 2.4-4.9 5.4-4.9s5.4 1.9 5.4 4.9M16.2 6.6a3.1 3.1 0 0 1 0 5.6M17.6 14.6c2 .7 3.6 2.3 3.6 4.6',
-      '<circle cx="8.2" cy="8.4" r="3.1"/>'),
-    clock: ico('M12 7.6V12l2.9 1.7', '<circle cx="12" cy="12" r="8.4"/>'),
-  };
+  /* 아이콘은 app.js 가 한 벌만 정의한다(window.__ICON) — /app.js 는 app.js + ingame.js
+     를 이어 붙인 것이라 app.js 가 먼저 돈다. 여기서 또 만들면 두 벌이 되어 언젠가 어긋난다. */
+  var ICON = window.__ICON;
 
   return { key: key, land: land, port: port, on: on, subscribe: subscribe, lock: lock,
            ICON: ICON };

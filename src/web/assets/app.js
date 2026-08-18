@@ -1,3 +1,33 @@
+/* ── 아이콘 ───────────────────────────────────────────────────────────
+   그림 문자(이모지)를 안 쓴다. 기기마다 제 글꼴로 그려져서 안드로이드와 iOS 가 서로
+   다른 그림을 내고, 크기·굵기·색이 우리 화면과 따로 논다. 선 굵기와 색(currentColor)을
+   우리가 정하는 SVG 로 둔다.
+
+   여기(app.js)에 두는 이유는 순서 때문이다. /app.js 는 app.js + ingame.js 를 이어
+   붙인 것이라 app.js 가 먼저 돈다. ingame.js 에 두면 채팅 도크가 만들어질 때 아직
+   없을 수 있다 — 지금은 DOMContentLoaded 뒤라 괜찮지만 그런 순서 의존은 언젠가 깨진다.
+   한 벌만 두고 양쪽이 같은 것을 본다.
+
+   규격: 24 격자 · stroke 2 · 둥근 끝. 이 사이트의 다른 아이콘과 같다. */
+window.__ICON = (function(){
+  function ico(d, extra){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + (extra || '') + '<path d="' + d + '"/></svg>';
+  }
+  return {
+    chat: ico('M20.5 11.7a7.7 7.7 0 0 1-8.2 7.7 8.6 8.6 0 0 1-2.9-.5L4.5 20.5l1.6-4.6a7.5 7.5 0 0 1-.8-3.4 7.7 7.7 0 0 1 7.7-7.7 7.7 7.7 0 0 1 7.5 6.9z'),
+    /* 톱니를 선으로 그렸더니 해처럼 보였다. 조절 손잡이로 바꾼다 — 선이 적어
+       작은 크기에서도 안 뭉개지고 "설정" 으로 바로 읽힌다. */
+    gear: ico('M3.5 8h9M16.5 8h4M3.5 16h4M11.5 16h9',
+      '<circle cx="14.5" cy="8" r="2.3"/><circle cx="9.5" cy="16" r="2.3"/>'),
+    close: ico('M17.5 6.5l-11 11M6.5 6.5l11 11'),
+    people: ico('M2.8 19.2c0-3 2.4-4.9 5.4-4.9s5.4 1.9 5.4 4.9M16.2 6.6a3.1 3.1 0 0 1 0 5.6M17.6 14.6c2 .7 3.6 2.3 3.6 4.6',
+      '<circle cx="8.2" cy="8.4" r="3.1"/>'),
+    clock: ico('M12 7.6V12l2.9 1.7', '<circle cx="12" cy="12" r="8.4"/>'),
+  };
+})();
+
 /* 승리 효과음 — 외부 음원 파일 없이 Web Audio로 합성한 짧고 조용한 2음 차임.
    브라우저 자동재생 정책 때문에 첫 사용자 조작 시점에 오디오 컨텍스트를 미리 열어두고(unlock),
    이후 타이머로 공개되는 결과(사다리 등)에서도 소리가 나도록 한다. 실패하면 조용히 무시. */
@@ -1303,7 +1333,7 @@
          아무도 안 열고 아무도 안 쓰는 쪽으로 굴러간다.
          마지막 줄을 그 자리에 그대로 띄우면, 접힌 채로도 대화가 보인다. */
       '<button type="button" class="chat-tab" aria-label="채팅 열기">'
-        + '<i class="chat-ico" aria-hidden="true">💬</i>'
+        + '<i class="chat-ico" aria-hidden="true">' + window.__ICON.chat + '</i>'
         + '<span class="chat-last"><span class="chat-last-e">채팅</span></span>'
         + '<i class="chat-badge" hidden></i>'
       + '</button>'
