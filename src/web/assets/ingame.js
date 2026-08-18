@@ -282,24 +282,36 @@
 
   function movedGrid(){ return document.querySelector('.ig-body'); }
 
-  /* 타이머를 상단바로 옮긴다. 원래 자리를 적어 두고 세로로 돌리면 되돌린다. */
-  var clockHome = null;
+  /* 타이머를 상단바로 옮긴다. 원래 자리를 적어 두고 세로로 돌리면 되돌린다.
+
+     옮긴 노드를 클래스로 다시 찾으면 안 된다. 세로로 돌아올 때 IIFE 는 등록 순서대로
+     도는데, 맨 위 상단바 IIFE 가 먼저 .ig-bar 를 통째로 removeChild 한다 — 그 안에
+     들어가 있던 시계까지 같이 떨어져 나간다. 그 다음에 여기가 querySelector 로 찾으면
+     이미 문서에 없어서 null 이고, 그대로 return 해서 시계가 영영 안 돌아왔다.
+     (사다리 카운트다운이 가로 한 번 갔다 오면 사라지던 것이 이것이다. 에러는 안 났다.
+      사다리 코드는 잡아 둔 변수에 textContent 만 쓰므로 떨어져 나간 노드에 조용히 쓴다.)
+
+     그래서 노드 자체를 들고 있는다. 떨어져 나간 뒤라도 clockHome.parent(보드)는
+     문서에 살아 있으므로 — 그리드 IIFE 가 우리보다 먼저 제자리로 돌려놓는다 —
+     그 자리에 다시 꽂으면 된다. */
+  var clockHome = null, clockEl = null;
   function moveClock(){
     var bar = document.querySelector('.ig-bar');
     var st = document.querySelector('.stage-status');
     if (!bar || !st) return;
     if (st.parentNode === bar) return;
     clockHome = { parent: st.parentNode, next: st.nextSibling };
+    clockEl = st;
     st.classList.add('ig-clock');
     var name = bar.querySelector('.ig-name');
     bar.insertBefore(st, name ? name.nextSibling : bar.firstChild);
   }
   function restoreClock(){
-    var st = document.querySelector('.ig-clock');
+    var st = clockEl || document.querySelector('.ig-clock');
     if (!st || !clockHome) return;
     st.classList.remove('ig-clock');
     clockHome.parent.insertBefore(st, clockHome.next);
-    clockHome = null;
+    clockHome = null; clockEl = null;
   }
 
   /* 채팅 탭. 참가자·랭킹 탭 옆에 하나를 더 만들고, 누르면 채팅창을 연다. */
