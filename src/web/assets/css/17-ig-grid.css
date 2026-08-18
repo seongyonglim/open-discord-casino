@@ -47,10 +47,15 @@
     .ig-cell > .game-side{width:auto;position:static;padding:0;background:none;
       flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
-    /* ══ 사다리 — 5 : 4 : 3 ═══════════════════════════════════ */
-    .ig-body.ig-ladder .ig-board{grid-column:span 5}
-    .ig-body.ig-ladder .ig-bet{grid-column:span 4}
-    .ig-body.ig-ladder .ig-side{grid-column:span 3}
+    /* ══ 사다리 — 판 | 조작부 두 칸 ═══════════════════════════
+       칸이 셋이면 조작부가 화면 한가운데다. 폰을 두 손으로 잡으면 엄지는 화면
+       양 끝에 있어서 가운데는 손이 안 닿는다 — 판을 보려고 만든 배치가 조작을
+       불편하게 만들고 있었다. 그래서 참가인원을 서랍으로 빼고 둘로 나눈다.
+
+       조작부는 오른쪽 끝에 고정 폭으로 붙인다. 여기만 오른손 엄지가 닿는다. */
+    .ig-body.ig-ladder{grid-template-columns:1fr minmax(272px,33%)}
+    .ig-body.ig-ladder .ig-board{grid-column:1}
+    .ig-body.ig-ladder .ig-bet{grid-column:2}
 
     /* ── 좌: 사다리판 ─────────────────────────────────────────
        최근 결과 34px 고정 + 그림이 나머지 전부. 그림은 viewBox 를 가진 SVG 라
@@ -205,4 +210,60 @@
     html.ig-grid .ig-cell > .game-side{position:static;top:auto;right:auto;bottom:auto;
       left:auto;width:auto;padding:0;background:none;z-index:auto;
       flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 참가인원 서랍 ────────────────────────────────────────
+       칸에서 빼내 오른쪽 밖에 세워 두고, 👥 를 누르면 밀려 나온다. 격자에서 빠지므로
+       (position:fixed 는 흐름 밖이다) 남은 두 칸이 자동으로 화면을 나눠 갖는다.
+
+       상단바(40px) 아래에서 시작한다 — 서랍이 상단바를 덮으면 그 안의 👥 를 다시
+       누를 수 없어 닫는 길이 가림막 하나뿐이 된다. */
+    html.ig-grid .ig-cell.ig-side{position:fixed;top:40px;right:0;bottom:0;
+      width:min(320px,44vw);z-index:60;transform:translateX(102%);
+      transition:transform .18s ease;border-radius:12px 0 0 12px;
+      background:#0e0e10;box-shadow:-14px 0 30px rgba(0,0,0,.55)}
+    html.ig-grid .ig-cell.ig-side.ig-open{transform:none}
+
+    /* 가림막 — 서랍 밖 아무 데나 눌러도 닫힌다. 좁은 화면에서 X 를 정확히
+       누르게 하면 두 번 만에 닫힌다. */
+    .ig-scrim{position:fixed;left:0;right:0;top:40px;bottom:0;z-index:55;
+      background:rgba(0,0,0,.5);opacity:0;pointer-events:none;
+      transition:opacity .18s ease}
+    .ig-scrim.on{opacity:1;pointer-events:auto}
+
+    /* 서랍은 넓어졌으므로 목록 글자를 다시 키운다 — 219px 칸에 맞춰 줄여 둔 값이다 */
+    html.ig-grid .ig-side.ig-open .sp-mid{font-size:12px}
+    html.ig-grid .ig-side.ig-open .sp-p{font-size:11.5px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 조작부 세로 순서: 정보 → 선택 → 금액 → 실행 ──────────
+       엄지는 화면 아래쪽에 있다. 그래서 자주 누르는 것일수록 아래에 둔다.
+       읽기만 하는 배당은 맨 위, 실행 버튼은 맨 아래다.
+
+       DOM 순서는 금액 → 예측 → 배당 → 버튼이라 서버 HTML 을 고쳐야 할 것 같지만,
+       .field-grid 를 display:contents 로 풀면 그 안의 .field 둘이 카드의 직계
+       형제가 되고, 그때부터 order 로 자리를 정할 수 있다. HTML 은 그대로 둔다. */
+    .ig-ladder .ig-bet .field-grid{display:contents}
+    .ig-ladder .ig-bet .payout-line{order:1;flex:none}
+    .ig-ladder .ig-bet .field:nth-child(2){order:2}   /* 예측 — 출발/도착 */
+    .ig-ladder .ig-bet .field:nth-child(1){order:3}   /* 금액 — 인풋 ½ 2x MAX */
+    .ig-ladder .ig-bet .btn-primary,
+    .ig-ladder .ig-bet .game-action{order:4}
+    .ig-ladder .ig-bet .game-msg{order:5}
+
+    /* 네 덩어리를 위아래로 벌린다. 남는 높이가 사이 간격으로 가서
+       각 덩어리가 제 높이를 지키고 겹칠 자리가 없다. */
+    .ig-ladder .ig-bet .card{justify-content:space-between;gap:6px}
+
+    /* 배당 줄은 읽는 정보다 — 작은 카드로 묶어 조작부와 성격을 구분한다 */
+    .ig-ladder .ig-bet .payout-line{display:flex;justify-content:space-between;
+      align-items:center;height:30px;padding:0 10px;box-sizing:border-box;
+      background:rgba(212,175,55,.08);border:1px solid var(--gold-dim);
+      border-radius:8px;font-size:11.5px;text-align:left}
+
+    /* 실행 버튼 — 우하단, 엄지가 가장 쉽게 닿는 자리 */
+    .ig-ladder .ig-bet .btn-primary,
+    .ig-ladder .ig-bet .game-action{height:48px;font-size:15px}
   }

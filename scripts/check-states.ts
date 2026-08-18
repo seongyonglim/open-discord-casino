@@ -89,12 +89,32 @@ const PROBE = `(() => {
     }
   }
 
-  /* 눌러야 할 것들이 화면 안에 있는가 */
+  /* 눌러야 할 것들이 화면 안에 있는가
+
+     닫아 둔 서랍 안은 빼고 센다. 서랍은 화면 밖에 세워 두는 것이 정상이고, 열면
+     들어온다 — 그 열린 상태는 아래에서 따로 검사한다. 다만 예외를 넓게 두면 검사가
+     무의미해지므로 "변형으로 통째로 화면 밖에 나가 있는 조상" 으로만 좁힌다.
+     카드 안에서 아래로 밀려 잘린 버튼(블랙잭 액션이 그랬다)은 조상이 화면 안에
+     있으므로 그대로 걸린다. */
+  const inClosedDrawer = el => {
+    let p = el.parentElement;
+    while (p && p !== document.body) {
+      const cs = getComputedStyle(p);
+      if (cs.transform && cs.transform !== 'none') {
+        const r = p.getBoundingClientRect();
+        if (r.left >= vw - 1 || r.right <= 1 || r.top >= vh - 1 || r.bottom <= 1) return true;
+      }
+      p = p.parentElement;
+    }
+    return false;
+  };
+
   const btnOut = [];
   for (const el of document.querySelectorAll('button:not([hidden]), .coin, .chip-btn, .bja, .hta, .market, .gs-pill')) {
     const b = el.getBoundingClientRect();
     if (b.width < 3 || b.height < 3) continue;
     if (b.bottom > vh + 1 || b.top < 0 || b.right > vw + 1) {
+      if (inClosedDrawer(el)) continue;
       btnOut.push((el.className || el.tagName) + ' ' + Math.round(b.top) + '~' + Math.round(b.bottom));
     }
   }
@@ -197,6 +217,9 @@ async function main(): Promise<void> {
       { name: '예측함', act: `(()=>{const bs=document.querySelectorAll('.predict-row button, .pred-btn, .field-grid button');
           if(bs[0])bs[0].click(); if(bs[2])bs[2].click(); return true})()` },
       { name: '베팅함', act: `(()=>{const b=document.querySelector('.btn-primary'); if(b)b.click(); return true})()` },
+      /* 서랍은 닫혀 있을 때 화면 밖이라 위 검사에서 빠진다. 열어서 안이 멀쩡한지 본다 —
+         빼기만 하고 끝내면 서랍이 깨져도 아무도 모른다. */
+      { name: '참가인원열림', act: `(()=>{const b=document.querySelector('.ig-people'); if(b)b.click(); return true})()` },
     ] },
   ];
 

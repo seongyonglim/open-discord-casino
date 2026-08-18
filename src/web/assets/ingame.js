@@ -270,13 +270,15 @@
   else start();
 })();
 
-/* ── 인게임 격자의 마무리: 타이머를 헤더로, 채팅을 탭으로 ────────────────
+/* ── 인게임 격자의 마무리: 타이머를 헤더로, 참가인원을 서랍으로 ──────────
    타이머는 판 위에 떠 있었다. 판을 가리지 않으려고 절대 위치로 띄웠는데, 그러면
    사다리 그림과 겹치는 자리를 계속 피해 다녀야 한다. 헤더에는 그 자리가 이미 있다 —
    회차와 남은 시간은 "지금 무슨 판인가" 라서 게임 이름 옆이 제자리다.
 
-   채팅은 오른쪽 칸에 탭으로 넣는다. 지금까지는 상단바의 💬 로 열었는데, 참가자·랭킹과
-   같은 성격(옆에서 흐르는 것)이므로 같은 자리에서 고르는 것이 맞다. */
+   참가인원·랭킹은 세 번째 칸을 통째로 쓰고 있었다. 폰을 두 손으로 잡으면 조작부가
+   화면 한가운데로 밀려 엄지가 안 닿는다 — 칸이 셋이면 가운데가 조작부다. 그래서
+   참가인원은 상단바 👥 로 여는 서랍으로 빼고, 화면은 판(왼쪽) · 조작부(오른쪽) 둘로
+   나눈다. 조작부가 오른쪽 끝에 붙어야 오른손 엄지가 닿는다. */
 (function(){
   var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
 
@@ -314,27 +316,61 @@
     clockHome = null; clockEl = null;
   }
 
-  /* 채팅 탭. 참가자·랭킹 탭 옆에 하나를 더 만들고, 누르면 채팅창을 연다. */
-  function addChatTab(){
-    var tabs = document.querySelector('.ig-side .sp-tabs');
-    if (!tabs || tabs.querySelector('.ig-chat-tab')) return;
+  /* 채팅 탭은 두지 않는다. 상단바에 이미 💬 가 있어서 같은 창을 두 군데서 열게 되고,
+     좁은 칸에 탭만 셋으로 늘어 참가인원·랭킹이 좁아졌다. 여는 자리는 하나면 된다.
+
+     ── 참가인원 서랍
+     칸에서 빼내 오른쪽에서 밀려 나오게 한다. 열고 닫는 단추는 상단바에 둔다.
+     닫기는 서랍 밖 아무 데나 눌러도 되게 가림막을 깐다 — 좁은 화면에서 X 를
+     정확히 누르게 하면 두 번 만에 닫힌다. */
+  function drawer(){ return document.querySelector('.ig-side'); }
+  function scrim(){
+    var s = document.querySelector('.ig-scrim');
+    if (!s) {
+      s = document.createElement('div');
+      s.className = 'ig-scrim';
+      s.addEventListener('click', closeDrawer);
+      document.body.appendChild(s);
+    }
+    return s;
+  }
+  function openDrawer(){
+    var d = drawer(); if (!d) return;
+    d.classList.add('ig-open');
+    scrim().classList.add('on');
+    var b = document.querySelector('.ig-people');
+    if (b) b.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer(){
+    var d = drawer(); if (d) d.classList.remove('ig-open');
+    var s = document.querySelector('.ig-scrim'); if (s) s.classList.remove('on');
+    var b = document.querySelector('.ig-people');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+  function addPeopleBtn(){
+    var bar = document.querySelector('.ig-bar');
+    if (!bar || !drawer() || bar.querySelector('.ig-people')) return;
     var b = document.createElement('button');
     b.type = 'button';
-    b.className = 'sp-tab ig-chat-tab';
-    b.textContent = '채팅';
+    b.className = 'ig-btn ig-people';
+    b.setAttribute('aria-label', '참가인원');
+    b.setAttribute('aria-expanded', 'false');
+    b.textContent = '👥';
     b.addEventListener('click', function(){
-      if (window.casinoChat && window.casinoChat.open) window.casinoChat.open();
+      var d = drawer();
+      if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
     });
-    tabs.appendChild(b);
+    /* 💬 왼쪽에 둔다 — 사람 · 말 순서가 읽기 좋다 */
+    bar.insertBefore(b, bar.querySelector('.ig-chat'));
   }
-  function removeChatTab(){
-    var b = document.querySelector('.ig-chat-tab');
-    if (b) b.remove();
+  function removePeopleBtn(){
+    var b = document.querySelector('.ig-people'); if (b) b.remove();
+    var s = document.querySelector('.ig-scrim'); if (s) s.remove();
   }
 
   function apply(){
-    if (movedGrid() && window.matchMedia(MQ).matches) { moveClock(); addChatTab(); }
-    else { restoreClock(); removeChatTab(); }
+    if (movedGrid() && window.matchMedia(MQ).matches) { moveClock(); addPeopleBtn(); }
+    else { restoreClock(); closeDrawer(); removePeopleBtn(); }
   }
 
   function start(){
