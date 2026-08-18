@@ -231,6 +231,66 @@ async function main(): Promise<void> {
     }
   }
 
+  /* ── 돌려도 잃지 않는가 ────────────────────────────────────────────────
+     인게임 껍데기는 이미 있는 요소를 다른 자리로 옮겨 담는다 — 잔액·음량·규칙·
+     타이머·[로비]. 옮긴 것은 되돌려야 하는데, 그 되돌리기가 세 번 조용히 깨졌다.
+
+       1. 상단바를 먼저 지우는 바람에 그 안의 시계가 같이 떨어져 나갔다
+       2. 되돌릴 자리로 기억한 "뒤 형제" 가 그새 지워져 insertBefore 가 예외를 냈다
+       3. 기억한 "부모" 가 문서에서 떨어져 나간 옛 상단바였다 — 거기 넣으니 사라졌다
+
+     셋 다 에러가 안 났다. 화면에서 조용히 없어질 뿐이라 눈으로 봐야 알았고, 위의
+     상태 검사들은 "있는 것" 만 재기 때문에 하나도 못 잡았다. 그래서 없어진 것을
+     본다 — 돌리기 전에 세어 둔 요소가 돌린 뒤에도 문서에 붙어 있고 보이는가. */
+  /* 자리가 아니라 존재를 본다. 옮기는 것이 정상이므로 "원래 자리에 있나" 로 물으면
+     제대로 옮긴 것까지 사라졌다고 잡는다 — 가로에서 [로비] 탭은 상단바로 가는 것이
+     맞다. 우리가 알고 싶은 것은 "화면 어딘가에 살아 있나" 다. */
+  const KEEP = ['.profwrap', '.volwrap', '.gs-help', 'a.tab[href="/"]', '#lCountdown'];
+  const alive = `(() => {
+    const out = {};
+    for (const s of ${JSON.stringify(KEEP)}) {
+      const e = document.querySelector(s);
+      out[s] = !e ? 'none' : (!e.isConnected ? 'detached'
+        : (e.getBoundingClientRect().width > 0 ? 'ok' : 'hidden'));
+    }
+    return out;
+  })()`;
+  /* 화면 크기만 바꾸면 껍데기가 안 따라오는 수가 있다 — setDeviceMetricsOverride 가
+     resize 를 안 흘려 주면 껍데기는 세로 상태 그대로고, 그러면 이 검사는 아무것도
+     안 보면서 통과한다(실제로 그랬다: 브라우저에서는 버그가 나는데 검사는 초록이었다).
+     그래서 크기를 바꾼 뒤 resize 를 직접 때리고, 껍데기가 실제로 그 방향으로
+     넘어갔는지를 먼저 확인한다. */
+  const metrics = async (w: number, h: number) => {
+    await send('Emulation.setDeviceMetricsOverride',
+      { width: w, height: h, deviceScaleFactor: 2, mobile: true });
+    await sleep(500);
+    await evalIn(`window.dispatchEvent(new Event('resize')), 1`);
+    await sleep(1400);
+  };
+  const shellMode = `document.documentElement.className.match(/ig-(port|land)/)?.[1] ?? 'off'`;
+
+  await metrics(412, 915);
+  await go(`${BASE}/games/ladder`);
+  const before = await evalIn(alive);
+  for (const [orient, w, h] of [['가로', 915, 412], ['세로', 412, 915],
+                                ['가로', 915, 412], ['세로', 412, 915]] as [string, number, number][]) {
+    await metrics(w, h);
+    /* 껍데기가 실제로 넘어갔는지 먼저 본다 — 안 넘어갔으면 아래 검사는 의미가 없다 */
+    const want = orient === '가로' ? 'land' : 'port';
+    const got = await evalIn(shellMode);
+    ck(`ladder/${orient}로 돌린 뒤`, `껍데기가 ${orient}로 바뀐다`, got === want, `ig-${got}`);
+    const now = await evalIn(alive);
+    /* "보이나" 가 아니라 "문서에 있나" 로 본다. 접어 둔 것(⚙️ 안의 음량·규칙)은
+       평소에도 display:none 이라 안 보이는 것이 정상이고, 보이는지로 재면 기준값이
+       이미 hidden 이라 사라져도 그냥 넘어간다 — 실제로 그래서 이 검사가 버그를
+       놓쳤다. 우리가 잡으려는 고장은 "되돌리다 문서 밖으로 나갔다" 이다. */
+    const lost = KEEP.filter(s => before?.[s] !== 'none'
+        && (now?.[s] === 'none' || now?.[s] === 'detached'))
+      .map(s => `${s}: ${now?.[s]}`);
+    ck(`ladder/${orient}로 돌린 뒤`, '옮긴 것이 그대로 있다', lost.length === 0, lost.join(' / '));
+  }
+  await shot('ladder-회전왕복');
+
   ws.close();
   console.log(`\n${'─'.repeat(52)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);

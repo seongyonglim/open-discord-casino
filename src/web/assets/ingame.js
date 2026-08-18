@@ -124,7 +124,7 @@ window.__IG = (function(){
      때만 그 앞에 넣고, 아니면 끝에 붙인다. */
   function giveBack(el, key){
     var h = home[key];
-    if (!el || !h || !h.parent) return;
+    if (!el || !h || !h.parent || !h.parent.isConnected) return;
     h.parent.insertBefore(el, (h.next && h.next.parentNode === h.parent) ? h.next : null);
   }
 
@@ -137,16 +137,12 @@ window.__IG = (function(){
     var vol   = take(document.querySelector('.volwrap'), 'vol');
     var help  = take(document.querySelector('.game-switch .gs-help'), 'help');
 
-    /* 뒤로가기.
-       가로: 하단 탭바를 안 쓰므로 그 [로비] 탭을 그대로 꺼내 온다.
-       세로: 탭바를 살려 두므로 꺼내 오면 네 칸 중 하나가 빈다. 새로 만든다. */
-    if (mode === 'port') {
-      var back = document.createElement('a');
-      back.className = 'ig-back ig-back-new';
-      back.href = '/';
-      back.textContent = '← 로비';
-      bar.appendChild(back);
-    } else {
+    /* 뒤로가기는 가로에만 둔다.
+       가로: 하단 탭바를 통째로 걷으므로 나갈 길이 없다. 그 [로비] 탭을 꺼내 온다.
+       세로: 탭바를 살려 두었고 거기 [로비] 가 이미 있다. 위에 하나 더 두면 같은
+             일을 하는 것이 두 군데가 되고, 그것도 엄지가 제일 안 닿는 왼쪽 위다.
+             폰에서 나가는 길은 아래에 있는 것이 맞다. 56px 도 돌려받는다. */
+    if (mode !== 'port') {
       var lobby = take(document.querySelector('header nav a.tab[href="/"]'), 'lobby');
       if (lobby) { lobby.classList.add('ig-back'); bar.appendChild(lobby); }
     }
@@ -179,9 +175,6 @@ window.__IG = (function(){
 
   function tearDown(){
     if (!bar) return;
-    /* 세로에서 만든 뒤로가기는 우리 것이라 되돌릴 자리가 없다 — 그냥 지운다 */
-    var made = document.querySelector('.ig-back-new');
-    if (made) made.remove();
     giveBack(document.querySelector('.ig-back'), 'lobby');
     giveBack(document.querySelector('.ig-bar .profwrap'), 'prof');
     giveBack(document.querySelector('.ig-vol'), 'vol');
@@ -438,6 +431,11 @@ window.__IG = (function(){
      형제가 아직 그 부모의 자식일 때만 그 앞에 넣고, 아니면 끝에 붙인다. */
   function putBack(node, parent, next){
     if (!node || !parent) return;
+    /* 기억해 둔 부모가 이미 문서에서 떨어져 나갔으면 되돌리지 않는다. 거기에 넣으면
+       화면에서 사라진다 — 실제로 그랬다. 세로에서 ⚙️ 로 접을 때 원래 부모로 적어 둔
+       것이 그때의 상단바인데, 가로로 돌면 상단바를 통째로 새로 짓는다. 그 사이
+       상단바 쪽 코드가 음량·규칙을 새 상단바에 이미 옮겨 놓았으므로 그냥 두면 된다. */
+    if (!parent.isConnected) return;
     parent.insertBefore(node, (next && next.parentNode === parent) ? next : null);
   }
 
@@ -486,9 +484,8 @@ window.__IG = (function(){
     var s = document.querySelector('.ig-scrim'); if (s) s.remove();
   }
 
-  /* 시트에 닫기 단추를 단다. 여는 자리(라이브 띠)가 시트에 가려서 다시 눌러 닫을 수가
-     없었다 — 밖을 누르면 닫히기는 하지만 그걸 알려 주는 것이 화면에 없었다.
-     손잡이 막대는 "끌어내릴 수 있다" 는 암시일 뿐 눌러도 아무 일이 없다. */
+  /* 가로 서랍에는 닫기 단추를 둔다. 옆에서 나오는 판을 옆으로 쓸어 닫는 것은 세로만큼
+     자연스럽지 않고, 여는 사람 아이콘도 상단바에 그대로 보인다. */
   function addSheetClose(){
     var d = drawer();
     if (!d || d.querySelector('.ig-sheet-x')) return;
@@ -502,6 +499,57 @@ window.__IG = (function(){
   }
   function removeSheetClose(){
     var b = document.querySelector('.ig-sheet-x'); if (b) b.remove();
+  }
+
+  /* ── 쓸어내려 닫기 ────────────────────────────────────────────
+     세로 시트는 손잡이 막대를 달아 "끌어내릴 수 있다" 고 말해 놓고 정작 안 됐다.
+     아래에서 올라온 판은 아래로 쓸어 닫는 것이 폰의 기본 문법이다.
+
+     ── 목록 스크롤과 안 싸우게
+     시트 안에는 참가자 목록이 있고 그것도 세로로 움직인다. 둘을 같은 손짓으로 하면
+     하나는 반드시 어긋난다. 그래서 목록이 맨 위에 있을 때만 시트를 끈다 — 목록을
+     내려 보다가 위로 다 올라오면 그때부터 시트가 따라 내려온다. 폰의 시트들이
+     대체로 이렇게 동작한다.
+
+     끄는 동안에는 transition 을 꺼서 손가락을 그대로 따라가게 하고, 놓을 때
+     되돌린다. 임계는 높이의 28% 와 110px 중 작은 값 — 짧은 시트에서 끝까지
+     내려야 닫히면 답답하고, 긴 시트에서 조금만 움직여도 닫히면 실수로 닫힌다. */
+  function addSwipeClose(){
+    var d = drawer();
+    if (!d || d.__igSwipe) return;
+    d.__igSwipe = true;
+    var startY = 0, dy = 0, dragging = false, h = 0;
+
+    function scrolledPane(t){
+      var p = t && t.closest ? t.closest('.sp-pane') : null;
+      return !!(p && p.scrollTop > 0);
+    }
+    d.addEventListener('touchstart', function(e){
+      if (!IG.port() || !d.classList.contains('ig-open')) return;
+      if (e.touches.length !== 1 || scrolledPane(e.target)) return;
+      startY = e.touches[0].clientY; dy = 0; dragging = true;
+      h = d.getBoundingClientRect().height;
+      d.style.transition = 'none';
+    }, { passive: true });
+
+    d.addEventListener('touchmove', function(e){
+      if (!dragging) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy < 0) dy = 0;               // 위로는 안 끌린다 — 시트는 이미 다 올라와 있다
+      if (dy > 4) e.preventDefault();   // 여기서부터는 목록이 아니라 시트를 끄는 중이다
+      d.style.transform = 'translateY(' + dy + 'px)';
+    }, { passive: false });
+
+    function end(){
+      if (!dragging) return;
+      dragging = false;
+      d.style.transition = '';
+      d.style.transform = '';
+      if (dy > Math.min(110, h * 0.28)) closeDrawer();
+      dy = 0;
+    }
+    d.addEventListener('touchend', end);
+    d.addEventListener('touchcancel', end);
   }
 
   /* ── 세로 상단바의 라이브 뱃지 — 👥 3명 · 45K
@@ -704,7 +752,9 @@ window.__IG = (function(){
       restoreClock();
       addTimer(); syncTimer();
       addLiveBar(); syncLiveBar();
-      addGearBtn(); foldSettings(); addSheetClose();
+      /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
+      removeSheetClose(); addSwipeClose();
+      addGearBtn(); foldSettings();
     }
   }
 

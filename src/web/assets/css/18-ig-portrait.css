@@ -242,19 +242,13 @@
       transition:transform .2s ease;border-radius:14px 14px 0 0;
       background:#0e0e10;box-shadow:0 -14px 30px rgba(0,0,0,.55)}
     html.ig-port .ig-cell.ig-side.ig-open{transform:none}
-    /* 손잡이 — 여기가 끌어 내릴 수 있는 판이라는 표시 */
-    html.ig-port .ig-cell.ig-side::before{content:'';flex:none;width:36px;height:4px;
-      border-radius:999px;background:rgba(255,255,255,.22);margin:0 auto 8px}
-    /* 닫기. 여는 자리(라이브 띠)가 시트에 가려서 다시 눌러 닫을 수 없었다 —
-       밖을 눌러도 닫히지만 그 사실을 알려 주는 것이 화면에 없었다. */
-    html.ig-port .ig-sheet-x{position:absolute;top:12px;right:10px;width:32px;height:32px;
-      display:inline-flex;align-items:center;justify-content:center;padding:0;
-      background:none;border:1px solid var(--line);border-radius:8px;
-      color:var(--muted);cursor:pointer;font-family:inherit;z-index:2}
-    html.ig-port .ig-sheet-x:hover{border-color:var(--gold-dim);color:var(--gold)}
-    html.ig-port .ig-sheet-x svg{width:15px;height:15px;display:block}
-    /* 탭 줄이 닫기 단추 밑으로 들어가지 않게 오른쪽을 비운다 */
-    html.ig-port .ig-side .sp-tabs{padding-right:38px;box-sizing:border-box}
+    /* 손잡이 — 끌어내릴 수 있다는 표시. 실제로 끌린다(ingame.js 의 addSwipeClose).
+       잡는 자리라 막대 자체보다 누를 면적을 넓게 준다 — 4px 짜리 선을 정확히
+       집으라고 하면 못 집는다. */
+    html.ig-port .ig-cell.ig-side::before{content:'';flex:none;width:40px;height:4px;
+      border-radius:999px;background:rgba(255,255,255,.28);margin:2px auto 10px}
+    /* 손가락을 따라 움직이는 동안에는 브라우저가 세로 스크롤을 가로채지 않게 한다 */
+    html.ig-port .ig-cell.ig-side{touch-action:pan-y}
 
     html.ig-port .ig-side .sp-tabs{flex:none;height:34px;display:flex;gap:6px}
     html.ig-port .ig-side .sp-tab{flex:1 1 0;min-width:0;font-size:12.5px;padding:0;
