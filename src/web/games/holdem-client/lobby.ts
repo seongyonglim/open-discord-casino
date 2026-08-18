@@ -19,18 +19,24 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
     function nextModeBadge(up){
       var mys = up.mode === 'MYSTERY_BOUNTY';
       var pko = mys || up.mode === 'PKO_BOUNTY';
-      return '<div class="ht-next-badges">' + (mys
+      return mys
         ? '<span class="ht-mode mys">미스터리 바운티<\\/span>'
         : (pko ? '<span class="ht-mode bty">바운티<\\/span>'
-               : '<span class="ht-mode cls">클래식<\\/span>')) + '<\\/div>';
+               : '<span class="ht-mode cls">클래식<\\/span>');
     }
+    /* 이월 배너 문구.
+       금액은 "총 상금" 이 아니라 1인당으로 적는다 — 등록 전에는 몇 명이 올지 모르므로
+       총액이 존재하지 않는다. 총액을 적으려면 인원을 가정해야 하고, 그 가정이 틀리면
+       화면이 거짓말을 한 것이 된다. 인당 금액은 지금 확정된 값이다. */
     function nextRollBanner(up){
       var s = up.rolloverSkips || 0;
       if (!s) return '';
       return '<div class="ht-roll">' +
         '<span class="ht-roll-ico">' + (window.__ICON ? window.__ICON.flame : '') + '<\\/span>' +
-        '<span class="ht-roll-txt">이월 <b>' + s + '회<\\/b> 누적 — 다음 판 상금이 '
-          + '<b>' + (s + 1) + '배<\\/b>입니다<\\/span>' +
+        '<span class="ht-roll-txt">이월 <b>' + s + '회<\\/b> 누적 — 미달 이월로 상금이 '
+          + '<b>' + (s + 1) + '배<\\/b>'
+          + (up.perHead ? ' · 1인당 <b>' + num(up.perHead) + 'P<\\/b>' : '')
+          + ' 적용됩니다<\\/span>' +
       '<\\/div>';
     }
 
@@ -42,10 +48,19 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
         var opened = up.regOpenAt <= now;
         html +=
           '<div class="ht-card ht-next">' +
+            /* 1행 — 무슨 판인가(다음 대회 · 모드) | 언제인가(일정).
+               모드 뱃지가 카운트다운 아래에 따로 놓여 있었다. 그러면 "8시간 26분" 을
+               읽고 내려오다가 뒤늦게 종류를 알게 된다 — 종류는 시간보다 먼저 정해지는
+               정보라 같은 줄 맨 앞에 있는 것이 맞다. */
             '<div class="ht-next-top">' +
-              '<span class="ht-badge open">다음 대회</span>' +
+              '<span class="ht-next-tags">' +
+                '<span class="ht-badge open">다음 대회</span>' + nextModeBadge(up) +
+              '<\/span>' +
               '<span class="ht-next-when">' + esc(kstDay(up.startAt)) + ' ' + esc(kstClock(up.startAt)) + '<\/span>' +
             '<\/div>' +
+            /* 2행 — 대회 이름. 예고 카드에는 이름이 아예 없어서 무슨 대회를 기다리는지
+               알 수 없었다(로비 카드에는 있는데 여기만 빠져 있었다). */
+            (up.title ? '<h2 class="ht-next-title">' + esc(up.title) + '<\/h2>' : '') +
             '<div class="ht-next-count">' + esc(dur((opened ? up.startAt : up.regOpenAt) - now)) + '<\/div>' +
             '<div class="ht-next-sub">' +
               esc(opened ? '시작까지 남았습니다' : '등록 시작까지 남았습니다') + ' · 등록 ' +
@@ -60,7 +75,7 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
                0 을 적으면 "상금 0P 짜리 판" 으로 읽혀 없는 것보다 나쁘다. 대신 인당
                금액과 최소 인원을 나란히 두어 "3명이면 얼마" 를 셀 수 있게 한다. */
             (up.perHead != null
-              ? nextModeBadge(up) + nextRollBanner(up) +
+              ? nextRollBanner(up) +
                 '<div class="ht-grid ht-next-grid">' +
                   (up.buyIn > 0
                     ? '<div><span class="k">참가비<\/span><span class="v warn">'

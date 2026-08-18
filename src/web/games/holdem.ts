@@ -105,6 +105,13 @@ function statePayload(st: HoldemStatus, userId: string) {
         regOpenAt: up.regOpenAt, startAt: up.startAt, dateStr: up.dateStr,
         mode: cfg.mode,
         buyIn: cfg.buyIn,
+        /* 대회 이름. 행이 아직 없으므로 만들어질 때와 같은 규칙으로 미리 짓는다
+           (db/admin.ts 의 createTournament 와 같은 순서) — 예고와 실제 이름이 다르면
+           같은 판을 두 번 여는 것처럼 보인다. */
+        title: (T.isKstWeekend(up.startAt * 1000) ? cfg.weekendTitle : cfg.weekdayTitle).trim()
+          || (cfg.mode === 'MYSTERY_BOUNTY' ? '미스터리 바운티'
+            : cfg.mode === 'PKO_BOUNTY' ? '바운티 헌터'
+            : cfg.buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤'),
         /* 주말 여부는 시작 시각으로 정해진다 — 지금 요일이 아니라 그 판이 열리는 날이다.
            이월 배수도 함께 얹는다. 실제 대회는 만들어질 때 곱해진 값으로 생기는데
            (db/admin.ts 의 rolledMultiplier), 예고 카드가 곱하기 전 값을 적으면
