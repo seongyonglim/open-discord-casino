@@ -90,8 +90,11 @@ window.__IG = (function(){
   }
   var ICON = {
     chat: ico('M20.5 11.7a7.7 7.7 0 0 1-8.2 7.7 8.6 8.6 0 0 1-2.9-.5L4.5 20.5l1.6-4.6a7.5 7.5 0 0 1-.8-3.4 7.7 7.7 0 0 1 7.7-7.7 7.7 7.7 0 0 1 7.5 6.9z'),
-    gear: ico('M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6',
-      '<circle cx="12" cy="12" r="3.4"/>'),
+    /* 톱니를 선으로 그렸더니 해처럼 보였다. 조절 손잡이(슬라이더)로 바꾼다 —
+       선이 적어 작은 크기에서도 뭉개지지 않고 "설정" 으로 바로 읽힌다. */
+    gear: ico('M3.5 8h9M16.5 8h4M3.5 16h4M11.5 16h9',
+      '<circle cx="14.5" cy="8" r="2.3"/><circle cx="9.5" cy="16" r="2.3"/>'),
+    close: ico('M17.5 6.5l-11 11M6.5 6.5l11 11'),
     people: ico('M2.8 19.2c0-3 2.4-4.9 5.4-4.9s5.4 1.9 5.4 4.9M16.2 6.6a3.1 3.1 0 0 1 0 5.6M17.6 14.6c2 .7 3.6 2.3 3.6 4.6',
       '<circle cx="8.2" cy="8.4" r="3.1"/>'),
     clock: ico('M12 7.6V12l2.9 1.7', '<circle cx="12" cy="12" r="8.4"/>'),
@@ -483,6 +486,24 @@ window.__IG = (function(){
     var s = document.querySelector('.ig-scrim'); if (s) s.remove();
   }
 
+  /* 시트에 닫기 단추를 단다. 여는 자리(라이브 띠)가 시트에 가려서 다시 눌러 닫을 수가
+     없었다 — 밖을 누르면 닫히기는 하지만 그걸 알려 주는 것이 화면에 없었다.
+     손잡이 막대는 "끌어내릴 수 있다" 는 암시일 뿐 눌러도 아무 일이 없다. */
+  function addSheetClose(){
+    var d = drawer();
+    if (!d || d.querySelector('.ig-sheet-x')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-sheet-x';
+    b.setAttribute('aria-label', '닫기');
+    b.innerHTML = IG.ICON.close;
+    b.addEventListener('click', closeDrawer);
+    d.appendChild(b);
+  }
+  function removeSheetClose(){
+    var b = document.querySelector('.ig-sheet-x'); if (b) b.remove();
+  }
+
   /* ── 세로 상단바의 라이브 뱃지 — 👥 3명 · 45K
      값을 새로 계산하지 않는다. 참가자 수와 판돈은 이미 패널 머리(#lBetCount·#lPot)에
      적혀 있고 그것을 그대로 비춘다 — 같은 값을 두 곳에서 따로 세면 언젠가 어긋난다.
@@ -668,14 +689,14 @@ window.__IG = (function(){
   function apply(){
     if (!movedGrid() || !IG.on()) {
       restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
-      removePeopleBtn(); removeLiveBar(); removeTimer();
+      removePeopleBtn(); removeLiveBar(); removeTimer(); removeSheetClose();
       return;
     }
     if (IG.land()) {
-      /* 가로 — 타이머는 상단바로, 참가인원은 👥 아이콘으로.
+      /* 가로 — 타이머는 상단바로, 참가인원은 사람 아이콘으로.
          가로는 폭이 넉넉해 음량·규칙을 펼쳐 둔다(실측 915px). */
       removeLiveBar(); removeTimer(); closeSettings(); restoreSettings();
-      moveClock(); addPeopleBtn();
+      moveClock(); addPeopleBtn(); addSheetClose();
     } else {
       /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로,
          음량·규칙은 ⚙️ 안으로 접는다. 상단바에는 자라는 값을 두지 않는다. */
@@ -683,7 +704,7 @@ window.__IG = (function(){
       restoreClock();
       addTimer(); syncTimer();
       addLiveBar(); syncLiveBar();
-      addGearBtn(); foldSettings();
+      addGearBtn(); foldSettings(); addSheetClose();
     }
   }
 

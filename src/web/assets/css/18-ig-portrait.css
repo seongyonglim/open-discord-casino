@@ -245,6 +245,16 @@
     /* 손잡이 — 여기가 끌어 내릴 수 있는 판이라는 표시 */
     html.ig-port .ig-cell.ig-side::before{content:'';flex:none;width:36px;height:4px;
       border-radius:999px;background:rgba(255,255,255,.22);margin:0 auto 8px}
+    /* 닫기. 여는 자리(라이브 띠)가 시트에 가려서 다시 눌러 닫을 수 없었다 —
+       밖을 눌러도 닫히지만 그 사실을 알려 주는 것이 화면에 없었다. */
+    html.ig-port .ig-sheet-x{position:absolute;top:12px;right:10px;width:32px;height:32px;
+      display:inline-flex;align-items:center;justify-content:center;padding:0;
+      background:none;border:1px solid var(--line);border-radius:8px;
+      color:var(--muted);cursor:pointer;font-family:inherit;z-index:2}
+    html.ig-port .ig-sheet-x:hover{border-color:var(--gold-dim);color:var(--gold)}
+    html.ig-port .ig-sheet-x svg{width:15px;height:15px;display:block}
+    /* 탭 줄이 닫기 단추 밑으로 들어가지 않게 오른쪽을 비운다 */
+    html.ig-port .ig-side .sp-tabs{padding-right:38px;box-sizing:border-box}
 
     html.ig-port .ig-side .sp-tabs{flex:none;height:34px;display:flex;gap:6px}
     html.ig-port .ig-side .sp-tab{flex:1 1 0;min-width:0;font-size:12.5px;padding:0;

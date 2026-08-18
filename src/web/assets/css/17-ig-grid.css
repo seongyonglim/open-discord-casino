@@ -224,6 +224,14 @@
       transition:transform .18s ease;border-radius:12px 0 0 12px;
       background:#0e0e10;box-shadow:-14px 0 30px rgba(0,0,0,.55)}
     html.ig-grid .ig-cell.ig-side.ig-open{transform:none}
+    /* 닫기 단추 — 가로에서도 같은 자리에 둔다 */
+    html.ig-grid .ig-sheet-x{position:absolute;top:8px;right:8px;width:26px;height:26px;
+      display:inline-flex;align-items:center;justify-content:center;padding:0;
+      background:none;border:1px solid var(--line);border-radius:7px;
+      color:var(--muted);cursor:pointer;font-family:inherit;z-index:2}
+    html.ig-grid .ig-sheet-x:hover{border-color:var(--gold-dim);color:var(--gold)}
+    html.ig-grid .ig-sheet-x svg{width:13px;height:13px;display:block}
+    html.ig-grid .ig-side .sp-tabs{padding-right:32px;box-sizing:border-box}
 
     /* 가림막 — 서랍 밖 아무 데나 눌러도 닫힌다. 좁은 화면에서 X 를 정확히
        누르게 하면 두 번 만에 닫힌다. */
