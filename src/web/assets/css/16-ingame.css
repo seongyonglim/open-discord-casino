@@ -50,9 +50,13 @@
     .ig-btn{flex:none;width:28px;height:26px;display:inline-flex;align-items:center;
       justify-content:center;background:none;border:1px solid var(--line);
       border-radius:7px;font-size:13px;line-height:1;cursor:pointer;padding:0}
-    .ig-btn:hover{border-color:var(--gold-dim)}
-    /* 아이콘을 이모지에서 SVG 로 바꿨다. viewBox 만 있는 SVG 는 기본 300x150 으로
-       그려져 단추를 밀어내므로 크기를 못 박는다. */
+    .ig-btn:hover{border-color:var(--gold-dim);color:var(--gold)}
+    /* 아이콘을 이모지에서 SVG 로 바꿨다. 두 가지를 같이 못 박아야 한다.
+       크기: viewBox 만 있는 SVG 는 기본 300x150 으로 그려져 단추를 밀어낸다.
+       색  : <button> 의 기본 color 는 buttontext(검정)다. 이모지는 제 색이 있어서
+             지금까지 안 드러났는데, stroke="currentColor" 로 바꾸자 검은 상단바에
+             검은 선을 그려 빈 네모로 보였다(실측: color rgb(0,0,0)). */
+    .ig-btn{color:var(--muted);font-family:inherit}
     .ig-btn svg{width:15px;height:15px;display:block}
     .ig-bar .ig-vol{flex:none;transform:scale(.85)}
     .ig-bar .ig-help{flex:none}

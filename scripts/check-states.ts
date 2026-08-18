@@ -89,6 +89,37 @@ const PROBE = `(() => {
     }
   }
 
+  /* 아이콘이 배경에 묻혔는가
+     아이콘을 이모지에서 currentColor SVG 로 바꿨더니 가로 상단바의 두 개가 빈 네모가
+     됐다. <button> 의 기본 color 가 buttontext(검정)라 검은 바에 검은 선을 그렸다 —
+     이모지는 제 색이 있어서 그때까지 안 드러났다. 크기도 자리도 멀쩡해서 위의 검사는
+     전부 통과했고, 화면을 봐야 알았다. 선 색과 뒤에 깔린 색의 밝기가 거의 같으면
+     그 아이콘은 없는 것이다. */
+  const rgbOf = s => { const m = String(s).match(/(\\d+(?:\\.\\d+)?)/g); return m ? m.slice(0,3).map(Number) : null; };
+  const lumOf = c => c ? (0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]) : null;
+  const bgOf = el => {
+    let e = el;
+    while (e && e !== document.documentElement) {
+      const b = getComputedStyle(e).backgroundColor, c = rgbOf(b);
+      if (c && !/rgba\\(.*,\\s*0\\)/.test(b)) return c;
+      e = e.parentElement;
+    }
+    return [5,5,6];
+  };
+  const faded = [];
+  for (const svg of document.querySelectorAll('svg')) {
+    /* 판 그림은 자식마다 제 색을 갖는다 — 뿌리 요소의 색으로 재면 헛짚는다 */
+    if (svg.closest('.ladder-board, .crash-graph, .bacc-table, .bj-table')) continue;
+    const r = svg.getBoundingClientRect();
+    if (r.width < 3 || r.height < 3) continue;
+    const cs = getComputedStyle(svg);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const ink = rgbOf(cs.stroke !== 'none' ? cs.stroke : cs.fill);
+    if (!ink) continue;
+    const d = Math.abs(lumOf(ink) - lumOf(bgOf(svg.parentElement || svg)));
+    if (d < 25) faded.push(((svg.parentElement||{}).className || '?') + ' 밝기차' + Math.round(d));
+  }
+
   /* 눌러야 할 것들이 화면 안에 있는가
 
      닫아 둔 서랍 안은 빼고 센다. 서랍은 화면 밖에 세워 두는 것이 정상이고, 열면
@@ -122,7 +153,7 @@ const PROBE = `(() => {
   return {
     scrollY: de.scrollHeight > vh + 1, scrollX: de.scrollWidth > vw + 1,
     clipped: clipped.slice(0, 4), outside: outside.slice(0, 4),
-    tiny: tiny.slice(0, 4), btnOut: btnOut.slice(0, 4),
+    tiny: tiny.slice(0, 4), btnOut: btnOut.slice(0, 4), faded: faded.slice(0, 4),
   };
 })()`;
 
@@ -179,6 +210,7 @@ async function main(): Promise<void> {
     ck(where, '화면 밖 요소 없음', m.outside.length === 0, m.outside.join(' / '));
     ck(where, '글자가 읽을 수 있는 크기', m.tiny.length === 0, m.tiny.join(' / '));
     ck(where, '버튼이 화면 안에', m.btnOut.length === 0, m.btnOut.join(' / '));
+    ck(where, '아이콘이 배경에 안 묻힘', (m.faded ?? []).length === 0, (m.faded ?? []).join(' / '));
   };
 
   if (BASE.includes('localhost')) await go(`${BASE}/dev/login`);
