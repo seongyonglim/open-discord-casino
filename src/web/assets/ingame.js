@@ -104,6 +104,70 @@ window.__IG = (function(){
            ICON: ICON };
 })();
 
+/* ── 사다리 남은 시간 ─────────────────────────────────────────────────
+   이 하나만은 방향을 안 가린다. 세로에서 만든 모양이 마음에 든다는 판단이라
+   가로와 데스크톱에도 같은 것을 쓴다 — 남은 시간은 어느 화면에서나 같은 뜻이다.
+
+   ── 원본을 고쳐 쓰지 않는 이유
+   사다리 코드는 #lCountdown 의 textContent 를 폴링마다 다시 쓴다. 거기에 우리가
+   span 을 심으면 다음 폴링에 지워지고, 매초 다시 심는 싸움이 된다. 그래서 원본은
+   감춰 두고 그 글자를 읽어서 우리 것을 그린다. 값의 출처는 하나로 남는다.
+
+   서버 HTML 은 그대로다 — 여기서 만들어 붙일 뿐이라 골든 비교는 영향받지 않는다.
+
+   원본이 쓰는 문장은 다섯 가지다:
+     '베팅 마감까지 N초' · '결과 공개 중…' · '다음 라운드까지 N초'
+     '일시정지 (화면을 클릭하면 재개)' · '서버에 연결하는 중…' */
+(function(){
+  var IG = window.__IG;
+
+  function src(){ return document.getElementById('lCountdown'); }
+
+  function build(){
+    var s = src();
+    if (!s || document.querySelector('.ig-timer')) return;
+    /* 원본은 지우지 않는다 — 사다리 코드가 계속 글자를 쓰는 노드다. 감추기만 한다. */
+    s.style.display = 'none';
+    var t = document.createElement('div');
+    t.className = 'ig-timer';
+    t.innerHTML = '<span class="ig-t-ico"></span><span class="ig-t-txt"></span>'
+      + '<span class="ig-t-num"></span>';
+    s.parentNode.insertBefore(t, s.nextSibling);
+    sync();
+  }
+
+  function sync(){
+    var t = document.querySelector('.ig-timer');
+    if (!t) return;
+    var s = src();
+    var v = s ? String(s.textContent).trim() : '';
+    var ico = t.querySelector('.ig-t-ico'), txt = t.querySelector('.ig-t-txt'),
+        num = t.querySelector('.ig-t-num');
+    var m, sec = null, label = v;
+    if ((m = v.match(/^베팅 마감까지 (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
+    else if ((m = v.match(/^다음 라운드까지 (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
+    else if (/결과 공개/.test(v)) { label = '사다리 진행 중…'; }
+    else if (/일시정지/.test(v)) { label = '일시정지 — 화면을 누르면 재개'; }
+    else if (!v) { label = ''; }
+    if (!ico.firstChild) ico.innerHTML = IG.ICON.clock;
+    if (txt.textContent !== label) txt.textContent = label;
+    /* 두 자리로 고정한다 — 9→10 에서 글자가 밀리면 눈이 그 움직임을 따라간다 */
+    var ns = sec === null ? '' : (sec < 10 ? '0' + sec : String(sec)) + '초';
+    if (num.textContent !== ns) num.textContent = ns;
+    t.classList.toggle('ig-t-hot', sec !== null && sec <= 3);
+    t.style.display = (label || ns) ? '' : 'none';
+  }
+
+  function start(){
+    build();
+    /* 원본이 1초마다 바뀌므로 그보다 촘촘히 본다 — 1초로 맞추면 최대 1초를 늦게
+       따라가서 남은 시간이 한 박자씩 밀려 보인다. */
+    setInterval(function(){ build(); sync(); }, 250);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
 (function(){
   var IG = window.__IG;
   var root = document.documentElement;
@@ -400,7 +464,7 @@ window.__IG = (function(){
   var clockHome = null, clockEl = null;
   function moveClock(){
     var bar = document.querySelector('.ig-bar');
-    var st = document.querySelector('.stage-status');
+    var st = document.querySelector('.ig-timer');
     if (!bar || !st) return;
     if (st.parentNode === bar) return;
     clockHome = { parent: st.parentNode, next: st.nextSibling };
@@ -479,8 +543,13 @@ window.__IG = (function(){
     /* 💬 왼쪽에 둔다 — 사람 · 말 순서가 읽기 좋다 */
     bar.insertBefore(b, bar.querySelector('.ig-chat'));
   }
+  /* 사람 아이콘만 걷는다. 가림막은 여기서 지우면 안 된다 — 세로에서는 이 함수가
+     1초마다 돌기 때문에, 시트를 열고 1초가 지나면 뒤가 도로 밝아졌다(실측: 0.4초에
+     opacity 1, 1.6초에 사라짐). 가림막은 껍데기를 벗을 때만 치운다. */
   function removePeopleBtn(){
     var b = document.querySelector('.ig-people'); if (b) b.remove();
+  }
+  function removeScrim(){
     var s = document.querySelector('.ig-scrim'); if (s) s.remove();
   }
 
@@ -633,42 +702,6 @@ window.__IG = (function(){
      원본이 쓰는 문장은 다섯 가지다:
        '베팅 마감까지 N초' · '결과 공개 중…' · '다음 라운드까지 N초'
        '일시정지 (화면을 클릭하면 재개)' · '서버에 연결하는 중…' */
-  function addTimer(){
-    var stage = document.querySelector('.ig-board .board-stage');
-    if (!stage || stage.querySelector('.ig-timer')) return;
-    var t = document.createElement('div');
-    t.className = 'ig-timer';
-    t.innerHTML = '<span class="ig-t-ico"></span><span class="ig-t-txt"></span>'
-      + '<span class="ig-t-num"></span>';
-    stage.appendChild(t);
-    syncTimer();
-  }
-  function syncTimer(){
-    var t = document.querySelector('.ig-timer');
-    if (!t) return;
-    var src = document.getElementById('lCountdown');
-    var s = src ? String(src.textContent).trim() : '';
-    var ico = t.querySelector('.ig-t-ico'), txt = t.querySelector('.ig-t-txt'),
-        num2 = t.querySelector('.ig-t-num');
-    var m, sec = null, label = s;
-    if ((m = s.match(/^베팅 마감까지 (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
-    else if ((m = s.match(/^다음 라운드까지 (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
-    else if (/결과 공개/.test(s)) { label = '사다리 진행 중…'; }
-    else if (/일시정지/.test(s)) { label = '일시정지 — 화면을 누르면 재개'; }
-    else if (!s) { label = ''; }
-    if (!ico.firstChild) ico.innerHTML = IG.ICON.clock;
-    if (txt.textContent !== label) txt.textContent = label;
-    /* 두 자리로 고정한다 — 9→10 에서 글자가 밀리면 눈이 그 움직임을 따라간다 */
-    var ns = sec === null ? '' : (sec < 10 ? '0' + sec : String(sec)) + '초';
-    if (num2.textContent !== ns) num2.textContent = ns;
-    t.classList.toggle('ig-t-hot', sec !== null && sec <= 3);
-    t.classList.toggle('ig-t-idle', sec === null);
-    t.style.display = label || ns ? '' : 'none';
-  }
-  function removeTimer(){
-    var t = document.querySelector('.ig-timer'); if (t) t.remove();
-  }
-
   /* ── ⚙️ 설정 — 음량과 규칙을 한 자리에 모은다
      412px 상단바에 음량(34) · 규칙(30)까지 늘어놓았더니 규칙 단추가 x=414 로
      화면 밖에 나갔다(실측, 바 폭 412). 둘 다 자주 쓰는 것이 아니라 한 번 정하고
@@ -780,7 +813,7 @@ window.__IG = (function(){
   function apply(){
     if (!movedGrid() || !IG.on()) {
       restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
-      removePeopleBtn(); removeLiveBar(); removeTimer(); removeSheetClose();
+      removePeopleBtn(); removeScrim(); removeLiveBar(); removeSheetClose();
       return;
     }
     if (IG.land()) {
@@ -788,14 +821,13 @@ window.__IG = (function(){
          음량·규칙은 세로와 똑같이 ⚙️ 안으로 접는다. 가로는 915px 이라 지금은 들어가지만
          잔액 자릿수가 늘면(1,980,006P) 밀리기 시작한다 — 자라는 값 옆에 안 자라는
          아이콘을 늘어놓으면 언젠가 넘친다. 아이콘 넷을 둘로 줄인다. */
-      removeLiveBar(); removeTimer();
+      removeLiveBar();
       moveClock(); addPeopleBtn(); addGearBtn(); foldSettings(); addSheetClose();
     } else {
       /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로,
          음량·규칙은 ⚙️ 안으로 접는다. 상단바에는 자라는 값을 두지 않는다. */
       removePeopleBtn();
       restoreClock();
-      addTimer(); syncTimer();
       addLiveBar(); syncLiveBar(); syncChatTop();
       /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
       removeSheetClose(); addSwipeClose();
@@ -811,7 +843,7 @@ window.__IG = (function(){
     /* 타이머와 참가 현황은 더 자주 맞춘다. 1초마다 맞추면 원본이 바뀐 뒤 최대 1초를
        늦게 따라가서, 남은 시간이 한 박자씩 밀려 보인다. */
     setInterval(function(){
-      if (movedGrid() && IG.port()) { syncTimer(); syncLiveBar(); syncChatTop(); }
+      if (movedGrid() && IG.port()) { syncLiveBar(); syncChatTop(); }
     }, 250);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

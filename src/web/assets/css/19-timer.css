@@ -1,0 +1,45 @@
+  /* ── 사다리 남은 시간 ────────────────────────────────────────────────
+     이 파일만은 미디어쿼리 안에 없다. 데스크톱에도 걸린다는 뜻이다.
+
+     지금까지 모바일 작업은 전부 (max-width…) 안에 가둬서 데스크톱을 한 픽셀도 안
+     건드렸다. 여기만 예외로 두는 것은 요청이 그랬기 때문이다 — 세로에서 만든 모양이
+     마음에 든다는 판단이라 가로와 PC 에도 같은 것을 쓴다. 남은 시간은 어느 화면에서나
+     같은 뜻이고, 화면마다 다른 모양일 이유가 없다.
+
+     서버 HTML 은 그대로다. ingame.js 가 원본(#lCountdown)을 감추고 그 글자를 읽어
+     .ig-timer 를 그린다 — 골든 비교(페이지 10개 바이트 동일)는 영향받지 않는다.
+
+     ── 자리
+     원본 배지가 있던 자리를 그대로 쓴다(판 오른쪽 위, 04-board.css). 가운데로 옮기면
+     '출발' 글자와 겹친다 — 세로에서는 그 자리를 24px 비워 두었기 때문에 가운데에
+     둘 수 있었고, 그건 18-ig-portrait.css 가 따로 정한다. */
+  .ig-timer{position:absolute;top:10px;right:10px;z-index:3;
+    display:inline-flex;align-items:center;gap:7px;
+    padding:5px 12px;border-radius:8px;
+    background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.10);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    font-size:12px;color:#cfd0d6;white-space:nowrap;pointer-events:none;
+    max-width:calc(100% - 20px);overflow:hidden;text-overflow:ellipsis}
+
+  .ig-timer .ig-t-ico{flex:none;display:inline-flex;color:#9aa0aa}
+  .ig-timer .ig-t-ico svg{width:13px;height:13px;display:block}
+
+  /* 숫자는 고정폭으로. 9→10 에서 글자 폭이 변하면 눈이 그 움직임을 따라가서,
+     정작 읽어야 할 숫자보다 흔들림이 먼저 보인다. */
+  .ig-timer .ig-t-num{font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
+    font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
+    font-weight:700;color:#fbbf24;letter-spacing:.02em}
+
+  /* 3초 이하 — 색을 바꾸고 천천히 깜빡인다. 빠르게 깜빡이면 오히려 읽기 어렵다.
+     금색은 이 사이트에서 "좋은 것"의 색이라 마감이 코앞이라는 뜻과 겹친다. */
+  .ig-timer.ig-t-hot{border-color:rgba(244,63,94,.55);background:rgba(70,8,20,.5);
+    animation:ig-t-pulse 1s ease-in-out infinite}
+  .ig-timer.ig-t-hot .ig-t-num,
+  .ig-timer.ig-t-hot .ig-t-txt{color:#fb7185}
+  .ig-timer.ig-t-hot .ig-t-ico{color:#fb7185}
+  @keyframes ig-t-pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+  /* 움직임을 불편해하는 사람에게는 깜빡임 없이 색만 바뀐다 */
+  @media (prefers-reduced-motion: reduce){
+    .ig-timer.ig-t-hot{animation:none}
+  }

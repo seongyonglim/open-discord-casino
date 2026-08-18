@@ -157,34 +157,12 @@
        노드이고, 우리는 그 글자를 읽어서 아래 .ig-timer 를 그린다. */
     html.ig-port .ig-board .stage-status{display:none}
 
-    /* ── 타이머 ──────────────────────────────────────────────
-       금색 알약은 이 화면에서 "좋은 것"의 색과 겹쳐 남은 시간이라는 뜻이 흐려졌다.
-       판 위에 얹히는 것이라 배경은 어둡게 깔고 테두리는 얇게만 둔다. */
-    html.ig-port .ig-board .ig-timer{position:absolute;top:0;left:50%;
-      transform:translateX(-50%);display:inline-flex;align-items:center;gap:6px;
-      background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.10);
-      border-radius:8px;padding:4px 12px;
-      -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
-      font-size:12px;color:#cfd0d6;white-space:nowrap;max-width:calc(100% - 16px);
-      overflow:hidden;text-overflow:ellipsis}
-    html.ig-port .ig-timer .ig-t-ico{flex:none;display:inline-flex;color:#9aa0aa}
-    html.ig-port .ig-timer .ig-t-ico svg{width:13px;height:13px;display:block}
-    html.ig-port .ig-timer.ig-t-hot .ig-t-ico{color:#fb7185}
-    /* 숫자는 고정폭으로 — 9→10 에서 폭이 변하면 눈이 그 움직임을 따라간다 */
-    html.ig-port .ig-timer .ig-t-num{font-variant-numeric:tabular-nums;
-      font-feature-settings:'tnum' 1;font-family:ui-monospace,SFMono-Regular,
-      'SF Mono',Menlo,Consolas,monospace;font-weight:700;color:#fbbf24;
-      letter-spacing:.02em}
-    /* 3초 이하 — 색을 바꾸고 천천히 깜빡인다. 빠르게 깜빡이면 읽기가 어렵다. */
-    html.ig-port .ig-timer.ig-t-hot{border-color:rgba(244,63,94,.55);
-      background:rgba(70,8,20,.5);animation:ig-t-pulse 1s ease-in-out infinite}
-    html.ig-port .ig-timer.ig-t-hot .ig-t-num,
-    html.ig-port .ig-timer.ig-t-hot .ig-t-txt{color:#fb7185}
-    @keyframes ig-t-pulse{0%,100%{opacity:1}50%{opacity:.55}}
-    /* 움직임을 불편해하는 사람에게는 깜빡임 대신 색만 바뀐다 */
-    @media (prefers-reduced-motion: reduce){
-      html.ig-port .ig-timer.ig-t-hot{animation:none}
-    }
+    /* ── 타이머 자리 ─────────────────────────────────────────
+       모양은 19-timer.css 가 정한다(데스크톱·가로·세로 공통). 여기서는 자리만
+       바꾼다 — 세로는 판 위 24px 을 비워 두었으므로 오른쪽 위가 아니라 가운데에
+       둘 수 있고, 좁은 화면에서는 가운데가 눈이 먼저 가는 자리다. */
+    html.ig-port .ig-board .ig-timer{top:0;left:50%;right:auto;
+      transform:translateX(-50%);max-width:calc(100% - 16px)}
 
     /* ── 라이브 베팅 띠 (판 아래 · 조작부 위) ────────────────
        상단바에 두었더니 인원과 금액이 자랄수록 게임 이름을 밀어냈다. 자라는 값은
