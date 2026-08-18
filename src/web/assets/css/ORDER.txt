@@ -22,3 +22,4 @@
 15-mobile.css
 16-ingame.css
 17-ig-grid.css
+18-ig-portrait.css

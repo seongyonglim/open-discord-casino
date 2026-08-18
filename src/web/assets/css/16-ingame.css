@@ -51,6 +51,9 @@
       justify-content:center;background:none;border:1px solid var(--line);
       border-radius:7px;font-size:13px;line-height:1;cursor:pointer;padding:0}
     .ig-btn:hover{border-color:var(--gold-dim)}
+    /* 아이콘을 이모지에서 SVG 로 바꿨다. viewBox 만 있는 SVG 는 기본 300x150 으로
+       그려져 단추를 밀어내므로 크기를 못 박는다. */
+    .ig-btn svg{width:15px;height:15px;display:block}
     .ig-bar .ig-vol{flex:none;transform:scale(.85)}
     .ig-bar .ig-help{flex:none}
 

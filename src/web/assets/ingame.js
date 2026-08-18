@@ -17,8 +17,92 @@
  *   게임 전환 칩은 접었다 펴는 동작이 .game-switch 에 위임돼 있어 빼내면 끊긴다.
  *   채팅은 app.js 가 window.casinoChat.open() 을 열어 두었으므로 단추만 만들면 된다.
  */
+/* ── 게임마다 다른 방향 ────────────────────────────────────────────────
+   판 모양이 게임마다 다르다. 사다리는 위에서 아래로 떨어지는 세로형이고 지뢰찾기는
+   정사각이라 세로 화면이 맞다. 홀덤·바카라·블랙잭·포커·그래프는 판이 옆으로 넓어
+   가로가 맞다. 그래서 한 방향으로 통일하지 않고 게임마다 나눈다.
+
+   ── 잠금은 되면 좋고, 안 되면 그만이다
+   screen.orientation.lock() 은 설치된 앱(standalone)이나 전체화면에서만 동작한다.
+   그냥 브라우저 탭에서는 NotSupportedError 로 거부되고, iOS 사파리는 아예 없다.
+   그러니 잠금에 기대면 안 된다 — 잠금이 실패해도 사용자가 폰을 돌리면 그 방향이
+   그대로 보인다. 그래서 두 방향 다 제대로 나와야 한다.
+
+     사다리·지뢰찾기 : 세로가 주력, 가로는 폴백
+     나머지 다섯     : 가로가 주력
+
+   여기서는 "지금 인게임 껍데기를 쓸 상황인가" 하나만 정한다. 다섯 개 IIFE 가
+   각자 판단하면 조건이 어긋나서 반쪽만 켜지는 상태가 생긴다. */
+window.__IG = (function(){
+  var LAND = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var PORT = '(max-width:560px) and (orientation:portrait)';
+  /* 세로가 맞는 게임 — 방향 잠금은 여기 적힌 대로 건다 */
+  var PORTRAIT_GAMES = ['ladder', 'mines'];
+  /* 그중 세로 배치를 실제로 만들어 둔 게임. 잠금과 나누는 이유가 있다 —
+     지뢰찾기를 여기까지 넣었더니 껍데기는 켜지는데(원래 자리를 display:none 으로
+     감춘다) 대신 그릴 격자가 없어서 화면이 통째로 사라졌다. 검사가 "판 폭 0px" 로
+     잡아 줬다. 한 게임씩 만들고, 만든 것만 여기 더한다. */
+  var PORT_SHELL = ['ladder'];
+
+  function key(){
+    var m = location.pathname.match(/^\/games\/([a-z]+)\/?$/);
+    return m ? m[1] : null;
+  }
+  function land(){ return window.matchMedia(LAND).matches; }
+  function port(){
+    return window.matchMedia(PORT).matches && PORT_SHELL.indexOf(key()) >= 0;
+  }
+  /* 껍데기를 쓸 상황인가 — 게임 페이지이고, 그 게임에 맞는 방향/크기인가 */
+  function on(){ return !!key() && (land() || port()); }
+
+  function subscribe(fn){
+    [LAND, PORT].forEach(function(q){
+      var m = window.matchMedia(q);
+      if (m.addEventListener) m.addEventListener('change', fn);
+      else if (m.addListener) m.addListener(fn);
+    });
+    window.addEventListener('orientationchange', fn);
+    window.addEventListener('resize', fn);
+  }
+
+  /* 방향 잠금. 실패는 정상이므로 조용히 넘긴다 — 콘솔에 빨간 줄이 남으면
+     진짜 오류를 찾을 때 방해가 된다. */
+  function lock(){
+    var so = window.screen && window.screen.orientation;
+    if (!so) return;
+    var k = key();
+    try {
+      if (!k) { so.unlock && so.unlock(); return; }
+      var want = PORTRAIT_GAMES.indexOf(k) >= 0 ? 'portrait-primary' : 'landscape-primary';
+      var p = so.lock(want);
+      if (p && p.catch) p.catch(function(){});
+    } catch (e) { /* 지원하지 않는 기기 — 사용자가 돌리는 대로 보여 준다 */ }
+  }
+
+  /* 아이콘은 그림 문자를 안 쓴다. 이모지는 기기마다 제 글꼴로 그려져서 — 안드로이드와
+     iOS 가 서로 다른 그림을 내고, 크기·굵기·색이 우리 화면과 따로 논다. 선 굵기와
+     색(currentColor)을 우리가 정하는 SVG 로 둔다. 이 사이트의 다른 아이콘과 같은 규격
+     (24 격자 · stroke 2 · 둥근 끝)이다. */
+  function ico(d, extra){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + (extra || '') + '<path d="' + d + '"/></svg>';
+  }
+  var ICON = {
+    chat: ico('M20.5 11.7a7.7 7.7 0 0 1-8.2 7.7 8.6 8.6 0 0 1-2.9-.5L4.5 20.5l1.6-4.6a7.5 7.5 0 0 1-.8-3.4 7.7 7.7 0 0 1 7.7-7.7 7.7 7.7 0 0 1 7.5 6.9z'),
+    gear: ico('M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6',
+      '<circle cx="12" cy="12" r="3.4"/>'),
+    people: ico('M2.8 19.2c0-3 2.4-4.9 5.4-4.9s5.4 1.9 5.4 4.9M16.2 6.6a3.1 3.1 0 0 1 0 5.6M17.6 14.6c2 .7 3.6 2.3 3.6 4.6',
+      '<circle cx="8.2" cy="8.4" r="3.1"/>'),
+    clock: ico('M12 7.6V12l2.9 1.7', '<circle cx="12" cy="12" r="8.4"/>'),
+  };
+
+  return { key: key, land: land, port: port, on: on, subscribe: subscribe, lock: lock,
+           ICON: ICON };
+})();
+
 (function(){
-  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var IG = window.__IG;
   var root = document.documentElement;
   var bar = null;
   var home = {};        // 원래 자리 — 껍데기를 벗을 때 그대로 돌려놓는다
@@ -32,22 +116,37 @@
     if (!home[key]) home[key] = { parent: el.parentNode, next: el.nextSibling };
     return el;
   }
+  /* 기억해 둔 "바로 뒤 형제" 가 그새 지워졌으면 그 앞에 못 넣는다 — insertBefore 가
+     NotFoundError 를 던지고 남은 되돌리기가 통째로 멈춘다. 아직 그 부모의 자식일
+     때만 그 앞에 넣고, 아니면 끝에 붙인다. */
   function giveBack(el, key){
     var h = home[key];
-    if (el && h && h.parent) h.parent.insertBefore(el, h.next);
+    if (!el || !h || !h.parent) return;
+    h.parent.insertBefore(el, (h.next && h.next.parentNode === h.parent) ? h.next : null);
   }
 
-  function build(){
+  function build(mode){
     if (bar) return;
     bar = document.createElement('div');
     bar.className = 'ig-bar';
 
-    var lobby = take(document.querySelector('header nav a.tab[href="/"]'), 'lobby');
     var prof  = take(document.querySelector('.profwrap'), 'prof');
     var vol   = take(document.querySelector('.volwrap'), 'vol');
     var help  = take(document.querySelector('.game-switch .gs-help'), 'help');
 
-    if (lobby) { lobby.classList.add('ig-back'); bar.appendChild(lobby); }
+    /* 뒤로가기.
+       가로: 하단 탭바를 안 쓰므로 그 [로비] 탭을 그대로 꺼내 온다.
+       세로: 탭바를 살려 두므로 꺼내 오면 네 칸 중 하나가 빈다. 새로 만든다. */
+    if (mode === 'port') {
+      var back = document.createElement('a');
+      back.className = 'ig-back ig-back-new';
+      back.href = '/';
+      back.textContent = '← 로비';
+      bar.appendChild(back);
+    } else {
+      var lobby = take(document.querySelector('header nav a.tab[href="/"]'), 'lobby');
+      if (lobby) { lobby.classList.add('ig-back'); bar.appendChild(lobby); }
+    }
 
     /* 게임 이름은 글자만 가져온다. 칩 자체를 옮기면 접었다 펴는 위임이 끊긴다. */
     var active = document.querySelector('.game-switch .gs-pill.active');
@@ -63,7 +162,7 @@
     chat.type = 'button';
     chat.className = 'ig-btn ig-chat';
     chat.setAttribute('aria-label', '채팅');
-    chat.textContent = '💬';
+    chat.innerHTML = IG.ICON.chat;
     chat.addEventListener('click', function(){
       if (window.casinoChat && window.casinoChat.open) window.casinoChat.open();
     });
@@ -77,6 +176,9 @@
 
   function tearDown(){
     if (!bar) return;
+    /* 세로에서 만든 뒤로가기는 우리 것이라 되돌릴 자리가 없다 — 그냥 지운다 */
+    var made = document.querySelector('.ig-back-new');
+    if (made) made.remove();
     giveBack(document.querySelector('.ig-back'), 'lobby');
     giveBack(document.querySelector('.ig-bar .profwrap'), 'prof');
     giveBack(document.querySelector('.ig-vol'), 'vol');
@@ -91,19 +193,30 @@
     bar = null;
   }
 
+  var mode = null;
   function apply(){
-    var on = isGame() && window.matchMedia(MQ).matches;
-    if (on) { build(); root.classList.add('ingame'); }
-    else { root.classList.remove('ingame'); tearDown(); }
+    if (!IG.on()) {
+      root.classList.remove('ingame', 'ig-port', 'ig-land');
+      tearDown();
+      mode = null;
+      return;
+    }
+    var m = IG.port() ? 'port' : 'land';
+    /* 방향이 바뀌면 상단바를 다시 짓는다 — 뒤로가기를 가로는 꺼내 쓰고 세로는
+       새로 만들기 때문에, 그대로 두면 세로에서 하단 탭바의 [로비] 칸이 빈 채로 남는다 */
+    if (mode && mode !== m) tearDown();
+    mode = m;
+    build(m);
+    root.classList.add('ingame');
+    /* 세로 전용 게임인지 여기서 표시한다 — CSS 가 두 방향을 갈라 쓴다 */
+    root.classList.toggle('ig-port', m === 'port');
+    root.classList.toggle('ig-land', m === 'land');
   }
 
   function start(){
+    IG.lock();
     apply();
-    var m = window.matchMedia(MQ);
-    if (m.addEventListener) m.addEventListener('change', apply);
-    else if (m.addListener) m.addListener(apply);
-    window.addEventListener('orientationchange', apply);
-    window.addEventListener('resize', apply);
+    IG.subscribe(apply);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
@@ -119,7 +232,7 @@
    잔액은 헤더에 이미 적혀 있으므로 그 글자에서 숫자만 뽑는다 — 값을 두 곳에서
    따로 계산하면 언젠가 어긋난다. */
 (function(){
-  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var IG = window.__IG;
 
   function balance(){
     var el = document.querySelector('.profwrap .num, .profwrap .bal, .profwrap');
@@ -129,7 +242,7 @@
   }
 
   function apply(){
-    var on = /^\/games\//.test(location.pathname) && window.matchMedia(MQ).matches;
+    var on = IG.on();
     var row = document.querySelector('.game-controls .bet-row');
     var old = document.querySelector('.ig-max');
     if (!on || !row) { if (old) old.remove(); return; }
@@ -154,10 +267,7 @@
 
   function start(){
     apply();
-    var m = window.matchMedia(MQ);
-    if (m.addEventListener) m.addEventListener('change', apply);
-    window.addEventListener('orientationchange', apply);
-    window.addEventListener('resize', apply);
+    IG.subscribe(apply);
     /* 조작부는 상태가 바뀌면 다시 그려진다 — 그때 단추가 사라지므로 주기적으로 확인한다.
        폴링이 1초라 그보다 촘촘할 이유가 없다. */
     setInterval(apply, 1000);
@@ -184,7 +294,7 @@
    칸 수는 게임마다 다르다 — 사다리는 세로로 긴 판이라 5:4:3, 지뢰찾기는 정사각
    격자라 6:6(참가자 없음), 나머지는 판이 넓어야 해서 판이 아래를 쓴다. */
 (function(){
-  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var IG = window.__IG;
   var body = null;
   var home = [];      // [노드, 원래 부모, 원래 다음 형제]
 
@@ -253,18 +363,13 @@
   var MOVED = ['ladder'];
 
   function apply(){
-    var on = /^\/games\//.test(location.pathname)
-      && window.matchMedia(MQ).matches
-      && MOVED.indexOf(shellKind()) >= 0;
+    var on = IG.on() && MOVED.indexOf(shellKind()) >= 0;
     if (on) build(); else tearDown();
   }
 
   function start(){
     apply();
-    var m = window.matchMedia(MQ);
-    if (m.addEventListener) m.addEventListener('change', apply);
-    window.addEventListener('orientationchange', apply);
-    window.addEventListener('resize', apply);
+    IG.subscribe(apply);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
@@ -280,7 +385,7 @@
    참가인원은 상단바 👥 로 여는 서랍으로 빼고, 화면은 판(왼쪽) · 조작부(오른쪽) 둘로
    나눈다. 조작부가 오른쪽 끝에 붙어야 오른손 엄지가 닿는다. */
 (function(){
-  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var IG = window.__IG;
 
   function movedGrid(){ return document.querySelector('.ig-body'); }
 
@@ -312,7 +417,7 @@
     var st = clockEl || document.querySelector('.ig-clock');
     if (!st || !clockHome) return;
     st.classList.remove('ig-clock');
-    clockHome.parent.insertBefore(st, clockHome.next);
+    putBack(st, clockHome.parent, clockHome.next);
     clockHome = null; clockEl = null;
   }
 
@@ -323,6 +428,16 @@
      칸에서 빼내 오른쪽에서 밀려 나오게 한다. 열고 닫는 단추는 상단바에 둔다.
      닫기는 서랍 밖 아무 데나 눌러도 되게 가림막을 깐다 — 좁은 화면에서 X 를
      정확히 누르게 하면 두 번 만에 닫힌다. */
+  /* 원래 자리로 되돌린다. "바로 뒤 형제" 를 기억해 두었는데 그 형제가 그새 지워질 수
+     있다 — 예를 들어 세로에서 가로로 돌 때 라이브 뱃지를 먼저 걷으면, 규칙 단추가
+     기억하던 뒤 형제가 바로 그 뱃지다. 그러면 insertBefore 가 NotFoundError 를 던지고
+     그 뒤의 일(시계 옮기기·👥 붙이기)이 통째로 안 돈다. 실제로 그렇게 멈춰 있었다.
+     형제가 아직 그 부모의 자식일 때만 그 앞에 넣고, 아니면 끝에 붙인다. */
+  function putBack(node, parent, next){
+    if (!node || !parent) return;
+    parent.insertBefore(node, (next && next.parentNode === parent) ? next : null);
+  }
+
   function drawer(){ return document.querySelector('.ig-side'); }
   function scrim(){
     var s = document.querySelector('.ig-scrim');
@@ -355,7 +470,7 @@
     b.className = 'ig-btn ig-people';
     b.setAttribute('aria-label', '참가인원');
     b.setAttribute('aria-expanded', 'false');
-    b.textContent = '👥';
+    b.innerHTML = IG.ICON.people;
     b.addEventListener('click', function(){
       var d = drawer();
       if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
@@ -368,19 +483,220 @@
     var s = document.querySelector('.ig-scrim'); if (s) s.remove();
   }
 
+  /* ── 세로 상단바의 라이브 뱃지 — 👥 3명 · 45K
+     값을 새로 계산하지 않는다. 참가자 수와 판돈은 이미 패널 머리(#lBetCount·#lPot)에
+     적혀 있고 그것을 그대로 비춘다 — 같은 값을 두 곳에서 따로 세면 언젠가 어긋난다.
+     좁은 상단바라 자릿수가 늘면 게임 이름을 밀어내므로 천 단위부터 줄여 쓴다. */
+  function shorten(n){
+    if (!isFinite(n)) return '0';
+    var a = Math.abs(n);
+    /* 포인트는 언제나 내림이다 — 올림하면 없는 포인트가 있는 것처럼 보인다 */
+    if (a >= 1e8) return Math.floor(n / 1e8) + '억';
+    if (a >= 1e4) return Math.floor(n / 1e4) + '만';
+    if (a >= 1e3) return Math.floor(n / 1e3) + 'K';
+    return String(Math.floor(n));
+  }
+  /* ── 라이브 베팅 띠 (판과 조작부 사이) ──────────────────────────
+     처음에는 상단바 가운데에 뱃지로 뒀는데, 상단바는 폭이 고정이고 인원·금액은
+     자라는 값이다. "👥 128명 · 1억2345만P" 가 되면 게임 이름을 밀어내고 결국
+     넘친다 — 좁은 곳에 자라는 값을 두면 언젠가 터진다. 판 아래 한 줄 띠는
+     화면 폭 전체를 쓰므로 자릿수가 늘어도 자리가 있다.
+
+     값은 새로 세지 않는다. 패널 머리(#lBetCount·#lPot)에 이미 적혀 있는 것을
+     비춘다 — 같은 값을 두 곳에서 따로 세면 언젠가 어긋난다. */
+  function addLiveBar(){
+    var body = movedGrid(), bet = document.querySelector('.ig-cell.ig-bet');
+    if (!body || !bet || body.querySelector('.ig-livebar')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-livebar';
+    b.setAttribute('aria-label', '참가자 명단 보기');
+    b.innerHTML = '<span class="ig-lb-ico">' + IG.ICON.people + '</span>'
+      + '<span class="ig-lb-l"></span><span class="ig-lb-r"></span>';
+    b.addEventListener('click', function(){
+      var d = drawer();
+      if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
+    });
+    body.insertBefore(b, bet);
+    syncLiveBar();
+  }
+  function num(el){
+    if (!el) return 0;
+    var m = String(el.textContent).match(/(\d[\d,]*)/);
+    return m ? Number(m[1].replace(/,/g, '')) : 0;
+  }
+  function syncLiveBar(){
+    var b = document.querySelector('.ig-livebar');
+    if (!b) return;
+    var n = num(document.getElementById('lBetCount'));
+    var p = num(document.getElementById('lPot'));
+    var l = b.querySelector('.ig-lb-l'), r = b.querySelector('.ig-lb-r');
+    var lt = '실시간 참가자 ' + n + '명';
+    /* 자릿수가 커지면 축약한다 — 띠는 넓지만 무한하지는 않다 */
+    var rt = '총 베팅 ' + (p >= 1e7 ? shorten(p) : p.toLocaleString('ko-KR')) + 'P';
+    if (l.textContent !== lt) l.textContent = lt;
+    if (r.textContent !== rt) r.textContent = rt;
+  }
+  function removeLiveBar(){
+    var b = document.querySelector('.ig-livebar'); if (b) b.remove();
+  }
+
+  /* ── 타이머 ────────────────────────────────────────────────────
+     사다리 코드가 #lCountdown 에 쓰는 문장을 고쳐 쓰지 않는다. 그 노드는 폴링마다
+     다시 쓰이므로 우리가 손대면 매초 싸우게 된다. 대신 원본은 감추고, 그 글자를
+     읽어서 우리 것을 그린다 — 값의 출처는 하나로 둔다.
+
+     원본이 쓰는 문장은 다섯 가지다:
+       '베팅 마감까지 N초' · '결과 공개 중…' · '다음 라운드까지 N초'
+       '일시정지 (화면을 클릭하면 재개)' · '서버에 연결하는 중…' */
+  function addTimer(){
+    var stage = document.querySelector('.ig-board .board-stage');
+    if (!stage || stage.querySelector('.ig-timer')) return;
+    var t = document.createElement('div');
+    t.className = 'ig-timer';
+    t.innerHTML = '<span class="ig-t-ico"></span><span class="ig-t-txt"></span>'
+      + '<span class="ig-t-num"></span>';
+    stage.appendChild(t);
+    syncTimer();
+  }
+  function syncTimer(){
+    var t = document.querySelector('.ig-timer');
+    if (!t) return;
+    var src = document.getElementById('lCountdown');
+    var s = src ? String(src.textContent).trim() : '';
+    var ico = t.querySelector('.ig-t-ico'), txt = t.querySelector('.ig-t-txt'),
+        num2 = t.querySelector('.ig-t-num');
+    var m, sec = null, label = s;
+    if ((m = s.match(/^베팅 마감까지 (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
+    else if ((m = s.match(/^다음 라운드까지 (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
+    else if (/결과 공개/.test(s)) { label = '사다리 진행 중…'; }
+    else if (/일시정지/.test(s)) { label = '일시정지 — 화면을 누르면 재개'; }
+    else if (!s) { label = ''; }
+    if (!ico.firstChild) ico.innerHTML = IG.ICON.clock;
+    if (txt.textContent !== label) txt.textContent = label;
+    /* 두 자리로 고정한다 — 9→10 에서 글자가 밀리면 눈이 그 움직임을 따라간다 */
+    var ns = sec === null ? '' : (sec < 10 ? '0' + sec : String(sec)) + '초';
+    if (num2.textContent !== ns) num2.textContent = ns;
+    t.classList.toggle('ig-t-hot', sec !== null && sec <= 3);
+    t.classList.toggle('ig-t-idle', sec === null);
+    t.style.display = label || ns ? '' : 'none';
+  }
+  function removeTimer(){
+    var t = document.querySelector('.ig-timer'); if (t) t.remove();
+  }
+
+  /* ── ⚙️ 설정 — 음량과 규칙을 한 자리에 모은다
+     412px 상단바에 음량(34) · 규칙(30)까지 늘어놓았더니 규칙 단추가 x=414 로
+     화면 밖에 나갔다(실측, 바 폭 412). 둘 다 자주 쓰는 것이 아니라 한 번 정하고
+     마는 것이라 접어 둔다.
+
+     새로 만들지 않고 있는 것을 옮긴다 — 음량 슬라이더와 규칙 단추에는 이미 동작이
+     걸려 있고, 다시 만들면 그 동작을 여기서 또 짜야 한다. 옮긴 자리는 노드 참조로
+     들고 있는다(클래스로 다시 찾으면 상단바가 먼저 지워질 때 놓친다). */
+  var setHome = [];
+  function settingsSheet(){
+    var s = document.querySelector('.ig-set');
+    if (s) return s;
+    s = document.createElement('div');
+    s.className = 'ig-set';
+    /* body 에 붙인다 — 상단바 안에 넣으면 상단바가 지워질 때 같이 사라진다 */
+    document.body.appendChild(s);
+    return s;
+  }
+  /* 옮기면서 이름을 붙인다. 아이콘만 두면 스피커 그림과 물음표 하나가 남아
+     무엇을 누르는 자리인지 알 수 없다. 줄(row)은 우리가 만든 것이라 되돌릴 때
+     같이 지우고, 안에 있던 원래 노드만 제자리로 보낸다. */
+  function takeInto(el, box, label){
+    if (!el) return;
+    setHome.push([el, el.parentNode, el.nextSibling]);
+    var row = document.createElement('div');
+    row.className = 'ig-set-row';
+    var t = document.createElement('span');
+    t.className = 'ig-set-lbl';
+    t.textContent = label;
+    row.appendChild(t);
+    row.appendChild(el);
+    box.appendChild(row);
+  }
+  /* 세로에 들어서는 즉시 접는다. 누를 때 접으면 그전까지는 상단바에 그대로 남아
+     자리를 먹는다 — 실제로 규칙 단추가 x=414 로 화면 밖에 나가 있었다. */
+  function foldSettings(){
+    if (setHome.length) return;
+    var vol = document.querySelector('.ig-vol'), help = document.querySelector('.ig-help');
+    if (!vol && !help) return;
+    var box = settingsSheet();
+    takeInto(vol, box, '소리');
+    takeInto(help, box, '게임 규칙');
+  }
+  function openSettings(){
+    foldSettings();
+    settingsSheet().classList.add('on');
+    scrim().classList.add('on');
+  }
+  function closeSettings(){
+    var box = document.querySelector('.ig-set');
+    if (box) box.classList.remove('on');
+    var s = document.querySelector('.ig-scrim');
+    if (s && !(drawer() && drawer().classList.contains('ig-open'))) s.classList.remove('on');
+  }
+  /* 세로를 벗어나면 옮겨 온 것들을 원래 자리(상단바)로 돌려놓는다. 넣은 역순으로
+     되돌려야 뒤 형제가 아직 제자리에 있다. */
+  function restoreSettings(){
+    for (var i = setHome.length - 1; i >= 0; i--) {
+      var t = setHome[i];
+      if (t[1]) putBack(t[0], t[1], t[2]);
+    }
+    setHome = [];
+    var box = document.querySelector('.ig-set'); if (box) box.remove();
+    var g = document.querySelector('.ig-gear'); if (g) g.remove();
+  }
+  function addGearBtn(){
+    var bar = document.querySelector('.ig-bar');
+    if (!bar || bar.querySelector('.ig-gear')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-btn ig-gear';
+    b.setAttribute('aria-label', '설정');
+    b.innerHTML = IG.ICON.gear;
+    b.addEventListener('click', function(){
+      var box = document.querySelector('.ig-set');
+      if (box && box.classList.contains('on')) closeSettings(); else openSettings();
+    });
+    bar.appendChild(b);
+  }
+
   function apply(){
-    if (movedGrid() && window.matchMedia(MQ).matches) { moveClock(); addPeopleBtn(); }
-    else { restoreClock(); closeDrawer(); removePeopleBtn(); }
+    if (!movedGrid() || !IG.on()) {
+      restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
+      removePeopleBtn(); removeLiveBar(); removeTimer();
+      return;
+    }
+    if (IG.land()) {
+      /* 가로 — 타이머는 상단바로, 참가인원은 👥 아이콘으로.
+         가로는 폭이 넉넉해 음량·규칙을 펼쳐 둔다(실측 915px). */
+      removeLiveBar(); removeTimer(); closeSettings(); restoreSettings();
+      moveClock(); addPeopleBtn();
+    } else {
+      /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로,
+         음량·규칙은 ⚙️ 안으로 접는다. 상단바에는 자라는 값을 두지 않는다. */
+      removePeopleBtn();
+      restoreClock();
+      addTimer(); syncTimer();
+      addLiveBar(); syncLiveBar();
+      addGearBtn(); foldSettings();
+    }
   }
 
   function start(){
     apply();
-    var m = window.matchMedia(MQ);
-    if (m.addEventListener) m.addEventListener('change', apply);
-    window.addEventListener('orientationchange', apply);
-    window.addEventListener('resize', apply);
+    IG.subscribe(apply);
     /* 조작부와 패널은 상태가 바뀌면 다시 그려진다 — 그때 붙인 것이 사라지므로 확인한다 */
     setInterval(apply, 1000);
+    /* 타이머와 참가 현황은 더 자주 맞춘다. 1초마다 맞추면 원본이 바뀐 뒤 최대 1초를
+       늦게 따라가서, 남은 시간이 한 박자씩 밀려 보인다. */
+    setInterval(function(){
+      if (movedGrid() && IG.port()) { syncTimer(); syncLiveBar(); }
+    }, 250);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
@@ -393,12 +709,12 @@
 
    격자 위, 상단바 아래에 띠로 둔다. 예산에서 34px 을 쓰고 나머지를 격자가 받는다. */
 (function(){
-  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var IG = window.__IG;
   var strip = null, histHome = null;
 
   function apply(){
     var grid = document.querySelector('.ig-body');
-    var on = grid && window.matchMedia(MQ).matches;
+    var on = grid && IG.on();
     var hist = document.querySelector('.bead');
 
     if (!on) {
@@ -417,10 +733,7 @@
 
   function start(){
     apply();
-    var m = window.matchMedia(MQ);
-    if (m.addEventListener) m.addEventListener('change', apply);
-    window.addEventListener('orientationchange', apply);
-    window.addEventListener('resize', apply);
+    IG.subscribe(apply);
     setInterval(apply, 1000);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

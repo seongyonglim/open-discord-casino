@@ -240,14 +240,26 @@ async function main(): Promise<void> {
       ck(`${g} 가로로 안 넘친다`, m.scrollW <= m.vw + 1 && m.over.length === 0,
         `scrollW ${m.scrollW} > ${m.vw}` + (m.over.length ? ' · ' + m.over.join(' / ') : ''));
 
-      if (size.name === '가로') {
+      /* 가로는 게임 일곱 개 모두 껍데기를 벗는다 — 안 켜지면 그 자체로 실패다.
+         세로는 게임마다 다르다(사다리·지뢰찾기만 세로가 주력). 그래서 아래 검사는
+         "가로냐" 가 아니라 "껍데기가 켜졌냐" 로 갈라야 한다. 방향으로 갈랐더니
+         세로 사다리가 "탭바가 화면 바닥에" 로 걸렸다 — 인게임에서는 그 탭바를
+         일부러 걷는데도. */
+      if (size.name === '가로') ck(`${g} 인게임 껍데기가 켜진다`, m.ingame === true);
+
+      if (m.ingame) {
         /* ── 인게임 풀스크린 ───────────────────────────────────────
-           가로 게임 화면은 웹 껍데기를 벗고 판에 화면을 다 내준다.
+           게임 화면은 웹 껍데기를 벗고 판에 화면을 다 내준다.
            스크롤이 생기면 그 자체로 실패다 — 폰에서 판이 밀린다. */
-        ck(`${g} 인게임 껍데기가 켜진다`, m.ingame === true);
         ck(`${g} 세로로도 안 밀린다 (스크롤 없음)`, m.scrollH <= m.vh + 1,
           `scrollH ${m.scrollH} > ${m.vh}`);
-        ck(`${g} 하단 탭바가 없다`, m.navShown === false);
+        /* 탭바는 방향마다 다르다. 가로는 높이가 412px 뿐이라 통째로 걷고 [로비] 만
+           상단바에 남긴다. 세로는 여유가 있어 탭바를 살려 둔다 — 로비·랭킹·도전과제·
+           공지로 바로 건너뛸 수 있는 자리다. 그러니 "없어야 한다" 를 양쪽에 똑같이
+           걸면 안 된다. 있어야 하는 쪽은 바닥에 붙었는지를 본다. */
+        if (size.name === '가로') ck(`${g} 하단 탭바가 없다`, m.navShown === false);
+        else ck(`${g} 탭바가 화면 바닥에`,
+          m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2, `${m.navBottom} vs ${m.vh}`);
         ck(`${g} 상단바가 얇다 (≤44px)`, m.barH !== null && m.barH <= 44,
           m.barH === null ? '.ig-bar 없음' : `${m.barH}px`);
         /* 자리를 비워 놓고 판이 그대로면 아무것도 얻은 게 없다. */
@@ -265,8 +277,9 @@ async function main(): Promise<void> {
           `${m.navBottom} vs ${m.vh}`);
       }
       /* 판과 조작부가 한 화면에. 이것이 "게임이 스크롤 없이 되는가"다.
-         가로에서는 탭바가 없으므로 화면 바닥을 기준으로 본다. */
-      const 바닥 = size.name === '가로' ? m.vh : m.navTop;
+         인게임에서는 탭바가 없으므로 화면 바닥을 기준으로 본다. */
+      /* 탭바가 남아 있으면 그 위가 바닥이다 — 세로 인게임이 그렇다 */
+      const 바닥 = m.ingame && m.navShown === false ? m.vh : m.navTop;
       ck(`${g} 판+조작부가 한 화면에`, m.mainBottom !== null && 바닥 !== null && m.mainBottom <= 바닥,
         m.mainBottom !== null ? `${m.mainBottom - (바닥 ?? 0)}px 넘침 (판 ${m.mainTop}~${m.mainBottom} · 바닥 ${바닥})` : '.game-main 없음');
       /* 눌러서 맞춘 것이 아닌지. 화면 폭의 3할도 안 되는 판은 게임이 아니라 막대다. */
