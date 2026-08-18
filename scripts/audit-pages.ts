@@ -1006,6 +1006,28 @@ async function main(): Promise<void> {
     const ghost = listed.filter(f => !onDisk.includes(f));
     ck('없는 파일을 가리키지 않는다', ghost.length === 0, ghost.join(', '));
     ck('검사 대상이 있다', onDisk.length > 5, `${onDisk.length}개`);
+
+    /* 주석 짝이 맞는가 — 한 번 닫은 뒤에 설명을 이어 쓰고 닫는 표시를 또 적는 실수다.
+       그러면 그 사이 글이 주석 밖 생 텍스트가 되고, 파서가 거기서 헤매다가 바로 뒤
+       규칙까지 삼킨다. 파일은 정상으로 보이고 화면도 뜨는데 그 규칙만 조용히 없다.
+       이 프로젝트에서 네 번 겪었다(홀덤 배율이 사라진 것, 사다리 채팅창이 안 움직인 것,
+       15·16·18 세 파일에 동시에 남아 있던 것). 눈으로는 안 보이므로 세어서 잡는다. */
+    const orphan: string[] = [];
+    for (const f of onDisk) {
+      const s = readFileSync(join(dir, f), 'utf8');
+      let i = 0, inC = false;
+      while (i < s.length) {
+        if (!inC && s[i] === '/' && s[i + 1] === '*') { inC = true; i += 2; continue; }
+        if (inC && s[i] === '*' && s[i + 1] === '/') { inC = false; i += 2; continue; }
+        if (!inC && s[i] === '*' && s[i + 1] === '/') {
+          orphan.push(`${f}:${s.slice(0, i).split('\n').length}`); i += 2; continue;
+        }
+        i++;
+      }
+      if (inC) orphan.push(`${f}: 안 닫힌 주석`);
+    }
+    ck('주석 밖에 닫는 표시가 남지 않았다', orphan.length === 0,
+      orphan.join(', ') + ' — 그 뒤 규칙이 통째로 무시된다');
     // 실제로 그 규칙이 app.css 에 실렸는지까지 본다
     const css = (await get('/app.css', cookie)).text;
     ck('경고 토스트 규칙이 실제로 실린다', /\.toast\.warn/.test(css));

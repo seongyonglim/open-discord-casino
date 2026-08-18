@@ -148,7 +148,8 @@
        · 마켓 다섯을 세로로 쌓지 않고 한 줄로 편다(251 → 약 90). 가로에서는 폭이 남는다. */
     html.ingame .game-shell:has(.bacc-table) .bacc-bead-head,
     html.ingame .game-shell:has(.bacc-table) .bacc-bead-row{display:none}
-       .market-grid 는 grid 가 아니라 flex column 이다(05-poker.css). 처음에
+
+    /* .market-grid 는 grid 가 아니라 flex column 이다(05-poker.css). 처음에
        grid-template-columns 를 걸었더니 아무 일도 안 일어났다 — 줄(.market-row)을
        가로로 눕혀야 한다. */
     html.ingame .market-grid{flex-direction:row;gap:6px;align-items:stretch}

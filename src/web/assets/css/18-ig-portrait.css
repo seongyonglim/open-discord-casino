@@ -17,7 +17,8 @@
     /* 원래 자리는 비워 두고 화면을 통째로 쓴다.
        15-mobile.css 가 하단 탭바 자리로 body 에 padding-bottom:50px 을 잡아 둔다.
        인게임에서는 그 탭바를 안 쓰는데 자리만 남아 문서가 965px 이 됐고, 화면(915)
-       보다 50px 커서 스크롤이 생겼다(실측). 예약을 걷고 탭바도 끈다. */
+       보다 50px 커서 스크롤이 생겼다(실측).
+
        세로는 가로보다 높이가 여유로우므로 하단 탭바(header nav)는 살려 둔다 —
        로비·랭킹·도전과제·공지로 바로 건너뛸 수 있는 자리다. 대신 그 50px 을
        예산에 넣고 본문을 그만큼 줄인다(안 그러면 문서가 화면보다 커져 스크롤이 생긴다). */
@@ -42,8 +43,25 @@
        판에 들어와서까지 자리를 먹으면 안 그래도 좁은 화면이 더 좁아진다. */
     html.ig-port.ingame main > .footer{display:none}
     /* 채팅 도크가 화면 아래에 떠서 [베팅하기] 를 덮었다(실측: 도크 823~857,
-       버튼 850~898). 채팅은 상단바 💬 로 열 수 있으므로 여기서는 걷는다. */
-    html.ig-port.ingame .chat-dock{display:none}
+       버튼 850~898). 그래서 도크를 통째로 display:none 했는데, 채팅 패널이 그 도크
+       안에 들어 있어서 상단바 채팅 단추가 아무 일도 못 하게 됐다 — 창은 열리는데
+       부모가 안 보이니 화면에 아무것도 안 나온다.
+
+       그래서 접힌 한 줄 바(.chat-tab)만 걷고, 펼친 패널은 살린다. 닫혀 있는 동안은
+       도크 자체를 숨겨 조작부를 가리지 않게 한다(열리면 .on 이 붙는다).
+
+       화면을 다 덮지는 않는다. 말하는 동안에도 공이 어디까지 내려왔는지는 보여야 한다 —
+       라이브 띠 위에서 시작해 조작부만 가린다. 시작 높이(--ig-chat-top)는 ingame.js 가
+       실제로 그려진 자리를 재서 넘긴다. 조작부는 제 내용만큼 가져가고 판이 나머지를
+       받으므로 그 경계가 화면마다 다르기 때문이다. */
+    html.ig-port.ingame .chat-dock{position:fixed;left:0;right:0;width:auto;
+      top:var(--ig-chat-top, 56%);
+      bottom:calc(50px + env(safe-area-inset-bottom,0px));height:auto;
+      transform:none;z-index:70;max-width:none}
+    html.ig-port.ingame .chat-dock:not(.on){display:none}
+    html.ig-port.ingame .chat-dock .chat-tab{display:none}
+    html.ig-port.ingame .chat-dock .chat-panel{width:100%;height:100%;max-height:none;
+      border-radius:14px 14px 0 0;box-shadow:0 -14px 30px rgba(0,0,0,.55)}
 
     /* ── 상단바 40 ────────────────────────────────────────── */
     html.ig-port .ig-bar{position:fixed;top:0;left:0;right:0;height:40px;z-index:50;

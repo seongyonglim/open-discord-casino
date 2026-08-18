@@ -608,6 +608,21 @@ window.__IG = (function(){
   }
   function removeLiveBar(){
     var b = document.querySelector('.ig-livebar'); if (b) b.remove();
+    document.documentElement.style.removeProperty('--ig-chat-top');
+  }
+
+  /* 채팅창이 시작할 높이를 알려 준다. 화면을 다 덮으면 판이 안 보여서, 말하는 동안
+     공이 어디까지 내려왔는지를 놓친다. 라이브 띠 위쪽에서 시작하면 판은 그대로 남고
+     가리는 것은 베팅 조작부뿐이다.
+
+     자리를 CSS 에 숫자로 박지 않는 이유는 조작부 높이가 화면마다 다르기 때문이다 —
+     조작부는 제 내용만큼 가져가고 판이 나머지를 받으므로, 412x915 와 360x780 에서
+     경계가 다른 자리에 생긴다. 실제로 그려진 자리를 재서 넘긴다. */
+  function syncChatTop(){
+    var lb = document.querySelector('.ig-livebar');
+    if (!lb) return;
+    var t = Math.round(lb.getBoundingClientRect().top);
+    if (t > 0) document.documentElement.style.setProperty('--ig-chat-top', t + 'px');
   }
 
   /* ── 타이머 ────────────────────────────────────────────────────
@@ -690,10 +705,20 @@ window.__IG = (function(){
   /* 세로에 들어서는 즉시 접는다. 누를 때 접으면 그전까지는 상단바에 그대로 남아
      자리를 먹는다 — 실제로 규칙 단추가 x=414 로 화면 밖에 나가 있었다. */
   function foldSettings(){
+    /* 방향이 바뀌면 상단바를 통째로 다시 짓는다. 그때 적어 둔 자리는 낡은 상단바를
+       가리키므로 그대로 두면 다시 접지도 못하고 되돌리지도 못한다 — 비우고 새로 접는다. */
+    if (setHome.length && setHome[0][1] && !setHome[0][1].isConnected) setHome = [];
     if (setHome.length) return;
     var vol = document.querySelector('.ig-vol'), help = document.querySelector('.ig-help');
     if (!vol && !help) return;
     var box = settingsSheet();
+    /* 다시 접기 전에 빈 줄을 치운다. 줄(.ig-set-row)은 우리가 만든 껍데기라, 안의
+       진짜 노드가 상단바로 돌아가고 나면 빈 껍데기만 남는다. 그대로 두고 새로 접으면
+       방향을 바꿀 때마다 한 벌씩 쌓인다 — 실제로 "소리 / 게임 규칙" 이 네 벌이었다.
+       안에 진짜 노드가 아직 있는 줄은 건드리지 않는다. */
+    [].forEach.call(box.querySelectorAll('.ig-set-row'), function(row){
+      if (!row.querySelector('.ig-vol, .ig-help')) row.remove();
+    });
     takeInto(vol, box, '소리');
     takeInto(help, box, '게임 규칙');
   }
@@ -742,16 +767,18 @@ window.__IG = (function(){
     }
     if (IG.land()) {
       /* 가로 — 타이머는 상단바로, 참가인원은 사람 아이콘으로.
-         가로는 폭이 넉넉해 음량·규칙을 펼쳐 둔다(실측 915px). */
-      removeLiveBar(); removeTimer(); closeSettings(); restoreSettings();
-      moveClock(); addPeopleBtn(); addSheetClose();
+         음량·규칙은 세로와 똑같이 ⚙️ 안으로 접는다. 가로는 915px 이라 지금은 들어가지만
+         잔액 자릿수가 늘면(1,980,006P) 밀리기 시작한다 — 자라는 값 옆에 안 자라는
+         아이콘을 늘어놓으면 언젠가 넘친다. 아이콘 넷을 둘로 줄인다. */
+      removeLiveBar(); removeTimer();
+      moveClock(); addPeopleBtn(); addGearBtn(); foldSettings(); addSheetClose();
     } else {
       /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로,
          음량·규칙은 ⚙️ 안으로 접는다. 상단바에는 자라는 값을 두지 않는다. */
       removePeopleBtn();
       restoreClock();
       addTimer(); syncTimer();
-      addLiveBar(); syncLiveBar();
+      addLiveBar(); syncLiveBar(); syncChatTop();
       /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
       removeSheetClose(); addSwipeClose();
       addGearBtn(); foldSettings();
@@ -766,7 +793,7 @@ window.__IG = (function(){
     /* 타이머와 참가 현황은 더 자주 맞춘다. 1초마다 맞추면 원본이 바뀐 뒤 최대 1초를
        늦게 따라가서, 남은 시간이 한 박자씩 밀려 보인다. */
     setInterval(function(){
-      if (movedGrid() && IG.port()) { syncTimer(); syncLiveBar(); }
+      if (movedGrid() && IG.port()) { syncTimer(); syncLiveBar(); syncChatTop(); }
     }, 250);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
