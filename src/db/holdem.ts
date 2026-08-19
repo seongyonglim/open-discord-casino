@@ -355,7 +355,14 @@ export function recentHoldemWinners(limit = 2): {
   dateStr: string; title: string; username: string; prize: number; players: number;
 }[] {
   return all<{ dateStr: string; title: string; username: string; prize: number; players: number }>(
-    `SELECT t.date_str AS dateStr, t.title AS title, e.username AS username, e.prize AS prize,
+    /* 받아 간 돈은 순위 상금 + 바운티다. prize 만 세면 바운티로 나간 몫이 통째로
+       빠진다 — 로비의 "최근 소식" 이 우승자를 19,500P 로 적고, 바로 아래 "지난 대회"
+       패널은 같은 사람을 45,675P 로 적었다(차이 26,175P 가 바운티였다). 미스터리
+       바운티는 순위 상금이 0 이라 아예 "0P 우승" 이 된다.
+       같은 함정을 다른 집계들은 이미 지나왔다(holdem-recap · queries/season ·
+       holdemRecordsIn · admin). 이 한 줄만 남아 있었다. */
+    `SELECT t.date_str AS dateStr, t.title AS title, e.username AS username,
+            (e.prize + e.bounty_paid) AS prize,
             (SELECT COUNT(*) FROM holdem_entries x WHERE x.tournament_id = t.id) AS players
        FROM holdem_tournaments t
        JOIN holdem_entries e ON e.tournament_id = t.id AND e.finish_place = 1

@@ -171,6 +171,52 @@ section('[4] 정산이 끝난 판은 단계가 되돌아가지 않는가');
     /if \(phase === 'done' && !settled\)/.test(src));
 }
 
+
+/* ── [5] 화면 두 곳이 같은 금액을 말하는가 ──────────────────────────── */
+section('[5] 로비의 두 자리가 우승자에게 같은 금액을 적는가');
+{
+  /* 로비에는 우승자 금액이 두 번 나온다 — "최근 소식" 한 줄과 "지난 대회" 패널.
+     둘이 각각 다른 SQL 로 세고 있었고, 한쪽만 바운티를 빼먹어서 같은 사람이
+     19,500P 와 45,675P 로 동시에 적혔다(실제 화면에서 발견됐다).
+
+     바운티 판에서는 이 차이가 전부가 된다: 미스터리는 순위 상금이 0 이라 "0P 우승" 이
+     나온다. 그래서 순위 상금이 0 이고 돈이 전부 바운티로 나간 판으로 검사한다 —
+     한쪽이 prize 만 세면 그 자리에서 0 이 되어 곧바로 드러난다. */
+  const A5 = require('../src/db/admin') as typeof import('../src/db/admin');
+  const HD5 = require('../src/db/holdem') as typeof import('../src/db/holdem');
+  const RC5 = require('../src/db/holdem-recap') as typeof import('../src/db/holdem-recap');
+  const t0 = Math.floor(Date.now() / 1000);
+
+  run(`UPDATE holdem_tournaments SET cancelled_at = unixepoch()
+        WHERE finished_at IS NULL AND cancelled_at IS NULL`);
+  const made = A5.createTournament({
+    startAt: t0 + 3600, regOpenMin: 1, buyIn: 0, prizeMultiplier: 15000,
+    mode: 'MYSTERY_BOUNTY', bountyPct: 100,
+  } as never) as { ok: boolean; id: number };
+  ck('바운티 대회를 열었다', made.ok === true, JSON.stringify(made));
+  run(`UPDATE holdem_tournaments SET started_at = ?, finished_at = ? WHERE id = ?`,
+    t0 - 7000, t0 - 100, made.id);
+
+  const PLACES: [string, string, number, number, number][] = [
+    ['n1', '일등', 1, 0, 45675], ['n2', '이등', 2, 0, 14325], ['n3', '삼등', 3, 0, 0],
+  ];
+  for (const [id, name, place, prize, bty] of PLACES) {
+    upsertUser(id, name, null);
+    run(`INSERT INTO holdem_entries
+          (tournament_id, user_id, username, registered_at, finish_place, prize, bounty_paid)
+         VALUES (?,?,?,?,?,?,?)`, made.id, id, name, t0 - 7200, place, prize, bty);
+  }
+
+  const news = HD5.recentHoldemWinners(1)[0];
+  const recap = RC5.recentRecap()!;
+  ck('두 자리가 같은 대회를 가리킨다',
+    news?.username === recap?.top[0]?.username, `${news?.username} vs ${recap?.top[0]?.username}`);
+  ck('최근 소식이 바운티를 빼먹지 않는다 (0P 우승이 아니다)',
+    news.prize === 45675, `${news.prize}`);
+  ck('두 자리가 같은 금액을 적는다',
+    news.prize === recap.top[0].prize, `${news.prize} != ${recap.top[0].prize}`);
+  ck('총 상금이 나간 돈의 합과 같다', recap.prizeTotal === 60000, String(recap.prizeTotal));
+}
 console.log('\n──────────────────────────────────────────────────');
 console.log(`통과 ${pass} · 실패 ${fail}`);
 if (fail > 0) process.exit(1);
