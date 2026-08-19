@@ -23,7 +23,7 @@ import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
 import { ensureRecurring } from './recurrence';
-import { bumpRollover, clearRollover, carriesRollover } from './rollover';
+import { bumpRollover, clearRollover, carriesRollover, rolloverFactor } from './rollover';
 import { notifyAll } from './notifications';
 
 /* 알림 문구에 쓸 KST 시:분. 화면이 아니라 알림 본문에 들어가는 값이라 여기서 만든다 —
@@ -755,7 +755,28 @@ export function advanceHoldem(userId?: string): HoldemStatus {
       /* 상금이 0 인 판(운영자가 화면을 보려고 여는 테스트 판)은 세지 않는다.
          예전에는 참가비만 봐서, 그런 판을 열었다 넘기는 것만으로 다음 프리롤이
          2배가 됐다 — 경제에 흔적을 남기지 않기로 한 판이 가장 큰 흔적을 남겼다. */
-      if (carriesRollover(t)) bumpRollover();
+      if (carriesRollover(t)) {
+        const was = rolloverFactor();
+        bumpRollover();
+        const now2 = rolloverFactor();
+        /* 이미 만들어 둔 다음 판에도 이 이월을 얹는다.
+
+           배수는 대회를 만들 때 금액에 굳혀 넣는다(admin.ts). 그래서 운영자가 다음 판을
+           미리 열어 두면, 그 뒤에 쌓인 이월이 그 판에는 실리지 않는다 — 화면은 "이월
+           2회 누적 적용" 이라고 말하는데 실제 금액은 1회분이다. 상한에 걸려 배수가
+           안 오른 때(was === now2)는 아무 일도 하지 않는다.
+
+           원래 금액(base)을 따로 안 들고 있어도 된다: 지금 값이 base × was 이므로
+           was 로 나누고 now2 를 곱하면 정확히 base × now2 가 된다. 정수 나눗셈이
+           먼저 오지 않게 곱셈을 앞에 둔다. */
+        if (now2 > was) {
+          run(`UPDATE holdem_tournaments
+                  SET prize_multiplier = (prize_multiplier * ?) / ?
+                WHERE started_at IS NULL AND finished_at IS NULL AND cancelled_at IS NULL
+                  AND buy_in <= 0 AND prize_multiplier > 0`,
+            now2, was);
+        }
+      }
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 

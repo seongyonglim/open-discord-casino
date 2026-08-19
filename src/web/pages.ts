@@ -340,7 +340,7 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
     : (today.net > 0 ? '+' : '') + today.net.toLocaleString('ko-KR') + 'P';
   const netSub = today.rounds === 0 ? '아직 플레이 없음' : `${today.rounds}판`;
 
-  const ff = nextFreerollStat(ht);
+  const ff = tournamentStat(ht);
   /* 도전과제 버프. 출석 칸 아래에 붙인다 — 출석과 지원금에만 걸리는 버프라 그 자리가
      맞고, 버프가 없는 사람에게는 "디스코드에서 출석" 안내가 그대로 남아야 한다
      (0% 뱃지는 알려주는 것이 없고 자리만 차지한다). */
@@ -359,7 +359,7 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
         ? `<span class="buff-badge">${trophyIcon}도전과제 버프 +${buff.percent}%</span>`
         : '디스코드에서 출석'}</div></div>
     <div class="stat"><div class="lbl">${esc(ff.label)}</div>
-      <div class="val num"${ff.until != null ? ` data-countdown="${ff.until}"` : ''}>${esc(ff.value)}</div>
+      <div class="val num">${esc(ff.value)}</div>
       <div class="sub">${esc(ff.sub)}</div></div>
   </div>`;
 }
@@ -367,6 +367,43 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
 /* 프리롤 칸. 상태 판정은 advanceHoldem이 이미 해 뒀으므로 문구로만 옮긴다.
    오늘 대회가 끝났거나 취소됐으면 내일 일정을 계산해서 보여준다 — 그래야
    하루 중 언제 들어와도 "다음이 언제인가"에 답이 있다. */
+/**
+ * 네 번째 스탯 칸.
+ *
+ * 한동안 이벤트 배너와 같은 함수를 써서, 바로 아래 배너와 똑같은 "시작까지 07:24" 가
+ * 100px 떨어진 자리에 두 번 떴다. 같은 값이 한 화면에 두 번 있으면 읽는 쪽은 둘이
+ * 다른 값인지 확인하느라 한 번 더 본다.
+ *
+ * 그래서 둘이 맡는 것을 나눈다 — 남은 시간은 배너가 혼자 세고(그쪽이 누르는 자리다),
+ * 이 칸은 "얼마나 모였고 언제 시작하나" 를 맡는다. 인원은 신청이 들어올 때마다
+ * 바뀌므로 이 칸도 여전히 대회 상태를 따라간다.
+ */
+function tournamentStat(ht: HoldemStatus | null): { label: string; value: string; sub: string } {
+  const now = Math.floor(Date.now() / 1000);
+  const hhmm = (at: number) => new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(at * 1000));
+
+  const t = ht?.tournament ?? null;
+  if (!t || !ht?.schedule) {
+    /* 대회 행이 없어도 반복 일정은 있을 수 있다 — 있으면 그 날짜를 적는다.
+       없으면서 있다고 말하지 않는 것이 이 칸의 유일한 규칙이다. */
+    const up = upcomingHint(now);
+    if (!up) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
+    return { label: '다음 대회', value: up.dateStr, sub: `${hhmm(up.startAt)} 시작` };
+  }
+
+  const state = ht.status === 'REGISTRATION_OPEN' ? '등록 중'
+    : ht.status === 'WAITING_MIN_PLAYERS' ? '인원 대기'
+    : ht.status === 'RUNNING' ? '진행 중'
+    : ht.status === 'FINISHED' ? '종료' : ht.status === 'CANCELLED' ? '취소' : '예정';
+  return {
+    label: t.title?.trim() || '홀덤 토너먼트',
+    value: `${ht.registered} / ${T.MAX_PLAYERS}명`,
+    sub: `${state} · ${hhmm(ht.schedule.scheduledStartAt)} 시작`,
+  };
+}
+
 /* 네 번째 스탯 카드와 이벤트 배너가 같이 쓰는 한 줄 요약.
    until 은 세어 내려갈 목표 시각(epoch 초)이다. 값이 있는 갈래만 붙는다 —
    "진행 중"이나 "예정 없음"처럼 셀 것이 없는 상태에 0 을 넣으면 화면이 00:00 을

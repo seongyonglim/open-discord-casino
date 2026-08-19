@@ -26,7 +26,12 @@
   .card + .card{margin-top:16px}
   .card h2{margin:0 0 14px;font-family:var(--display);font-weight:400;font-size:17px;color:var(--gold);
     letter-spacing:.3px;display:flex;align-items:center;gap:8px}
-  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+  /* 네 칸짜리 줄이다. auto-fit 에 맡겨 두었더니 480~600px 구간에서 3열이 잡혀
+     3 + 1 로 갈라졌고, 둘째 줄에 빈칸 두 개가 그대로 남았다 — 창을 조금 좁힌 노트북과
+     태블릿 세로에서 화면 위쪽에 구멍이 하나 뚫린 것처럼 보였다.
+     네 칸은 4열이거나 2×2 여야 한다. 3열은 어느 쪽도 아니므로 아예 만들지 않는다. */
+  .stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+  @media (max-width:700px){ .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))} }
   .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .stat .lbl{font-size:12px;color:var(--muted);font-weight:600}
   .stat .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}

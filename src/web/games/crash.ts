@@ -164,6 +164,9 @@ function crashAwards(
   // 이번 라운드에 캐시아웃한 판만 본다. 안 걸었거나 터진 판은 볼 것이 없다.
   // 안 걸었거나 터진 판에도 공통 과제는 봐야 한다 — 되살아난 것은 그 판과 무관하다
   if (!myBet || myBet.cashout_multiplier == null) return withUnlocked(commonAwards(userId));
+  /* 손으로 뺐는가. 예약이 걸려 있지 않았거나, 걸려 있어도 그 배율이 아니면 손이다.
+     시즌 마감 강제 환불은 두 값을 똑같이 1 로 적어 두므로 여기서 손이 아닌 것으로
+     걸러진다 — 안 그러면 아무것도 안 한 사람에게 1.01배 히든 과제가 열렸다. */
   const byHand = myBet.auto_cashout == null || myBet.cashout_multiplier !== myBet.auto_cashout;
   const checks: [string, () => boolean][] = [];
   if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);

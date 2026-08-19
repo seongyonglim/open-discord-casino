@@ -120,7 +120,12 @@ export function settleOpenStakes(): LockdownSweep {
      보이게 한다 — 안 채우면 화면이 아직 진행 중인 베팅으로 그린다. */
   const refunded =
     refundBets('ladder_bets', 'amount', ', won = 0')
-    + refundBets('crash_bets', 'amount', ', cashout_multiplier = 1')
+    /* 예약 배율도 1 로 함께 적는다. 표시 때문이 아니라 "손으로 뺀 것이 아니다" 를
+       남기기 위해서다 — 크래시에는 1.01배 이하로 직접 캐시아웃하면 열리는 히든 과제가
+       있는데, 마감 환불이 cashout_multiplier 만 1 로 채워 두면 그 조건과 구별이 안 돼
+       아무것도 안 한 사람에게 과제가 열렸다. 두 값이 같으면 예약 정산으로 읽히므로
+       그 갈래를 타지 않는다(games/crash.ts 의 byHand). */
+    + refundBets('crash_bets', 'amount', ', cashout_multiplier = 1, auto_cashout = 1')
     + refundBets('poker_bets', 'amount', ', won = 0')
     + refundBets('baccarat_bets', 'amount', ', won = 0')
     + refundBets('blackjack_hands', 'bet', `, status = 'stand', outcome = 'push'`);

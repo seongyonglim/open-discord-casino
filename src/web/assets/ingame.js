@@ -293,7 +293,7 @@ window.__IG = (function(){
     if (isFinite(v) && v >= 0) return v;
     /* 옛 페이지가 캐시에 남아 있으면 그 속성이 없다. 그때만 글자를 읽는다 —
        이 한 칸 안에는 잔액 말고 다른 숫자가 없다. */
-    var m = (el.textContent || '').replace(/,/g, '').match(/(d+)/);
+    var m = (el.textContent || '').replace(/,/g, '').match(/(\d+)/);
     return m ? Number(m[1]) : null;
   }
 

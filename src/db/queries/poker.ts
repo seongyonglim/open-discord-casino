@@ -66,7 +66,7 @@ function prunePokerRounds(): void {
   run(`DELETE FROM poker_rounds WHERE id <= ?`, cutoff.id);
 }
 
-// 정산: 승자 시장은 무승부 시 원금 환불, 등급 시장은 두 핸드 중 하나라도 그 등급이면 적중
+// 정산: 승자 시장은 무승부 시 원금 환불, 등급 시장은 두 핸드 중 더 높은 등급 하나에만 적중
 function settlePokerBets(roundId: number, outcome: { winner: 'master' | 'shark' | 'tie'; buckets: number[] }): void {
   const bets = all<{ id: number; user_id: string; market: string; amount: number; odds: number }>(
     `SELECT id, user_id, market, amount, odds FROM poker_bets WHERE round_id = ?`, roundId
