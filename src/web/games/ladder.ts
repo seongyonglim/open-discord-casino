@@ -381,7 +381,12 @@ export function ladderPage(user: WebUser): string {
           cancelBtn.style.display = (betting === false) ? 'none' : 'inline-flex';
           return;
         }
-        setControlsLocked(false);
+        /* 베팅이 닫혀 있으면 조작부도 함께 잠근다.
+           예전에는 여기서 무조건 풀어 놓고 아래에서 [베팅하기] 단추만 죽였다. 그래서
+           공이 내려가는 동안에도 좌/우·홀/짝 토글이 눌리고 금액칸·칩이 다 먹혀서,
+           고르고 금액을 맞춰 놓고 마지막에야 "안 되는 화면" 이라는 걸 알게 됐다.
+           누를 수 없는 것은 눌리지 않아야 한다. */
+        setControlsLocked(betting === false);
         cancelBtn.style.display = 'none';
         if (betting === false) { playBtn.disabled = true; playBtn.textContent = '베팅 마감'; return; }
         var has = startGuess || parityGuess;

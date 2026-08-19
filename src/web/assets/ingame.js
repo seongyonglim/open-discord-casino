@@ -42,7 +42,7 @@ window.__IG = (function(){
      지뢰찾기를 여기까지 넣었더니 껍데기는 켜지는데(원래 자리를 display:none 으로
      감춘다) 대신 그릴 격자가 없어서 화면이 통째로 사라졌다. 검사가 "판 폭 0px" 로
      잡아 줬다. 한 게임씩 만들고, 만든 것만 여기 더한다. */
-  var PORT_SHELL = ['ladder'];
+  var PORT_SHELL = ['ladder', 'mines'];
 
   function key(){
     var m = location.pathname.match(/^\/games\/([a-z]+)\/?$/);
@@ -175,6 +175,46 @@ window.__IG = (function(){
     h.parent.insertBefore(el, (h.next && h.next.parentNode === h.parent) ? h.next : null);
   }
 
+  /* ── 게임 전환 팝오버 ────────────────────────────────────────────────
+     목록은 지어내지 않는다. 페이지에 이미 있는 게임 전환 바(.game-switch)의 칩을
+     그대로 읽는다 — 이름·아이콘·주소가 거기 다 있고, 게임이 늘어도 따라온다.
+     로비는 그 바에 없으므로 맨 위에 한 줄 더 붙인다(가로에서는 하단 탭바를 걷기
+     때문에 여기가 유일한 나가는 길이다). */
+  function gamesPop(){
+    var p = document.querySelector('.ig-games');
+    if (p) return p;
+    p = document.createElement('div');
+    p.className = 'ig-games';
+
+    var here = location.pathname;
+    var add = function(href, label, iconHtml, on){
+      var a = document.createElement('a');
+      a.className = 'ig-g' + (on ? ' on' : '');
+      a.href = href;
+      if (iconHtml) { var i = document.createElement('span'); i.className = 'ig-g-ic'; i.innerHTML = iconHtml; a.appendChild(i); }
+      var s = document.createElement('span'); s.className = 'ig-g-t'; s.textContent = label;
+      a.appendChild(s);
+      p.appendChild(a);
+    };
+
+    add('/', '로비', IG.ICON.home || '', here === '/');
+    [].forEach.call(document.querySelectorAll('.game-switch .gs-pill'), function(pill){
+      var ic = pill.querySelector('.gs-ic');
+      /* 칩의 글자에서 아이콘 부분을 뺀 나머지가 게임 이름이다. textContent 를 그대로
+         쓰면 아이콘이 글자가 아니므로 이름만 남는다. */
+      add(pill.getAttribute('href'), pill.textContent.trim(),
+        ic ? ic.innerHTML : '', pill.classList.contains('active'));
+    });
+    document.body.appendChild(p);
+    return p;
+  }
+  function closeGames(){
+    var p = document.querySelector('.ig-games');
+    if (p) p.classList.remove('on');
+    var b = document.querySelector('.ig-gamesel');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+
   function build(mode){
     if (bar) return;
     bar = document.createElement('div');
@@ -183,27 +223,50 @@ window.__IG = (function(){
     var prof  = take(document.querySelector('.profwrap'), 'prof');
     var vol   = take(document.querySelector('.volwrap'), 'vol');
     var help  = take(document.querySelector('.game-switch .gs-help'), 'help');
+    /* 알림 종은 잔액 상자(.profwrap) 안에 들어 있다. 통째로 옮기면 안 읽은 표시와
+       목록 여닫는 동작이 그대로 따라온다 — 우리가 다시 만들 것이 없다. */
+    var bel   = take(document.querySelector('.profwrap .belwrap'), 'bel');
 
-    /* 뒤로가기는 가로에만 둔다.
-       가로: 하단 탭바를 통째로 걷으므로 나갈 길이 없다. 그 [로비] 탭을 꺼내 온다.
-       세로: 탭바를 살려 두었고 거기 [로비] 가 이미 있다. 위에 하나 더 두면 같은
-             일을 하는 것이 두 군데가 되고, 그것도 엄지가 제일 안 닿는 왼쪽 위다.
-             폰에서 나가는 길은 아래에 있는 것이 맞다. 56px 도 돌려받는다. */
-    if (mode !== 'port') {
-      var lobby = take(document.querySelector('header nav a.tab[href="/"]'), 'lobby');
-      if (lobby) { lobby.classList.add('ig-back'); bar.appendChild(lobby); }
-    }
+    /* ── 왼쪽: 지금 어느 게임인가 · 규칙 ─────────────────────────────
+       게임 이름이 글자였을 때는 "여기가 어디인지" 만 말하고 끝이었다. 다른 게임으로
+       가려면 로비를 거쳐야 했는데, 폰에서 그건 두 번 나갔다 들어오는 길이다.
+       이름 자체를 눌러 바꾸게 한다 — 이미 화면에서 가장 눈에 띄는 글자이고,
+       "지금 여기" 와 "다른 데로" 는 원래 같은 자리에 있는 것이 자연스럽다. */
+    var left = document.createElement('div');
+    left.className = 'ig-left';
 
-    /* 게임 이름은 글자만 가져온다. 칩 자체를 옮기면 접었다 펴는 위임이 끊긴다. */
     var active = document.querySelector('.game-switch .gs-pill.active');
-    var name = document.createElement('span');
-    name.className = 'ig-name';
-    name.textContent = active ? active.textContent.trim() : '';
-    bar.appendChild(name);
+    var sel = document.createElement('button');
+    sel.type = 'button';
+    sel.className = 'ig-btn ig-gamesel';
+    sel.setAttribute('aria-haspopup', 'true');
+    sel.setAttribute('aria-expanded', 'false');
+    var nm = document.createElement('span');
+    nm.className = 'ig-name';
+    nm.textContent = active ? active.textContent.trim() : '';
+    sel.appendChild(nm);
+    var car = document.createElement('span');
+    car.className = 'ig-caret';
+    car.setAttribute('aria-hidden', 'true');
+    sel.appendChild(car);
+    sel.addEventListener('click', function(e){
+      e.stopPropagation();
+      var p = gamesPop();
+      var on = p.classList.toggle('on');
+      sel.setAttribute('aria-expanded', on ? 'true' : 'false');
+      if (!on) closeGames();
+    });
+    left.appendChild(sel);
+    if (help) { help.classList.add('ig-help'); left.appendChild(help); }
+    bar.appendChild(left);
 
-    if (prof) bar.appendChild(prof);
+    /* ── 오른쪽: 아이콘 둘 · 잔액 ───────────────────────────────────
+       글자 없는 아이콘만 둔다. 라벨을 붙이면 360px 에서 줄이 넘친다.
+       잔액은 맨 끝에 못 박는다 — 자릿수가 자라는 유일한 값이라 끝에 있어야 다른
+       것을 밀지 않는다(가운데 두었을 때 실제로 아이콘을 밀어냈다). */
+    var right = document.createElement('div');
+    right.className = 'ig-right';
 
-    /* 채팅 단추. app.js 가 창을 여는 함수를 내보내 두었으므로 여기서는 부르기만 한다. */
     var chat = document.createElement('button');
     chat.type = 'button';
     chat.className = 'ig-btn ig-chat';
@@ -212,22 +275,29 @@ window.__IG = (function(){
     chat.addEventListener('click', function(){
       if (window.casinoChat && window.casinoChat.open) window.casinoChat.open();
     });
-    bar.appendChild(chat);
+    right.appendChild(chat);
 
-    if (vol) { vol.classList.add('ig-vol'); bar.appendChild(vol); }
-    if (help) { help.classList.add('ig-help'); bar.appendChild(help); }
+    if (bel) { bel.classList.add('ig-bel'); right.appendChild(bel); }
+    if (vol) { vol.classList.add('ig-vol'); right.appendChild(vol); }
+    if (prof) right.appendChild(prof);
+    bar.appendChild(right);
 
     document.body.appendChild(bar);
   }
 
   function tearDown(){
     if (!bar) return;
+    closeGames();
+    var p = document.querySelector('.ig-games'); if (p) p.remove();
     giveBack(document.querySelector('.ig-back'), 'lobby');
     giveBack(document.querySelector('.ig-bar .profwrap'), 'prof');
+    giveBack(document.querySelector('.ig-bel'), 'bel');
     giveBack(document.querySelector('.ig-vol'), 'vol');
     giveBack(document.querySelector('.ig-help'), 'help');
     var back = document.querySelector('.ig-back');
     if (back) back.classList.remove('ig-back');
+    var bel = document.querySelector('.ig-bel');
+    if (bel) bel.classList.remove('ig-bel');
     var vol = document.querySelector('.ig-vol');
     if (vol) vol.classList.remove('ig-vol');
     var help = document.querySelector('.ig-help');
@@ -235,6 +305,17 @@ window.__IG = (function(){
     bar.parentNode && bar.parentNode.removeChild(bar);
     bar = null;
   }
+
+  /* 팝오버 바깥을 누르면 닫는다. 가림막을 따로 두지 않는 이유는 상단바 바로 아래에
+     붙는 작은 목록이라 화면을 덮을 일이 없고, 가림막을 쓰면 서랍·설정 시트와 같은
+     노드를 놓고 서로 내리기를 다투기 때문이다(그 셋이 각각 다른 IIFE 에 있다). */
+  document.addEventListener('click', function(e){
+    var p = document.querySelector('.ig-games');
+    if (!p || !p.classList.contains('on')) return;
+    if (e.target.closest && (e.target.closest('.ig-games') || e.target.closest('.ig-gamesel'))) return;
+    closeGames();
+  });
+  window.addEventListener('orientationchange', closeGames);
 
   var mode = null;
   function apply(){
@@ -415,12 +496,19 @@ window.__IG = (function(){
 
   /* 한 게임씩 옮긴다. 여기 적힌 게임만 격자를 쓰고, 나머지는 예전 배치를 그대로 쓴다 —
      일곱 개를 한꺼번에 바꾸면 어디가 왜 깨졌는지 가릴 수 없다. 하나를 끝내고 확인한
-     뒤에 다음을 더한다. */
-  var MOVED = ['ladder'];
+     뒤에 다음을 더한다.
+
+     방향까지 함께 적는다. 격자를 쓴다는 것은 그 방향에 맞는 배치 규칙이 CSS 에
+     있다는 뜻인데, 그 규칙은 방향마다 따로 쓰기 때문이다 — 지뢰찾기는 세로 배치만
+     지어 두었고, 가로에서 격자를 켜면 세 칸이 폭을 균등하게 나눠 판이 68px 로
+     찌그러졌다(점검이 잡았다). 가로 지뢰찾기는 어차피 방향 잠금 대상이라 예전
+     배치로 두는 것이 맞다. */
+  var MOVED = { ladder: 'both', mines: 'port' };
 
   function apply(){
-    var on = IG.on() && MOVED.indexOf(shellKind()) >= 0;
-    if (on) build(); else tearDown();
+    var want = MOVED[shellKind()];
+    var fits = want === 'both' || (want === 'port' && IG.port()) || (want === 'land' && IG.land());
+    if (IG.on() && fits) build(); else tearDown();
   }
 
   function start(){
@@ -814,20 +902,28 @@ window.__IG = (function(){
     }
     if (IG.land()) {
       /* 가로 — 타이머는 상단바로, 참가인원은 사람 아이콘으로.
-         음량·규칙은 세로와 똑같이 ⚙️ 안으로 접는다. 가로는 915px 이라 지금은 들어가지만
-         잔액 자릿수가 늘면(1,980,006P) 밀리기 시작한다 — 자라는 값 옆에 안 자라는
-         아이콘을 늘어놓으면 언젠가 넘친다. 아이콘 넷을 둘로 줄인다. */
+
+         ⚙️ 는 없앴다. 그 안에 접어 두던 것이 소리와 규칙 둘뿐이었는데, 둘 다 한 번
+         누르면 끝나는 일이라 서랍을 한 겹 더 여는 값이 아니었다 — 이제 상단바에
+         그대로 있다(규칙은 왼쪽 게임 이름 옆, 소리는 오른쪽).
+
+         자리는 게임 이름을 눌러 바꾸게 하면서 벌었다. 가로에 있던 [← 로비] 단추가
+         목록의 첫 줄로 들어가 사라졌기 때문이다. */
       removeLiveBar();
-      moveClock(); addPeopleBtn(); addGearBtn(); foldSettings(); addSheetClose();
+      moveClock(); addPeopleBtn(); restoreSettings(); addSheetClose();
     } else {
-      /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로,
-         음량·규칙은 ⚙️ 안으로 접는다. 상단바에는 자라는 값을 두지 않는다. */
+      /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로.
+         소리·규칙은 상단바에 그대로 둔다(⚙️ 를 없앴다 — 위 가로 갈래의 설명을 보라). */
       removePeopleBtn();
       restoreClock();
-      addLiveBar(); syncLiveBar(); syncChatTop();
+      /* 라이브 띠는 여럿이 같은 판에 거는 게임만 쓴다. 지뢰찾기는 혼자 하는 판이라
+         "실시간 참가자 0명 · 총 베팅 0P" 가 언제나 0 이고, 그건 알려 주는 것이
+         없으면서 한 줄을 먹는다. 그런 게임에서는 아예 안 붙인다. */
+      if (shellKind() === 'ladder') { addLiveBar(); syncLiveBar(); syncChatTop(); }
+      else removeLiveBar();
       /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
       removeSheetClose(); addSwipeClose();
-      addGearBtn(); foldSettings();
+      restoreSettings();
     }
   }
 

@@ -60,6 +60,83 @@
     .ig-btn svg{width:15px;height:15px;display:block}
     .ig-bar .ig-vol{flex:none;transform:scale(.85)}
     .ig-bar .ig-help{flex:none}
+    /* ── 두 덩이로 나눈 상단바 ───────────────────────────────────
+       [게임명 ▾][?] ……… [💬][🔊][잔액]
+
+       왼쪽은 "여기가 어디이고 규칙이 무엇인가", 오른쪽은 "무엇을 누를 수 있는가".
+       예전에는 이름·잔액·아이콘이 한 줄에 섞여 있어서, 잔액 자릿수가 늘 때마다
+       무엇이 밀릴지 예측할 수가 없었다. 이제 밀릴 수 있는 것은 왼쪽 이름 하나뿐이다.
+
+       오른쪽은 flex:none 이고 잔액이 그 맨 끝이다 — 자라는 값이 끝에 있으면 자라도
+       다른 것을 밀지 않고 제 자리에서 늘어난다. */
+    .ig-bar{flex-wrap:nowrap}
+    .ig-left{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px}
+    .ig-right{flex:none;display:flex;align-items:center;gap:6px;margin-left:auto}
+
+    /* 게임 이름은 이제 단추다. 눌러서 다른 게임으로 간다. */
+    .ig-gamesel{flex:0 1 auto;min-width:0;width:auto;gap:4px;padding:0 8px;
+      border-color:transparent}
+    .ig-gamesel:hover{border-color:var(--line)}
+    .ig-gamesel .ig-name{flex:0 1 auto;min-width:0;overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap}
+    /* 아래쪽 삼각형. 글자가 아니라 도형이라 글꼴에 안 휘둘린다. */
+    .ig-caret{flex:none;width:0;height:0;border-left:4px solid transparent;
+      border-right:4px solid transparent;border-top:5px solid currentColor;
+      opacity:.65}
+    .ig-gamesel[aria-expanded="true"] .ig-caret{transform:rotate(180deg)}
+
+    /* ── 게임 전환 목록 ──────────────────────────────────────────
+       상단바 바로 아래 왼쪽에 붙는다. 화면을 덮지 않으므로 가림막을 두지 않는다. */
+    .ig-games{position:fixed;top:40px;left:8px;z-index:600;display:none;
+      min-width:168px;max-width:min(72vw,260px);padding:6px;
+      background:#15161a;border:1px solid var(--line);border-radius:12px;
+      box-shadow:0 14px 34px rgba(0,0,0,.6)}
+    .ig-games.on{display:block}
+    .ig-g{display:flex;align-items:center;gap:9px;min-height:38px;padding:0 10px;
+      border-radius:8px;text-decoration:none;color:var(--muted);
+      font-size:13px;font-weight:600;white-space:nowrap}
+    .ig-g:hover{background:rgba(255,255,255,.06);color:var(--txt)}
+    .ig-g.on{color:var(--gold);background:rgba(212,175,55,.10)}
+    .ig-g-ic{flex:none;display:inline-flex;width:16px;height:16px}
+    .ig-g-ic svg{width:16px;height:16px;display:block}
+    .ig-g-t{min-width:0;overflow:hidden;text-overflow:ellipsis}
+    /* ── 우측 유틸 네 개를 한 규격으로 (가로) ────────────────────
+       세로와 정확히 같은 구성·같은 순서다: [채팅][알림][소리][잔액].
+       크기만 한 치수 작다 — 가로는 높이가 412px 뿐이라 상단바가 36px 이고,
+       그 안에서 36px 짜리 네모는 테두리가 바에 닿는다. 32px 로 두되 세로 여백을
+       상단바가 대신 내주므로 손가락이 닿는 넓이는 같다. */
+    .ig-bar .ig-btn,
+    .ig-bar .ig-help,
+    .ig-bar .ig-bel .belbtn,
+    .ig-bar .ig-vol .sfxbtn{
+      width:32px;height:32px;min-width:32px;min-height:32px;padding:0;flex:none;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:none;border:1px solid var(--line);border-radius:8px;
+      color:var(--muted);font-family:inherit;font-size:13px;line-height:1;cursor:pointer}
+    /* 크기만 정한다 — 소리 단추 안의 아이콘 셋 중 하나만 보이는 규칙(01-base)을
+       display 로 덮으면 셋이 한꺼번에 나온다. */
+    .ig-bar .ig-btn svg,
+    .ig-bar .ig-bel .belbtn svg,
+    .ig-bar .ig-vol .sfxbtn svg{width:16px;height:16px}
+    .ig-bar .ig-bel{display:flex;flex:none;position:relative}
+    .ig-bar .ig-vol{display:flex;flex:none;transform:none;position:relative}
+
+    /* 이름 단추만 글자를 따라간다 */
+    .ig-bar .ig-gamesel{width:auto;min-width:0;flex:0 1 auto;height:32px;
+      gap:5px;padding:0 9px;border-color:transparent;justify-content:flex-start}
+    .ig-bar .ig-gamesel:hover{border-color:var(--line)}
+    /* 로비 전환 바에서 오른쪽 끝으로 밀리라고 붙어 있던 margin-left:auto(03-lobby)가
+       따라온다. 상단바에서는 이름 바로 옆이 제자리다. */
+    .ig-bar .ig-help{margin:0}
+    .ig-bar .ig-gamesel .ig-name{flex:0 1 auto;min-width:0;font-size:13px;
+      font-weight:700;color:var(--gold);overflow:hidden;text-overflow:ellipsis;
+      white-space:nowrap}
+    /* 잔액 상자는 가로에서도 안쪽 여백을 줄인다. 아바타·이름은 로비에서 보는 것이고
+       판에서 필요한 것은 숫자 하나다 — 상자가 229px 을 쓰던 자리를 줄인다. */
+    .ig-bar .profwrap{margin-left:0;flex:none;transform:none}
+    .ig-bar .profwrap .ava,
+    .ig-bar .profwrap .pname{display:none}
+    .ig-bar .profwrap .prof{padding:0 9px;height:32px;white-space:nowrap}
 
     /* ── 판에 화면을 내준다 ──────────────────────────────────────
        상단바 36px 만 빼고 나머지가 전부 게임이다. main 의 여백도 걷는다. */
