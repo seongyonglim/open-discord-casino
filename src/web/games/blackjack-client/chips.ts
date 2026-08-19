@@ -270,8 +270,31 @@ export function bjChips(p0: string | number): string {
            늘었을 때만 채팅이 스스로 받아 간다(app.js 의 casinoChat). */
         if (window.casinoChat) casinoChat.note(d.chatMax, d.chatMod);
       }
+      /* 탭이 숨겨져 있거나 한참 아무 조작이 없으면 폴링을 멈춘다. 사다리·그래프·포커가
+         이미 쓰는 규칙인데 여기만 빠져 있었다 — 백그라운드 탭이 1초마다 계속 요청을
+         보내고 있었다. 서버가 이 폴링을 세어 "지금 몇 명이 보고 있나"를 만들므로
+         (services/presence.ts) 안 보는 탭이 섞이면 그 숫자도 거짓이 된다. */
+      var IDLE_MS = 3 * 60 * 1000;
+      var lastAct = Date.now(), timer = null;
+      function startPolling(){
+        if (timer) return;
+        timer = setInterval(function(){
+          if (document.hidden) { stopPolling(); return; }
+          if (Date.now() - lastAct > IDLE_MS) { stopPolling(); return; }
+          poll();
+        }, 1000);
+      }
+      function stopPolling(){ if (timer) { clearInterval(timer); timer = null; } }
+      function wake(){ lastAct = Date.now(); if (!document.hidden) { startPolling(); poll(); } }
+      ['click','keydown','touchstart','mousemove'].forEach(function(ev){
+        document.addEventListener(ev, function(){ lastAct = Date.now(); if (!timer) wake(); },
+          { passive: true });
+      });
+      document.addEventListener('visibilitychange', function(){
+        if (document.hidden) stopPolling(); else wake();
+      });
       poll();
-      setInterval(poll, 1000);
+      startPolling();
     })();
 
       // 우측 패널 랭킹 탭

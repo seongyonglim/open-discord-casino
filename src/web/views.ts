@@ -1,6 +1,8 @@
 // SSR HTML 렌더링 (레이아웃 + 공통 헬퍼). 프레임워크 없이 템플릿 문자열만 사용.
 // 톤앤매너: 블랙 + 골드 베이스의 절제된 카지노 UI. 초록/빨강은 승패 등 기능적 신호에만 사용.
 import { ASSET_V } from './assets';
+/* pwa 는 assets 만 가져다 쓴다 — views 를 안 부르므로 순환이 생기지 않는다. */
+import { THEME_BG } from './pwa';
 import { seasonLockdown } from '../db/season-schedule';
 import { discordIcon } from './icons';
 
@@ -378,7 +380,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
         <button class="prof" id="profBtn" type="button" aria-haspopup="true" aria-expanded="false">
           ${ava}<span class="pname">${esc(u.username)}</span>
           ${u.role === 'admin' ? '<span class="adm">ADMIN</span>' : ''}
-          <span class="pbal">${esc(pts(u.balance))}</span>
+          <span class="pbal" data-balance="${u.balance}">${esc(pts(u.balance))}</span>
           <svg class="caret" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
         </button>
         <div class="profmenu" id="profMenu" hidden>${adminMenuItem}
@@ -396,6 +398,16 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · OD CASINO</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+${/* 앱으로 설치되기 위한 세 줄. 매니페스트가 이름·아이콘·시작 화면을 알려주고,
+     theme-color 는 안드로이드가 상태 표시줄에 칠하는 색이다(--bg 와 같은 값이라
+     앱을 열 때 흰 띠가 안 생긴다). apple-touch-icon 은 iOS 홈 화면용 —
+     iOS 는 매니페스트의 아이콘을 안 보고 이 태그만 본다. */''}
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="${THEME_BG}">
+<!-- 페이지를 만든 순간의 서버 시각(epoch 초). 카운트다운이 이걸 기준으로 센다 —
+     폰 시계가 몇 분씩 어긋나 있으면 남은 시간이 음수가 되거나 더 남은 것처럼 보인다. -->
+<meta name="server-now" content="${Math.floor(Date.now() / 1000)}">
+<link rel="apple-touch-icon" href="/icon/apple-touch-icon.png?v=${ASSET_V}">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- 브랜드용 Black Han Sans 하나만 받고, 그마저도 렌더를 막지 않게 비동기로 로드한다.
      (media="print"로 받아 두고 onload에서 all로 바꾸는 방식 — 첫 페인트가 폰트를 기다리지 않는다)
@@ -403,6 +415,15 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
      예전에는 Noto Sans KR 3종까지 동기 로드해서 CSS 한 개가 340KB였고 그게 렌더를 막았다. -->
 <link rel="stylesheet" media="print" onload="this.media='all'"
   href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
+<!-- 본문 글꼴. 예전에 Noto Sans KR 을 걷어낸 이유는 CSS 한 개가 340KB 였고 그게 렌더를
+     막았기 때문인데, 여기서는 두 가지가 다르다.
+       · 동적 서브셋(dynamic-subset)이라 브라우저가 실제로 쓴 글자 범위만 받아 간다.
+         한글 전체를 미리 받지 않는다.
+       · media="print" → onload 로 비동기로 받는다. 첫 페인트는 이 요청을 안 기다린다.
+     그래서 늦거나 실패해도 화면은 아래 시스템 글꼴로 정상 표시된다 — 모양만 달라진다. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <!-- CSS와 공용 스크립트는 모든 페이지에서 완전히 동일하다. 인라인이면 게임을 오갈 때마다
      44KB를 다시 받고 다시 파싱하므로 외부 파일로 빼서 브라우저 캐시에 맡긴다(?v= 로 갱신).
      스크립트를 <head>에 동기로 두는 이유: 게임 스크립트가 실행되는 시점에 window.casinoPoll을 쓴다.

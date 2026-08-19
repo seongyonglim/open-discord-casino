@@ -3,7 +3,9 @@
 //
 // 시장 (동시에 여러 개 베팅 가능, 칩을 쌓는 방식)
 //   · master / shark : 누가 이기는지. 무승부면 원금 환불 (무승부 자체에 거는 시장은 없다)
-//   · b0 ~ b4        : 최종 등급 묶음 — "두 핸드 중 하나라도" 그 등급을 만들면 적중
+//   · b0 ~ b4        : 최종 등급 묶음 — 두 핸드 중 **더 높은** 등급 하나에만 적중한다.
+//                      (한동안 여기에 "하나라도" 라고 적혀 있었는데, 그러면 한 라운드에
+//                       두 묶음이 동시에 터진다는 뜻이 되어 배당 계산과 어긋난다.)
 //
 // 배당은 공개된 홀카드로부터 남은 48장 전수 계산(C(48,5)=1,712,304)으로 정확히 산출한다.
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -33,7 +35,10 @@ import { PK_CHIPS_JS } from './poker-client/chips';
 import { PK_MARKETS_JS } from './poker-client/markets';
 import { pkLoop } from './poker-client/loop';
 
-const HOUSE_EDGE = 0.01;
+/* 감사(scripts/audit-economy.ts)가 이 값을 그대로 읽는다. 예전에는 감사가 0.05 를
+   손으로 적어 두어서, 실제로 팔리는 배당을 한 번도 검사하지 않았다 — 여기를
+   고쳐도 감사는 옛 값으로 계속 통과했다. */
+export const HOUSE_EDGE = 0.01;
 // 앞의 3단(10·100·500)은 동전, 뒤의 3단(1000·5000·1만)은 골드바로 그린다
 export const COIN_SIZES = [10, 100, 500, 1000, 5000, 10000];
 
@@ -115,7 +120,10 @@ function resolveRound(hole: number[], board: number[]) {
   };
 }
 
-function advance(): PokerRoundRow {
+/* 서버 전진 타이머(src/tick.ts)도 이 함수를 부른다. 헬퍼를 밖으로 열지 않고
+   이 한 함수만 내보내는 이유가 그것이다 — 어떤 규칙으로 전진하는지는 이 모듈이
+   쥐고 있어야 하고, 부르는 쪽은 "포커 플립을 전진시켜라"만 알면 된다. */
+export function advance(): PokerRoundRow {
   return advancePokerRound(makeRound, resolveRound, BUCKET_NAMES.length);
 }
 
@@ -290,6 +298,9 @@ const RULES_HTML = `
 
   <p class="tip"><b>꿀팁 —</b> 배당이 높다는 건 그만큼 잘 안 나온다는 뜻입니다.
      확률에서 만든 값이라 어느 쪽을 골라도 기대값은 같습니다.</p>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">매치업마다 배당 재계산 · 최대 3,000배</p>
 `;
 
 export function pokerPage(user: WebUser): string {

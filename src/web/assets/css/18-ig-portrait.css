@@ -1,0 +1,295 @@
+  /* ── 세로 인게임 (사다리·지뢰찾기) ──────────────────────────────────
+     게임마다 판 모양이 다르다. 사다리는 위에서 아래로 떨어지는 세로형이라
+     가로 화면에서는 그림이 높이에 묶여 폭 238px 를 못 넘고, 594px 짜리 칸에
+     좌우 178px 씩 검은 여백이 남았다(실측). 세로로 돌리면 그 제약이 사라진다 —
+     412px 폭에 그림이 360px 까지 차고, 낙하 연출이 화면 방향과 같아진다.
+
+     ── 예산 (412 x 915 기준)
+       상단바      40
+       기록 띠     34
+       판         48%  ≒ 440   ← 공이 떨어지는 자리
+       조작부      나머지 ≒ 380
+     넘칠 자리가 없도록 먼저 나누고 그 안에서만 그린다. 16·17 은 전부
+     (orientation:landscape) 안에 있으므로 여기와 겹치지 않는다. */
+
+  @media (max-width:560px) and (orientation:portrait) {
+
+    /* 원래 자리는 비워 두고 화면을 통째로 쓴다.
+       15-mobile.css 가 하단 탭바 자리로 body 에 padding-bottom:50px 을 잡아 둔다.
+       인게임에서는 그 탭바를 안 쓰는데 자리만 남아 문서가 965px 이 됐고, 화면(915)
+       보다 50px 커서 스크롤이 생겼다(실측).
+
+       세로는 가로보다 높이가 여유로우므로 하단 탭바(header nav)는 살려 둔다 —
+       로비·랭킹·도전과제·공지로 바로 건너뛸 수 있는 자리다. 대신 그 50px 을
+       예산에 넣고 본문을 그만큼 줄인다(안 그러면 문서가 화면보다 커져 스크롤이 생긴다). */
+    html.ig-port.ingame body{overflow:hidden}
+    html.ig-port.ingame .game-switch{display:none}
+    /* 헤더는 자리를 안 쓰되 그 안의 하단 탭바(position:fixed)는 남긴다 */
+    html.ig-port.ingame header{height:0;min-height:0;padding:0;border:0;
+      background:none;box-shadow:none;overflow:visible}
+    html.ig-port.ingame header > .wrap > *:not(nav){display:none}
+    html.ig-port.ingame header nav{display:flex}
+    html.ig-port.ingame .game-shell{display:none}
+    /* 하단 탭바 50px 을 뺀 만큼만 쓴다. body 의 padding-bottom(50px, 15-mobile.css)
+       과 합쳐 정확히 한 화면이 된다 — 남으면 스크롤이 생기고 모자라면 탭바가 덮는다. */
+    html.ig-port.ingame main{padding:0;box-sizing:border-box;
+      height:calc(100vh - 50px - env(safe-area-inset-bottom,0px));
+      display:flex;flex-direction:column;min-height:0;overflow:hidden}
+    @supports (height: 100dvh) {
+      html.ig-port.ingame main{
+        height:calc(100dvh - 50px - env(safe-area-inset-bottom,0px))}
+    }
+    /* "재미로 즐기는 서버 내부 포인트 게임…" — 로비에서 한 번 읽으면 되는 고지다.
+       판에 들어와서까지 자리를 먹으면 안 그래도 좁은 화면이 더 좁아진다. */
+    html.ig-port.ingame main > .footer{display:none}
+    /* 채팅 도크가 화면 아래에 떠서 [베팅하기] 를 덮었다(실측: 도크 823~857,
+       버튼 850~898). 그래서 도크를 통째로 display:none 했는데, 채팅 패널이 그 도크
+       안에 들어 있어서 상단바 채팅 단추가 아무 일도 못 하게 됐다 — 창은 열리는데
+       부모가 안 보이니 화면에 아무것도 안 나온다.
+
+       그래서 접힌 한 줄 바(.chat-tab)만 걷고, 펼친 패널은 살린다. 닫혀 있는 동안은
+       도크 자체를 숨겨 조작부를 가리지 않게 한다(열리면 .on 이 붙는다).
+
+       화면을 다 덮지는 않는다. 말하는 동안에도 공이 어디까지 내려왔는지는 보여야 한다 —
+       라이브 띠 위에서 시작해 조작부만 가린다. 시작 높이(--ig-chat-top)는 ingame.js 가
+       실제로 그려진 자리를 재서 넘긴다. 조작부는 제 내용만큼 가져가고 판이 나머지를
+       받으므로 그 경계가 화면마다 다르기 때문이다. */
+    html.ig-port.ingame .chat-dock{position:fixed;left:0;right:0;width:auto;
+      top:var(--ig-chat-top, 56%);
+      bottom:calc(50px + env(safe-area-inset-bottom,0px));height:auto;
+      transform:none;z-index:70;max-width:none}
+    html.ig-port.ingame .chat-dock:not(.on){display:none}
+    html.ig-port.ingame .chat-dock .chat-tab{display:none}
+    html.ig-port.ingame .chat-dock .chat-panel{width:100%;height:100%;max-height:none;
+      border-radius:14px 14px 0 0;box-shadow:0 -14px 30px rgba(0,0,0,.55)}
+
+    /* ── 상단바 40 ────────────────────────────────────────── */
+    html.ig-port .ig-bar{position:fixed;top:0;left:0;right:0;height:40px;z-index:50;
+      display:flex;align-items:center;gap:6px;padding:0 8px;box-sizing:border-box;
+      background:#0e0e10;border-bottom:1px solid var(--line)}
+    html.ig-port .ig-bar .ig-back{order:-3;flex:none;font-size:12px;padding:0 8px;
+      height:28px;display:inline-flex;align-items:center;white-space:nowrap}
+    /* 폭이 모자라면 게임 이름이 먼저 줄어든다. 판에 들어와 있는 사람은 무슨 게임인지
+       이미 알고, 바로 왼쪽에 [로비] 도 있다 — 줄여도 잃는 것이 가장 적은 자리다. */
+    html.ig-port .ig-bar .ig-name{order:-2;flex:1 1 auto;min-width:0;font-size:13px;
+      font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis}
+    /* 가운데 라이브 뱃지 — 글자 폭 그대로 지킨다. 줄어들 자리는 게임 이름이 맡는다 */
+    html.ig-port .ig-bar .ig-live{order:-1;flex:none;
+      background:rgba(212,175,55,.10);border:1px solid var(--gold-dim);
+      border-radius:999px;height:26px;padding:0 10px;margin:0 4px;
+      color:var(--gold);font-weight:700;font-size:11.5px;font-family:inherit;
+      cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      display:flex;align-items:center;justify-content:center}
+    /* 잔액 상자는 통째로 171px 을 썼다(실측) — 그 탓에 규칙 단추가 x=414 로
+       화면(412) 밖으로 밀렸다. 세로에서는 숫자만 남긴다. 이름과 등급은 로비에서
+       보면 되는 것이고, 판에서 필요한 것은 "지금 얼마 있나" 하나다. */
+    html.ig-port .ig-bar .profwrap{flex:none;max-width:none;overflow:visible;
+      font-size:12px;white-space:nowrap}
+    /* 412px 상단바에 다 못 들어간다(실측: 필요 폭 합계 423). 판에 들어와 있는 동안
+       필요한 것은 "지금 얼마 있나" 하나이므로 아바타(24)와 알림종(30)을 접는다 —
+       둘 다 로비에 그대로 있다. 이름·등급은 15-mobile.css 가 이미 접어 두었다. */
+    html.ig-port .ig-bar .profwrap .ava{display:none}
+    html.ig-port .ig-bar .profwrap .belwrap{display:none}
+    /* 16-ingame.css 의 .ig-btn 규칙은 가로 미디어쿼리 안에 있어 여기서는 안 걸린다.
+       그대로 두면 브라우저 기본 단추(밝은 회색)가 나와 검은 상단바에서 튄다. */
+    html.ig-port .ig-bar .ig-btn,
+    html.ig-port .ig-bar .ig-help{flex:none;width:30px;height:30px;padding:0;
+      display:inline-flex;align-items:center;justify-content:center;font-size:14px;
+      background:none;border:1px solid var(--line);border-radius:7px;
+      line-height:1;cursor:pointer;color:inherit;font-family:inherit}
+    html.ig-port .ig-bar .ig-btn:hover{border-color:var(--gold-dim)}
+    /* SVG 는 제 크기를 못 정한다 — viewBox 만 있고 width 가 없으면 기본 300x150 으로
+       그려져 단추를 밀어낸다. 여기서 못 박는다. */
+    html.ig-port .ig-bar .ig-btn svg{width:16px;height:16px;display:block}
+
+    /* ── 기록 띠 34 — 한 덩어리, 가로로 넘치면 밀어서 본다 ──── */
+    html.ig-port .ig-hist{flex:none;height:34px;box-sizing:border-box;
+      margin:40px 8px 0;padding:3px 8px;display:flex;align-items:center;
+      overflow:hidden;background:rgba(18,18,20,.62);
+      border:1px solid var(--line);border-radius:10px}
+    html.ig-port .ig-hist .bead{flex:1 1 auto;min-width:0;display:flex;
+      flex-direction:column;gap:2px;overflow-x:auto;overflow-y:hidden;
+      margin:0;padding:0;border:none;height:auto}
+    html.ig-port .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none}
+    html.ig-port .ig-hist .bead-lbl{flex:none;width:22px;font-size:9.5px;
+      font-weight:700;color:var(--muted)}
+    html.ig-port .ig-hist .bead-cell{flex:none;width:15px;height:12px;font-size:9px;
+      display:flex;align-items:center;justify-content:center;border-radius:3px}
+    /* 판 칸 안의 원래 기록 줄은 띠로 옮겼으므로 끈다 */
+    html.ig-port .ig-board .bead{display:none}
+
+    /* ── 본문: 판 위 · 조작부 아래 ───────────────────────────── */
+    html.ig-port .ig-body{flex:1 1 auto;min-height:0;display:flex;
+      flex-direction:column;gap:8px;padding:8px;box-sizing:border-box;margin-top:6px}
+    html.ig-port .ig-cell{min-width:0;min-height:0;display:flex;flex-direction:column;
+      background:rgba(18,18,20,.62);border:1px solid var(--line);border-radius:12px;
+      padding:8px;overflow:hidden;box-sizing:border-box}
+    html.ig-port .ig-cell > .card{background:none;border:none;padding:0;margin:0;
+      border-radius:0;flex:1 1 auto;display:flex;flex-direction:column;min-height:0;gap:0}
+    /* 판에 고정 비율(57%)을 주었더니 화면이 낮은 기기에서 조작부가 눌렸다 —
+       360x780 에서 조작부가 227px 을 받았는데 실제로 필요한 높이는 283px 이다.
+       비율은 화면이 클 때만 맞는 값이라, 반대로 잡는다.
+
+         조작부 : 제 내용이 필요한 만큼 먼저 가져간다 (flex:0 0 auto)
+         판     : 남는 것을 전부 갖는다 (flex:1 1 auto)
+
+       그러면 큰 화면에서는 판이 커지고, 작은 화면에서는 조작부가 먼저 지켜진다.
+       눌린 조작부는 못 쓰는 화면이지만 작은 판은 그냥 작은 판이다.
+       조작부가 화면을 다 먹지 않게 위쪽 한계만 둔다. */
+    html.ig-port .ig-cell.ig-board{flex:1 1 auto;min-height:180px}
+    html.ig-port .ig-cell.ig-bet{flex:0 0 auto;max-height:52%}
+
+    /* ── 판: 그림이 폭을 채운다 ──────────────────────────────
+       가로에서는 height:100%;width:auto 로 높이에 맞췄다. 세로에서는 반대다 —
+       폭을 채우고 높이가 따라온다. 360px 을 넘기지 않는 것은 큰 폰에서
+       공이 너무 커지면 낙하가 느리게 보이기 때문이다. */
+    /* 위 24px 은 카운트다운 자리로 비워 둔다. 판 위에 겹쳐 띄웠더니 SVG 맨 위의
+       '출발' 글자와 포개져 둘 다 안 읽혔다 — 띄우는 대신 자리를 준다. */
+    html.ig-port .ig-board .board-stage{flex:1 1 auto;min-height:0;position:relative;
+      display:flex;align-items:center;justify-content:center;
+      padding:24px 0 0;max-height:none}
+    html.ig-port .ig-board .ladder-board{width:100%;height:100%;min-height:0;
+      display:flex;align-items:center;justify-content:center}
+    html.ig-port .ig-board .ladder-svg{width:100%;max-width:360px;height:auto;
+      max-height:100%;margin:0 auto}
+    /* 원본 카운트다운은 감춘다. 지우지는 않는다 — 사다리 코드가 계속 글자를 쓰는
+       노드이고, 우리는 그 글자를 읽어서 아래 .ig-timer 를 그린다. */
+    html.ig-port .ig-board .stage-status{display:none}
+
+    /* ── 타이머 자리 ─────────────────────────────────────────
+       모양은 19-timer.css 가 정한다(데스크톱·가로·세로 공통). 여기서는 자리만
+       바꾼다 — 세로는 판 위 24px 을 비워 두었으므로 오른쪽 위가 아니라 가운데에
+       둘 수 있고, 좁은 화면에서는 가운데가 눈이 먼저 가는 자리다. */
+    html.ig-port .ig-board .ig-timer{top:0;left:50%;right:auto;
+      transform:translateX(-50%);max-width:calc(100% - 16px)}
+
+    /* ── 라이브 베팅 띠 (판 아래 · 조작부 위) ────────────────
+       상단바에 두었더니 인원과 금액이 자랄수록 게임 이름을 밀어냈다. 자라는 값은
+       폭이 고정된 곳에 두면 안 된다 — 여기는 화면 폭을 다 쓴다. */
+    html.ig-port .ig-livebar{flex:none;height:30px;display:flex;align-items:center;
+      justify-content:space-between;gap:8px;padding:0 12px;box-sizing:border-box;
+      background:#161922;border:1px solid rgba(255,255,255,.06);border-radius:8px;
+      font-size:11.5px;font-family:inherit;color:var(--muted);cursor:pointer;
+      width:100%;text-align:left}
+    html.ig-port .ig-livebar .ig-lb-ico{flex:none;display:inline-flex;color:var(--muted)}
+    html.ig-port .ig-livebar .ig-lb-ico svg{width:14px;height:14px;display:block}
+    html.ig-port .ig-livebar .ig-lb-l{flex:1 1 auto;min-width:0;overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap}
+    html.ig-port .ig-livebar .ig-lb-r{flex:none;color:var(--gold);font-weight:700;
+      font-variant-numeric:tabular-nums;white-space:nowrap}
+    html.ig-port .ig-livebar:hover{border-color:var(--gold-dim)}
+
+    /* ── 조작부: 배당 → 예측 → 금액 → 실행 ─────────────────
+       가로와 같은 순서다. 엄지는 화면 아래에 있으므로 자주 누르는 것일수록 아래다.
+       DOM 순서는 금액이 먼저라 .field-grid 를 display:contents 로 풀어 형제로
+       만들고 order 로 자리를 정한다 — 서버 HTML 은 안 바꾼다. */
+    html.ig-port .ig-bet .card{justify-content:space-between;gap:8px}
+    html.ig-port .ig-bet .field-grid{display:contents}
+    html.ig-port .ig-bet .field{display:flex;flex-direction:column;gap:8px;
+      width:100%;min-width:0;box-sizing:border-box}
+    html.ig-port .ig-bet .field > label{display:none}
+    html.ig-port .ig-bet .quick-row{display:none}
+    html.ig-port .ig-bet .game-msg{display:none}
+
+    html.ig-port .ig-bet .payout-line{order:1;flex:none;display:flex;
+      justify-content:space-between;align-items:center;height:34px;padding:0 12px;
+      box-sizing:border-box;background:rgba(212,175,55,.08);
+      border:1px solid var(--gold-dim);border-radius:8px;font-size:12.5px;margin:0}
+    html.ig-port .ig-bet .field:nth-child(2){order:2}   /* 예측 */
+    html.ig-port .ig-bet .field:nth-child(1){order:3}   /* 금액 */
+    html.ig-port .ig-bet .btn-primary,
+    html.ig-port .ig-bet .game-action{order:4;flex:none;width:100%;height:48px;
+      font-size:15px;margin:0;padding:0;box-sizing:border-box}
+
+    /* 출발/도착 — 라벨 고정 폭, 버튼 둘이 남는 폭을 반씩 */
+    html.ig-port .ig-bet .predict-row{display:flex;align-items:center;gap:8px;
+      height:48px;flex:none;width:100%;box-sizing:border-box}
+    html.ig-port .ig-bet .predict-row > span:first-child,
+    html.ig-port .ig-bet .predict-row > label{flex:none;width:34px;text-align:center;
+      font-size:12px;font-weight:700;color:var(--muted)}
+    html.ig-port .ig-bet .predict-row button{flex:1 1 0;min-width:0;height:48px;
+      font-size:15px;font-weight:700;box-sizing:border-box}
+
+    /* 금액 — 인풋이 남는 폭을 먹고 ½ 2x MAX 는 제 폭만.
+       <input type=number> 는 기본 크기로 185px 를 주장한다. min-width:0 은 그
+       주장을 못 이긴다 — width:0 + flex-basis:0 이어야 남는 만큼만 쓴다. */
+    html.ig-port .ig-bet .bet-row{display:flex;gap:6px;height:46px;flex:none;
+      width:100%;box-sizing:border-box}
+    html.ig-port .ig-bet .bet-row .game-input{flex:1 1 0;width:0;min-width:0;
+      height:46px;font-size:15px;padding:0 12px;box-sizing:border-box}
+    html.ig-port .ig-bet .bet-row .chip-btn,
+    html.ig-port .ig-bet .bet-row .ig-max{flex:none;height:46px;min-width:46px;
+      padding:0 10px;font-size:13px;display:inline-flex;align-items:center;
+      justify-content:center;box-sizing:border-box;line-height:1}
+    html.ig-port .ig-bet .bet-row .ig-max{background:var(--panel2);
+      border:1px solid var(--gold-dim);border-radius:8px;color:var(--gold);
+      font-weight:700;cursor:pointer;font-family:inherit}
+  }
+
+  @media (max-width:560px) and (orientation:portrait) {
+    /* ── 참가인원 바텀시트 ──────────────────────────────────
+       세로에서는 옆이 아니라 아래에서 올라온다 — 폰을 한 손으로 잡으면 엄지가
+       화면 아래에 있고, 닫기도 아래로 쓸어내리는 감각과 맞는다.
+       상단바(40px)는 덮지 않는다. 덮으면 여는 단추를 다시 못 눌러 닫는 길이
+       가림막 하나뿐이 된다. */
+    html.ig-port .ig-cell.ig-side{position:fixed;left:0;right:0;bottom:0;top:auto;
+      height:min(58%,420px);width:auto;z-index:60;transform:translateY(102%);
+      transition:transform .2s ease;border-radius:14px 14px 0 0;
+      background:#0e0e10;box-shadow:0 -14px 30px rgba(0,0,0,.55)}
+    html.ig-port .ig-cell.ig-side.ig-open{transform:none}
+    /* 손잡이 — 끌어내릴 수 있다는 표시. 실제로 끌린다(ingame.js 의 addSwipeClose).
+       잡는 자리라 막대 자체보다 누를 면적을 넓게 준다 — 4px 짜리 선을 정확히
+       집으라고 하면 못 집는다. */
+    html.ig-port .ig-cell.ig-side::before{content:'';flex:none;width:40px;height:4px;
+      border-radius:999px;background:rgba(255,255,255,.28);margin:2px auto 10px}
+    /* 손가락을 따라 움직이는 동안에는 브라우저가 세로 스크롤을 가로채지 않게 한다 */
+    html.ig-port .ig-cell.ig-side{touch-action:pan-y}
+
+    html.ig-port .ig-side .sp-tabs{flex:none;height:34px;display:flex;gap:6px}
+    html.ig-port .ig-side .sp-tab{flex:1 1 0;min-width:0;font-size:12.5px;padding:0;
+      height:34px;display:flex;align-items:center;justify-content:center}
+    html.ig-port .ig-side .sp-pane{flex:1 1 auto;min-height:0;overflow-y:auto}
+
+    .ig-scrim{position:fixed;left:0;right:0;top:40px;bottom:0;z-index:55;
+      background:rgba(0,0,0,.5);opacity:0;pointer-events:none;
+      transition:opacity .2s ease}
+    .ig-scrim.on{opacity:1;pointer-events:auto}
+
+    /* ── ⚙️ 설정 — 음량과 규칙을 접어 둔 자리 ────────────────
+       상단바 오른쪽 아래에 붙는 작은 판이다. 항목이 둘뿐이라 시트까지 갈 필요가 없다. */
+    /* 줄마다 제 여백을 가지므로 판에는 안쪽 여백을 두지 않는다 — 그래야 줄을 눌렀을 때
+       밝아지는 면이 판 가장자리까지 닿아 "이 줄 전체가 눌리는 자리" 로 읽힌다. */
+    html.ig-port .ig-set{position:fixed;top:46px;right:8px;z-index:62;
+      display:none;flex-direction:column;padding:0;overflow:hidden;
+      background:#131316;border:1px solid var(--line);border-radius:12px;
+      box-shadow:0 12px 30px rgba(0,0,0,.6);min-width:236px}
+    html.ig-port .ig-set.on{display:flex}
+    /* 누를 자리는 44px 아래로 내려가면 안 된다 — 그보다 작으면 옆 줄이 눌린다 */
+    html.ig-port .ig-set-row{display:flex;width:100%;box-sizing:border-box;
+      align-items:center;justify-content:space-between;gap:12px;
+      min-height:46px;padding:8px 14px;cursor:pointer;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      transition:background-color .12s ease}
+    html.ig-port .ig-set-row:last-child{border-bottom:none}
+    html.ig-port .ig-set-row:active{background:rgba(255,255,255,.10)}
+    html.ig-port .ig-set-row:focus-visible{outline:2px solid var(--gold-dim);outline-offset:-2px}
+    html.ig-port .ig-set-lbl{flex:none;font-size:13px;font-weight:500;color:#e4e4e7;
+      white-space:nowrap}
+    /* 접힌 안에서는 제 크기를 되찾는다 — 상단바용으로 눌러 둔 값이 아니다 */
+    html.ig-port .ig-set .ig-vol{flex:0 1 auto;min-width:0;height:32px;display:flex;
+      align-items:center;justify-content:flex-end;gap:6px;transform:none}
+    html.ig-port .ig-set .ig-help{flex:none;width:34px;height:32px;border-radius:8px;
+      display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+
+    /* 음량 슬라이더는 원래 hover 로 펴진다(01-base.css). 폰에는 hover 가 없으니
+       그대로 두면 켜고 끄기만 되고 크기 조절은 아예 못 한다. 이 메뉴 안에서는
+       띄우지 말고 줄 안에 그대로 펼친다 — 여기는 헤더가 아니라 설정 판이라
+       폭을 밀어낼 걱정이 없다. */
+    html.ig-port .ig-set .ig-vol .volpop{position:static;opacity:1;visibility:visible;
+      transform:none;padding:0;background:none;border:none;box-shadow:none;
+      display:flex;align-items:center;gap:8px;z-index:auto}
+    html.ig-port .ig-set .ig-vol .volpop::before{display:none}
+    html.ig-port .ig-set .ig-vol .volrange{width:84px}
+    html.ig-port .ig-set .ig-vol .volpct{font-size:11.5px;min-width:32px;text-align:right}
+  }

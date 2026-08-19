@@ -387,7 +387,8 @@ export function leaderboardPage(me: WebUser | null): string {
         var profitCls = (overall || ht) ? '' : (r.score > 0 ? ' pos' : r.score < 0 ? ' neg' : '');
         return '<tr' + (mine ? ' class="me"' : '') + '>'
           + '<td class="c rk">' + r.rank + '<\\/td>'
-          + '<td><span class="lb-who">' + avatar(r, 'lb-av') + esc(r.username)
+          + '<td><span class="lb-who">' + avatar(r, 'lb-av')
+            + '<span class="lb-name">' + esc(r.username) + '<\/span>'
             + (mine ? '<span class="lb-youtag">(나)<\\/span>' : '') + '<\\/span><\\/td>'
           + '<td class="r n' + profitCls + '">' + (r.score > 0 && !overall && !ht ? '+' : '') + num(r.score) + 'P<\\/td>'
           + (overall ? ''

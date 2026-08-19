@@ -47,7 +47,14 @@ function randomUnit(): number {
 
 // 크래시 지점 = (1 - 하우스엣지) / U,  U ~ Uniform(0,1]
 //  → P(배율 ≥ m) = P(U ≤ 0.99/m) = 0.99/m  (m > 1)
-//  → raw < 1 이 되는 확률이 정확히 하우스엣지(1%)이고, 이 경우가 "즉시 크래시(1.00x)"가 된다.
+//  → raw < 1 이 되는 확률이 정확히 하우스엣지(1%)다.
+//
+// 다만 화면에 1.00x 로 보이는 판은 그보다 잦다 — 실측 약 1.98%. 마지막 줄에서 배율을
+// 소수 둘째 자리로 내리기 때문에, raw 가 [1, 1.01) 인 판도 1.00x 가 된다.
+//   P(raw < 1.01) = P(u > 0.99/1.01) = 1.98%
+// 버그가 아니라 내림의 결과다(내림은 언제나 하우스 쪽이라 엣지가 조금 커질 뿐 작아지지
+// 않는다). 여기 적어 두는 이유는 "1% 인데 왜 이렇게 자주 터지나" 라는 물음이 실제로
+// 나왔고, 코드만 보면 1% 라고 읽히기 때문이다.
 // 주의: 분모는 반드시 U여야 한다. (1-U)를 쓰면서 U 상단을 즉시 크래시로 잘라내면
 // 고배율이 나오는 구간을 통째로 날려버려 최대 배율이 막히고 하우스엣지도 어긋난다.
 export function makeCrashPoint(): number {
@@ -78,7 +85,10 @@ function crashDurationMs(crashPoint: number): number {
   return ACCEL_T2 + Math.log(crashPoint / ACCEL_M2) / GROWTH_K3;
 }
 
-function advance(): CrashRoundRow {
+/* 서버 전진 타이머(src/tick.ts)도 이 함수를 부른다. 헬퍼를 밖으로 열지 않고
+   이 한 함수만 내보내는 이유가 그것이다 — 어떤 규칙으로 전진하는지는 이 모듈이
+   쥐고 있어야 하고, 부르는 쪽은 "그래프을 전진시켜라"만 알면 된다. */
+export function advance(): CrashRoundRow {
   return advanceCrashRound({ makeCrashPoint, crashDurationMs, multiplierAt });
 }
 
@@ -154,6 +164,9 @@ function crashAwards(
   // 이번 라운드에 캐시아웃한 판만 본다. 안 걸었거나 터진 판은 볼 것이 없다.
   // 안 걸었거나 터진 판에도 공통 과제는 봐야 한다 — 되살아난 것은 그 판과 무관하다
   if (!myBet || myBet.cashout_multiplier == null) return withUnlocked(commonAwards(userId));
+  /* 손으로 뺐는가. 예약이 걸려 있지 않았거나, 걸려 있어도 그 배율이 아니면 손이다.
+     시즌 마감 강제 환불은 두 값을 똑같이 1 로 적어 두므로 여기서 손이 아닌 것으로
+     걸러진다 — 안 그러면 아무것도 안 한 사람에게 1.01배 히든 과제가 열렸다. */
   const byHand = myBet.auto_cashout == null || myBet.cashout_multiplier !== myBet.auto_cashout;
   const checks: [string, () => boolean][] = [];
   if (myBet.cashout_multiplier >= CRASH_X100) checks.push(['crash-x100', () => true]);
@@ -253,6 +266,9 @@ const RULES_HTML = `
 
   <div class="warn"><b>주의 —</b> 배율은 <b>1.00배에서도</b> 터질 수 있습니다.
   "조금만 더"가 이 게임에서 돈을 잃는 유일한 방법입니다.</div>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">최대 배율 10,000배 · 자동 캐시아웃</p>
 `;
 
 export function crashPage(user: WebUser): string {
@@ -592,7 +608,18 @@ export function crashPage(user: WebUser): string {
           cancelBtn.style.display = 'none';
           var canCash = my && my.cashout_multiplier == null && my.payout == null;
           cashoutBtn.style.display = canCash ? 'block' : 'none';
-          if (my && my.cashout_multiplier != null && notedRoundId !== r.id) {
+          /* 서버가 대신 빼 준 경우에만 알린다.
+
+             예전에는 "캐시아웃이 잡혀 있으면" 이 조건의 전부였다. 그래서 손으로 누른
+             사람에게도 0.25초 뒤 폴링이 돌아오면서 방금 띄운 "캐시아웃 1.87x" 가
+             "자동 캐시아웃 1.87x" 로 바뀌고 팡파르가 한 번 더 울렸다 — 자기가 누른
+             것을 기계가 한 것처럼 말한다.
+
+             예약이 실제로 발동한 판은 정산 배율이 예약 배율과 같다. 그 둘이 같을
+             때만 자동이라고 말한다. */
+          var byAuto = my && my.cashout_multiplier != null && my.auto_cashout != null
+            && Math.abs(my.cashout_multiplier - my.auto_cashout) < 0.005;
+          if (byAuto && notedRoundId !== r.id) {
             notedRoundId = r.id;
             msg.innerHTML = '<span style="color:var(--win);font-weight:700">자동 캐시아웃</span> ' +
               my.cashout_multiplier.toFixed(2) + 'x · +' + fmt(my.payout);

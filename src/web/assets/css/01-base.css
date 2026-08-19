@@ -13,6 +13,12 @@
        페이지 본문(gzip 15KB)보다 20배 무거웠다. 브랜드용 Black Han Sans만 비동기로 받는다. */
     --display:"Black Han Sans","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
     --mono:ui-monospace,SFMono-Regular,"Cascadia Mono",Consolas,"Noto Sans Mono",monospace;
+    /* 본문 글꼴. Pretendard 는 동적 서브셋으로 비동기로 받고(views.ts), 못 받으면 뒤의
+       시스템 글꼴이 그대로 받는다 — 순서가 곧 폴백이다.
+       맑은 고딕은 한글 자간이 좁고 획이 굵어 어두운 배경에서 글자가 서로 붙어 보인다.
+       그게 "쨍하고 뭉친다" 는 인상의 정체다. */
+    --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,
+      "Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;
   }
   *{box-sizing:border-box}
   *{scrollbar-width:thin;scrollbar-color:#333338 transparent}
@@ -21,9 +27,17 @@
   *::-webkit-scrollbar-thumb{background:#2c2c31;border-radius:8px;border:2px solid transparent;background-clip:content-box}
   body{margin:0;background:var(--bg);color:var(--txt);
     background-image:radial-gradient(1000px 460px at 50% -60px, rgba(212,175,55,.10) 0%, rgba(212,175,55,0) 60%);
-    font-family:"Malgun Gothic","Apple SD Gothic Neo",-apple-system,"Segoe UI",Roboto,"Noto Sans CJK KR",sans-serif;
-    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
-  .num,.mono{font-family:var(--mono);font-feature-settings:"tnum"}
+    font-family:var(--sans);
+    /* 자간을 아주 살짝 줄인다. Pretendard 는 기본 자간이 넉넉해서 한글이 성겨 보이는데,
+       -0.01em 이면 뭉치지 않으면서 줄이 단단해진다. */
+    letter-spacing:-.01em;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility}
+  /* 숫자는 고정폭으로. 잔액·상금·타이머가 1초마다 바뀌는데 글자 폭이 같이 바뀌면
+     눈이 그 흔들림을 먼저 따라간다 — 읽어야 할 숫자보다 움직임이 먼저 보인다.
+     Pretendard 에 tabular 숫자가 있으므로 별도 글꼴을 더 받지 않는다. */
+  .num,.mono{font-family:var(--mono);font-feature-settings:"tnum";
+    font-variant-numeric:tabular-nums}
   a{color:inherit;text-decoration:none}
   header{position:sticky;top:0;z-index:300;background:rgba(5,5,6,.92);
     backdrop-filter:blur(8px);border-bottom:1px solid var(--line);

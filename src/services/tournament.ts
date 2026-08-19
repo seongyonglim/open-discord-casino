@@ -144,7 +144,13 @@ export function canRegister(
   if (st === 'FINISHED' || st === 'CANCELLED') return { ok: false, reason: 'closed' };
   if (st === 'SCHEDULED') return { ok: false, reason: 'not_open' };
   if (st === 'REGISTRATION_OPEN' || st === 'WAITING_MIN_PLAYERS') {
-    return seatedCount >= MAX_PLAYERS ? { ok: false, reason: 'table_full' } : { ok: true };
+    /* 시작 전에는 좌석이 아직 없다 — 좌석은 대회가 시작될 때 한꺼번에 만들어진다.
+       그래서 여기서 seatedCount 를 보면 언제나 0 이고, 정원 검사가 한 번도 걸리지
+       않았다. 아홉 자리 판에 열 명, 스무 명이 그냥 들어왔고 그렇게 시작하면 있지도
+       않은 좌석 번호가 생긴다.
+       시작 전에 세어야 하는 것은 앉은 사람이 아니라 신청한 사람이다. */
+    return registeredCount >= MAX_PLAYERS
+      ? { ok: false, reason: 'table_full' } : { ok: true };
   }
   // RUNNING — 늦은 등록 창 안이고 자리가 남아 있어야 한다
   if (f.startedAt == null) return { ok: false, reason: 'closed' };

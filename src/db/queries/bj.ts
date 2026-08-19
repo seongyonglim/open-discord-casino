@@ -11,7 +11,7 @@ import { randomInt } from 'node:crypto';
 import { one, all, run, tx, bumpGameStats, pruneStaleData } from './core';
 
 /* ── 블랙잭 ──────────────────────────────────────────────────────────────
-   7석 공용 테이블. 다른 게임과 다른 점이 둘 있다.
+   5석 공용 테이블(BJ_SEATS). 다른 게임과 다른 점이 둘 있다.
 
    1) 카드를 몇 장 쓸지 미리 알 수 없다(각자 원하는 만큼 힛한다). 그래서 바카라처럼
       필요한 만큼만 뽑아둘 수 없고, 라운드 시작에 슈를 통째로 섞어 저장하고 커서를 민다.
@@ -113,26 +113,49 @@ function bjHands(roundId: number): BjHandRow[] {
 function drawCard(round: BjRoundRow): number {
   let shoe = JSON.parse(round.shoe_json) as number[];
   if (round.shoe_pos >= shoe.length) {
-    /* 제외 기준은 "이미 슈에서 꺼낸 카드"다. 손패·딜러 카드를 읽어 판단하면 안 된다 —
-       딜러가 연달아 뽑는 도중에는 방금 뽑은 카드가 아직 dealer_json에 기록되지 않아
-       제외 목록에서 빠지고, 그 카드가 다시 나온다(실측으로 Ad가 두 번 나왔다).
-       슈 배열과 커서는 항상 최신이므로 이쪽이 유일하게 믿을 수 있는 근거다. */
-    const used = new Set<number>(shoe.slice(0, round.shoe_pos));
-    const fresh: number[] = [];
-    for (let c = 0; c < 52; c++) if (!used.has(c)) fresh.push(c);
+    /* 빼야 할 것은 "지금 테이블에 깔려 있는 카드" 뿐이다.
+
+       예전에는 슈에서 꺼낸 카드를 전부 뺐다. 그런데 소진이란 곧 그 슈를 다 썼다는
+       뜻이라, 첫 소진 시점에는 그 목록이 52장 전부다 — 남는 카드가 하나도 없어
+       fresh 가 빈 배열이 되고 concat 이 아무것도 안 붙인다. 그리고 바로 다음 줄에서
+       shoe[pos] 가 undefined 를 돌려줬다. 안전망이 한 번도 작동한 적이 없었다.
+
+       손패를 읽지 않는다는 원칙은 그대로 지킨다(딜러가 연달아 뽑는 도중에는 방금
+       뽑은 카드가 아직 dealer_json 에 없어서, 그것을 근거로 삼으면 같은 카드가 다시
+       나온다 — 실측으로 Ad 가 두 번 나왔다). 대신 근거를 좁힌다: 슈에서 꺼낸 카드
+       가운데 "이번 벌에서 꺼낸 것"만 본다. 앞선 벌의 카드는 이미 화면에서 치워졌다.
+
+       그리고 이어 붙이는 벌은 언제나 52장으로 맞춘다. 지금 깔려 있는 카드는 버리지
+       않고 벌의 맨 뒤로 보낸다 — 그러면 그 카드들이 다시 나오려면 52장을 더 뽑아야
+       하고(한 판에 그럴 일은 없다), 벌 크기가 늘 52 라서 다음 소진 때 이번 벌의
+       시작점을 length - 52 로 정확히 되짚을 수 있다. */
+    const base = Math.max(0, shoe.length - 52);
+    const inPlay = new Set<number>(shoe.slice(base, round.shoe_pos));
+    const head: number[] = [], tail: number[] = [];
+    for (let c = 0; c < 52; c++) (inPlay.has(c) ? tail : head).push(c);
     // 피셔-예이츠 (Math.random 금지 — 암호학적 randomInt만 쓴다)
-    for (let i = fresh.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      const t = fresh[i]; fresh[i] = fresh[j]; fresh[j] = t;
-    }
+    const shuffle = (a: number[]) => {
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = randomInt(i + 1);
+        const t = a[i]; a[i] = a[j]; a[j] = t;
+      }
+    };
+    shuffle(head); shuffle(tail);
+    const fresh = head.concat(tail);
     shoe = shoe.concat(fresh);
     run(`UPDATE blackjack_rounds SET shoe_json = ? WHERE id = ?`, JSON.stringify(shoe), round.id);
     round.shoe_json = JSON.stringify(shoe);
   }
   const pos = round.shoe_pos;
+  const card = shoe[pos];
+  /* 위에서 반드시 52장을 얹으므로 여기서 빈손이 될 수 없다. 그래도 확인한다 —
+     예전에는 이 자리가 조용히 undefined 를 돌려주고, 그 값이 손패에 null 로 들어가
+     끗수 계산부터 화면까지 전부 어긋났다. 터지는 편이 낫다: 조용한 undefined 는
+     정산까지 흘러가지만 예외는 그 자리에서 멈춘다. */
+  if (typeof card !== 'number') throw new Error('blackjack: 슈에서 카드를 못 꺼냈다');
   run(`UPDATE blackjack_rounds SET shoe_pos = ? WHERE id = ?`, pos + 1, round.id);
   round.shoe_pos = pos + 1;
-  return shoe[pos];
+  return card;
 }
 
 function pruneBlackjackRounds(): void {

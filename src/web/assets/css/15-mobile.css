@@ -1,0 +1,203 @@
+  /* ── 폰에서만 껍데기를 바꾼다 ────────────────────────────────────────
+     데스크톱 화면은 만족스럽다는 판단이라 한 픽셀도 건드리지 않는다. 그래서 서버가
+     내보내는 HTML 은 한 글자도 안 바꿨다 — 여기 있는 것은 전부 이미 있는 마크업을
+     좁은 화면에서만 다르게 그리는 규칙이다. 그 덕에 화면을 바이트로 비교하는
+     검사(scripts/golden.ts)가 "데스크톱 산출물이 그대로다"를 증명해 준다.
+
+     ── 왜 필요한가
+     폰(375×812)에서 껍데기가 262px 을 먹고 있었다. 헤더 133 + 게임 전환 129 —
+     게임 칩 일곱 개가 세 줄로 접히기 때문이다. 가로로 눕히면 더 나빠진다:
+     412px 중 290px 이 껍데기라 홀덤 테이블이 잘려 나갔다.
+
+     ── 조건이 왜 둘인가
+     가로로 누운 폰은 폭이 915px 이다. max-width:768px 하나로는 안 걸린다.
+     그래서 "좁다" 와 "낮다" 를 따로 본다. 낮은 쪽에 max-width:1024px 을 같이 거는
+     이유는 창을 낮게 줄인 데스크톱까지 끌려들지 않게 하기 위해서다 — 폰은 가로로
+     누워도 932px 을 안 넘는다.
+
+     ── header 의 backdrop-filter 함정
+     backdrop-filter 가 걸린 요소는 그 안의 position:fixed 기준이 뷰포트가 아니라
+     그 요소가 된다. 그대로 두고 탭을 아래에 붙이면 화면 아래가 아니라 헤더 아래
+     (46~89px 자리)에 붙는다 — 실제로 그렇게 나왔다. 그래서 폰에서는 흐림을 걷고
+     배경을 불투명하게 한다. */
+
+  @media (max-width:768px), (max-width:1024px) and (max-height:560px) {
+    header{backdrop-filter:none;-webkit-backdrop-filter:none;background:#0a0a0c}
+    .brand{padding:8px 0}
+    .brand .logo{width:24px;height:24px}
+    .brand b{font-size:17px}
+
+    /* 탭 넷을 화면 아래로. 엄지가 닿는 자리이고, 위쪽을 통째로 게임에 내준다.
+       마크업은 그대로다 — 같은 <a class="tab"> 넷을 다른 자리에 그릴 뿐이다. */
+    header nav{position:fixed;left:0;right:0;bottom:0;z-index:420;
+      gap:0;background:#0a0a0c;border-top:1px solid var(--line);
+      padding-bottom:env(safe-area-inset-bottom,0px);
+      box-shadow:0 -6px 20px rgba(0,0,0,.55)}
+    /* 활성 표시가 밑줄에서 윗줄로 바뀐다 — 아래에 붙은 바에서 밑줄은 화면 끝에 닿아
+       거의 안 보인다. border-bottom 을 끄지 않으면 두 줄이 된다. */
+    /* 세로 여백을 넉넉히 준다 — 손가락으로 누르는 자리라 44px 아래로 내려가면
+       옆 탭이 눌린다. 글자는 11px 이지만 누를 수 있는 면적은 그보다 커야 한다. */
+    .tab{flex:1 1 0;min-width:0;text-align:center;font-size:11px;
+      padding:12px 2px 11px;border-bottom:none;border-top:2px solid transparent}
+    .tab.active{border-top-color:var(--gold);border-bottom-color:transparent}
+
+    /* 본문이 탭바 뒤로 숨지 않게 자리를 비운다 */
+    body{padding-bottom:calc(50px + env(safe-area-inset-bottom,0px))}
+    /* 채팅 도크도 탭바 위로 올린다 — 안 그러면 마지막 줄이 탭에 가린다 */
+    .chat-dock{bottom:calc(58px + env(safe-area-inset-bottom,0px))}
+
+    /* ── 게임 전환: 접었다 편다 ───────────────────────────────────
+       일곱 개를 늘어놓으면 세 줄이 된다. 평소에는 지금 하는 게임 하나만 보이고,
+       그것을 누르면 나머지가 펼쳐진다. 여는 손잡이를 따로 만들지 않고 활성 칩을
+       그대로 쓴다 — 그 칩은 원래 지금 보고 있는 페이지로 가는 링크라 눌러도 아무
+       일이 없었다. 이제 그 자리가 "무슨 게임인지" 와 "바꾸기" 를 겸한다.
+       gs-m 은 app.js 가 좁은 화면에서만 붙인다(데스크톱에는 안 붙는다). */
+    .game-switch.gs-m{flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+    .game-switch.gs-m > .gs-pill{display:none}
+    /* auto 로 둔다 — 100% 로 하면 옆의 '?' 버튼이 다음 줄로 밀려 26px 을 더 먹는다.
+       order 를 같이 맞춰 둘이 항상 첫 줄에 나란히 서게 한다. */
+    .game-switch.gs-m > .gs-pill.active{display:inline-flex;flex:1 1 auto;order:-1}
+    .game-switch.gs-m > .gs-help{order:-1;flex:none}
+    .game-switch.gs-m > .gs-pill.active::after{content:'▾';margin-left:auto;opacity:.55;
+      font-size:11px}
+    .game-switch.gs-m.gs-open > .gs-pill{display:inline-flex;flex:1 1 calc(50% - 3px)}
+    .game-switch.gs-m.gs-open > .gs-pill.active::after{content:'▴'}
+  }
+
+  /* ── 가로로 누웠을 때 ────────────────────────────────────────────
+     여기서는 높이가 전부다. 412px 밖에 없으므로 껍데기를 한 번 더 깎는다.
+     탭바를 아예 없애지는 않는다 — 없애면 게임 화면에서 로비로 돌아갈 길이 사라진다
+     (헤더의 로고는 링크가 아니다). 대신 34px 로 줄인다. */
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 판과 조작부를 좌우로 ────────────────────────────────────
+       게임 화면은 판(펠트·보드) 위에 조작부를 쌓는 구조다(.game-main 이 column).
+       세로에서는 그게 맞지만 가로에서는 높이가 412px 뿐이라 조작부가 화면 밖으로
+       밀린다 — 재 보니 일곱 게임이 전부 그랬다(176~382px 넘침).
+       가로에서는 반대로 폭이 남는다. 그래서 방향만 돌린다: 판 왼쪽, 조작부 오른쪽.
+       실제 포커 클라이언트들이 가로에서 쓰는 배치이기도 하다.
+       ── 다만 모든 게임이 그런 것은 아니다
+       조작부 모양을 재 보니 둘로 갈린다(세로 배치일 때의 가로:세로 비).
+         홀덤 5.1 · 바카라 3.5 · 블랙잭 3.5 · 포커플립 3.5  → 가로로 긴 띠(칩·액션 버튼)
+         지뢰찾기 1.1 · 그래프 1.1 · 사다리 0.9              → 세로로 긴 입력 폼
+       가로로 긴 띠를 좁은 오른쪽 칸에 밀어 넣으면 화면이 반으로 줄고 띠는 세로로
+       접힌다 — 넷 다 그렇게 됐다. 띠는 아래에 그대로 두고 판이 폭을 다 쓰는 것이 맞다.
+
+       예외가 하나: 홀덤은 조작부가 띠인데도 옆에 둔다. 테이블이 타원이라 아래 띠
+       배치와 안 맞기 때문이다 — 폭을 다 주면 길쭉한 알약이 되고 좌석만 가운데로
+       몰리며, 폭을 좁히면 이번엔 높이가 안 남는다. 옆에 두면 2.6:1 을 지킨다.
+       그래서 좌우로 도는 것은 넷(홀덤·지뢰찾기·그래프·사다리)이다. */
+    main{padding-top:6px;padding-bottom:6px}
+    .game-shell{gap:10px}
+    .ht-shell .game-main,
+    .mines-shell .game-main,
+    .game-shell:has(.crash-graph) .game-main,
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main{
+      flex-direction:row;align-items:flex-start;gap:10px}
+    /* 좌우로 돌린 셋만. 판은 제 크기를 지키고(0 0 auto) 조작부가 남는 폭을 가져간다.
+       처음에 판을 0 1 auto + min-width:0 으로 두었더니 flex 가 판을 끝까지 짜부라뜨려
+       홀덤 테이블이 왼쪽에 폭 64px 짜리 세로 막대가 됐다. 높이만 재던 검사는 그걸
+       통과시켰다 — 낮아지긴 했으니까.
+       조작부에는 바닥을 깔아 준다. 안 깔았더니 지뢰찾기 조작부가 185px 로 눌려서
+       베팅 금액·지뢰 개수·배당이 서로 겹쳐 읽을 수 없게 나왔다. 판만 지키고 조작부는
+       안 봤던 것이다 — 검사에 둘 다 넣었다(check-mobile.ts). */
+    .ht-shell .game-main > :first-child,
+    .mines-shell .game-main > :first-child,
+    .game-shell:has(.crash-graph) .game-main > :first-child,
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{flex:0 0 auto}
+    .ht-shell .game-main > :last-child,
+    .mines-shell .game-main > :last-child,
+    .game-shell:has(.crash-graph) .game-main > :last-child,
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :last-child{flex:1 1 0;min-width:300px}
+    /* 판 폭을 묶어 둔 게임들이 있다(지뢰찾기 .game-main 은 620px). 세로로 쌓을 때는
+       그게 맞지만 가로로 돌리면 그 안에 조작부까지 들어가야 해서 둘 다 좁아진다.
+       가로에서는 화면 폭을 다 쓴다. */
+    .game-main{max-width:none}
+    .mines-shell{max-width:none}
+    /* 참가자·랭킹 패널은 아래로 내린다. 가로 412px 에서 세 칸은 어느 하나도 제대로
+       안 들어간다 — 판이 먼저다. 스크롤하면 그대로 있다. */
+    .game-side{width:100%;order:99}
+    .game-shell{flex-wrap:wrap}
+
+    /* ── 판을 남은 높이에 맞춘다 ─────────────────────────────────
+       좌우로 돌리는 것만으로는 모자랐다. 재 보니 일곱 게임이 31~284px 씩 더 넘쳤다.
+       판마다 크기를 정하는 방식이 다르다 — 홀덤만 변수 한 벌로 유도되고, 나머지는
+       고정 픽셀이 흩어져 있다. 그 전부를 가로용으로 다시 적는 것은 같은 값을 두 곳에
+       두는 일이라, 다음에 판을 고칠 때 한쪽만 바뀐다.
+
+       그래서 zoom 으로 판 전체를 줄인다. transform:scale 이 아니라 zoom 인 이유는
+       zoom 이 레이아웃에 반영되기 때문이다 — scale 은 겉모습만 줄고 자리는 그대로라
+       조작부가 여전히 밀린다. 글자는 래스터를 늘리는 것이 아니라 그 크기로 다시
+       그리므로 흐려지지 않는다.
+       배율은 재서 정했다: (남는 높이 ÷ 지금 판 높이).
+
+       게임을 가려내는 방법: 셋(홀덤·지뢰찾기·포커)만 껍데기에 제 이름표가 있고
+       나머지 넷은 없다. HTML 은 안 바꾸기로 했으므로 :has() 로 안에 있는 것을 보고
+       가린다 — 바카라는 .bacc-table, 블랙잭은 .bj-table, 그래프는 .crash-graph 다.
+       사다리는 저만의 클래스가 없어서(.bead·.board-stage 는 다른 게임도 쓴다)
+       "판이 있는데 위 넷 중 아무것도 아닌 것"으로 남긴다.
+
+       폭도 같이 정해야 한다. 세로에서는 판이 칸 폭을 그대로 받지만(세로 배치라
+       늘어난다), 가로로 돌리면 블록 요소라 제 내용의 최소폭까지 줄어든다 — 홀덤
+       테이블이 폭 64px 이 됐다. 그래서 게임마다 폭을 적는다. 화면에 찍히는 폭은
+       여기 적은 값 × zoom 이므로, 전부 대략 화면의 절반이 되게 맞췄다.
+       가로 띠 넷은 폭을 안 적는다 — 판이 칸 폭을 그대로 받아 화면을 다 쓰는 것이
+       요점이라 폭을 적으면 그걸 되돌리는 셈이 된다. 높이만 zoom 으로 맞춘다. */
+    /* 가로 띠 넷(홀덤·바카라·블랙잭·포커플립)은 여기서 배율을 안 적는다.
+       판 높이는 게임이 도는 동안 바뀐다 — 카드가 깔리고, 좌석이 늘고, 마켓 줄이 생긴다.
+       한 순간을 보고 정한 숫자는 다음 순간에 다시 넘친다(실제로 그렇게 몇 번 어긋났다).
+       그래서 app.js 가 남는 높이를 재서 맞춘다.
+       아래 셋(좌우로 돌린 것들)은 기준이 폭이라 값이 안 흔들려 그대로 적어 둔다.
+
+       다만 폭에는 상한이 필요하다. 테이블은 주어진 폭을 그대로 늘리는데 좌석 위치는
+       퍼센트라, 915px 을 다 주면 테이블이 길쭉한 알약이 되고 좌석만 가운데로 몰린다
+       (블랙잭·바카라가 실제로 그렇게 나왔다). 제 비율을 지킬 만큼만 주고 가운데에 둔다.
+       상한은 CSS 에 못 적는다. zoom 이 걸린 요소에서는 max-width 도 함께 줄어들어
+       화면에 찍히는 폭이 (적은 값 × 배율)이 된다 — 620px 이라고 적었더니 250px 이
+       됐다. 그래서 app.js 가 배율을 나눠서 건다.
+
+       가운데 정렬에 margin:auto 를 쓰면 안 된다. 세로 flex 칸에서 가로 margin 이 auto 면
+       stretch 가 꺼져 판이 제 내용 폭까지 줄어든다 — 560px 을 걸었는데 161px 이 나왔다.
+       align-self 로 가운데에 두고 width:100% 로 채운 뒤 상한만 건다. */
+    .game-shell:has(.bj-table) .game-main > :first-child,
+    .game-shell:has(.bacc-table) .game-main > :first-child{align-self:center;width:100%}
+
+    /* 채팅 도크가 아래 띠(칩·액션 버튼)를 덮는다. 가로에서는 오른쪽 가운데로 올려
+       띠와 겹치지 않게 한다 — 그 자리는 어느 게임에서도 비어 있다. */
+    .chat-dock{bottom:auto;top:50%;transform:translateY(-50%);right:8px;left:auto;
+      width:min(240px,32vw)}
+    .chat-dock .chat-panel{width:auto;height:min(260px,62vh)}
+    /* 좌우로 돌린 넷은 폭도 적어야 한다(위 설명 참고).
+       홀덤이 여기 있는 이유: 테이블이 타원이라 아래 띠 배치와 안 맞는다. 폭을 다 줘도
+       납작한 알약이 되고, 폭을 좁히면 이번엔 높이가 안 남는다. 옆에 두면 테이블이
+       제 비율(2.6:1)을 지킨다 — 실제 포커 클라이언트들도 가로에서 그렇게 놓는다. */
+    .ht-shell .game-main > :first-child{zoom:.56;width:760px}
+    .mines-shell .game-main > :first-child{zoom:.85;width:500px}
+    .game-shell:has(.crash-graph) .game-main > :first-child{zoom:.74;width:570px}
+    /* 사다리. :not 들 사이에 빈칸이 들어가면 자손 결합자가 되어 전혀 다른 것을
+       가리킨다 — 줄을 나눴다가 그렇게 되어 규칙이 안 먹었다. 한 줄로 붙여 둔다. */
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{zoom:.72;width:585px}
+
+    /* 껍데기를 한 번 더 깎는다. 여기 있는 값들은 반드시 이 가로 블록 안에 있어야 한다 —
+       한번 실수로 아래 세로 블록에 넘겨 놓았더니 가로에서 탭바가 29px 에서 42px 로
+       돌아오면서 일곱 게임이 다시 21px 씩 넘쳤다. */
+    .brand{padding:4px 0}
+    .brand .logo{width:20px;height:20px}
+    .brand b{font-size:15px}
+    header nav{box-shadow:0 -4px 14px rgba(0,0,0,.5)}
+    .tab{font-size:10px;padding:6px 2px 5px}
+    body{padding-bottom:calc(34px + env(safe-area-inset-bottom,0px))}
+    .game-switch.gs-m{margin-bottom:6px}
+    .game-switch.gs-m > .gs-pill.active{padding-top:5px;padding-bottom:5px}
+    /* 펼쳤을 때는 한 줄에 넷 — 세로보다 폭이 넓으니 두 줄이면 다 들어간다 */
+    .game-switch.gs-m.gs-open > .gs-pill{flex:1 1 calc(25% - 5px)}
+  }
+
+  /* ── 세로에서 아직 넘치는 둘 ─────────────────────────────────────
+     세로는 높이가 915px 이라 대부분 그냥 들어간다. 둘만 예외다.
+     포커 플립은 판이 878px 이다 — 좌석 아홉이 두 줄로 접히면서 그렇게 된다.
+     사다리는 38px 이 모자란다.
+     여기서도 같은 손잡이(zoom)를 쓴다. 배율은 재서 정했다. */
+  @media (max-width:768px) and (orientation:portrait) {
+    .poker-shell .game-main > :first-child{zoom:.68}
+    .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .game-main > :first-child{zoom:.88}
+  }

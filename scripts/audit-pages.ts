@@ -229,10 +229,19 @@ async function main(): Promise<void> {
      그래서 여기서 게임 모듈을 직접 불러 값을 다시 계산하고, 그 숫자가 렌더된 로비
      화면에 실제로 들어 있는지 본다. 배당 상수를 고치고 카드를 잊으면 이 검사가 깨진다 —
      "카드에 적힌 숫자가 거짓이 되는" 실패는 조용히 지나가면 안 되는 종류다. */
-  console.log('\n[2] 로비 카드의 수치 = 게임 코드의 값');
+  console.log('\n[2] 규칙 도움말의 수치 = 게임 코드의 값');
   {
-    const lobby = (await get('/', cookie)).text;
-    const has = (s: string) => lobby.includes(s);
+    /* 예전에는 로비 카드의 한 줄 사실을 봤다. 그 줄을 걷으면서(여섯 장이 나란히 서면
+       규격 줄이 먼저 읽혀 로비가 사양표처럼 보였다) 수치를 게임마다 규칙 도움말로
+       옮겼고, 검사도 같이 옮긴다 — 표시하는 자리가 바뀌었을 뿐 "적힌 숫자가 거짓이
+       되면 안 된다" 는 그대로다.
+       지우지 않는 이유가 그것이다. 표시를 옮겼다고 보증까지 없애면, 배당 상수를 고치고
+       문구를 잊는 실패가 다시 조용해진다. */
+    const pages: string[] = [];
+    for (const g of ['baccarat', 'blackjack', 'poker', 'mines', 'graph', 'ladder']) {
+      pages.push((await get(`/games/${g}`, cookie)).text);
+    }
+    const has = (s: string) => pages.some(t => t.includes(s));
 
     const B = require('../src/web/games/baccarat') as typeof import('../src/web/games/baccarat');
     const C = require('../src/web/games/crash') as typeof import('../src/web/games/crash');
@@ -274,8 +283,11 @@ async function main(): Promise<void> {
     /* 대회가 없는 것도 정상 상태가 됐다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
        그때는 "예정 없음"이나 다음 대회 안내가 나온다. 어느 쪽이든 사람에게 할 말이
        있어야 한다는 것이 이 검사의 요지다. */
-    ck('홀덤 카드는 대회 상태를 비춘다',
-      /등록은 .*후에 열립니다|등록 중|명 신청|진행 중|오늘 대회|인원 대기|예정 없음|다음 대회/.test(lobby));
+    /* 로비를 여기서 다시 받는다 — 위 검사가 게임 페이지로 옮겨 가면서 lobby 를 안 읽게
+       됐다. 이 검사는 여전히 로비를 봐야 한다(홀덤 배너가 대회 상태를 비추는가). */
+    const lobbyHtml = (await get('/', cookie)).text;
+    ck('홀덤 배너는 대회 상태를 비춘다',
+      /등록은 .*후에 열립니다|등록 중|명 신청|진행 중|오늘 대회|인원 대기|예정 없음|다음 대회/.test(lobbyHtml));
   }
 
   /* 대회가 없을 때의 화면. 이 감사 환경에는 대회가 하나도 없으므로(자동 생성이 없다)
@@ -685,8 +697,14 @@ async function main(): Promise<void> {
     const auto = mn.slice(mn.indexOf('res.data.autoCashedOut'), mn.indexOf('} else {', mn.indexOf('res.data.autoCashedOut')));
 
     ck('자동 정산 자리에서 배당·획득을 갱신한다', /updateStats\(round\)/.test(auto), auto.slice(0, 120));
+    /* 예전에는 이 검사가 "베팅액 × 배수" 를 화면에서 다시 곱하라고 요구했다. 그런데
+       그 배수는 네 자리로 자른 표시용 값이라, 곱한 결과가 실제로 나가는 금액과
+       몇 P 씩 달랐다 — 검사 이름이 말하는 "서버가 준 최종값" 과 정반대다.
+       이제 서버가 나갈 금액(potAmount)을 그대로 실어 보내고 화면은 그것만 적는다. */
     ck('갱신에 쓰는 값이 서버가 준 최종값이다',
-      /multiEl\.textContent = round\.multiplier/.test(mn) && /potEl\.textContent = fmt\(round\.betAmount \* round\.multiplier\)/.test(mn));
+      /multiEl\.textContent = round\.multiplier/.test(mn) && /round\.potAmount/.test(mn));
+    ck('화면이 금액을 스스로 다시 곱하지 않는다',
+      !/potEl\.textContent = fmt\(round\.betAmount \* round\.multiplier\)/.test(mn));
     ck('남은 칸의 지뢰를 공개한다', /revealAllMines\(round\)/.test(auto));
     ck('터진 지뢰와 다른 모양이다 (.dud)', /classList\.add\('dud'\)/.test(mn));
     const css4 = readFileSync('src/web/assets/css/04-board.css', 'utf8') as string;
@@ -1006,9 +1024,49 @@ async function main(): Promise<void> {
     const ghost = listed.filter(f => !onDisk.includes(f));
     ck('없는 파일을 가리키지 않는다', ghost.length === 0, ghost.join(', '));
     ck('검사 대상이 있다', onDisk.length > 5, `${onDisk.length}개`);
+
+    /* 주석 짝이 맞는가 — 한 번 닫은 뒤에 설명을 이어 쓰고 닫는 표시를 또 적는 실수다.
+       그러면 그 사이 글이 주석 밖 생 텍스트가 되고, 파서가 거기서 헤매다가 바로 뒤
+       규칙까지 삼킨다. 파일은 정상으로 보이고 화면도 뜨는데 그 규칙만 조용히 없다.
+       이 프로젝트에서 네 번 겪었다(홀덤 배율이 사라진 것, 사다리 채팅창이 안 움직인 것,
+       15·16·18 세 파일에 동시에 남아 있던 것). 눈으로는 안 보이므로 세어서 잡는다. */
+    const orphan: string[] = [];
+    for (const f of onDisk) {
+      const s = readFileSync(join(dir, f), 'utf8');
+      let i = 0, inC = false;
+      while (i < s.length) {
+        if (!inC && s[i] === '/' && s[i + 1] === '*') { inC = true; i += 2; continue; }
+        if (inC && s[i] === '*' && s[i + 1] === '/') { inC = false; i += 2; continue; }
+        if (!inC && s[i] === '*' && s[i + 1] === '/') {
+          orphan.push(`${f}:${s.slice(0, i).split('\n').length}`); i += 2; continue;
+        }
+        i++;
+      }
+      if (inC) orphan.push(`${f}: 안 닫힌 주석`);
+    }
+    ck('주석 밖에 닫는 표시가 남지 않았다', orphan.length === 0,
+      orphan.join(', ') + ' — 그 뒤 규칙이 통째로 무시된다');
     // 실제로 그 규칙이 app.css 에 실렸는지까지 본다
     const css = (await get('/app.css', cookie)).text;
     ck('경고 토스트 규칙이 실제로 실린다', /\.toast\.warn/.test(css));
+
+    /* ── 폰 규칙이 데스크톱으로 새지 않는가 ────────────────────────
+       "웹 화면은 지금 그대로 둔다"가 이 작업의 전제다. 폰용 조각(15·16)의 규칙이
+       하나라도 미디어쿼리 밖에 있으면 그 순간 데스크톱까지 바뀐다 — 그리고 그건
+       화면을 열어 보기 전에는 모른다. 여기서 소스를 직접 읽어 못 박는다. */
+    for (const f of ['15-mobile.css', '16-ingame.css']) {
+      if (!onDisk.includes(f)) continue;
+      const src = readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      const outside: string[] = [];
+      let depth = 0, buf = '';
+      for (const c of src) {
+        if (c === '{') { if (depth === 0 && !/@media/.test(buf)) outside.push(buf.trim().slice(0, 40)); depth++; buf = ''; }
+        else if (c === '}') { depth--; buf = ''; }
+        else buf += c;
+      }
+      ck(`${f} 의 규칙이 전부 미디어쿼리 안에 있다`, outside.length === 0,
+        outside.join(' | ') + ' — 이 규칙은 데스크톱에도 걸린다');
+    }
   }
 
   console.log('\n[14] 운영자 왼쪽 메뉴 — 메뉴에 있으면 눌러서 열려야 한다');

@@ -1,3 +1,37 @@
+/* ── 아이콘 ───────────────────────────────────────────────────────────
+   그림 문자(이모지)를 안 쓴다. 기기마다 제 글꼴로 그려져서 안드로이드와 iOS 가 서로
+   다른 그림을 내고, 크기·굵기·색이 우리 화면과 따로 논다. 선 굵기와 색(currentColor)을
+   우리가 정하는 SVG 로 둔다.
+
+   여기(app.js)에 두는 이유는 순서 때문이다. /app.js 는 app.js + ingame.js 를 이어
+   붙인 것이라 app.js 가 먼저 돈다. ingame.js 에 두면 채팅 도크가 만들어질 때 아직
+   없을 수 있다 — 지금은 DOMContentLoaded 뒤라 괜찮지만 그런 순서 의존은 언젠가 깨진다.
+   한 벌만 두고 양쪽이 같은 것을 본다.
+
+   규격: 24 격자 · stroke 2 · 둥근 끝. 이 사이트의 다른 아이콘과 같다. */
+window.__ICON = (function(){
+  function ico(d, extra){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + (extra || '') + '<path d="' + d + '"/></svg>';
+  }
+  return {
+    chat: ico('M20.5 11.7a7.7 7.7 0 0 1-8.2 7.7 8.6 8.6 0 0 1-2.9-.5L4.5 20.5l1.6-4.6a7.5 7.5 0 0 1-.8-3.4 7.7 7.7 0 0 1 7.7-7.7 7.7 7.7 0 0 1 7.5 6.9z'),
+    /* 톱니를 선으로 그렸더니 해처럼 보였다. 조절 손잡이로 바꾼다 — 선이 적어
+       작은 크기에서도 안 뭉개지고 "설정" 으로 바로 읽힌다. */
+    gear: ico('M3.5 8h9M16.5 8h4M3.5 16h4M11.5 16h9',
+      '<circle cx="14.5" cy="8" r="2.3"/><circle cx="9.5" cy="16" r="2.3"/>'),
+    close: ico('M17.5 6.5l-11 11M6.5 6.5l11 11'),
+    people: ico('M2.8 19.2c0-3 2.4-4.9 5.4-4.9s5.4 1.9 5.4 4.9M16.2 6.6a3.1 3.1 0 0 1 0 5.6M17.6 14.6c2 .7 3.6 2.3 3.6 4.6',
+      '<circle cx="8.2" cy="8.4" r="3.1"/>'),
+    clock: ico('M12 7.6V12l2.9 1.7', '<circle cx="12" cy="12" r="8.4"/>'),
+    /* 불꽃. 이월이 쌓였다는 표시에 쓴다 — 이모지 🔥 는 기기마다 그림이 달라
+       같은 배너가 안드로이드와 iOS 에서 다른 색으로 나온다. */
+    flame: ico('M13 3.5c.4 2.6-.8 4.2-2.2 5.5C9.2 10.4 8 11.7 8 14a4.6 4.6 0 0 0 9.2 0'
+      + 'c0-2.4-1.2-4-2.4-5.3M11.6 20.2A2.6 2.6 0 0 0 14 16c0-1.2-.7-1.9-1.4-2.6'),
+  };
+})();
+
 /* 승리 효과음 — 외부 음원 파일 없이 Web Audio로 합성한 짧고 조용한 2음 차임.
    브라우저 자동재생 정책 때문에 첫 사용자 조작 시점에 오디오 컨텍스트를 미리 열어두고(unlock),
    이후 타이머로 공개되는 결과(사다리 등)에서도 소리가 나도록 한다. 실패하면 조용히 무시. */
@@ -1303,7 +1337,7 @@
          아무도 안 열고 아무도 안 쓰는 쪽으로 굴러간다.
          마지막 줄을 그 자리에 그대로 띄우면, 접힌 채로도 대화가 보인다. */
       '<button type="button" class="chat-tab" aria-label="채팅 열기">'
-        + '<i class="chat-ico" aria-hidden="true">💬</i>'
+        + '<i class="chat-ico" aria-hidden="true">' + window.__ICON.chat + '</i>'
         + '<span class="chat-last"><span class="chat-last-e">채팅</span></span>'
         + '<i class="chat-badge" hidden></i>'
       + '</button>'
@@ -1659,4 +1693,217 @@
   else init();
 
   window.casinoChat = { note: note, open: function(){ toggle(true); }, onMessage: onMessage };
+})();
+
+/* ── 서비스워커 등록 ──────────────────────────────────────────────────
+   앱으로 설치되기 위한 마지막 조각이다. 화면 동작에는 아무것도 더하지 않는다 —
+   여기서 하는 일은 "이 사이트는 설치할 수 있다"고 브라우저에 알리는 것과, 카드
+   그림·효과음처럼 안 바뀌는 파일을 두 번 안 받게 하는 것뿐이다.
+
+   load 를 기다렸다가 부른다. 등록은 첫 화면이 그려지는 것과 경쟁할 이유가 없고,
+   먼저 부르면 서비스워커 파일을 받느라 화면이 늦어진다.
+
+   실패는 삼킨다. 사설 인증서, 시크릿 창, 회사 정책으로 막힌 브라우저 — 서비스워커가
+   안 깔리는 사정은 여러 가지이고 그중 무엇도 게임을 못 하게 만들 이유가 아니다.
+   깔리지 않으면 그냥 예전과 똑같이 동작한다. */
+(function(){
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(){ });
+  });
+})();
+
+/* ── 좁은 화면에서 게임 전환을 접는다 ──────────────────────────────────
+   게임 칩이 일곱 개라 폰에서는 세 줄(129px)이 된다. 화면 위쪽을 그만큼 잃는데,
+   대부분의 시간에는 지금 하는 게임 하나만 알면 된다.
+
+   여는 손잡이를 새로 만들지 않고 활성 칩을 그대로 쓴다. 그 칩은 원래 지금 보고 있는
+   페이지로 가는 링크라 눌러도 아무 일이 없었다 — 그 빈 동작에 "펼치기"를 얹는다.
+
+   여기서 DOM 을 건드리는 이유: 서버가 내보내는 HTML 은 한 글자도 안 바꾸기로 했다.
+   데스크톱 화면이 지금 그대로여야 하고, 그 사실을 골든 비교가 증명해 주기 때문이다.
+   클래스 하나를 화면에서 붙이면 그 약속을 지키면서도 폰에서만 달라진다. */
+(function(){
+  var MQ = '(max-width:768px), (max-width:1024px) and (max-height:560px)';
+  function init(){
+    var gs = document.querySelector('.game-switch');
+    if (!gs) return;                                  // 게임 화면이 아니면 없다
+    var m = window.matchMedia(MQ);
+    function apply(){
+      if (m.matches) gs.classList.add('gs-m');
+      else { gs.classList.remove('gs-m'); gs.classList.remove('gs-open'); }
+    }
+    apply();
+    /* 화면을 돌리면 조건이 바뀐다 — 세로에서 접혀 있다가 데스크톱 폭이 되면 풀려야 한다.
+       addEventListener 가 없는 오래된 브라우저에서는 첫 판정만 쓴다(그래도 동작한다). */
+    if (m.addEventListener) m.addEventListener('change', apply);
+    else if (m.addListener) m.addListener(apply);
+
+    gs.addEventListener('click', function(e){
+      if (!gs.classList.contains('gs-m')) return;
+      var pill = e.target.closest ? e.target.closest('.gs-pill') : null;
+      if (!pill) return;
+      /* 활성 칩만 손잡이다. 나머지는 원래대로 그 게임으로 간다 — 여기서 가로채면
+         펼쳐 놓고 아무것도 못 고르는 화면이 된다. */
+      if (!pill.classList.contains('active')) return;
+      e.preventDefault();
+      gs.classList.toggle('gs-open');
+    });
+    /* 밖을 누르면 접는다. 펼친 채로 두면 원래 없애려던 세 줄이 그대로 남는다. */
+    document.addEventListener('click', function(e){
+      if (gs.classList.contains('gs-open') && !gs.contains(e.target)) {
+        gs.classList.remove('gs-open');
+      }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+
+/* ── 가로에서 판을 남는 높이에 맞춘다 ──────────────────────────────────
+   폰을 눕히면 높이가 412px 뿐이다. 판(펠트·보드)과 조작부가 그 안에 함께 들어가야
+   스크롤 없이 게임이 된다.
+
+   왜 CSS 에 배율을 적지 않는가: 판 높이가 게임이 도는 동안 바뀐다. 홀덤은 좌석이
+   늘고 카드가 깔리고, 포커 플립은 마켓 줄이 생기고, 바카라는 결과 구슬이 쌓인다.
+   한 순간을 재서 정한 숫자는 다음 순간에 다시 넘친다 — 실제로 그렇게 몇 번 어긋났다.
+   여기서 재면 그 순간의 실제 높이로 맞으므로 어긋날 자리가 없다.
+
+   조작부를 옆에 두는 게임(지뢰찾기·그래프·사다리)은 건드리지 않는다. 그쪽은 기준이
+   높이가 아니라 폭이라 CSS 값이 흔들리지 않는다 — flex-direction 을 보고 가린다. */
+(function(){
+  var MQ = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var MIN = 0.3;     // 이보다 줄이면 글자를 읽을 수 없다. 차라리 스크롤이 낫다.
+  var MAX = 1.8;     // 이보다 키우면 원본이 작은 글자·그림이 뭉개진다.
+  var GAP = 26;       // 아래 끝에 닿지 않게 남기는 여유
+
+  /* 판이 화면에서 이 폭을 넘지 않게 한다. 테이블은 주어진 폭을 그대로 늘리는데
+     좌석 위치는 퍼센트라, 915px 을 다 주면 길쭉한 알약이 되고 좌석만 가운데로 몰린다.
+     CSS 에 못 적는 이유: zoom 이 걸린 요소에서는 max-width 도 같이 줄어들어
+     화면에 찍히는 폭이 (적은 값 × 배율)이 된다. 여기서 배율로 나눠 건다. */
+  function capOf(board){
+    /* 홀덤. 인게임(웹 껍데기를 벗은 가로)에서는 높이가 더 있으므로 폭도 더 준다 —
+       테이블이 2.3:1 을 지킨다. 껍데기가 있는 가로에서는 높이가 모자라 더 좁혀야 한다. */
+    if (board.querySelector('.ht-rail') || board.className.indexOf('ht-felt') >= 0) {
+      /* 펠트 높이(--htCloth)는 폭과 무관하게 고정이라, 상한이 곧 가로세로 비를 정한다.
+         700 을 줬더니 3.4:1 이 나왔다 — 480 이 2.3:1 로 포커 테이블처럼 읽힌다. */
+      return document.documentElement.classList.contains('ingame') ? 480 : 440;
+    }
+    if (board.querySelector('.bj-table')) return 560;
+    if (board.querySelector('.bacc-table')) return 760;
+    return 0;                                  // 상한 없음 (포커 플립은 넓을수록 낫다)
+  }
+
+  function fit(){
+    var main = document.querySelector('.game-main');
+    var board = main && main.firstElementChild;
+    if (!board) return;
+    /* 먼저 되돌리고 잰다 — 줄여 놓은 상태에서 재면 그 값을 또 줄이게 된다. */
+    board.style.zoom = '';
+    board.style.maxWidth = '';
+    if (!window.matchMedia(MQ).matches) return;
+    /* 인게임(웹 껍데기를 벗은 화면)에서는 배율을 아예 안 쓴다. 거기서는 게임마다
+       실제 치수로 맞춰 두었고, 배율을 걸면 글자까지 같이 줄어 못 읽게 된다 —
+       여기서 inline 으로 zoom 을 걸고 있어서 CSS 의 zoom:1 이 못 이겼고,
+       바카라 부제가 10px 로 적혀 있는데 화면에는 4.3px 로 찍혔다. */
+    if (document.documentElement.classList.contains('ingame')) return;
+    if (getComputedStyle(main).flexDirection === 'row') return;   // 옆에 둔 게임은 제외
+
+    /* 폭 상한을 먼저 건다. 폭이 좁아지면 판이 세로로 길어지므로 높이를 그다음에 잰다 —
+       순서가 반대면 좁아진 뒤의 높이를 모른 채 배율을 정하게 된다. */
+    var cap = capOf(board);
+    if (cap) {
+      var avail = main.getBoundingClientRect().width;
+      if (avail > cap) board.style.maxWidth = cap + 'px';
+    }
+
+    /* 아래 한도. 탭바가 있으면 그 위까지, 없으면 화면 바닥까지다.
+       숨은 요소는 getBoundingClientRect 가 전부 0 이라 top 도 0 이 된다 — 높이를
+       안 보고 top 만 썼더니 인게임(탭바 숨김)에서 한도가 0 이 되어 아예 안 줄였다. */
+    var nav = document.querySelector('header nav');
+    var nr = nav ? nav.getBoundingClientRect() : null;
+    var limit = (nr && nr.height > 0) ? nr.top : window.innerHeight;
+
+    var boardH = board.getBoundingClientRect().height;
+    /* 판 말고 나머지(조작부)가 쓰는 높이. main 의 높이에서 빼면 안 된다 — 인게임에서는
+       main 이 화면 높이만큼 늘어나 있어서 남는 자리까지 "나머지"로 세게 된다. */
+    var ctlEl = main.lastElementChild !== board ? main.lastElementChild : null;
+    var others = ctlEl ? ctlEl.getBoundingClientRect().height + 10 : 0;
+    var room = limit - board.getBoundingClientRect().top - others - GAP;
+    if (boardH <= 0 || room <= 0) return;
+    /* 줄이기만 하던 것을 키우기도 하게 바꿨다. 인게임에서는 껍데기를 벗어 높이가
+       남는데, 줄이기만 하면 판이 제 자연 크기 그대로 있고 아래가 그냥 빈다 —
+       홀덤 테이블이 4.3:1 로 납작하게 남았다.
+       위로는 1.8배까지만. 그 이상 키우면 원본이 작은 글자·그림이 뭉개져 보인다. */
+    var z = room / boardH;
+    if (z > MAX) z = MAX;
+    z = Math.max(MIN, Math.floor(z * 1000) / 1000);
+    if (Math.abs(z - 1) < 0.02 && !cap) return;   // 그대로 둬도 되는 경우
+    board.style.zoom = String(z);
+    /* 상한은 화면에 찍히는 폭 기준이다. zoom 이 걸리면 max-width 도 같이 줄어드므로
+       배율로 나눠 둬야 화면에서 cap 이 된다(안 나눴더니 620px 이 250px 이 됐다). */
+    if (cap) board.style.maxWidth = Math.round(cap / z) + 'px';
+  }
+
+  function schedule(){ requestAnimationFrame(fit); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule);
+  else schedule();
+  window.addEventListener('resize', schedule);
+  window.addEventListener('orientationchange', schedule);
+  /* 판이 커지는 순간(카드가 깔리는 등)을 잡는다. 폴링이 1초라 그보다 촘촘할 이유가 없다.
+     가로가 아닐 때는 fit 이 첫 줄에서 곧바로 돌아오므로 값이 싸다. */
+  setInterval(fit, 1000);
+})();
+
+/* ── 로비의 카운트다운 ─────────────────────────────────────────────────
+   서버가 그린 "07:24"는 그린 순간의 값이라, 로비를 열어 두고 있으면 곧 거짓이 된다.
+   분 단위였을 때는 그럭저럭 견뎠지만 초까지 적기로 한 이상 세지 않으면 안 된다.
+
+   목표 시각(epoch 초)은 서버가 data-countdown 에 실어 보낸다. 스크립트가 안 돌아도
+   서버가 넣어 둔 글자가 그대로 남으므로 빈칸이 되지는 않는다 — 세는 것은 덧붙이는 일이다.
+
+   시계는 브라우저 것을 쓰지 않는다. 폰 시계가 몇 분씩 어긋나 있는 일이 드물지 않고,
+   그러면 남은 시간이 음수가 되거나 몇 분 더 남은 것처럼 보인다. 페이지를 받은 순간의
+   서버 시각을 기준으로 잡고 그 뒤로는 경과 시간만 더한다. */
+(function(){
+  /* app.js 는 <head> 에서 실행된다 — 이 시점에는 <body> 가 아직 없어서 지금 찾으면
+     언제나 빈손이다. 문서를 다 읽은 뒤에 시작한다. */
+  function start(){
+  var els = document.querySelectorAll('[data-countdown]');
+  if (!els.length) return;
+
+  /* 서버가 응답에 실어 준 시각. 없으면 브라우저 시계로 물러난다 — 어긋나 있을 수는
+     있어도, 아예 안 세는 것보다는 낫다. */
+  var meta = document.querySelector('meta[name="server-now"]');
+  var base = meta ? Number(meta.content) : Math.floor(Date.now() / 1000);
+  if (!isFinite(base) || base <= 0) base = Math.floor(Date.now() / 1000);
+  var mark = Date.now();
+
+  function p2(n){ return n < 10 ? '0' + n : String(n); }
+  function fmt(s){
+    if (s <= 0) return '00:00';
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return h > 0 ? h + ':' + p2(m) + ':' + p2(x) : p2(m) + ':' + p2(x);
+  }
+
+  function tick(){
+    var now = base + Math.floor((Date.now() - mark) / 1000);
+    for (var i = 0; i < els.length; i++) {
+      var at = Number(els[i].getAttribute('data-countdown'));
+      if (!isFinite(at)) continue;
+      var left = at - now;
+      els[i].textContent = fmt(left);
+      /* 다 셌으면 화면을 새로 받는다. 00:00 인 채로 그대로 두면 등록이 이미 닫혔는데도
+         [참가 신청]이 남아 있어, 누른 사람이 거절만 당한다. 한 번만 부른다. */
+      if (left <= 0 && !els[i].dataset.done) {
+        els[i].dataset.done = '1';
+        setTimeout(function(){ location.reload(); }, 1500);
+      }
+    }
+  }
+  tick();
+  setInterval(tick, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();

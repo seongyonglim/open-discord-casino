@@ -2,8 +2,13 @@
  *
  * 이 파일의 유일한 설계 원칙: 서버 타이머를 쓰지 않는다.
  * 요청이 들어올 때마다 "지금 시각 기준으로 밀린 일을 전부 처리"한다.
- * 이 서버는 접속이 없으면 약 7분 뒤 절전에 들어가므로 setTimeout으로 블라인드
- * 시계나 액션 마감을 걸면 잠든 사이에 죽는다. 기존 게임 다섯 개가 모두 이 방식이다.
+ * 요청이 언제 올지 모르므로 어떤 상태에서 시작해도 옳게 따라잡아야 한다 —
+ * 기존 게임 다섯 개가 모두 이 방식이다.
+ *
+ * (2026-08 부터 src/tick.ts 가 같은 전진 함수를 타이머로도 부른다. 이 파일의 규칙은
+ *  그대로다: 여기는 여전히 "불릴 때마다 밀린 일을 전부 처리"만 하고, 누가 부르는지는
+ *  모른다. 한때 여기에 "7분 뒤 절전이라 타이머를 못 건다"고 적혀 있었는데,
+ *  fly.toml 이 auto_stop_machines = "off" 로 바뀐 뒤로 그 제약은 없다.)
  *
  * 밀린 일이 여러 개일 수 있는 게 홀덤의 특징이다. 아무도 화면을 안 보는 사이
  * 세 명의 액션 마감이 연달아 지났다면 한 요청에서 세 번의 자동 액션을 처리해야
@@ -18,6 +23,7 @@ import * as G from '../services/holdem';
 import * as T from '../services/tournament';
 import { getConfig } from './settings';
 import { ensureRecurring } from './recurrence';
+import { bumpRollover, clearRollover, carriesRollover, rolloverFactor } from './rollover';
 import { notifyAll } from './notifications';
 
 /* 알림 문구에 쓸 KST 시:분. 화면이 아니라 알림 본문에 들어가는 값이라 여기서 만든다 —
@@ -196,6 +202,11 @@ export function prizePoolOf(
   t: { prize_multiplier: number; prize_fixed?: number; buy_in: number; mode?: string },
   entryCount: number, prizeFixed = t.prize_fixed ?? 0
 ): number {
+  /* 이월 배수는 여기서 곱하지 않는다. 대회를 만들 때 prize_multiplier 에 이미 굳혀
+     넣기 때문이다(db/rollover.ts).
+     실행 시점에 곱하면 끝난 대회를 다시 그릴 때 값이 달라진다 — 지급은 이월이 걸린
+     금액으로 나갔는데, 그 뒤 clearRollover 가 돌고 나면 결과 화면이 원래 값으로
+     계산해 "받은 돈보다 적은 상금표"를 그린다. 굳혀 두면 그 시차가 없다. */
   if (!isPko(t)) return T.prizePool(entryCount, t.prize_multiplier, prizeFixed, t.buy_in);
   /* 갈라내는 자리는 참가비냐 배수냐로 다르다 — prizePool 이 그 둘을 다른 인자로 받는다.
      어느 쪽이든 "1인당 금액에서 바운티 몫을 뺀 나머지"를 넘긴다. */
@@ -206,6 +217,26 @@ export function prizePoolOf(
   return t.buy_in > 0
     ? T.prizePool(entryCount, t.prize_multiplier, prizeFixed, keep)
     : T.prizePool(entryCount, keep, prizeFixed, 0);
+}
+
+/**
+ * 이 대회가 내보낼 **전체** 금액 — 순위 상금 + 바운티 펀드.
+ *
+ * prizePoolOf 는 이름 그대로 순위 상금 팟만 준다. 바운티 판에서는 1인당 금액의 상당
+ * 부분(미스터리는 전부)이 바운티로 빠져 있어서, 그 값만 "총 상금"이라고 적으면 실제
+ * 지급액보다 적게 광고하게 된다 — 미스터리는 순위 상금이 0 이라 "총 상금 풀 0P" 가
+ * 됐다. 실제로 로비 배너가 그러고 있었다.
+ *
+ * 화면 쪽에서 매번 두 값을 더하게 두면 언젠가 한 곳이 빠진다(그래서 빠졌다).
+ * "총액" 을 묻는 자리는 전부 이 함수 하나를 부른다.
+ */
+export function totalPoolOf(
+  t: { prize_multiplier: number; prize_fixed?: number; buy_in: number; mode?: string;
+       bounty_pool?: number },
+  entryCount: number, prizeFixed = t.prize_fixed ?? 0
+): number {
+  const ranked = prizePoolOf(t, entryCount, prizeFixed);
+  return ranked + (isPko(t) ? Math.max(0, Math.floor(t.bounty_pool ?? 0)) : 0);
 }
 export interface HtTableRow {
   id: number; tournament_id: number; table_no: number;
@@ -576,14 +607,26 @@ export interface HoldemStatus {
  * 넘기면 진행 중인 판이 화면에서 사라지는 문제가 있었다(그걸 막는 특별 규칙이 따로 있었다).
  * 이제 살아 있는 판을 곧바로 고르므로 그 문제가 생길 자리가 없다.
  *
- * 살아 있는 판이 여럿일 수는 없다 — 만드는 쪽(db/admin.ts 의 createTournament)이 막는다.
- * 그래도 최근 것을 고르게 해 둔다. 어긋난 데이터가 화면을 죽이는 것보다는 낫다.
+ * 살아 있는 판이 여럿일 수 있다. 오래도록 주석에 "만드는 쪽이 막는다"고 적혀 있었지만
+ * 사실이 아니었다 — createTournament 의 live_exists 는 *이미 시작된* 판만 보고,
+ * too_close 는 기존 대기 판의 시작 시각을 "지금"과 견줄 뿐 새로 만드는 판과 비교하지
+ * 않는다. 그래서 +3시간 판이 있어도 +6시간 판이 그대로 만들어진다.
+ *
+ * 그 상태에서 id 가 큰 쪽(나중에 만든 판)을 고르면 실제 사고가 난다: 먼저 열릴 판에
+ * 신청한 사람이 취소를 눌러도 "신청하지 않으셨습니다"로 거절당하고, 그 판은 아무도
+ * 전진시키지 않아 인원 미달 자동 취소·환불도 안 일어난다 — 참가비가 묶인다.
+ *
+ * 그래서 "지금 다뤄야 할 판"의 정의를 순서대로 적는다.
+ *   1. 이미 시작한 판이 있으면 그것이다 — 사람들이 지금 앉아 있다.
+ *   2. 아니면 가장 먼저 시작할 판. 곧 열릴 판이 지금 다룰 판이다.
+ *   3. 같으면 먼저 만든 것(id ASC).
  */
 function activeTournament(): HtRow | null {
   const live = one<HtRow>(
     `SELECT * FROM holdem_tournaments
       WHERE finished_at IS NULL AND cancelled_at IS NULL
-      ORDER BY id DESC LIMIT 1`);
+      ORDER BY (started_at IS NOT NULL) DESC, scheduled_start_at ASC, id ASC
+      LIMIT 1`);
   if (live) return live;
   /* 막 끝난 판. 결과 화면을 띄울 시간을 준다 — 끝나는 순간 화면이 대회를 떠나면
      우승 연출도 마지막 쇼다운도 못 본다.
@@ -705,6 +748,35 @@ export function advanceHoldem(userId?: string): HoldemStatus {
       /* 참가비를 걷었으면 돌려준다. 판이 열리지 않았고, 인원 미달은 참가자 잘못이 아니다.
          돌려주지 않으면 3명이 안 모여 취소된 판에 돈만 잃는 사람이 생긴다. */
       refundEntries(t.id, 'holdem:cancel:');
+      /* 프리롤이 인원 미달로 못 열렸다 — 다음 판으로 배수를 넘긴다.
+         여기만 센다. 운영자가 손으로 접은 판(admin.ts)은 세지 않는다: 실수로 연 판을
+         접을 때마다 이월이 쌓이면 그건 이월이 아니라 사고다.
+         참가비 대회는 걷은 돈이 곧 상금이라 서비스가 얹는 배수가 없어 해당이 없다. */
+      /* 상금이 0 인 판(운영자가 화면을 보려고 여는 테스트 판)은 세지 않는다.
+         예전에는 참가비만 봐서, 그런 판을 열었다 넘기는 것만으로 다음 프리롤이
+         2배가 됐다 — 경제에 흔적을 남기지 않기로 한 판이 가장 큰 흔적을 남겼다. */
+      if (carriesRollover(t)) {
+        const was = rolloverFactor();
+        bumpRollover();
+        const now2 = rolloverFactor();
+        /* 이미 만들어 둔 다음 판에도 이 이월을 얹는다.
+
+           배수는 대회를 만들 때 금액에 굳혀 넣는다(admin.ts). 그래서 운영자가 다음 판을
+           미리 열어 두면, 그 뒤에 쌓인 이월이 그 판에는 실리지 않는다 — 화면은 "이월
+           2회 누적 적용" 이라고 말하는데 실제 금액은 1회분이다. 상한에 걸려 배수가
+           안 오른 때(was === now2)는 아무 일도 하지 않는다.
+
+           원래 금액(base)을 따로 안 들고 있어도 된다: 지금 값이 base × was 이므로
+           was 로 나누고 now2 를 곱하면 정확히 base × now2 가 된다. 정수 나눗셈이
+           먼저 오지 않게 곱셈을 앞에 둔다. */
+        if (now2 > was) {
+          run(`UPDATE holdem_tournaments
+                  SET prize_multiplier = (prize_multiplier * ?) / ?
+                WHERE started_at IS NULL AND finished_at IS NULL AND cancelled_at IS NULL
+                  AND buy_in <= 0 AND prize_multiplier > 0`,
+            now2, was);
+        }
+      }
       t = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, t.id)!;
     }
 
@@ -1463,6 +1535,13 @@ function finishTournament(t: HtRow, table: HtTableRow, now: number): void {
   if (fresh.finished_at !== now) return;
   payPrizes(fresh, now);
   awardBounty(fresh);
+  /* 판이 열려 상금이 나갔다 — 이월은 여기서 갚아진 것이므로 다음 판은 제 값으로
+     돌아간다. 지급 뒤에 부르는 이유는 순서가 곧 뜻이기 때문이다: 지급이 도중에
+     실패하면 이월도 그대로 남아 다음 판이 그 몫을 다시 진다. */
+  /* 이월을 실제로 지고 있던 판이 끝났을 때만 지운다. 참가비 대회나 테스트 판은
+     쌓인 이월을 한 푼도 쓰지 않으므로, 그 판이 끝났다고 지우면 프리롤을 기다리던
+     사람들의 이월이 남의 판에 딸려 사라진다(실측: 3배가 1배로 떨어졌다). */
+  if (carriesRollover(t)) clearRollover();
   announceWinner(fresh);
 }
 
@@ -1654,7 +1733,12 @@ function payBounties(t: HtRow, entries: HtEntryRow[]): void {
 
 export type RegisterError =
   'not_open' | 'late_reg_closed' | 'table_full' | 'closed' | 'already' | 'no_funds';
-export type UnregisterError = 'not_registered' | 'already_started' | 'closed';
+export type UnregisterError =
+  | 'not_registered' | 'already_started' | 'closed'
+  /* 취소를 누르는 사이에 그 판이 인원 미달로 자동 취소된 경우. 돈은 이미 돌아갔다 —
+     이걸 'closed' 와 한 덩어리로 두면 "지금은 취소할 수 없습니다" 가 떠서,
+     참가비가 묶인 줄 알고 문의가 온다. */
+  | 'auto_cancelled';
 
 /**
  * 참가 신청 취소 — 대회가 시작되기 전에만 된다.
@@ -1671,10 +1755,25 @@ export type UnregisterError = 'not_registered' | 'already_started' | 'closed';
 export function unregisterHoldem(userId: string):
   { ok: true; registered: number } | { ok: false; error: UnregisterError } {
   return tx(() => {
+    /* 전진시키기 전에 내가 어느 판에 걸려 있었는지 적어 둔다.
+       advanceHoldem 은 그냥 읽는 함수가 아니다 — 유예가 지나고 인원이 모자라면 그 자리에서
+       판을 취소하고 참가비를 전부 돌려준다. 그러고 나서 보면 나는 등록한 적 없는 사람이
+       되어 있고, 화면에는 "지금은 취소할 수 없습니다" 가 뜬다. 돈은 돌아왔는데 실패로 읽힌다. */
+    const prev = activeTournament();
+    const wasMine = prev != null && one<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`,
+      prev.id, userId)!.n > 0;
+
     const st = advanceHoldem();
     const t = st.tournament;
     // 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다
-    if (!t || t.finished_at != null || t.cancelled_at != null) return { ok: false, error: 'closed' };
+    if (!t || t.finished_at != null || t.cancelled_at != null) {
+      if (wasMine && prev) {
+        const after = one<HtRow>(`SELECT * FROM holdem_tournaments WHERE id = ?`, prev.id);
+        if (after?.cancelled_at != null) return { ok: false, error: 'auto_cancelled' };
+      }
+      return { ok: false, error: 'closed' };
+    }
 
     /* 지우기 전에 얼마를 냈는지 읽어 둔다 — 지운 뒤에는 알 방법이 없다.
        설정의 참가비를 다시 읽지 않는 이유는, 그 사이에 값이 바뀌었으면 걷은 것과 다른

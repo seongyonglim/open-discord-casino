@@ -19,6 +19,7 @@ import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
 import { getWebUser, chatTick } from '../../db/queries';
 import { recentRecap } from '../../db/holdem-recap';
+import { rolloverSkips, rolledMultiplier } from '../../db/rollover';
 import { upcomingHint } from '../../db/recurrence';
 import { getConfig } from '../../db/settings';
 import { readJson, sendJson } from '../http';
@@ -88,11 +89,44 @@ function statePayload(st: HoldemStatus, userId: string) {
     /* 빈 화면 대신 두 가지를 준다 — 지난 판이 어땠는지(recap)와 다음이 언제인지(upcoming).
        둘 다 없을 수도 있고, 그때는 화면이 안내 문구만 그린다. */
     const up = upcomingHint(now);
+    const cfg = getConfig();
     return {
       ok: true, me: userId, balance: getWebUser(userId)?.balance ?? 0,
       serverNow: now, tournament: null, results: [], table: null,
       recap: recentRecap(),
-      upcoming: up ? { regOpenAt: up.regOpenAt, startAt: up.startAt, dateStr: up.dateStr } : null,
+      /* 다음 대회 카드에 "언제" 만 적었더니, 갈지 말지를 정하는 데 필요한 것들 —
+         얼마짜리 판인지 · 몇 명이 모여야 열리는지 · 어떤 방식인지 — 을 알 길이 없었다.
+         등록이 안 열렸을 뿐이지 규칙은 이미 정해져 있으므로 같이 내려보낸다.
+
+         대회 행이 아직 없어서 참가자 수와 상금 풀은 존재하지 않는다. 그래서 그 둘은
+         안 보낸다 — 0 을 보내면 화면이 "상금 0P 짜리 판" 으로 그리고, 그건 없는 것보다
+         나쁘다. 대신 인당 금액과 최소 인원을 주어 "3명이면 얼마" 를 읽을 수 있게 한다. */
+      upcoming: up ? {
+        regOpenAt: up.regOpenAt, startAt: up.startAt, dateStr: up.dateStr,
+        mode: cfg.mode,
+        buyIn: cfg.buyIn,
+        /* 대회 이름. 행이 아직 없으므로 만들어질 때와 같은 규칙으로 미리 짓는다
+           (db/admin.ts 의 createTournament 와 같은 순서) — 예고와 실제 이름이 다르면
+           같은 판을 두 번 여는 것처럼 보인다. */
+        title: (T.isKstWeekend(up.startAt * 1000) ? cfg.weekendTitle : cfg.weekdayTitle).trim()
+          || (cfg.mode === 'MYSTERY_BOUNTY' ? '미스터리 바운티'
+            : cfg.mode === 'PKO_BOUNTY' ? '바운티 헌터'
+            : cfg.buyIn > 0 ? '홀덤 토너먼트' : '홀덤 프리롤'),
+        /* 주말 여부는 시작 시각으로 정해진다 — 지금 요일이 아니라 그 판이 열리는 날이다.
+           이월 배수도 함께 얹는다. 실제 대회는 만들어질 때 곱해진 값으로 생기는데
+           (db/admin.ts 의 rolledMultiplier), 예고 카드가 곱하기 전 값을 적으면
+           "이월 2회 — 3배" 라고 써 놓고 바로 아래에 원래 금액이 적히는 모순이 된다. */
+        perHead: rolledMultiplier({
+          prize_multiplier: T.isKstWeekend(up.startAt * 1000)
+            ? cfg.weekendMultiplier : cfg.weekdayMultiplier,
+          buy_in: cfg.buyIn,
+        }),
+        startingStack: cfg.startingStack,
+        minPlayers: T.MIN_PLAYERS,
+        maxPlayers: T.MAX_PLAYERS,
+        /* 이월은 다음 판에 걸린다 — 지금 화면이 바로 그 다음 판이다 */
+        rolloverSkips: cfg.buyIn <= 0 ? rolloverSkips() : 0,
+      } : null,
     };
   }
   const table = getTable(t.id);
@@ -147,6 +181,15 @@ function statePayload(st: HoldemStatus, userId: string) {
         : undefined,
       /* 바운티 몫(%) — 상금 탭이 "1인당 금액의 몇 %가 바운티인가"를 적는 데 쓴다 */
       bountyPct: isPko(t) ? bountyPctOf(t) : undefined,
+      /* 이월이 걸린 판인가. 배수는 대회를 만들 때 이미 굳혀 넣었으므로(db/rollover.ts)
+         금액에는 반영돼 있고, 화면은 "왜 평소보다 큰가"를 말하기 위해 횟수만 받는다. */
+      rolloverSkips: t.buy_in <= 0 ? rolloverSkips() : 0,
+      /* 미스터리에서 봉투 하나가 받을 수 있는 최대 금액. 개별 봉투가 얼마인지는
+         감추지만(위의 bountyBySeat), "얼마까지 나올 수 있나"는 감출 것이 아니다 —
+         그게 이 모드를 고르는 이유이고, 규칙에서 계산되는 공개 값이다. */
+      mysteryTop: isMystery(t) && entries.length > 0
+        ? Math.floor(t.bounty_pool * T.envelopeRange(entries.length).hi / 100)
+        : undefined,
       /* 누가 얼마를 벌었나. 상금 탭이 규칙 설명 대신 이 표를 보여준다 — 규칙은 공지에
          적어 두고, 화면은 "지금 누가 앞서 있나"만 말하는 편이 읽힌다.
 
@@ -475,10 +518,14 @@ export async function handleUnregister(
 ): Promise<void> {
   const r = unregisterHoldem(userId);
   if (!r.ok) {
+    /* auto_cancelled 는 실패가 아니라 "내가 누르는 사이에 판이 없어졌고 돈은 돌아갔다"이다.
+       예전에는 이것도 '지금은 취소할 수 없습니다' 로 묶여 나가서, 참가비가 묶인 줄 알게 했다. */
     const msg = r.error === 'not_registered' ? '신청하지 않으셨습니다'
       : r.error === 'already_started' ? '대회가 이미 시작되어 취소할 수 없습니다'
+      : r.error === 'auto_cancelled'
+        ? '대회가 최소 인원 미달로 취소됐습니다. 참가비가 있었다면 전액 돌려드렸습니다.'
       : '지금은 취소할 수 없습니다';
-    return sendJson(res, 400, { error: msg });
+    return sendJson(res, r.error === 'auto_cancelled' ? 409 : 400, { error: msg });
   }
   return sendJson(res, 200, { ok: true, registered: r.registered });
 }

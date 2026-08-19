@@ -19,3 +19,9 @@
 12-rank.css
 13-achieve.css
 14-chat.css
+15-mobile.css
+16-ingame.css
+17-ig-grid.css
+18-ig-portrait.css
+19-timer.css
+20-lobby2.css

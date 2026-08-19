@@ -1,0 +1,885 @@
+/* 인게임 껍데기 — 폰을 눕히고 게임에 들어가면 웹 껍데기를 벗고 화면을 판에 내준다.
+ *
+ * ── 왜 별도 파일인가
+ * 이 파일을 안 실으면 정확히 예전으로 돌아간다. 서버가 내보내는 HTML 은 여전히 그대로고
+ * (골든 비교가 페이지 10개 바이트 동일을 증명한다), 여기서 하는 일은 이미 있는 요소를
+ * 다른 자리에 옮겨 담는 것뿐이다. TICK=off · SW=off 와 같은 성질의 되돌리기 장치다.
+ *
+ * ── 왜 서버 HTML 을 안 바꾸는가
+ * 데스크톱 화면은 만족스럽다는 판단이라 한 픽셀도 안 건드리기로 했다. 그런데 상단바에
+ * 필요한 것이 이미 화면에 전부 있다 — 로비 링크, 게임 이름, 잔액, 음량, 규칙 버튼.
+ * 새로 만들 필요 없이 자리만 옮기면 된다.
+ *
+ * ── 옮기는 것과 새로 만드는 것
+ * 옮긴다: 로비 탭(a.tab[href="/"]) · 잔액 상자(.profwrap) · 음량(.volwrap) · 규칙(?)
+ *   같은 노드를 그대로 옮기므로 거기 걸린 동작(프로필 메뉴, 음량 슬라이더)이 살아 있다.
+ * 새로 만든다: 게임 이름(글자만 복사) · 채팅 단추
+ *   게임 전환 칩은 접었다 펴는 동작이 .game-switch 에 위임돼 있어 빼내면 끊긴다.
+ *   채팅은 app.js 가 window.casinoChat.open() 을 열어 두었으므로 단추만 만들면 된다.
+ */
+/* ── 게임마다 다른 방향 ────────────────────────────────────────────────
+   판 모양이 게임마다 다르다. 사다리는 위에서 아래로 떨어지는 세로형이고 지뢰찾기는
+   정사각이라 세로 화면이 맞다. 홀덤·바카라·블랙잭·포커·그래프는 판이 옆으로 넓어
+   가로가 맞다. 그래서 한 방향으로 통일하지 않고 게임마다 나눈다.
+
+   ── 잠금은 되면 좋고, 안 되면 그만이다
+   screen.orientation.lock() 은 설치된 앱(standalone)이나 전체화면에서만 동작한다.
+   그냥 브라우저 탭에서는 NotSupportedError 로 거부되고, iOS 사파리는 아예 없다.
+   그러니 잠금에 기대면 안 된다 — 잠금이 실패해도 사용자가 폰을 돌리면 그 방향이
+   그대로 보인다. 그래서 두 방향 다 제대로 나와야 한다.
+
+     사다리·지뢰찾기 : 세로가 주력, 가로는 폴백
+     나머지 다섯     : 가로가 주력
+
+   여기서는 "지금 인게임 껍데기를 쓸 상황인가" 하나만 정한다. 다섯 개 IIFE 가
+   각자 판단하면 조건이 어긋나서 반쪽만 켜지는 상태가 생긴다. */
+window.__IG = (function(){
+  var LAND = '(max-width:1024px) and (max-height:560px) and (orientation:landscape)';
+  var PORT = '(max-width:560px) and (orientation:portrait)';
+  /* 세로가 맞는 게임 — 방향 잠금은 여기 적힌 대로 건다 */
+  var PORTRAIT_GAMES = ['ladder', 'mines'];
+  /* 그중 세로 배치를 실제로 만들어 둔 게임. 잠금과 나누는 이유가 있다 —
+     지뢰찾기를 여기까지 넣었더니 껍데기는 켜지는데(원래 자리를 display:none 으로
+     감춘다) 대신 그릴 격자가 없어서 화면이 통째로 사라졌다. 검사가 "판 폭 0px" 로
+     잡아 줬다. 한 게임씩 만들고, 만든 것만 여기 더한다. */
+  var PORT_SHELL = ['ladder'];
+
+  function key(){
+    var m = location.pathname.match(/^\/games\/([a-z]+)\/?$/);
+    return m ? m[1] : null;
+  }
+  function land(){ return window.matchMedia(LAND).matches; }
+  function port(){
+    return window.matchMedia(PORT).matches && PORT_SHELL.indexOf(key()) >= 0;
+  }
+  /* 껍데기를 쓸 상황인가 — 게임 페이지이고, 그 게임에 맞는 방향/크기인가 */
+  function on(){ return !!key() && (land() || port()); }
+
+  function subscribe(fn){
+    [LAND, PORT].forEach(function(q){
+      var m = window.matchMedia(q);
+      if (m.addEventListener) m.addEventListener('change', fn);
+      else if (m.addListener) m.addListener(fn);
+    });
+    window.addEventListener('orientationchange', fn);
+    window.addEventListener('resize', fn);
+  }
+
+  /* 방향 잠금. 실패는 정상이므로 조용히 넘긴다 — 콘솔에 빨간 줄이 남으면
+     진짜 오류를 찾을 때 방해가 된다. */
+  function lock(){
+    var so = window.screen && window.screen.orientation;
+    if (!so) return;
+    var k = key();
+    try {
+      if (!k) { so.unlock && so.unlock(); return; }
+      var want = PORTRAIT_GAMES.indexOf(k) >= 0 ? 'portrait-primary' : 'landscape-primary';
+      var p = so.lock(want);
+      if (p && p.catch) p.catch(function(){});
+    } catch (e) { /* 지원하지 않는 기기 — 사용자가 돌리는 대로 보여 준다 */ }
+  }
+
+  /* 아이콘은 app.js 가 한 벌만 정의한다(window.__ICON) — /app.js 는 app.js + ingame.js
+     를 이어 붙인 것이라 app.js 가 먼저 돈다. 여기서 또 만들면 두 벌이 되어 언젠가 어긋난다. */
+  var ICON = window.__ICON;
+
+  return { key: key, land: land, port: port, on: on, subscribe: subscribe, lock: lock,
+           ICON: ICON };
+})();
+
+/* ── 사다리 남은 시간 ─────────────────────────────────────────────────
+   이 하나만은 방향을 안 가린다. 세로에서 만든 모양이 마음에 든다는 판단이라
+   가로와 데스크톱에도 같은 것을 쓴다 — 남은 시간은 어느 화면에서나 같은 뜻이다.
+
+   ── 원본을 고쳐 쓰지 않는 이유
+   사다리 코드는 #lCountdown 의 textContent 를 폴링마다 다시 쓴다. 거기에 우리가
+   span 을 심으면 다음 폴링에 지워지고, 매초 다시 심는 싸움이 된다. 그래서 원본은
+   감춰 두고 그 글자를 읽어서 우리 것을 그린다. 값의 출처는 하나로 남는다.
+
+   서버 HTML 은 그대로다 — 여기서 만들어 붙일 뿐이라 골든 비교는 영향받지 않는다.
+
+   원본이 쓰는 문장은 다섯 가지다:
+     '베팅 마감까지 N초' · '결과 공개 중…' · '다음 라운드까지 N초'
+     '일시정지 (화면을 클릭하면 재개)' · '서버에 연결하는 중…' */
+(function(){
+  var IG = window.__IG;
+
+  function src(){ return document.getElementById('lCountdown'); }
+
+  function build(){
+    var s = src();
+    if (!s || document.querySelector('.ig-timer')) return;
+    /* 원본은 지우지 않는다 — 사다리 코드가 계속 글자를 쓰는 노드다. 감추기만 한다. */
+    s.style.display = 'none';
+    var t = document.createElement('div');
+    t.className = 'ig-timer';
+    t.innerHTML = '<span class="ig-t-ico"></span><span class="ig-t-txt"></span>'
+      + '<span class="ig-t-num"></span>';
+    s.parentNode.insertBefore(t, s.nextSibling);
+    sync();
+  }
+
+  function sync(){
+    var t = document.querySelector('.ig-timer');
+    if (!t) return;
+    var s = src();
+    var v = s ? String(s.textContent).trim() : '';
+    var ico = t.querySelector('.ig-t-ico'), txt = t.querySelector('.ig-t-txt'),
+        num = t.querySelector('.ig-t-num');
+    var m, sec = null, label = v;
+    if ((m = v.match(/^베팅 마감까지 (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
+    else if ((m = v.match(/^다음 라운드까지 (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
+    else if (/결과 공개/.test(v)) { label = '사다리 진행 중…'; }
+    else if (/일시정지/.test(v)) { label = '일시정지 — 화면을 누르면 재개'; }
+    else if (!v) { label = ''; }
+    if (!ico.firstChild) ico.innerHTML = IG.ICON.clock;
+    if (txt.textContent !== label) txt.textContent = label;
+    /* 두 자리로 고정한다 — 9→10 에서 글자가 밀리면 눈이 그 움직임을 따라간다 */
+    var ns = sec === null ? '' : (sec < 10 ? '0' + sec : String(sec)) + '초';
+    if (num.textContent !== ns) num.textContent = ns;
+    t.classList.toggle('ig-t-hot', sec !== null && sec <= 3);
+    t.style.display = (label || ns) ? '' : 'none';
+  }
+
+  function start(){
+    build();
+    /* 원본이 1초마다 바뀌므로 그보다 촘촘히 본다 — 1초로 맞추면 최대 1초를 늦게
+       따라가서 남은 시간이 한 박자씩 밀려 보인다. */
+    setInterval(function(){ build(); sync(); }, 250);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+(function(){
+  var IG = window.__IG;
+  var root = document.documentElement;
+  var bar = null;
+  var home = {};        // 원래 자리 — 껍데기를 벗을 때 그대로 돌려놓는다
+
+  function isGame(){ return /^\/games\//.test(location.pathname); }
+
+  /* 옮기기 전에 원래 자리를 적어 둔다. 부모와 바로 뒤 형제를 기억하면 그 사이에
+     다시 끼워 넣을 수 있다 — 마지막 자식이었으면 뒤 형제가 null 이고 append 가 된다. */
+  function take(el, key){
+    if (!el) return null;
+    if (!home[key]) home[key] = { parent: el.parentNode, next: el.nextSibling };
+    return el;
+  }
+  /* 기억해 둔 "바로 뒤 형제" 가 그새 지워졌으면 그 앞에 못 넣는다 — insertBefore 가
+     NotFoundError 를 던지고 남은 되돌리기가 통째로 멈춘다. 아직 그 부모의 자식일
+     때만 그 앞에 넣고, 아니면 끝에 붙인다. */
+  function giveBack(el, key){
+    var h = home[key];
+    if (!el || !h || !h.parent || !h.parent.isConnected) return;
+    h.parent.insertBefore(el, (h.next && h.next.parentNode === h.parent) ? h.next : null);
+  }
+
+  function build(mode){
+    if (bar) return;
+    bar = document.createElement('div');
+    bar.className = 'ig-bar';
+
+    var prof  = take(document.querySelector('.profwrap'), 'prof');
+    var vol   = take(document.querySelector('.volwrap'), 'vol');
+    var help  = take(document.querySelector('.game-switch .gs-help'), 'help');
+
+    /* 뒤로가기는 가로에만 둔다.
+       가로: 하단 탭바를 통째로 걷으므로 나갈 길이 없다. 그 [로비] 탭을 꺼내 온다.
+       세로: 탭바를 살려 두었고 거기 [로비] 가 이미 있다. 위에 하나 더 두면 같은
+             일을 하는 것이 두 군데가 되고, 그것도 엄지가 제일 안 닿는 왼쪽 위다.
+             폰에서 나가는 길은 아래에 있는 것이 맞다. 56px 도 돌려받는다. */
+    if (mode !== 'port') {
+      var lobby = take(document.querySelector('header nav a.tab[href="/"]'), 'lobby');
+      if (lobby) { lobby.classList.add('ig-back'); bar.appendChild(lobby); }
+    }
+
+    /* 게임 이름은 글자만 가져온다. 칩 자체를 옮기면 접었다 펴는 위임이 끊긴다. */
+    var active = document.querySelector('.game-switch .gs-pill.active');
+    var name = document.createElement('span');
+    name.className = 'ig-name';
+    name.textContent = active ? active.textContent.trim() : '';
+    bar.appendChild(name);
+
+    if (prof) bar.appendChild(prof);
+
+    /* 채팅 단추. app.js 가 창을 여는 함수를 내보내 두었으므로 여기서는 부르기만 한다. */
+    var chat = document.createElement('button');
+    chat.type = 'button';
+    chat.className = 'ig-btn ig-chat';
+    chat.setAttribute('aria-label', '채팅');
+    chat.innerHTML = IG.ICON.chat;
+    chat.addEventListener('click', function(){
+      if (window.casinoChat && window.casinoChat.open) window.casinoChat.open();
+    });
+    bar.appendChild(chat);
+
+    if (vol) { vol.classList.add('ig-vol'); bar.appendChild(vol); }
+    if (help) { help.classList.add('ig-help'); bar.appendChild(help); }
+
+    document.body.appendChild(bar);
+  }
+
+  function tearDown(){
+    if (!bar) return;
+    giveBack(document.querySelector('.ig-back'), 'lobby');
+    giveBack(document.querySelector('.ig-bar .profwrap'), 'prof');
+    giveBack(document.querySelector('.ig-vol'), 'vol');
+    giveBack(document.querySelector('.ig-help'), 'help');
+    var back = document.querySelector('.ig-back');
+    if (back) back.classList.remove('ig-back');
+    var vol = document.querySelector('.ig-vol');
+    if (vol) vol.classList.remove('ig-vol');
+    var help = document.querySelector('.ig-help');
+    if (help) help.classList.remove('ig-help');
+    bar.parentNode && bar.parentNode.removeChild(bar);
+    bar = null;
+  }
+
+  var mode = null;
+  function apply(){
+    if (!IG.on()) {
+      root.classList.remove('ingame', 'ig-port', 'ig-land');
+      tearDown();
+      mode = null;
+      return;
+    }
+    var m = IG.port() ? 'port' : 'land';
+    /* 방향이 바뀌면 상단바를 다시 짓는다 — 뒤로가기를 가로는 꺼내 쓰고 세로는
+       새로 만들기 때문에, 그대로 두면 세로에서 하단 탭바의 [로비] 칸이 빈 채로 남는다 */
+    if (mode && mode !== m) tearDown();
+    mode = m;
+    build(m);
+    root.classList.add('ingame');
+    /* 세로 전용 게임인지 여기서 표시한다 — CSS 가 두 방향을 갈라 쓴다 */
+    root.classList.toggle('ig-port', m === 'port');
+    root.classList.toggle('ig-land', m === 'land');
+  }
+
+  function start(){
+    IG.lock();
+    apply();
+    IG.subscribe(apply);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+/* ── MAX 단추 ─────────────────────────────────────────────────────────
+   빠른 금액 칩 줄(10·100·1000·1만)을 폰 가로에서 걷어냈다. 그 줄이 판이 쓸 높이를
+   통째로 차지하기 때문이다. 대신 인풋 옆에 MAX 를 붙인다 — 가진 만큼 거는 것은
+   자주 하는 동작인데, 칩을 여러 번 눌러 맞추던 것을 한 번으로 줄인다.
+
+   서버 HTML 은 여전히 안 바꾼다. 여기서 만들어 붙이고, 세로로 돌리면 걷는다.
+   잔액은 헤더에 이미 적혀 있으므로 그 글자에서 숫자만 뽑는다 — 값을 두 곳에서
+   따로 계산하면 언젠가 어긋난다. */
+(function(){
+  var IG = window.__IG;
+
+  /* 잔액 한 칸만 본다.
+
+     예전에는 .profwrap 전체의 글자에서 "숫자 + P" 를 정규식으로 처음 하나 집었다.
+     그 안에는 알림 목록도 들어 있어서, 종에 "대회 우승 72,800P" 가 떠 있으면 MAX 가
+     잔액 대신 그 금액을 넣었다. 잔액보다 크면 그대로 베팅해서 "잔액 부족"으로
+     거절당한다 — 누른 사람은 왜 거절인지 알 길이 없다.
+
+     이제 서버가 그 칸에 data-balance 로 숫자를 실어 준다. 글자를 파싱하지 않으므로
+     천 단위 구분자나 문구가 바뀌어도 안 깨지고, 옆의 다른 숫자를 집을 수도 없다. */
+  function balance(){
+    var el = document.querySelector('.prof .pbal');
+    if (!el) return null;
+    var v = Number(el.getAttribute('data-balance'));
+    if (isFinite(v) && v >= 0) return v;
+    /* 옛 페이지가 캐시에 남아 있으면 그 속성이 없다. 그때만 글자를 읽는다 —
+       이 한 칸 안에는 잔액 말고 다른 숫자가 없다. */
+    var m = (el.textContent || '').replace(/,/g, '').match(/(\d+)/);
+    return m ? Number(m[1]) : null;
+  }
+
+  function apply(){
+    var on = IG.on();
+    var row = document.querySelector('.game-controls .bet-row');
+    var old = document.querySelector('.ig-max');
+    if (!on || !row) { if (old) old.remove(); return; }
+    if (old) return;
+
+    var input = row.querySelector('input');
+    if (!input) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-max';
+    b.textContent = 'MAX';
+    b.addEventListener('click', function(){
+      var v = balance();
+      if (v == null) return;
+      input.value = String(v);
+      /* 화면 쪽 계산(배당·예상 획득)이 input 을 지켜보므로 바뀐 것을 알린다 */
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    row.appendChild(b);
+  }
+
+  function start(){
+    apply();
+    IG.subscribe(apply);
+    /* 조작부는 상태가 바뀌면 다시 그려진다 — 그때 단추가 사라지므로 주기적으로 확인한다.
+       폴링이 1초라 그보다 촘촘할 이유가 없다. */
+    setInterval(apply, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+/* ── 인게임 전용 격자 ─────────────────────────────────────────────────
+   여기까지는 데스크톱 레이아웃 위에 규칙을 덮어써 왔다. 16-ingame.css 가 809줄 ·
+   341개 규칙이 됐고, 하나를 고치면 다른 하나가 어긋나는 일이 반복됐다 —
+   칩 줄을 걷으니 인풋이 폭 0 이 되고, 인풋을 살리니 MAX 가 옆 칸을 덮는 식이었다.
+   덮어쓰기가 쌓이면 서로 간섭하는 것이 당연하다.
+
+   그래서 이 화면만은 구조를 새로 짠다. 서버 HTML 은 여전히 그대로다 —
+   여기서 격자를 만들고 이미 있는 칸(판·조작부·참가자)을 그 안에 옮겨 담을 뿐이다.
+   세로로 돌리면 원래 자리로 되돌린다.
+
+     ig-body(격자 12칸)
+       ig-cell ig-board  판
+       ig-cell ig-bet    조작부
+       ig-cell ig-side   참가인원·랭킹
+
+   칸 수는 게임마다 다르다 — 사다리는 세로로 긴 판이라 5:4:3, 지뢰찾기는 정사각
+   격자라 6:6(참가자 없음), 나머지는 판이 넓어야 해서 판이 아래를 쓴다. */
+(function(){
+  var IG = window.__IG;
+  var body = null;
+  var home = [];      // [노드, 원래 부모, 원래 다음 형제]
+
+  function shellKind(){
+    var s = document.querySelector('.game-shell');
+    if (!s) return null;
+    if (s.classList.contains('ht-shell')) return 'holdem';
+    if (s.classList.contains('mines-shell')) return 'mines';
+    if (s.classList.contains('poker-shell')) return 'poker';
+    if (s.querySelector('.bacc-table')) return 'baccarat';
+    if (s.querySelector('.bj-table')) return 'blackjack';
+    if (s.querySelector('.crash-graph')) return 'graph';
+    return 'ladder';
+  }
+
+  function take(node, cell){
+    if (!node) return;
+    home.push([node, node.parentNode, node.nextSibling]);
+    cell.appendChild(node);
+  }
+
+  function build(){
+    if (body) return;
+    var main = document.querySelector('.game-main');
+    var shell = document.querySelector('.game-shell');
+    if (!main || !shell) return;
+    var kind = shellKind();
+
+    var board = main.firstElementChild;
+    var bet = main.lastElementChild !== board ? main.lastElementChild : null;
+    var side = document.querySelector('.game-side');
+
+    body = document.createElement('div');
+    body.className = 'ig-body ig-' + kind;
+
+    var cBoard = document.createElement('div'); cBoard.className = 'ig-cell ig-board';
+    var cBet = document.createElement('div'); cBet.className = 'ig-cell ig-bet';
+    var cSide = document.createElement('div'); cSide.className = 'ig-cell ig-side';
+    body.appendChild(cBoard); body.appendChild(cBet); body.appendChild(cSide);
+
+    take(board, cBoard);
+    take(bet, cBet);
+    take(side, cSide);
+
+    home.push([body, null, null]);       // 정리할 때 지울 것
+    (document.querySelector('main') || document.body).appendChild(body);
+    document.documentElement.classList.add('ig-grid');
+  }
+
+  function tearDown(){
+    if (!body) return;
+    /* 넣은 역순으로 되돌린다 — 앞의 것을 먼저 되돌리면 다음 형제가 이미 옮겨져 있다 */
+    for (var i = home.length - 1; i >= 0; i--) {
+      var n = home[i][0], p = home[i][1], nx = home[i][2];
+      if (!p) { n.parentNode && n.parentNode.removeChild(n); continue; }
+      p.insertBefore(n, nx);
+    }
+    home = [];
+    body = null;
+    document.documentElement.classList.remove('ig-grid');
+  }
+
+  /* 한 게임씩 옮긴다. 여기 적힌 게임만 격자를 쓰고, 나머지는 예전 배치를 그대로 쓴다 —
+     일곱 개를 한꺼번에 바꾸면 어디가 왜 깨졌는지 가릴 수 없다. 하나를 끝내고 확인한
+     뒤에 다음을 더한다. */
+  var MOVED = ['ladder'];
+
+  function apply(){
+    var on = IG.on() && MOVED.indexOf(shellKind()) >= 0;
+    if (on) build(); else tearDown();
+  }
+
+  function start(){
+    apply();
+    IG.subscribe(apply);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+/* ── 인게임 격자의 마무리: 타이머를 헤더로, 참가인원을 서랍으로 ──────────
+   타이머는 판 위에 떠 있었다. 판을 가리지 않으려고 절대 위치로 띄웠는데, 그러면
+   사다리 그림과 겹치는 자리를 계속 피해 다녀야 한다. 헤더에는 그 자리가 이미 있다 —
+   회차와 남은 시간은 "지금 무슨 판인가" 라서 게임 이름 옆이 제자리다.
+
+   참가인원·랭킹은 세 번째 칸을 통째로 쓰고 있었다. 폰을 두 손으로 잡으면 조작부가
+   화면 한가운데로 밀려 엄지가 안 닿는다 — 칸이 셋이면 가운데가 조작부다. 그래서
+   참가인원은 상단바 👥 로 여는 서랍으로 빼고, 화면은 판(왼쪽) · 조작부(오른쪽) 둘로
+   나눈다. 조작부가 오른쪽 끝에 붙어야 오른손 엄지가 닿는다. */
+(function(){
+  var IG = window.__IG;
+
+  function movedGrid(){ return document.querySelector('.ig-body'); }
+
+  /* 타이머를 상단바로 옮긴다. 원래 자리를 적어 두고 세로로 돌리면 되돌린다.
+
+     옮긴 노드를 클래스로 다시 찾으면 안 된다. 세로로 돌아올 때 IIFE 는 등록 순서대로
+     도는데, 맨 위 상단바 IIFE 가 먼저 .ig-bar 를 통째로 removeChild 한다 — 그 안에
+     들어가 있던 시계까지 같이 떨어져 나간다. 그 다음에 여기가 querySelector 로 찾으면
+     이미 문서에 없어서 null 이고, 그대로 return 해서 시계가 영영 안 돌아왔다.
+     (사다리 카운트다운이 가로 한 번 갔다 오면 사라지던 것이 이것이다. 에러는 안 났다.
+      사다리 코드는 잡아 둔 변수에 textContent 만 쓰므로 떨어져 나간 노드에 조용히 쓴다.)
+
+     그래서 노드 자체를 들고 있는다. 떨어져 나간 뒤라도 clockHome.parent(보드)는
+     문서에 살아 있으므로 — 그리드 IIFE 가 우리보다 먼저 제자리로 돌려놓는다 —
+     그 자리에 다시 꽂으면 된다. */
+  var clockHome = null, clockEl = null;
+  function moveClock(){
+    var bar = document.querySelector('.ig-bar');
+    var st = document.querySelector('.ig-timer');
+    if (!bar || !st) return;
+    if (st.parentNode === bar) return;
+    clockHome = { parent: st.parentNode, next: st.nextSibling };
+    clockEl = st;
+    st.classList.add('ig-clock');
+    var name = bar.querySelector('.ig-name');
+    bar.insertBefore(st, name ? name.nextSibling : bar.firstChild);
+  }
+  function restoreClock(){
+    var st = clockEl || document.querySelector('.ig-clock');
+    if (!st || !clockHome) return;
+    st.classList.remove('ig-clock');
+    putBack(st, clockHome.parent, clockHome.next);
+    clockHome = null; clockEl = null;
+  }
+
+  /* 채팅 탭은 두지 않는다. 상단바에 이미 💬 가 있어서 같은 창을 두 군데서 열게 되고,
+     좁은 칸에 탭만 셋으로 늘어 참가인원·랭킹이 좁아졌다. 여는 자리는 하나면 된다.
+
+     ── 참가인원 서랍
+     칸에서 빼내 오른쪽에서 밀려 나오게 한다. 열고 닫는 단추는 상단바에 둔다.
+     닫기는 서랍 밖 아무 데나 눌러도 되게 가림막을 깐다 — 좁은 화면에서 X 를
+     정확히 누르게 하면 두 번 만에 닫힌다. */
+  /* 원래 자리로 되돌린다. "바로 뒤 형제" 를 기억해 두었는데 그 형제가 그새 지워질 수
+     있다 — 예를 들어 세로에서 가로로 돌 때 라이브 뱃지를 먼저 걷으면, 규칙 단추가
+     기억하던 뒤 형제가 바로 그 뱃지다. 그러면 insertBefore 가 NotFoundError 를 던지고
+     그 뒤의 일(시계 옮기기·👥 붙이기)이 통째로 안 돈다. 실제로 그렇게 멈춰 있었다.
+     형제가 아직 그 부모의 자식일 때만 그 앞에 넣고, 아니면 끝에 붙인다. */
+  function putBack(node, parent, next){
+    if (!node || !parent) return;
+    /* 기억해 둔 부모가 이미 문서에서 떨어져 나갔으면 되돌리지 않는다. 거기에 넣으면
+       화면에서 사라진다 — 실제로 그랬다. 세로에서 ⚙️ 로 접을 때 원래 부모로 적어 둔
+       것이 그때의 상단바인데, 가로로 돌면 상단바를 통째로 새로 짓는다. 그 사이
+       상단바 쪽 코드가 음량·규칙을 새 상단바에 이미 옮겨 놓았으므로 그냥 두면 된다. */
+    if (!parent.isConnected) return;
+    parent.insertBefore(node, (next && next.parentNode === parent) ? next : null);
+  }
+
+  function drawer(){ return document.querySelector('.ig-side'); }
+  function scrim(){
+    var s = document.querySelector('.ig-scrim');
+    if (!s) {
+      s = document.createElement('div');
+      s.className = 'ig-scrim';
+      s.addEventListener('click', closeDrawer);
+      document.body.appendChild(s);
+    }
+    return s;
+  }
+  function openDrawer(){
+    var d = drawer(); if (!d) return;
+    d.classList.add('ig-open');
+    scrim().classList.add('on');
+    var b = document.querySelector('.ig-people');
+    if (b) b.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer(){
+    var d = drawer(); if (d) d.classList.remove('ig-open');
+    var s = document.querySelector('.ig-scrim'); if (s) s.classList.remove('on');
+    var b = document.querySelector('.ig-people');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+  function addPeopleBtn(){
+    var bar = document.querySelector('.ig-bar');
+    if (!bar || !drawer() || bar.querySelector('.ig-people')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-btn ig-people';
+    b.setAttribute('aria-label', '참가인원');
+    b.setAttribute('aria-expanded', 'false');
+    b.innerHTML = IG.ICON.people;
+    b.addEventListener('click', function(){
+      var d = drawer();
+      if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
+    });
+    /* 💬 왼쪽에 둔다 — 사람 · 말 순서가 읽기 좋다 */
+    bar.insertBefore(b, bar.querySelector('.ig-chat'));
+  }
+  /* 사람 아이콘만 걷는다. 가림막은 여기서 지우면 안 된다 — 세로에서는 이 함수가
+     1초마다 돌기 때문에, 시트를 열고 1초가 지나면 뒤가 도로 밝아졌다(실측: 0.4초에
+     opacity 1, 1.6초에 사라짐). 가림막은 껍데기를 벗을 때만 치운다. */
+  function removePeopleBtn(){
+    var b = document.querySelector('.ig-people'); if (b) b.remove();
+  }
+  function removeScrim(){
+    var s = document.querySelector('.ig-scrim'); if (s) s.remove();
+  }
+
+  /* 가로 서랍에는 닫기 단추를 둔다. 옆에서 나오는 판을 옆으로 쓸어 닫는 것은 세로만큼
+     자연스럽지 않고, 여는 사람 아이콘도 상단바에 그대로 보인다. */
+  function addSheetClose(){
+    var d = drawer();
+    if (!d || d.querySelector('.ig-sheet-x')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-sheet-x';
+    b.setAttribute('aria-label', '닫기');
+    b.innerHTML = IG.ICON.close;
+    b.addEventListener('click', closeDrawer);
+    d.appendChild(b);
+  }
+  function removeSheetClose(){
+    var b = document.querySelector('.ig-sheet-x'); if (b) b.remove();
+  }
+
+  /* ── 쓸어내려 닫기 ────────────────────────────────────────────
+     세로 시트는 손잡이 막대를 달아 "끌어내릴 수 있다" 고 말해 놓고 정작 안 됐다.
+     아래에서 올라온 판은 아래로 쓸어 닫는 것이 폰의 기본 문법이다.
+
+     ── 목록 스크롤과 안 싸우게
+     시트 안에는 참가자 목록이 있고 그것도 세로로 움직인다. 둘을 같은 손짓으로 하면
+     하나는 반드시 어긋난다. 그래서 목록이 맨 위에 있을 때만 시트를 끈다 — 목록을
+     내려 보다가 위로 다 올라오면 그때부터 시트가 따라 내려온다. 폰의 시트들이
+     대체로 이렇게 동작한다.
+
+     끄는 동안에는 transition 을 꺼서 손가락을 그대로 따라가게 하고, 놓을 때
+     되돌린다. 임계는 높이의 28% 와 110px 중 작은 값 — 짧은 시트에서 끝까지
+     내려야 닫히면 답답하고, 긴 시트에서 조금만 움직여도 닫히면 실수로 닫힌다. */
+  function addSwipeClose(){
+    var d = drawer();
+    if (!d || d.__igSwipe) return;
+    d.__igSwipe = true;
+    var startY = 0, dy = 0, dragging = false, h = 0;
+
+    function scrolledPane(t){
+      var p = t && t.closest ? t.closest('.sp-pane') : null;
+      return !!(p && p.scrollTop > 0);
+    }
+    d.addEventListener('touchstart', function(e){
+      if (!IG.port() || !d.classList.contains('ig-open')) return;
+      if (e.touches.length !== 1 || scrolledPane(e.target)) return;
+      startY = e.touches[0].clientY; dy = 0; dragging = true;
+      h = d.getBoundingClientRect().height;
+      d.style.transition = 'none';
+    }, { passive: true });
+
+    d.addEventListener('touchmove', function(e){
+      if (!dragging) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy < 0) dy = 0;               // 위로는 안 끌린다 — 시트는 이미 다 올라와 있다
+      if (dy > 4) e.preventDefault();   // 여기서부터는 목록이 아니라 시트를 끄는 중이다
+      d.style.transform = 'translateY(' + dy + 'px)';
+    }, { passive: false });
+
+    function end(){
+      if (!dragging) return;
+      dragging = false;
+      d.style.transition = '';
+      d.style.transform = '';
+      if (dy > Math.min(110, h * 0.28)) closeDrawer();
+      dy = 0;
+    }
+    d.addEventListener('touchend', end);
+    d.addEventListener('touchcancel', end);
+  }
+
+  /* ── 세로 상단바의 라이브 뱃지 — 👥 3명 · 45K
+     값을 새로 계산하지 않는다. 참가자 수와 판돈은 이미 패널 머리(#lBetCount·#lPot)에
+     적혀 있고 그것을 그대로 비춘다 — 같은 값을 두 곳에서 따로 세면 언젠가 어긋난다.
+     좁은 상단바라 자릿수가 늘면 게임 이름을 밀어내므로 천 단위부터 줄여 쓴다. */
+  function shorten(n){
+    if (!isFinite(n)) return '0';
+    var a = Math.abs(n);
+    /* 포인트는 언제나 내림이다 — 올림하면 없는 포인트가 있는 것처럼 보인다 */
+    if (a >= 1e8) return Math.floor(n / 1e8) + '억';
+    if (a >= 1e4) return Math.floor(n / 1e4) + '만';
+    if (a >= 1e3) return Math.floor(n / 1e3) + 'K';
+    return String(Math.floor(n));
+  }
+  /* ── 라이브 베팅 띠 (판과 조작부 사이) ──────────────────────────
+     처음에는 상단바 가운데에 뱃지로 뒀는데, 상단바는 폭이 고정이고 인원·금액은
+     자라는 값이다. "👥 128명 · 1억2345만P" 가 되면 게임 이름을 밀어내고 결국
+     넘친다 — 좁은 곳에 자라는 값을 두면 언젠가 터진다. 판 아래 한 줄 띠는
+     화면 폭 전체를 쓰므로 자릿수가 늘어도 자리가 있다.
+
+     값은 새로 세지 않는다. 패널 머리(#lBetCount·#lPot)에 이미 적혀 있는 것을
+     비춘다 — 같은 값을 두 곳에서 따로 세면 언젠가 어긋난다. */
+  function addLiveBar(){
+    var body = movedGrid(), bet = document.querySelector('.ig-cell.ig-bet');
+    if (!body || !bet || body.querySelector('.ig-livebar')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-livebar';
+    b.setAttribute('aria-label', '참가자 명단 보기');
+    b.innerHTML = '<span class="ig-lb-ico">' + IG.ICON.people + '</span>'
+      + '<span class="ig-lb-l"></span><span class="ig-lb-r"></span>';
+    b.addEventListener('click', function(){
+      var d = drawer();
+      if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
+    });
+    body.insertBefore(b, bet);
+    syncLiveBar();
+  }
+  function num(el){
+    if (!el) return 0;
+    var m = String(el.textContent).match(/(\d[\d,]*)/);
+    return m ? Number(m[1].replace(/,/g, '')) : 0;
+  }
+  function syncLiveBar(){
+    var b = document.querySelector('.ig-livebar');
+    if (!b) return;
+    var n = num(document.getElementById('lBetCount'));
+    var p = num(document.getElementById('lPot'));
+    var l = b.querySelector('.ig-lb-l'), r = b.querySelector('.ig-lb-r');
+    var lt = '실시간 참가자 ' + n + '명';
+    /* 자릿수가 커지면 축약한다 — 띠는 넓지만 무한하지는 않다 */
+    var rt = '총 베팅 ' + (p >= 1e7 ? shorten(p) : p.toLocaleString('ko-KR')) + 'P';
+    if (l.textContent !== lt) l.textContent = lt;
+    if (r.textContent !== rt) r.textContent = rt;
+  }
+  function removeLiveBar(){
+    var b = document.querySelector('.ig-livebar'); if (b) b.remove();
+    document.documentElement.style.removeProperty('--ig-chat-top');
+  }
+
+  /* 채팅창이 시작할 높이를 알려 준다. 화면을 다 덮으면 판이 안 보여서, 말하는 동안
+     공이 어디까지 내려왔는지를 놓친다. 라이브 띠 위쪽에서 시작하면 판은 그대로 남고
+     가리는 것은 베팅 조작부뿐이다.
+
+     자리를 CSS 에 숫자로 박지 않는 이유는 조작부 높이가 화면마다 다르기 때문이다 —
+     조작부는 제 내용만큼 가져가고 판이 나머지를 받으므로, 412x915 와 360x780 에서
+     경계가 다른 자리에 생긴다. 실제로 그려진 자리를 재서 넘긴다. */
+  function syncChatTop(){
+    var lb = document.querySelector('.ig-livebar');
+    if (!lb) return;
+    var t = Math.round(lb.getBoundingClientRect().top);
+    if (t > 0) document.documentElement.style.setProperty('--ig-chat-top', t + 'px');
+  }
+
+  /* ── 타이머 ────────────────────────────────────────────────────
+     사다리 코드가 #lCountdown 에 쓰는 문장을 고쳐 쓰지 않는다. 그 노드는 폴링마다
+     다시 쓰이므로 우리가 손대면 매초 싸우게 된다. 대신 원본은 감추고, 그 글자를
+     읽어서 우리 것을 그린다 — 값의 출처는 하나로 둔다.
+
+     원본이 쓰는 문장은 다섯 가지다:
+       '베팅 마감까지 N초' · '결과 공개 중…' · '다음 라운드까지 N초'
+       '일시정지 (화면을 클릭하면 재개)' · '서버에 연결하는 중…' */
+  /* ── ⚙️ 설정 — 음량과 규칙을 한 자리에 모은다
+     412px 상단바에 음량(34) · 규칙(30)까지 늘어놓았더니 규칙 단추가 x=414 로
+     화면 밖에 나갔다(실측, 바 폭 412). 둘 다 자주 쓰는 것이 아니라 한 번 정하고
+     마는 것이라 접어 둔다.
+
+     새로 만들지 않고 있는 것을 옮긴다 — 음량 슬라이더와 규칙 단추에는 이미 동작이
+     걸려 있고, 다시 만들면 그 동작을 여기서 또 짜야 한다. 옮긴 자리는 노드 참조로
+     들고 있는다(클래스로 다시 찾으면 상단바가 먼저 지워질 때 놓친다). */
+  var setHome = [];
+  function settingsSheet(){
+    var s = document.querySelector('.ig-set');
+    if (s) return s;
+    s = document.createElement('div');
+    s.className = 'ig-set';
+    /* body 에 붙인다 — 상단바 안에 넣으면 상단바가 지워질 때 같이 사라진다 */
+    document.body.appendChild(s);
+    return s;
+  }
+  /* 옮기면서 이름을 붙인다. 아이콘만 두면 스피커 그림과 물음표 하나가 남아
+     무엇을 누르는 자리인지 알 수 없다. 줄(row)은 우리가 만든 것이라 되돌릴 때
+     같이 지우고, 안에 있던 원래 노드만 제자리로 보낸다. */
+  function takeInto(el, box, label){
+    if (!el) return;
+    setHome.push([el, el.parentNode, el.nextSibling]);
+    var row = document.createElement('div');
+    row.className = 'ig-set-row';
+    /* 줄 전체가 하나의 누를 자리다. 규칙은 오른쪽 끝 물음표(30px)만 눌러야 열렸는데,
+       폰에서 그건 조준해서 눌러야 하는 크기다. 이름을 눌러도, 가운데 빈 자리를 눌러도
+       열려야 한다. div 를 쓰는 이유는 안에 진짜 단추가 들어가기 때문이다 —
+       단추 안에 단추는 못 넣는다. 대신 역할과 키보드 조작을 직접 붙인다. */
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    var t = document.createElement('span');
+    t.className = 'ig-set-lbl';
+    t.textContent = label;
+    row.appendChild(t);
+    row.appendChild(el);
+
+    function fire(e){
+      /* 진짜 조작을 직접 눌렀으면 그대로 둔다 — 여기서 또 부르면 두 번 눌린 것이 되어
+         소리가 껐다 켜졌다 하고, 슬라이더는 끌 수도 없게 된다. */
+      if (e.target !== row && e.target.closest('button, input, a, select')) return;
+      var hit = el.tagName === 'BUTTON' ? el : el.querySelector('button');
+      if (hit) hit.click();
+    }
+    row.addEventListener('click', fire);
+    row.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(e); }
+    });
+    box.appendChild(row);
+  }
+  /* 세로에 들어서는 즉시 접는다. 누를 때 접으면 그전까지는 상단바에 그대로 남아
+     자리를 먹는다 — 실제로 규칙 단추가 x=414 로 화면 밖에 나가 있었다. */
+  function foldSettings(){
+    /* 방향이 바뀌면 상단바를 통째로 다시 짓는다. 그때 적어 둔 자리는 낡은 상단바를
+       가리키므로 그대로 두면 다시 접지도 못하고 되돌리지도 못한다 — 비우고 새로 접는다. */
+    if (setHome.length && setHome[0][1] && !setHome[0][1].isConnected) setHome = [];
+    if (setHome.length) return;
+    var vol = document.querySelector('.ig-vol'), help = document.querySelector('.ig-help');
+    if (!vol && !help) return;
+    var box = settingsSheet();
+    /* 다시 접기 전에 빈 줄을 치운다. 줄(.ig-set-row)은 우리가 만든 껍데기라, 안의
+       진짜 노드가 상단바로 돌아가고 나면 빈 껍데기만 남는다. 그대로 두고 새로 접으면
+       방향을 바꿀 때마다 한 벌씩 쌓인다 — 실제로 "소리 / 게임 규칙" 이 네 벌이었다.
+       안에 진짜 노드가 아직 있는 줄은 건드리지 않는다. */
+    [].forEach.call(box.querySelectorAll('.ig-set-row'), function(row){
+      if (!row.querySelector('.ig-vol, .ig-help')) row.remove();
+    });
+    takeInto(vol, box, '소리');
+    takeInto(help, box, '게임 규칙');
+  }
+  function openSettings(){
+    foldSettings();
+    settingsSheet().classList.add('on');
+    scrim().classList.add('on');
+  }
+  function closeSettings(){
+    var box = document.querySelector('.ig-set');
+    if (box) box.classList.remove('on');
+    var s = document.querySelector('.ig-scrim');
+    if (s && !(drawer() && drawer().classList.contains('ig-open'))) s.classList.remove('on');
+  }
+  /* 세로를 벗어나면 옮겨 온 것들을 원래 자리(상단바)로 돌려놓는다. 넣은 역순으로
+     되돌려야 뒤 형제가 아직 제자리에 있다. */
+  function restoreSettings(){
+    for (var i = setHome.length - 1; i >= 0; i--) {
+      var t = setHome[i];
+      if (t[1]) putBack(t[0], t[1], t[2]);
+    }
+    setHome = [];
+    var box = document.querySelector('.ig-set'); if (box) box.remove();
+    var g = document.querySelector('.ig-gear'); if (g) g.remove();
+  }
+  function addGearBtn(){
+    var bar = document.querySelector('.ig-bar');
+    if (!bar || bar.querySelector('.ig-gear')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-btn ig-gear';
+    b.setAttribute('aria-label', '설정');
+    b.innerHTML = IG.ICON.gear;
+    b.addEventListener('click', function(){
+      var box = document.querySelector('.ig-set');
+      if (box && box.classList.contains('on')) closeSettings(); else openSettings();
+    });
+    bar.appendChild(b);
+  }
+
+  function apply(){
+    if (!movedGrid() || !IG.on()) {
+      restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
+      removePeopleBtn(); removeScrim(); removeLiveBar(); removeSheetClose();
+      return;
+    }
+    if (IG.land()) {
+      /* 가로 — 타이머는 상단바로, 참가인원은 사람 아이콘으로.
+         음량·규칙은 세로와 똑같이 ⚙️ 안으로 접는다. 가로는 915px 이라 지금은 들어가지만
+         잔액 자릿수가 늘면(1,980,006P) 밀리기 시작한다 — 자라는 값 옆에 안 자라는
+         아이콘을 늘어놓으면 언젠가 넘친다. 아이콘 넷을 둘로 줄인다. */
+      removeLiveBar();
+      moveClock(); addPeopleBtn(); addGearBtn(); foldSettings(); addSheetClose();
+    } else {
+      /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로,
+         음량·규칙은 ⚙️ 안으로 접는다. 상단바에는 자라는 값을 두지 않는다. */
+      removePeopleBtn();
+      restoreClock();
+      addLiveBar(); syncLiveBar(); syncChatTop();
+      /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
+      removeSheetClose(); addSwipeClose();
+      addGearBtn(); foldSettings();
+    }
+  }
+
+  function start(){
+    apply();
+    IG.subscribe(apply);
+    /* 조작부와 패널은 상태가 바뀌면 다시 그려진다 — 그때 붙인 것이 사라지므로 확인한다 */
+    setInterval(apply, 1000);
+    /* 타이머와 참가 현황은 더 자주 맞춘다. 1초마다 맞추면 원본이 바뀐 뒤 최대 1초를
+       늦게 따라가서, 남은 시간이 한 박자씩 밀려 보인다. */
+    setInterval(function(){
+      if (movedGrid() && IG.port()) { syncLiveBar(); syncChatTop(); }
+    }, 250);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
+/* ── 지난 결과를 상단 전체 폭 띠로 ────────────────────────────────────
+   사다리 칸(5/12 ≈ 290px)에 두 줄로 넣었더니 여덟 개만 보이고 나머지가 잘렸다.
+   지난 흐름은 판 하나에 매인 정보가 아니라 화면 전체의 맥락이고, 예측의 근거라
+   자주 본다. 가로 915px 을 다 쓰면 한 줄에 스물여섯 개가 들어간다.
+
+   격자 위, 상단바 아래에 띠로 둔다. 예산에서 34px 을 쓰고 나머지를 격자가 받는다. */
+(function(){
+  var IG = window.__IG;
+  var strip = null, histHome = null;
+
+  function apply(){
+    var grid = document.querySelector('.ig-body');
+    var on = grid && IG.on();
+    var hist = document.querySelector('.bead');
+
+    if (!on) {
+      if (histHome && hist) { histHome.parent.insertBefore(hist, histHome.next); histHome = null; }
+      if (strip) { strip.remove(); strip = null; }
+      return;
+    }
+    if (strip || !hist) return;
+
+    strip = document.createElement('div');
+    strip.className = 'ig-hist';
+    histHome = { parent: hist.parentNode, next: hist.nextSibling };
+    strip.appendChild(hist);
+    grid.parentNode.insertBefore(strip, grid);
+  }
+
+  function start(){
+    apply();
+    IG.subscribe(apply);
+    setInterval(apply, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();

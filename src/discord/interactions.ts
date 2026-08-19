@@ -321,11 +321,11 @@ async function handleReliefClaim(interaction: any, res: ServerResponse): Promise
 
   // 출석과 마찬가지로 누가 신청했는지 채널에 공개로 남긴다
   ackSilently(res);
-  /* 실제로 들어간 금액을 적는다 — reliefAmount() 는 안내판에 적히는 기본액이고,
-     받은 사람에게 들어간 값은 도전과제 버프가 곱해진 쪽이다. 둘을 섞으면 로그가 거짓이 된다. */
-  const buff = rewardBuff(caller.id);
-  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(reliefAmountFor(caller.id))}`
-    + (buff.percent > 0 ? ` · 🏆 도전과제 버프 **+${buff.percent}%**` : '') + '\n'
+  /* 지급이 돌려준 값만 쓴다. 여기서 다시 계산하면 바로 위 award() 가 방금 열어 준
+     과제까지 버프에 섞여서, 원장에 290P 가 들어간 판에 "+300P · 버프 +50%" 라고
+     적힌다. 로그는 원장을 설명하는 글이지 따로 계산하는 자리가 아니다. */
+  const log = `**${esc(caller.username)}**님 개인회생 지원금 수령 ${signedPts(r.granted)}`
+    + (r.buffPercent > 0 ? ` · 도전과제 버프 **+${r.buffPercent}%**` : '') + '\n'
     + `잔액 ${pts(r.balance)} · 다음 신청 <t:${r.nextAvailableAt}:R>`;
   await postChannelMessage(interaction.channel_id, log)
     .catch((e: unknown) => console.error('지원금 로그 게시 실패:', e));

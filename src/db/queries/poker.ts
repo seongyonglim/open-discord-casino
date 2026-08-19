@@ -66,7 +66,7 @@ function prunePokerRounds(): void {
   run(`DELETE FROM poker_rounds WHERE id <= ?`, cutoff.id);
 }
 
-// 정산: 승자 시장은 무승부 시 원금 환불, 등급 시장은 두 핸드 중 하나라도 그 등급이면 적중
+// 정산: 승자 시장은 무승부 시 원금 환불, 등급 시장은 두 핸드 중 더 높은 등급 하나에만 적중
 function settlePokerBets(roundId: number, outcome: { winner: 'master' | 'shark' | 'tie'; buckets: number[] }): void {
   const bets = all<{ id: number; user_id: string; market: string; amount: number; odds: number }>(
     `SELECT id, user_id, market, amount, odds FROM poker_bets WHERE round_id = ?`, roundId
@@ -124,8 +124,20 @@ export function advancePokerRound(
       else if (e >= POKER_TURN_SEC) phase = 'turn';
       else if (e >= 0) phase = 'flop'; // 베팅이 닫히는 순간 플롭 3장 공개
 
-      if (phase !== round.phase) {
-        if (phase === 'done' && round.phase !== 'done') {
+      /* 정산 여부의 근거는 phase 가 아니라 result_json 이다.
+
+         phase 는 "지금 시각 - 베팅 마감" 으로 매번 다시 계산되는 값이라, 그 계산에
+         쓰이는 상수가 바뀌면 이미 끝난 판이 river 로 되돌아간다. 예전 코드는 그때
+         phase 만 보고 판단해서, 되돌아간 판이 다시 done 에 닿는 순간 같은 베팅을 한 번
+         더 지급했다. 아래 UPDATE 의 `phase != done` 가드로는 못 막는다 — 돈은 그보다
+         윗줄에서 이미 나갔고, 그 시점 phase 는 river 라 UPDATE 도 그냥 성공한다.
+
+         result_json 은 한 번 채워지면 다시 비지 않으므로 "이 판은 정산됐다" 를 말할 수
+         있는 유일한 값이다. 되돌리는 쪽도 그것을 보게 해서, 끝난 판은 단계가 아예
+         역행하지 못하게 한다. */
+      const settled = round.result_json != null;
+      if (phase !== round.phase && !(settled && phase !== 'done')) {
+        if (phase === 'done' && !settled) {
           /* 표가 비어 있으면 남은 기록으로 먼저 채운다 — 반드시 이 판이 «done» 이 되기
              전에 해야 한다. 뒤에 두면 지금 정산 중인 판이 기록에 이미 들어가 있어서
              그 판이 두 번 세어진다(실측: 한 판을 돌렸는데 미출현이 2 로 올랐다). */
@@ -138,7 +150,8 @@ export function advancePokerRound(
              한 판이 두 번 세어질 수 없다(위 UPDATE 의 phase != 'done' 이 그것을 지킨다). */
           notePokerDrought(outcome.buckets, bucketCount);
         } else if (phase !== 'done') {
-          run(`UPDATE poker_rounds SET phase = ? WHERE id = ?`, phase, round.id);
+          run(`UPDATE poker_rounds SET phase = ? WHERE id = ? AND result_json IS NULL`,
+            phase, round.id);
         }
         round = one<PokerRoundRow>(`SELECT * FROM poker_rounds WHERE id = ?`, round.id)!;
       }

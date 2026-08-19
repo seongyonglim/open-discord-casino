@@ -1,0 +1,331 @@
+/* 폰 화면 점검 — 게임마다 "한 화면에 다 들어가는가"를 잰다.
+ *
+ * ── 왜 도구로 만드는가
+ * 게임 일곱 개를 세로·가로로 보면 열네 장이다. 눈으로 보면 놓친다 — 실제로 홀덤 좌석의
+ * 겹침을 잘못 읽어 없는 문제를 보고한 적이 있고, 반대로 가로에서 테이블이 잘리는 것을
+ * 스크린샷을 찍고 나서야 알았다. 숫자로 재면 둘 다 안 생긴다.
+ *
+ * ── 무엇을 합격으로 보는가
+ * 1. 가로로 넘치지 않는다 — 폰에서 좌우로 밀리는 화면은 그 자체로 고장이다.
+ * 2. 게임과 조작부가 첫 화면에 다 들어간다. .game-main 은 판(펠트·보드)과 조작부를
+ *    함께 담는 칸이라, 그 아래끝이 하단 탭바 위에 있으면 "스크롤 없이 게임이 된다"가 된다.
+ * 3. 하단 탭바가 화면 바닥에 정확히 붙어 있다.
+ *
+ * ── 왜 감사 체인에 안 넣는가
+ * 크롬이 있어야 하고 실제 레이아웃 엔진이 필요하다. 크롬 업데이트로 몇 픽셀이 달라져
+ * 감사가 빨개지면 감사 전체를 못 믿게 된다. check-installable 과 같은 이유다.
+ *
+ * 쓰는 법:  npx tsx scripts/check-mobile.ts            (로컬 8300)
+ *          npx tsx scripts/check-mobile.ts https://odcasino.kro.kr
+ */
+import { execFile, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const CHROME = [
+  `${process.env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+  `${process.env['ProgramFiles(x86)']}\\Google\\Chrome\\Application\\chrome.exe`,
+  `${process.env.ProgramFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  '/usr/bin/google-chrome', '/usr/bin/chromium',
+].find(p => { try { return existsSync(p); } catch { return false; } });
+
+if (!CHROME) { console.error('크롬이 없다 — 이 점검은 건너뛴다'); process.exit(0); }
+
+const BASE = (process.argv[2] ?? 'http://localhost:8300').replace(/\/$/, '');
+const PORT = Number(process.env.CDP_PORT ?? 9347);
+const prof = mkdtempSync(join(tmpdir(), 'casino-mob-'));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/* 갤럭시 S23 기준. 폭이 가장 좁은 축에 드는 기기라, 여기서 들어가면 대부분 들어간다. */
+const SIZES = [
+  { name: '세로', w: 412, h: 915 },
+  { name: '가로', w: 915, h: 412 },
+];
+const GAMES = ['holdem', 'baccarat', 'blackjack', 'poker', 'mines', 'graph', 'ladder'];
+const PLAIN = ['/', '/leaderboard', '/achievements', '/notices'];
+
+let pass = 0, fail = 0;
+function ck(name: string, ok: boolean, extra = ''): void {
+  if (ok) { pass++; console.log(`  ok   ${name}`); }
+  else { fail++; console.log(`  FAIL ${name}${extra ? ' — ' + extra : ''}`); }
+}
+
+let child: ChildProcess | null = null;
+
+/* 화면 안에서 돌 검사식. 문자열로 넘겨 Runtime.evaluate 로 실행한다. */
+const PROBE = `(() => {
+  const r = el => el ? el.getBoundingClientRect() : null;
+  const nav = r(document.querySelector('header nav'));
+  const main = r(document.querySelector('.game-main'));
+  const de = document.documentElement;
+  /* 가로로 넘치는 요소를 찾는다.
+     잘라 주는 조상이 있으면 넘어간다. 스크롤 칸(랭킹표) 안에서 미는 것은 의도된
+     것이고, overflow:hidden 안쪽은 애초에 화면에 안 나온다 — 블랙잭의 딜러 앞
+     반원선(.bj-arc)이 그렇다. 폭이 132%라 상자만 보면 화면을 넘지만 테이블이
+     잘라내므로 보이지 않는다. hidden 을 안 세었더니 그것을 고장으로 잡았다. */
+  const CLIP = ['auto', 'scroll', 'hidden', 'clip'];
+  const over = [];
+  for (const el of document.querySelectorAll('body *')) {
+    const b = el.getBoundingClientRect();
+    if (b.width === 0 || b.height === 0) continue;
+    if (b.right <= innerWidth + 1 && b.left >= -1) continue;
+    let p = el.parentElement, inScroller = false;
+    while (p && p !== document.body) {
+      if (CLIP.includes(getComputedStyle(p).overflowX)) { inScroller = true; break; }
+      p = p.parentElement;
+    }
+    if (inScroller) continue;
+    over.push((el.className || el.tagName) + ' ' + Math.round(b.left) + '~' + Math.round(b.right));
+    if (over.length > 3) break;
+  }
+  /* 판이 찌그러졌는지. 높이만 재면 "판을 폭 100px 짜리 막대로 눌러 놓고" 도 통과한다 —
+     실제로 가로 배치를 넣었을 때 flex 가 홀덤 테이블을 그렇게 만들었고, 높이 검사는
+     통과했다. 그림을 보고서야 알았다. 그래서 폭도 같이 본다. */
+  /* 판과 조작부를 찾는다. 인게임 격자로 옮긴 게임은 .game-main 이 비어 있고 내용이
+     .ig-board / .ig-bet 안에 있다 — 옛 자리만 보면 "판이 없다"로 잘못 읽는다. */
+  const grid = document.querySelector('.ig-body');
+  const el = grid || document.querySelector('.game-main');
+  const board = grid ? grid.querySelector('.ig-board') : (el && el.firstElementChild);
+  const bb = board ? board.getBoundingClientRect() : null;
+  /* 조작부도 같이 본다. 판만 지켰더니 지뢰찾기 조작부가 185px 로 눌려 안의 글자들이
+     서로 겹쳤다 — 판 검사는 초록이었다. 눌린 칸은 scrollWidth 가 실제 폭보다 크다. */
+  const ctl = grid ? grid.querySelector('.ig-bet')
+    : (el && el.lastElementChild !== board ? el.lastElementChild : null);
+  const cb = ctl ? ctl.getBoundingClientRect() : null;
+  return {
+    /* 로그인 여부. 게임 화면은 로그인해야 열리므로, 안 한 채로 재면 모든 항목이
+       "없음"으로 나와 전부 실패처럼 보인다 — 운영 주소로 돌렸다가 42개가 빨갛게
+       나왔는데 전부 이 이유였다. 고장이 아니라 잴 수 없는 상태다. */
+    loggedIn: !!window.__MEID__,
+    /* 대회가 아직 안 열린 상태(등록 중)에서는 홀덤 테이블이 만들어져 있어도 비어
+       있어 0x0 이다. 그때 판을 재면 \"판이 0px\" 이 되는데, 그건 화면이 깨진 것이
+       아니라 아직 판이 없는 것이다 — 로비 카드가 대신 떠 있다. 로그인 안 한 화면을
+       \"잴 수 없음\" 으로 두는 것과 같은 이유로 구분한다. */
+    preTable: !!document.querySelector('.ht-card'),
+    vw: innerWidth, vh: innerHeight,
+    scrollW: de.scrollWidth,
+    navBottom: nav ? Math.round(nav.bottom) : null,
+    navTop: nav ? Math.round(nav.top) : null,
+    mainBottom: main ? Math.round(main.bottom) : null,
+    mainTop: main ? Math.round(main.top) : null,
+    boardW: bb ? Math.round(bb.width) : null,
+    boardH: bb ? Math.round(bb.height) : null,
+    ctlW: cb ? Math.round(cb.width) : null,
+    ctlNeed: ctl ? Math.round(ctl.scrollWidth) : null,
+    over,
+    /* ── 인게임 풀스크린 ─────────────────────────────────────────
+       가로에서 게임 화면은 스크롤이 없어야 한다. 웹 껍데기(헤더·탭바·게임 전환)가
+       높이를 먹으면 판이 줄거나 화면이 밀린다. 아래 셋으로 그것을 본다. */
+    scrollH: de.scrollHeight,
+    ingame: document.documentElement.classList.contains('ingame'),
+    barH: (function(){ var b = document.querySelector('.ig-bar');
+      return b ? Math.round(b.getBoundingClientRect().height) : null; })(),
+    navShown: !!(nav && nav.height > 0),
+    /* 판이 화면을 얼마나 쓰는가. 남는 높이를 확보해 놓고도 판이 작으면 의미가 없다. */
+    boardFill: bb ? Math.round(bb.height / innerHeight * 100) : null,
+    /* 화면에 실제로 찍히는 글자 크기. zoom 을 걸면 적힌 크기와 보이는 크기가 달라진다 —
+       10.5px 로 적힌 닉네임이 배율 0.44 에서 4.6px 로 나왔고, 그동안의 검사는 전부
+       초록이었다. 판을 줄여 "들어가게" 만들어 놓고 읽을 수 없게 한 것이다.
+       여기서는 조상들의 zoom 을 전부 곱해 보이는 크기를 구한다. */
+    tinyText: (function(){
+      if (!el) return null;
+      var worst = 999, sample = '';
+      var nodes = el.querySelectorAll('*');
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (!n.textContent || !n.textContent.trim()) continue;
+        var r = n.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) continue;
+        /* 글자를 직접 담은 요소만 본다 — 감싸는 상자까지 세면 같은 글자를 여러 번 센다 */
+        var direct = false;
+        for (var k = 0; k < n.childNodes.length; k++) {
+          if (n.childNodes[k].nodeType === 3 && n.childNodes[k].nodeValue.trim()) direct = true;
+        }
+        if (!direct) continue;
+        var z = 1, p = n;
+        while (p && p !== document.body) {
+          var pz = parseFloat(getComputedStyle(p).zoom);
+          if (pz && pz !== 1) z *= pz;
+          p = p.parentElement;
+        }
+        var px = parseFloat(getComputedStyle(n).fontSize) * z;
+        if (px < worst) { worst = px; sample = (n.className || n.tagName) + ' "'
+          + n.textContent.trim().slice(0, 10) + '"'; }
+      }
+      return worst === 999 ? null : { px: Math.round(worst * 10) / 10, sample: sample };
+    })(),
+  };
+})()`;
+
+async function main(): Promise<void> {
+  child = execFile(CHROME!, [
+    '--headless=new', '--disable-gpu', `--remote-debugging-port=${PORT}`,
+    `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
+    '--hide-scrollbars', 'about:blank',
+  ]);
+
+  let ver: any = null;
+  for (let i = 0; i < 40 && !ver; i++) {
+    await sleep(250);
+    try { ver = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json(); } catch { /* 아직 */ }
+  }
+  if (!ver) throw new Error('크롬 디버깅 포트가 안 열렸다');
+
+  const tab: any = await (await fetch(
+    `http://127.0.0.1:${PORT}/json/new?about:blank`, { method: 'PUT' })).json();
+  const ws = new WebSocket(tab.webSocketDebuggerUrl);
+  await new Promise<void>((res, rej) => { ws.onopen = () => res(); ws.onerror = () => rej(new Error('소켓 실패')); });
+
+  let id = 0;
+  const waiting = new Map<number, (m: any) => void>();
+  let loaded = false;
+  ws.onmessage = (e: MessageEvent) => {
+    const m = JSON.parse(String(e.data));
+    if (m.id && waiting.has(m.id)) { waiting.get(m.id)!(m); waiting.delete(m.id); }
+    else if (m.method === 'Page.loadEventFired') loaded = true;
+  };
+  const send = (method: string, params: object = {}): Promise<any> => new Promise(res => {
+    const n = ++id; waiting.set(n, res); ws.send(JSON.stringify({ id: n, method, params }));
+  });
+
+  await send('Page.enable');
+  await send('Emulation.setUserAgentOverride', {
+    userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36'
+      + ' (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36',
+  });
+
+  const go = async (url: string): Promise<void> => {
+    loaded = false;
+    await send('Page.navigate', { url });
+    for (let i = 0; i < 40 && !loaded; i++) await sleep(200);
+    await sleep(1800);   // 폴링이 첫 상태를 받아 판을 그릴 때까지
+  };
+  const probe = async (): Promise<any> => {
+    const r = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
+    /* 화면 안에서 던진 예외는 조용히 undefined 로 돌아온다 — 그러면 "로그인이 없다"로
+       잘못 읽힌다(실제로 그렇게 헤맸다). 던졌으면 그 자리에서 말한다. */
+    if (r.result?.exceptionDetails) {
+      const e = r.result.exceptionDetails;
+      throw new Error('화면 안 검사식이 던졌다: '
+        + (e.exception?.description || e.text || JSON.stringify(e)).split('\n')[0]);
+    }
+    return r.result?.result?.value;
+  };
+
+  await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 2, mobile: true });
+  if (BASE.includes('localhost')) await go(`${BASE}/dev/login`);
+
+  /* 로그인이 없으면 게임 화면 자체가 안 열린다. 그 상태로 재면 "판이 없다"가 일곱 게임
+     × 두 방향으로 쏟아져 고장처럼 보인다 — 운영 주소로 돌렸다가 실제로 그랬다.
+     잴 수 없는 것과 틀린 것은 다르므로 여기서 갈라 말하고 끝낸다.
+     운영에서 재려면 그 브라우저에 로그인 세션이 있어야 한다(디스코드 OAuth 라
+     이 스크립트가 대신 할 수 없다) — 로컬 미리보기로 재는 것이 정상 경로다. */
+  await go(`${BASE}/games/holdem`);
+  const first = await probe();
+  if (process.env.MOB_DEBUG) console.log('첫 프로브:', JSON.stringify(first).slice(0, 400));
+  if (!first?.loggedIn) {
+    console.log(`\n로그인이 없어 게임 화면을 열 수 없다 — 잴 것이 없다.`);
+    console.log(`  ${BASE} 은 디스코드 로그인이 필요하다.`);
+    console.log(`  로컬 미리보기(casino-real, 8300)로 돌리면 /dev/login 으로 들어가 잰다.\n`);
+    ws.close();
+    return;
+  }
+
+  for (const size of SIZES) {
+    console.log(`\n[${size.name}] ${size.w}×${size.h}`);
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: size.w, height: size.h, deviceScaleFactor: 2, mobile: true,
+    });
+
+    for (const g of GAMES) {
+      await go(`${BASE}/games/${g}`);
+      const m = await probe();
+      if (!m) { ck(`${g} — 측정 실패`, false); continue; }
+      ck(`${g} 가로로 안 넘친다`, m.scrollW <= m.vw + 1 && m.over.length === 0,
+        `scrollW ${m.scrollW} > ${m.vw}` + (m.over.length ? ' · ' + m.over.join(' / ') : ''));
+
+      /* 가로는 게임 일곱 개 모두 껍데기를 벗는다 — 안 켜지면 그 자체로 실패다.
+         세로는 게임마다 다르다(사다리·지뢰찾기만 세로가 주력). 그래서 아래 검사는
+         "가로냐" 가 아니라 "껍데기가 켜졌냐" 로 갈라야 한다. 방향으로 갈랐더니
+         세로 사다리가 "탭바가 화면 바닥에" 로 걸렸다 — 인게임에서는 그 탭바를
+         일부러 걷는데도. */
+      if (size.name === '가로') ck(`${g} 인게임 껍데기가 켜진다`, m.ingame === true);
+
+      if (m.ingame) {
+        /* ── 인게임 풀스크린 ───────────────────────────────────────
+           게임 화면은 웹 껍데기를 벗고 판에 화면을 다 내준다.
+           스크롤이 생기면 그 자체로 실패다 — 폰에서 판이 밀린다. */
+        ck(`${g} 세로로도 안 밀린다 (스크롤 없음)`, m.scrollH <= m.vh + 1,
+          `scrollH ${m.scrollH} > ${m.vh}`);
+        /* 탭바는 방향마다 다르다. 가로는 높이가 412px 뿐이라 통째로 걷고 [로비] 만
+           상단바에 남긴다. 세로는 여유가 있어 탭바를 살려 둔다 — 로비·랭킹·도전과제·
+           공지로 바로 건너뛸 수 있는 자리다. 그러니 "없어야 한다" 를 양쪽에 똑같이
+           걸면 안 된다. 있어야 하는 쪽은 바닥에 붙었는지를 본다. */
+        if (size.name === '가로') ck(`${g} 하단 탭바가 없다`, m.navShown === false);
+        else ck(`${g} 탭바가 화면 바닥에`,
+          m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2, `${m.navBottom} vs ${m.vh}`);
+        ck(`${g} 상단바가 얇다 (≤44px)`, m.barH !== null && m.barH <= 44,
+          m.barH === null ? '.ig-bar 없음' : `${m.barH}px`);
+        /* 자리를 비워 놓고 판이 그대로면 아무것도 얻은 게 없다. */
+        /* 40% 로 둔다. 처음에 45% 로 잡았는데 사다리가 42% 에서 걸렸다 — 그 판은
+           출발 둘과 도착 둘, 선 두 개가 전부라 넓은 면적이 필요하지 않다. 기준이
+           현실보다 앞서면 맞추려고 다른 것을 망가뜨리게 된다(조작부를 더 눌렀을 것이다). */
+        /* 대회 전에는 판이 아직 없다 — 위와 같은 이유로 이 항목도 건너뛴다 */
+        if (m.preTable) console.log(`  --   ${g} 판 비율 — 대회 전이라 잴 수 없음`);
+        else ck(`${g} 판이 화면 높이의 40% 이상`, (m.boardFill ?? 0) >= 40, `${m.boardFill}%`);
+        /* 그리고 읽을 수 있어야 한다. 판을 줄여 "들어가게" 만들어 놓고 글자를 4.6px 로
+           만들면 들어간 것이 아니다 — 그동안 이 항목이 없어서 전부 통과했다.
+           9px 은 폰에서 겨우 읽히는 하한이다. */
+        ck(`${g} 글자가 읽을 수 있는 크기`, (m.tinyText?.px ?? 99) >= 9,
+          m.tinyText ? `가장 작은 글자 ${m.tinyText.px}px — ${m.tinyText.sample}` : '못 잼');
+      } else {
+        ck(`${g} 탭바가 화면 바닥에`, m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2,
+          `${m.navBottom} vs ${m.vh}`);
+      }
+      /* 판과 조작부가 한 화면에. 이것이 "게임이 스크롤 없이 되는가"다.
+         인게임에서는 탭바가 없으므로 화면 바닥을 기준으로 본다. */
+      /* 탭바가 남아 있으면 그 위가 바닥이다 — 세로 인게임이 그렇다 */
+      const 바닥 = m.ingame && m.navShown === false ? m.vh : m.navTop;
+      ck(`${g} 판+조작부가 한 화면에`, m.mainBottom !== null && 바닥 !== null && m.mainBottom <= 바닥,
+        m.mainBottom !== null ? `${m.mainBottom - (바닥 ?? 0)}px 넘침 (판 ${m.mainTop}~${m.mainBottom} · 바닥 ${바닥})` : '.game-main 없음');
+      /* 눌러서 맞춘 것이 아닌지. 화면 폭의 3할도 안 되는 판은 게임이 아니라 막대다. */
+      const 최소폭 = Math.round(m.vw * 0.3);
+      /* 대회 전(등록 중)에는 홀덤 테이블이 비어 있어 0x0 이다 — 깨진 것이 아니라
+         아직 판이 없는 것이다. 그 상태는 재지 않고 넘어간다. */
+      if (m.preTable) {
+        console.log(`  --   ${g} 판/조작부 — 대회 전이라 잴 수 없음`);
+      } else {
+      ck(`${g} 판이 찌그러지지 않았다`, m.boardW !== null && m.boardW >= 최소폭,
+        `판 폭 ${m.boardW}px < ${최소폭}px`);
+      /* 조작부도 같이 본다. 눌린 칸은 안의 내용이 들어갈 자리를 못 얻어 겹친다 —
+         scrollWidth 가 실제 폭보다 크면 그 상태다. */
+      if (m.ctlW !== null) {
+        ck(`${g} 조작부가 눌리지 않았다`, m.ctlW >= 280 && m.ctlNeed <= m.ctlW + 2,
+          `폭 ${m.ctlW}px · 필요 ${m.ctlNeed}px`);
+      }
+      }
+    }
+
+    for (const p of PLAIN) {
+      await go(BASE + p);
+      const m = await probe();
+      if (!m) { ck(`${p} — 측정 실패`, false); continue; }
+      ck(`${p} 가로로 안 넘친다`, m.scrollW <= m.vw + 1 && m.over.length === 0,
+        `scrollW ${m.scrollW} > ${m.vw}` + (m.over.length ? ' · ' + m.over.join(' / ') : ''));
+    }
+  }
+
+  ws.close();
+  console.log(`\n${'─'.repeat(52)}`);
+  console.log(`통과 ${pass} · 실패 ${fail}`);
+  process.exitCode = fail ? 1 : 0;
+}
+
+main()
+  .catch(e => { console.error(e.message); process.exitCode = 1; })
+  .finally(async () => {
+    child?.kill();
+    await sleep(400);
+    try { rmSync(prof, { recursive: true, force: true }); } catch { /* 잠겨 있으면 둔다 */ }
+  });

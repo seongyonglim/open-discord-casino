@@ -13,12 +13,13 @@ import {
 } from './notifications-api';
 import { findNotice, seedNoticesOnce } from '../db/notices';
 import { setRequestUser, LOGO_SVG } from './views';
+import { manifest, offlinePage, SW_UNINSTALL, swOff, assetLinks } from './pwa';
 import {
   adminPage, isAdmin, adminTokenOk,
   handleAdminUsers, handleAdminLedger, handleAdminPoints, handleAdminPurge, handleAdminTestTournament,
   handleAdminSeasonUpdate, handleAdminSeasonClose, handleAdminSeasonBackfill, handleAdminSeasonSchedule,
   handleAdminConfig, handleAdminConfigReset, handleAdminTournamentCreate, handleAdminTournamentRevoke,
-  handleAdminRecurrence, handleAdminTournamentAbort,
+  handleAdminRecurrence, handleAdminRollover, handleAdminTournamentAbort,
   handleAdminNoticeCreate, handleAdminNoticeUpdate, handleAdminNoticeToggle, handleAdminNoticeDelete,
   handleAdminChatHide, handleAdminChatMute,
 } from './admin';
@@ -55,6 +56,8 @@ import { advanceHoldem } from '../db/holdem';
 import { ensureSeasonClosed } from '../db/season-schedule';
 import { ensureLockdown, lockedPath, LOCKDOWN_MSG } from './lockdown';
 import { rankingGameOf, handleRanking } from './ranking';
+/* 지금 어느 게임을 보고 있는가 — 기존 상태 폴링에 얹어 세는 메모리 집계 */
+import { touchPresence, activeCounts } from '../services/presence';
 
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
@@ -115,6 +118,11 @@ const MIME: Record<string, string> = {
    왜 SVG 가 아니라 PNG 인가: 디스코드 임베드는 SVG 를 그리지 않는다(png·jpg·gif·webp만).
    공지 웹훅의 푸터 아이콘이 이 파일을 쓴다 — 없으면 아이콘 없이 글자만 나간다. */
 const IMG_FILES = new Set(['broke.jpg', 'logo.png']);
+/* 앱 아이콘. scripts/bake-icons.ts 가 로고 SVG 에서 굽는다 — 손으로 만들지 않는다.
+   마스커블은 안드로이드 런처가 제 모양대로 자를 때 쓰는 별도 한 장이다. */
+const ICON_FILES = new Set([
+  'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
+]);
 // 뒷면 두 종류 — back(남색)은 블랙잭·바카라·포커 플립, back-red(마룬)은 홀덤 테이블이 쓴다
 const CARD_FILES = new Set<string>(['back.svg', 'back-red.svg']);
 for (const s of ['s', 'h', 'd', 'c']) {
@@ -127,8 +135,9 @@ for (const s of ['s', 'h', 'd', 'c']) {
 interface CachedAsset { raw: Buffer; gz: Buffer | null }
 const assetCache = new Map<string, CachedAsset>();
 
-function serveAsset(dir: 'sfx' | 'cards' | 'img', name: string, res: http.ServerResponse): void {
-  const allowed = dir === 'sfx' ? SFX_FILES : dir === 'img' ? IMG_FILES : CARD_FILES;
+function serveAsset(dir: 'sfx' | 'cards' | 'img' | 'icon', name: string, res: http.ServerResponse): void {
+  const allowed = dir === 'sfx' ? SFX_FILES : dir === 'img' ? IMG_FILES
+    : dir === 'icon' ? ICON_FILES : CARD_FILES;
   if (!allowed.has(name)) { res.writeHead(404); res.end(); return; }
   const mime = MIME[name.split('.').pop() ?? ''] ?? 'application/octet-stream';
   const key = `${dir}/${name}`;
@@ -159,9 +168,16 @@ function serveAsset(dir: 'sfx' | 'cards' | 'img', name: string, res: http.Server
    순서가 곧 동작이다 — CSS 는 뒤에 오는 규칙이 이기므로, 조각 순서를 바꾸면 화면이 바뀐다.
    그래서 순서는 assets/css/ORDER.txt 한 곳에만 적고 여기서 그대로 읽는다.
    이어 붙인 결과가 나누기 전과 한 글자도 다르지 않은지는 scripts/golden.ts 가 확인한다. */
-const APP_FILES: Record<string, { path: string | string[]; mime: string }> = {
-  '/app.css': { path: cssParts(), mime: 'text/css; charset=utf-8' },
-  '/app.js': { path: 'app.js', mime: 'text/javascript; charset=utf-8' },
+const APP_FILES: Record<string, { path: string | string[] | (() => string[]); mime: string }> = {
+  /* 함수로 둔다. 값으로 두면 이 모듈이 읽히는 순간의 ORDER.txt 로 목록이 굳어서,
+     조각을 새로 넣어도 서버를 다시 띄우기 전에는 안 실린다 — 17-ig-grid.css 를
+     넣고 한참을 "왜 규칙이 안 먹지" 하고 들여다봤다. APP_CACHE_ON 과 같은 함정이다. */
+  '/app.css': { path: () => cssParts(), mime: 'text/css; charset=utf-8' },
+  /* ingame.js 를 따로 두고 여기서 이어 붙인다. 페이지 머리말에 <script> 를 하나 더
+     넣으면 서버 HTML 이 바뀌고, 그러면 "웹 화면은 그대로"를 골든 비교로 증명할 수
+     없게 된다. 파일은 나눠 두되 나가는 것은 한 덩어리다 — 그 파일만 빼면 인게임
+     껍데기가 통째로 사라진다(되돌리기 장치). */
+  '/app.js': { path: ['app.js', 'ingame.js'], mime: 'text/javascript; charset=utf-8' },
 };
 
 /* 돌려주는 경로는 src/web/assets/ 를 기준으로 한 상대 경로다 — serveAppFile 이 그 앞을
@@ -178,14 +194,22 @@ const appCache = new Map<string, CachedAsset>();
    프로세스 수명 동안 캐시하면 스타일 한 줄을 고칠 때마다 서버를 다시 띄워야 한다 —
    시뮬레이션이 돌고 있으면 대회가 처음부터 다시 시작되므로, 화면을 확인하려던 그
    상황을 다시 만들 수 없다. 배포 환경(FLY_APP_NAME)에서는 그대로 캐시한다. */
-const APP_CACHE_ON = !!process.env.FLY_APP_NAME || process.env.PREVIEW_LOGIN !== '1';
+/* 상수가 아니라 함수다. 상수로 두면 이 모듈이 import 되는 순간의 환경 변수로 값이
+   굳는데, 미리보기 기동 스크립트는 process.env 를 set 한 뒤에 server 를 부르는 것처럼
+   보여도 실제로는 import 가 먼저 돈다(require 가 파일 맨 위로 끌어올려진다).
+   그래서 "미리보기에서는 캐시하지 않는다"고 적어 두고도 내내 캐시하고 있었다 —
+   스타일을 고칠 때마다 서버를 다시 띄워야 했던 이유가 이것이다. */
+function APP_CACHE_ON(): boolean {
+  return !!process.env.FLY_APP_NAME || process.env.PREVIEW_LOGIN !== '1';
+}
 
 function serveAppFile(route: string, res: http.ServerResponse): void {
   const meta = APP_FILES[route];
-  let hit = APP_CACHE_ON ? appCache.get(route) : undefined;
+  let hit = APP_CACHE_ON() ? appCache.get(route) : undefined;
   if (!hit) {
     // app.js 안의 효과음 URL이 자산 버전을 필요로 하므로 여기서 치환한다
-    const parts = Array.isArray(meta.path) ? meta.path : [meta.path];
+    const list = typeof meta.path === 'function' ? meta.path() : meta.path;
+    const parts = Array.isArray(list) ? list : [list];
     const text = parts
       .map(p => readFileSync(join(process.cwd(), 'src', 'web', 'assets', p), 'utf8'))
       /* 조각 사이에 줄바꿈 하나를 넣는다 — 조각은 마지막 줄의 줄바꿈을 갖고 있지 않다.
@@ -195,12 +219,24 @@ function serveAppFile(route: string, res: http.ServerResponse): void {
       .split('__ASSET_V__').join(ASSET_V);
     const raw = Buffer.from(text, 'utf8');
     hit = { raw, gz: gzipSync(raw, { level: 9 }) };
-    if (APP_CACHE_ON) appCache.set(route, hit);
+    if (APP_CACHE_ON()) appCache.set(route, hit);
   }
   const useGz = acceptsGzip(res);
   sendBody(res, 200, meta.mime, useGz ? hit.gz! : hit.raw,
-    { 'cache-control': APP_CACHE_ON ? 'public, max-age=604800' : 'no-store' },
+    { 'cache-control': APP_CACHE_ON() ? 'public, max-age=604800' : 'no-store' },
     useGz ? 'gzip' : 'identity');
+}
+
+/* 서비스워커 원본. app.js 와 같은 자리에 두고 같은 방식으로 __ASSET_V__ 를 채운다 —
+   워커 안의 캐시 이름과 미리 받을 목록이 그 값을 쓰기 때문이다. 배포하면 값이 바뀌고,
+   워커는 이름이 다른 캐시를 전부 버린다.
+   serveAppFile 을 안 쓰는 이유는 헤더가 다르기 때문이다: 이 파일만은 캐시하면 안 된다. */
+let swCache: string | null = null;
+function swSource(): string {
+  if (swCache !== null && APP_CACHE_ON()) return swCache;
+  swCache = readFileSync(join(process.cwd(), 'src', 'web', 'assets', 'sw.js'), 'utf8')
+    .split('__ASSET_V__').join(ASSET_V);
+  return swCache;
 }
 
 function send(res: http.ServerResponse, status: number, html: string): void {
@@ -251,6 +287,35 @@ export function startWebServer(): void {
           { 'cache-control': 'public, max-age=86400' });
         return;
       }
+      if (path.startsWith('/icon/')) return serveAsset('icon', path.slice(6), res);
+
+      /* ── 앱으로 설치되기 위한 것들 ────────────────────────────────────
+         로그인보다 앞에 둔다. 안드로이드는 앱을 설치할지 판단할 때 쿠키 없이
+         매니페스트를 받아 가고, 서비스워커도 로그인 여부와 무관하게 깔려야 한다. */
+      if (path === '/manifest.webmanifest') {
+        sendBody(res, 200, 'application/manifest+json; charset=utf-8', manifest(),
+          { 'cache-control': 'public, max-age=3600' });
+        return;
+      }
+      if (path === '/offline') {
+        return send(res, 200, offlinePage());
+      }
+      /* 안드로이드가 설치할 때 이 파일을 읽어 "이 앱이 정말 이 사이트 것인가"를 대조한다.
+         맞으면 주소창을 없애고 앱처럼 띄운다. 로그인과 무관하게 열려 있어야 한다 —
+         안드로이드는 쿠키 없이 받아 간다. */
+      if (path === '/.well-known/assetlinks.json') {
+        sendBody(res, 200, 'application/json; charset=utf-8', assetLinks(),
+          { 'cache-control': 'public, max-age=3600' });
+        return;
+      }
+      if (path === '/sw.js') {
+        /* 캐시하지 않는다. 서비스워커는 브라우저가 스스로 다시 받아 보는데, 여기에
+           캐시를 걸면 그 확인이 낡은 파일에 걸려 되돌리기가 안 먹는다. */
+        const body = swOff() ? SW_UNINSTALL : swSource();
+        sendBody(res, 200, 'text/javascript; charset=utf-8', body,
+          { 'cache-control': 'no-cache', 'service-worker-allowed': '/' });
+        return;
+      }
 
       // 디스코드 Interactions 웹훅 (버튼/슬래시커맨드) — Gateway 없이 이 라우트로만 상호작용을 받는다
       if (path === '/discord/interactions' && req.method === 'POST') {
@@ -273,7 +338,7 @@ export function startWebServer(): void {
          상태 판정을 로비에서 따로 계산하면 로비 표시와 실제 대회가 갈라진다.
          지연 진행 구조라 이 호출이 밀린 일을 처리하기도 한다(그게 원래 설계다). */
       if (path === '/' || path === '/lobby') {
-        return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null));
+        return send(res, 200, lobbyPage(me, me ? advanceHoldem() : null, activeCounts()));
       }
       if (path === '/leaderboard') return send(res, 200, leaderboardPage(me));
 
@@ -346,6 +411,7 @@ export function startWebServer(): void {
         if (path === '/api/admin/season/backfill' && req.method === 'POST') return await handleAdminSeasonBackfill(req, res);
         if (path === '/api/admin/config' && req.method === 'POST') return await handleAdminConfig(req, res);
         if (path === '/api/admin/recurrence' && req.method === 'POST') return await handleAdminRecurrence(req, res);
+        if (path === '/api/admin/rollover' && req.method === 'POST') return await handleAdminRollover(req, res);
         if (path === '/api/admin/config/reset' && req.method === 'POST') return await handleAdminConfigReset(req, res);
         if (path === '/api/admin/notice/create' && req.method === 'POST') return await handleAdminNoticeCreate(req, res);
         if (path === '/api/admin/notice/update' && req.method === 'POST') return await handleAdminNoticeUpdate(req, res);
@@ -394,6 +460,17 @@ export function startWebServer(): void {
           error: LOCKDOWN_MSG,
           lockdown: { active: true, secondsLeft: lock.secondsLeft },
         });
+      }
+
+      /* ── 지금 누가 어느 게임을 보고 있는가 ──────────────────────────
+         게임마다 따로 적으면 언젠가 하나가 빠지고, 그러면 그 게임만 조용히 0명이 된다.
+         상태 폴링이 지나는 이 한 자리에서 한 번에 적는다.
+
+         새 요청을 만들지 않는다는 것이 요점이다 — 화면은 이미 1초마다 이 경로를 부르고
+         있고, 우리는 그 요청에 이미 실려 온 것(누가 · 어느 게임)을 기록할 뿐이다. */
+      {
+        const m = /^\/api\/games\/([a-z]+)\/state$/.exec(path);
+        if (m && me && req.method === 'GET') touchPresence(me.id, m[1]);
       }
 
       if (path === '/games/mines') {

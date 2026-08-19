@@ -9,6 +9,7 @@
  */
 import { one, all, run, tx, adjustBalance } from './queries';
 import * as T from '../services/tournament';
+import { rolledMultiplier } from './rollover';
 import { getConfig } from './settings';
 import { refundEntries } from './holdem';
 import { notifyUser } from './notifications';
@@ -306,7 +307,12 @@ export function createTournament(o: {
             starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode, bounty_pct)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       T.kstDateStr(startAt * 1000), title,
-      regOpenAt, startAt, startAt + grace.n * 60, mult,
+      /* 이월 배수를 여기서 굳혀 넣는다. 못 열린 회차만큼 프리롤이 커지는데(rollover.ts),
+         그 곱셈을 화면이나 지급 시점에 하면 대회가 끝나고 이월이 0 이 된 뒤 결과 화면이
+         원래 값으로 다시 계산해 "받은 돈보다 적은 상금표"를 그린다. 만들 때 정하고
+         나면 그 대회의 금액은 어디서 읽어도 같다.
+         참가비 대회는 곱하지 않는다 — 걷은 돈이 상금이라 서비스가 얹는 배수가 없다. */
+      regOpenAt, startAt, startAt + grace.n * 60, rolledMultiplier({ prize_multiplier: mult, buy_in: buyIn }),
       stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode, bountyPct);
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });

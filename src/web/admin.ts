@@ -21,6 +21,7 @@ import {
   cancelRunningTournament, searchUsers, grantPoints, userLedger,
 } from '../db/admin';
 import { prizePoolOf, isPko, isMystery } from '../db/holdem';
+import { ROLLOVER_MAX, rolloverFactor, rolloverSkips, setRollover } from '../db/rollover';
 import { listSeasons, updateSeason, closeSeason, seasonPlayers, backfillFirstSeason } from '../db/queries';
 import { chatRecentAll, setChatHidden, setChatMute, chatMuteLeft } from '../db/queries';
 import { getConfig, defaultConfig, saveConfig, resetConfig, multiplierBehindSeason, TITLE_MAX_LEN } from '../db/settings';
@@ -348,6 +349,25 @@ export function adminPage(user: WebUser): string {
             <th class="r">참가</th><th class="r">상금 풀</th><th class="r">지급</th><th></th></tr></thead>
           <tbody id="adTBody">${rows}</tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="ad-card" data-pane="tour">
+      <h2>프리롤 이월</h2>
+      <p class="ad-note">인원 미달로 <b>못 열린 회차만큼</b> 다음 프리롤 상금이 커집니다 —
+        ${ROLLOVER_MAX - 1}회까지 쌓이고, 대회가 정상적으로 끝나면 0 으로 돌아갑니다.
+        평소에는 서버가 알아서 세므로 <b>손댈 일이 없습니다</b>. 이 기능이 생기기 전에
+        이미 못 열린 회차가 있을 때만 여기서 맞춰 주세요.
+        참가비 대회에는 걸리지 않습니다(걷은 돈이 곧 상금이라 얹을 배수가 없습니다).</p>
+      <div class="ad-sub2">지금 상태
+        <span>${rolloverSkips() === 0
+          ? '이월 없음 — 다음 판은 제 값입니다'
+          : `이월 ${rolloverSkips()}회 — 다음 판 상금이 <b>${rolloverFactor()}배</b>`}</span></div>
+      <div class="ad-row">
+        <label>이월 횟수
+          <input type="number" id="rollSkips" min="0" max="${ROLLOVER_MAX - 1}"
+            value="${rolloverSkips()}"></label>
+        <button type="button" class="btn" id="rollSave">저장</button>
       </div>
     </section>
 
@@ -1094,6 +1114,15 @@ export function adminPage(user: WebUser): string {
         '다음에 만들어질 대회부터 적용됩니다. 진행 중인 대회는 바뀌지 않습니다.',
         function(){ post('/api/admin/config', c).then(function(r){ if (shout(r)) location.reload(); }); });
     });
+    /* 프리롤 이월. 상금을 키우는 값이라 저장 전에 한 번 묻는다 — 숫자를 잘못 넣으면
+       다음 판에 없던 포인트가 그만큼 더 발행된다. */
+    document.getElementById('rollSave').addEventListener('click', function(){
+      var n = Math.floor(Number(document.getElementById('rollSkips').value));
+      if (!isFinite(n) || n < 0) { alert('이월 횟수는 0 이상의 정수여야 합니다'); return; }
+      confirmThen('이월 횟수를 ' + n + '회로 맞출까요?',
+        '다음 프리롤 상금이 ' + (n + 1) + '배가 됩니다. 대회가 정상적으로 끝나면 0 으로 돌아갑니다.',
+        function(){ post('/api/admin/rollover', { skips: n }).then(function(r){ if (shout(r)) location.reload(); }); });
+    });
     /* 자동 개최 설정. 켰는데 주기가 '수동'이면 아무 일도 안 일어난다 — 서버도 막지만
        그 조합을 저장해 두고 기다리게 두면 운영자는 켰다고 믿는다. 여기서 먼저 말한다. */
     document.getElementById('rcSave').addEventListener('click', function(){
@@ -1354,6 +1383,33 @@ export async function handleAdminRecurrence(
   });
   if (!r.ok) return sendJson(res, 400, { error: r.errors.join(' · ') });
   return sendJson(res, 200, { ok: true });
+}
+
+/**
+ * 이월 횟수를 손으로 맞춘다.
+ *
+ * 평소에는 서버가 알아서 센다 — 인원 미달로 자동 취소되면 오르고, 대회가 끝나면 0 이
+ * 된다(db/rollover.ts). 그런데 이 기능을 넣기 전에 이미 못 열린 회차가 있으면 서버는
+ * 그것을 모른다. 그때 값을 맞추는 자리가 필요하다.
+ *
+ * 이월은 서비스가 새로 발행하는 포인트를 키우는 값이라, 운영자만 만질 수 있고
+ * 상한(ROLLOVER_MAX)을 넘겨 넣을 수 없다.
+ */
+export async function handleAdminRollover(
+  req: IncomingMessage, res: ServerResponse
+): Promise<void> {
+  const b = await readJson(req) as Record<string, unknown> | null;
+  const n = Math.floor(Number(b?.skips));
+  if (!Number.isFinite(n) || n < 0) {
+    return sendJson(res, 400, { error: '이월 횟수는 0 이상의 정수여야 합니다' });
+  }
+  if (n > ROLLOVER_MAX - 1) {
+    return sendJson(res, 400, {
+      error: `이월은 최대 ${ROLLOVER_MAX - 1}회(${ROLLOVER_MAX}배)까지입니다`,
+    });
+  }
+  setRollover(n);
+  return sendJson(res, 200, { ok: true, skips: rolloverSkips(), factor: rolloverFactor() });
 }
 
 export async function handleAdminConfigReset(

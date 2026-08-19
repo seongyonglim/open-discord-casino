@@ -48,8 +48,14 @@
      옆에 나란히 앉아 세 번째 탭처럼 보였다. */
   .chat-dock.on .chat-tab{display:none}
   /* 말풍선 그림 하나로 이 바가 무엇인지 말한다 — 옆의 글자는 이제 안내가 아니라
-     대화 그 자체라 "채팅"이라고 적을 자리가 없다. */
-  .chat-ico{flex:none;font-style:normal;font-size:13px;line-height:1}
+     대화 그 자체라 "채팅"이라고 적을 자리가 없다.
+
+     이모지 대신 SVG 를 쓴다. 기기마다 제 글꼴로 그려지던 것을 우리가 굵기와 색을
+     정하는 그림으로 바꿨다. viewBox 만 있는 SVG 는 기본 300x150 으로 그려져 바를
+     밀어내므로 크기를 못 박고, 색은 부모에서 받는다(currentColor). */
+  .chat-ico{flex:none;font-style:normal;line-height:1;display:inline-flex;
+    align-items:center;color:var(--gold)}
+  .chat-ico svg{width:15px;height:15px;display:block}
   /* 안 읽은 수. 접혀 있을 때 이것 하나가 "지금 대화가 오간다"를 말한다.
      그래서 접혀 있는 동안에만 깜빡인다 — 가만히 있는 숫자는 배경이 된다. */
   .chat-badge{position:absolute;top:-6px;right:-4px;min-width:18px;height:18px;padding:0 5px;

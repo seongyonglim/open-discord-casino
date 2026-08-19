@@ -26,7 +26,12 @@
   .card + .card{margin-top:16px}
   .card h2{margin:0 0 14px;font-family:var(--display);font-weight:400;font-size:17px;color:var(--gold);
     letter-spacing:.3px;display:flex;align-items:center;gap:8px}
-  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+  /* 네 칸짜리 줄이다. auto-fit 에 맡겨 두었더니 480~600px 구간에서 3열이 잡혀
+     3 + 1 로 갈라졌고, 둘째 줄에 빈칸 두 개가 그대로 남았다 — 창을 조금 좁힌 노트북과
+     태블릿 세로에서 화면 위쪽에 구멍이 하나 뚫린 것처럼 보였다.
+     네 칸은 4열이거나 2×2 여야 한다. 3열은 어느 쪽도 아니므로 아예 만들지 않는다. */
+  .stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+  @media (max-width:700px){ .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))} }
   .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .stat .lbl{font-size:12px;color:var(--muted);font-weight:600}
   .stat .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
@@ -39,7 +44,11 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* 도전과제 보상 버프. 이 줄만은 안내가 아니라 "지금 켜져 있는 것"이라 금색으로 둔다 —
      흐린 회색으로 두면 옆의 안내 문구와 구분되지 않아 켜져 있다는 사실이 전달되지 않는다. */
-  .buff-badge{color:var(--gold);font-weight:700}
+  /* 트로피 이모지를 선 아이콘으로 바꿨다 — 이모지는 OS 마다 다른 그림이 나오고,
+     컬러 하나가 글줄 안에서 혼자 튄다. 아이콘은 글자 색을 따라가므로 줄에 녹는다. */
+  .buff-badge{color:var(--gold);font-weight:700;
+    display:inline-flex;align-items:center;gap:4px}
+  .buff-badge svg{width:12px;height:12px;flex:none}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th{text-align:left;color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;
     letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -66,7 +75,7 @@
   .notice.err{background:rgba(229,72,77,.1);border:1px solid rgba(229,72,77,.35);color:#f0868a}
   .game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
   .game-card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:18px;
-    display:flex;flex-direction:column;gap:6px;box-shadow:inset 0 1px 0 rgba(212,175,55,.1);
+    display:flex;flex-direction:column;gap:8px;box-shadow:inset 0 1px 0 rgba(212,175,55,.1);
     transition:border-color .15s,transform .15s,background .15s,box-shadow .15s}
   /* 출시된 게임은 카드 전체가 링크다. 반응을 확실히 보이게 테두리·배경·그림자를 함께 바꾼다 —
      예전에는 2px 떠오르고 테두리만 옅게 밝아져서 마우스를 올려도 반응을 알아채기 어려웠다 */
@@ -79,7 +88,6 @@
     box-shadow:0 14px 32px rgba(0,0,0,.55),0 0 0 1px rgba(212,175,55,.25),
       inset 0 1px 0 rgba(212,175,55,.28)}
   .game-card.ready:active{transform:translateY(-1px) scale(1)}
-  .game-card.ready:hover .btn{background:var(--gold-hi);border-color:var(--gold-hi)}
   .game-card.ready:hover .icon{color:var(--gold-hi)}
   .game-card .icon{width:30px;height:30px;color:var(--gold)}
   .game-card .icon svg{width:100%;height:100%}
@@ -97,7 +105,6 @@
   .game-card .gc-fact{flex:none;margin:0 0 6px;padding-top:6px;
     border-top:1px solid rgba(255,255,255,.055);
     font-size:11.5px;color:#82828a;letter-spacing:-.1px}
-  .game-card .btn{justify-content:center}
 
   /* 아이콘 줄 — 왼쪽 아이콘, 오른쪽 배지 */
   .gc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}

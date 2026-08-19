@@ -249,6 +249,9 @@ const RULES_HTML = `
 
   <p class="tip"><b>꿀팁 —</b> 뱅커가 플레이어보다 조금 자주 이깁니다(46.0% vs 44.7%).
      타이와 페어는 배당이 큰 만큼 드뭅니다.</p>
+
+  <h4>이 판의 규격</h4>
+  <p class="spec">1덱 · 최대 배당 16.83배 (페어)</p>
 `;
 
 export function baccaratPage(user: WebUser): string {

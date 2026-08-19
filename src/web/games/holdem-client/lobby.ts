@@ -13,7 +13,38 @@
    그때 빈 카드만 남으면 서비스가 죽은 것처럼 보이므로 세 조각을 순서대로 채운다 —
    다음 대회 안내(있으면) · 지난 대회 결과(있으면) · 마지막으로 안내 문구.
    셋 다 없을 수는 없다. 안내 문구는 언제나 나온다. */
-export const LOBBY_EMPTY = `    function renderNoTournament(){
+export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 이월 배너를 쓴다. renderLobby 안에서 만드는 것과
+       모양이 같아야 "같은 판을 미리 보는 것" 으로 읽힌다 — 두 카드가 서로 다르게 생기면
+       등록이 열리는 순간 화면이 갈아치워진 것처럼 느껴진다. */
+    function nextModeBadge(up){
+      var mys = up.mode === 'MYSTERY_BOUNTY';
+      var pko = mys || up.mode === 'PKO_BOUNTY';
+      return mys
+        ? '<span class="ht-mode mys">미스터리 바운티<\\/span>'
+        : (pko ? '<span class="ht-mode bty">바운티<\\/span>'
+               : '<span class="ht-mode cls">클래식<\\/span>');
+    }
+    /* 이월 배너 문구.
+       "최소 인원 미달로" 대신 "열리지 못한 회차가 얹혀" 를 쓴다 — 미달은 원인의 이름일
+       뿐이고, 읽는 사람이 알고 싶은 것은 "지난번에 안 열려서 그만큼 쌓였다" 는 사실이다.
+
+       "총 상금" 은 쓰지 않는다. 등록 전에는 몇 명이 올지 모르므로 총액이 아직 없는 값이고,
+       적으려면 인원을 가정해야 한다 — 그 가정이 틀리면 화면이 거짓말을 한 것이 된다.
+       대신 이 제품이 이미 쓰는 말로 적는다: 규칙 안내가 "참가자 1인당 N P 가 상금 풀에
+       쌓입니다" 라고 하고 있으므로 여기서도 1인당 · 적립이다. 배수는 뒤에 붙여 "평소의
+       몇 배" 로 맥락만 준다 — 숫자가 먼저 오고 이유가 뒤에 오는 것이 읽기 순서다. */
+    function nextRollBanner(up){
+      var s = up.rolloverSkips || 0;
+      if (!s) return '';
+      return '<div class="ht-roll">' +
+        '<span class="ht-roll-tag">이월 ' + s + '회<\\/span>' +
+        '<span class="ht-roll-txt">열리지 못한 회차가 얹혀 '
+          + (up.perHead ? '1인당 <b>' + num(up.perHead) + 'P<\\/b> 적립' : '상금이 커집니다')
+          + ' — 평소의 <b>' + (s + 1) + '배<\\/b><\\/span>' +
+      '<\\/div>';
+    }
+
+    function renderNoTournament(){
       var now = st.serverNow, html = '';
       var up = st.upcoming, rc = st.recap;
 
@@ -21,15 +52,55 @@ export const LOBBY_EMPTY = `    function renderNoTournament(){
         var opened = up.regOpenAt <= now;
         html +=
           '<div class="ht-card ht-next">' +
+            /* 1행 — 무슨 판인가(다음 대회 · 모드) | 언제인가(일정).
+               모드 뱃지가 카운트다운 아래에 따로 놓여 있었다. 그러면 "8시간 26분" 을
+               읽고 내려오다가 뒤늦게 종류를 알게 된다 — 종류는 시간보다 먼저 정해지는
+               정보라 같은 줄 맨 앞에 있는 것이 맞다. */
             '<div class="ht-next-top">' +
-              '<span class="ht-badge open">다음 대회</span>' +
+              '<span class="ht-next-tags">' +
+                '<span class="ht-badge open">다음 대회</span>' + nextModeBadge(up) +
+              '<\/span>' +
               '<span class="ht-next-when">' + esc(kstDay(up.startAt)) + ' ' + esc(kstClock(up.startAt)) + '<\/span>' +
             '<\/div>' +
+            /* 2행 — 대회 이름. 예고 카드에는 이름이 아예 없어서 무슨 대회를 기다리는지
+               알 수 없었다(로비 카드에는 있는데 여기만 빠져 있었다). */
+            (up.title ? '<h2 class="ht-next-title">' + esc(up.title) + '<\/h2>' : '') +
+            /* 3행 — 라벨 · 숫자 · 일정 순으로 쌓는다.
+               예전에는 "8시간 21분" 아래에 "등록 시작까지 남았습니다 · 등록 09:00 …" 가
+               한 줄로 붙어 있었다. 무엇까지 남은 시간인지가 숫자 뒤에 오니 숫자를 먼저
+               읽고 나서 되짚어야 했고, 그 뒤에 일정까지 이어 붙어 한 줄이 세 가지를
+               말했다. 라벨을 위로 올리면 읽는 순서가 뜻의 순서와 같아진다. */
+            '<div class="ht-next-label">' + esc(opened ? '시작까지' : '등록 시작까지') + '<\/div>' +
             '<div class="ht-next-count">' + esc(dur((opened ? up.startAt : up.regOpenAt) - now)) + '<\/div>' +
-            '<div class="ht-next-sub">' +
-              esc(opened ? '시작까지 남았습니다' : '등록 시작까지 남았습니다') + ' · 등록 ' +
-              esc(kstClock(up.regOpenAt)) + ' · 시작 ' + esc(kstClock(up.startAt)) + ' (KST)' +
-            '<\/div>' +
+            '<div class="ht-next-sub">등록 ' + esc(kstClock(up.regOpenAt)) +
+              ' · 시작 ' + esc(kstClock(up.startAt)) + ' (KST)<\/div>' +
+            /* ── 등록 전에도 규칙은 보여준다 ────────────────────────
+               예전에는 남은 시간만 적었다. 그런데 갈지 말지를 정하는 데 필요한 것은
+               "언제" 가 아니라 "얼마짜리 판인가 · 몇 명이 모여야 열리나 · 어떤 방식인가"
+               이고, 그건 등록이 안 열렸을 뿐 이미 정해져 있다.
+
+               참가자 수와 상금 풀은 안 적는다 — 대회 행이 아직 없어 존재하지 않는 값이다.
+               0 을 적으면 "상금 0P 짜리 판" 으로 읽혀 없는 것보다 나쁘다. 대신 인당
+               금액과 최소 인원을 나란히 두어 "3명이면 얼마" 를 셀 수 있게 한다. */
+            (up.perHead != null
+              ? nextRollBanner(up) +
+                '<div class="ht-grid ht-next-grid">' +
+                  (up.buyIn > 0
+                    ? '<div><span class="k">참가비<\/span><span class="v warn">'
+                        + num(up.buyIn) + 'P<\/span><\/div>'
+                    : '<div><span class="k">1인당<\/span><span class="v gold">'
+                        + num(up.perHead) + 'P<\/span><\/div>') +
+                  '<div><span class="k">최소 인원<\/span><span class="v">'
+                    + up.minPlayers + '명<\/span><\/div>' +
+                  '<div><span class="k">정원<\/span><span class="v">'
+                    + up.maxPlayers + '명<\/span><\/div>' +
+                  '<div><span class="k">시작 스택<\/span><span class="v">'
+                    + num(up.startingStack) + '<\/span><\/div>' +
+                '<\/div>'
+                /* 못 누르는 단추는 두지 않는다. 위에 이미 "등록 시작까지 9시간 8분" 이
+                   적혀 있어 지금 신청할 수 없다는 것은 그 줄이 말하고, 회색 단추는
+                   같은 말을 한 번 더 하면서 누를 수 있을 것처럼 보이기만 한다. */
+              : '') +
           '<\/div>';
       }
 
@@ -80,7 +151,25 @@ export const LOBBY_EMPTY = `    function renderNoTournament(){
     }
 `;
 
-export const LOBBY = `    function renderLobby(){
+export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자리표. 화면에 절대 나올 수 없는
+       글자여야 뼈대 비교가 어긋나지 않는다. */
+    var NOTE_SLOT = String.fromCharCode(0);
+    var lastShell = '', noteEl = null;
+    /* ── 참가 완료 = 취소 단추 ──────────────────────────────────────
+       예전에는 "신청 완료" 라벨과 "신청 취소" 단추가 따로 있었다. 라벨은 누를 수 없는데
+       단추처럼 생겨서 그것을 누르는 사람이 있었고, 둘이 나란히 놓이니 어느 쪽이 지금
+       상태이고 어느 쪽이 행동인지도 한눈에 안 갈렸다.
+
+       이제 하나다. 평소에는 초록 테두리로 "되어 있다"를 말하고, 손을 올리면 붉게 바뀌어
+       "누르면 물린다"를 말한다 — 상태와 행동이 한 칸을 나눠 쓴다. */
+    function joinedBtn(){
+      return '<button type="button" class="btn ht-done" id="htLeave">'
+        + '<svg class="ht-done-i" width="15" height="15" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2.6" stroke-linecap="round"'
+        + ' stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/><\/svg>'
+        + '참가 완료 <span class="ht-done-x">(등록 취소)<\/span><\/button>';
+    }
+    function renderLobby(){
       var t = st.tournament, now = st.serverNow;
       if (!t) { renderNoTournament(); return; }
       var badge = '', action = '', note = '';
@@ -96,9 +185,7 @@ export const LOBBY = `    function renderLobby(){
         /* 시작 전에는 신청을 되돌릴 수 있다. 좌석과 스택은 대회가 시작될 때
            한꺼번에 만들어지므로, 이 시점의 취소는 등록 행 하나를 지우는 것뿐이다.
            시작한 뒤에는 이미 칩을 들고 앉아 있어 취소가 성립하지 않는다. */
-        action = t.iRegistered
-          ? '<span class="ht-joined">신청 완료</span>'
-            + ' <button type="button" class="btn ht-leave" id="htLeave">신청 취소</button>'
+        action = t.iRegistered ? joinedBtn()
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'WAITING_MIN_PLAYERS') {
         badge = '<span class="ht-badge wait">최소 인원 대기</span>';
@@ -106,9 +193,7 @@ export const LOBBY = `    function renderLobby(){
         /* 시작 전에는 신청을 되돌릴 수 있다. 좌석과 스택은 대회가 시작될 때
            한꺼번에 만들어지므로, 이 시점의 취소는 등록 행 하나를 지우는 것뿐이다.
            시작한 뒤에는 이미 칩을 들고 앉아 있어 취소가 성립하지 않는다. */
-        action = t.iRegistered
-          ? '<span class="ht-joined">신청 완료</span>'
-            + ' <button type="button" class="btn ht-leave" id="htLeave">신청 취소</button>'
+        action = t.iRegistered ? joinedBtn()
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'RUNNING') {
         if (t.lateRegLeft != null) {
@@ -159,7 +244,10 @@ export const LOBBY = `    function renderLobby(){
             var needed = si < t.minPlayers;
             slots += '<div class="ht-reg empty' + (needed ? ' need' : '') + '">' +
               '<span class="ht-reg-av ph"></span>' +
-              '<span class="ht-reg-nm">' + (needed ? '더 필요' : '빈자리') + '</span></div>';
+              /* "더 필요" 는 무엇이 더 필요한지 안 적혀 있어 말이 끊긴 것처럼 읽혔다.
+                 이 칸이 뜻하는 것은 "여기까지 차야 판이 열린다" 이므로 그 기준의
+                 이름을 그대로 쓴다 — 아래 정보 카드의 [최소 인원 3명] 과 같은 말이다. */
+              '<span class="ht-reg-nm">' + (needed ? '최소 인원' : '빈자리') + '</span></div>';
           }
         }
         /* 최소 인원을 채운 것과 자리가 다 찬 것은 다른 말이다. 3/9 에 "인원이 찼습니다"라고
@@ -172,6 +260,68 @@ export const LOBBY = `    function renderLobby(){
         roster = '<h3 class="ht-h3">신청자 <span class="ht-h3sub">' + sub + '</span></h3>' +
           '<div class="ht-regs">' + slots + '</div>';
       }
+
+      /* ── 모드 뱃지 ────────────────────────────────────────────────
+         제목만 보면 이 판이 클래식인지 바운티인지 알 수 없었다. 참가를 정하기 전에
+         알아야 하는 정보다 — 바운티는 순위 상금이 절반으로 줄고 대신 남을 떨어뜨려
+         버는 판이라, 같은 "프리롤" 이라도 성격이 다르다. */
+      var isPko = t.mode === 'PKO_BOUNTY' || t.mode === 'MYSTERY_BOUNTY';
+      var isMys = t.mode === 'MYSTERY_BOUNTY';
+      var modeBadge = isMys
+        ? '<span class="ht-mode mys">미스터리 바운티<\/span>'
+        : (isPko ? '<span class="ht-mode bty">바운티<\/span>'
+                 : '<span class="ht-mode cls">클래식<\/span>');
+
+      /* ── 상금 풀 ──────────────────────────────────────────────────
+         여기는 순위 상금만 적고 있었다(t.prizePool). 바운티 대회에서는 참가비의 절반이
+         바운티로 빠지므로, 그 값은 실제로 걸린 돈의 절반이다 — 10,000P 짜리 판이
+         5,000P 로 보였다. 인게임 사이드 패널은 이미 합계로 그리고 있어서 같은 대회가
+         두 화면에서 다른 금액으로 보이기까지 했다.
+         총액을 크게 적고 갈래는 아래 작은 줄로 둔다. */
+      var btyPool = isPko ? (t.bountyPool || 0) : 0;
+      var poolTotal = (t.prizePool || 0) + btyPool;
+      var poolSub = isPko
+        ? '<span class="ht-sub">순위 ' + num(t.prizePool || 0) + 'P + 바운티 '
+            + num(btyPool) + 'P<\/span>'
+        : '';
+
+      /* ── 바운티 배너 ──────────────────────────────────────────────
+         전에는 상금표 맨 아래에 작은 한 줄로 있었다. 그 자리는 표를 다 읽고 나서야
+         닿는 곳이라, 정작 이 대회를 고를 이유(잭팟이 얼마까지 나오나)가 맨 나중에
+         읽혔다. 상금 구조의 머리로 올린다.
+
+         이모지는 안 쓴다 — 대괄호 표지와 색으로 구분한다. */
+      var btyPct = t.bountyPct || 50;
+      var splitBanner = '';
+      if (isPko) {
+        splitBanner =
+          '<div class="ht-bty-banner' + (isMys ? ' mys' : '') + '">' +
+            '<span class="ht-bty-tag">' + (isMys ? 'MYSTERY BOUNTY' : 'BOUNTY') + '<\/span>' +
+            (isMys && t.mysteryTop
+              ? '<span class="ht-bty-top">최고 잭팟 바운티 <b>' + num(t.mysteryTop) + 'P<\/b><\/span>'
+              : '') +
+            '<span class="ht-bty-split">순위 상금 ' + (100 - btyPct)
+              + '% / 바운티 풀 ' + btyPct + '%<\/span>' +
+          '<\/div>';
+      }
+
+      /* ── 이월 배너 ────────────────────────────────────────────────
+         못 열린 회차만큼 프리롤 배수가 커진다(db/rollover.ts). 금액에는 이미 반영돼
+         있으므로 여기서 다시 계산하지 않고, "왜 평소보다 큰가"만 말한다 — 안 적으면
+         상금이 갑자기 네 배가 된 이유를 아무도 모른다. 이모지는 안 쓴다. */
+      /* 상금 풀 총액이 아니라 1인당으로 적는다. 총액은 인원에 비례하므로 아직 아무도
+         신청하지 않았으면 0P 다 — "상금 풀 0P · 평소의 3배" 는 이월을 알리려던 배너가
+         정반대로 읽히는 문장이다. 1인당 금액은 인원과 무관하게 지금 확정돼 있고,
+         예고 카드와도 같은 말이 된다. */
+      var skips = t.rolloverSkips || 0;
+      var rollBanner = skips > 0
+        ? '<div class="ht-roll">' +
+            '<span class="ht-roll-tag">이월 ' + skips + '회<\/span>' +
+            '<span class="ht-roll-txt">열리지 못한 회차가 얹혀 1인당 <b>'
+              + num(t.multiplier || 0) + 'P<\/b> 적립 — 평소의 <b>'
+              + (skips + 1) + '배<\/b><\/span>' +
+          '<\/div>'
+        : '';
 
       var payTable = '';
       if (rowCount) {
@@ -192,28 +342,63 @@ export const LOBBY = `    function renderLobby(){
             '<td class="nm">' + (res ? esc(res.username) : '<i>—<\i>') + '</td>' +
             '<td class="pz">' + num(amt) + 'P</td></tr>';
         }
+        /* 바운티 판은 표 아래에 분배율을 적는다. 표에 적힌 등수별 금액이 전부가
+           아니라는 것을 말해 주지 않으면, 순위 상금만 보고 "이 판은 절반짜리" 로
+           읽힌다. 미스터리는 봉투 최고액도 함께 알린다 — 그게 이 모드를 고르는 이유다. */
         payTable = '<h3 class="ht-h3">' + (resList.length ? '결과' : '상금 구조') + '</h3>' +
+          splitBanner +
           '<table class="ht-prize"><thead><tr><th>순위</th><th>플레이어</th><th>상금</th></tr></thead>' +
           '<tbody>' + rows + '<\/tbody><\/table>';
+      } else if (splitBanner) {
+        /* 등수표가 아직 없어도(참가자가 적어 지급 인원이 안 잡힌 때) 배너는 띄운다 —
+           이 대회가 어떤 판인지는 표와 상관없이 알려야 한다. */
+        payTable = '<h3 class="ht-h3">상금 구조</h3>' + splitBanner;
       }
 
       /* 안내 문구는 배지 옆으로 붙인다. 한 줄짜리 <p>로 따로 두면 그 줄 하나 때문에
          위아래 여백이 두 겹 생겨 카드가 늘어졌다 — 상태를 말하는 짧은 문장이므로
          상태 배지와 같은 줄에 있는 것이 읽기에도 맞다. */
-      lobbyEl.innerHTML =
+      /* ── 왜 통째로 다시 그리지 않는가 ────────────────────────────────
+         이 함수는 1초마다 불린다. 예전에는 그때마다 lobbyEl.innerHTML 을 새로 대입해서
+         카드 안의 모든 노드가 사라지고 다시 태어났다 — 단추도 포함이다.
+
+         그래서 누르는 동안 틱이 한 번 끼면, 눌렀던 그 노드가 없어진 채로 손을 떼게 되고
+         브라우저는 click 을 아예 만들지 않는다. 누른 사람 눈에는 "눌렀는데 아무 일도
+         없었다"로 보인다. 사람이 단추를 누르는 데 걸리는 시간이 100ms 안팎이니
+         열 번에 한 번꼴로 삼켜졌고, 망설이다 누르는 [등록 취소]에서 특히 잦았다.
+
+         고치는 방법은 안 지우는 것이다. 매 초 바뀌는 값은 남은 시간 하나뿐이므로,
+         그 자리를 표식으로 비운 "뼈대"를 만들어 지난번 것과 견준다. 같으면 DOM 은
+         손대지 않고 남은 시간 글자만 갈아 끼운다 — 단추는 계속 같은 노드로 살아 있다.
+         상태가 실제로 바뀌었을 때만(신청·취소·인원 변동) 다시 그린다. */
+      var shell =
         '<div class="ht-card">' +
-          '<div class="ht-card-top">' +
-            '<div><h2>' + esc(t.title) + '</h2>' +
-              '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
-                ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p></div>' +
-            '<div class="ht-badge-wrap">' + badge +
-              (note ? '<span class="ht-note">' + esc(note) + '</span>' : '') + '</div>' +
+          /* 머리를 세 줄로 나눈다.
+             예전에는 제목 왼쪽에 모드 뱃지가 붙고 오른쪽에 상태 뱃지와 남은 시간이
+             따로 떠 있어서, 한 줄에 성격이 다른 네 가지가 섞였다 — 눈이 제목을
+             찾으려면 뱃지를 먼저 지나야 했다.
+               1행  무슨 판인가(모드·상태)          |  언제까지인가(남은 시간)
+               2행  대회 이름 — 이 카드의 주인공이라 혼자 쓴다
+               3행  날짜와 시각 */
+          '<div class="ht-head">' +
+            '<div class="ht-head-meta">' +
+              '<span class="ht-head-badges">' + modeBadge + badge + '</span>' +
+              /* 시간은 여기 한 곳에만 들어간다. 아래 뼈대 비교가 이 자리를 표식으로
+                 비워 두고 견주므로, 다른 곳에 초 단위 값이 새로 생기면 뼈대가 매 초
+                 달라져서 단추가 다시 1초마다 무너진다 — 새 값은 반드시 이 note 로. */
+              (note ? '<span class="ht-note">' + NOTE_SLOT + '</span>' : '') +
+            '</div>' +
+            '<h2 class="ht-title">' + esc(t.title) + '</h2>' +
+            '<p class="ht-when">' + esc(t.dateStr) + ' · 등록 ' + kstClock(t.regOpenAt) +
+              ' · 시작 ' + kstClock(t.scheduledStartAt) + ' (KST)</p>' +
           '</div>' +
+          rollBanner +
           /* 여섯 지표를 2×3 미니 카드로 나눈다. 줄 형태(k ····· v)로 쌓았을 때는
              여섯 줄이 같은 무게로 늘어서서 무엇을 봐야 할지 정해지지 않았다. */
           '<div class="ht-grid">' +
             '<div><span class="k">참가자</span><span class="v">' + t.registered + ' / ' + t.maxPlayers + '</span></div>' +
-            '<div><span class="k">상금 풀</span><span class="v gold">' + num(t.prizePool) + 'P</span></div>' +
+            '<div><span class="k">상금 풀</span><span class="v gold">' + num(poolTotal) + 'P</span>'
+              + poolSub + '</div>' +
             /* 참가비가 있으면 그 자리에 참가비를 적는다. "1인당 배수"는 프리롤에서
                서비스가 얹어 주는 금액이라 참가비 대회에서는 뜻이 없다 — 두 값을 나란히
                두면 어느 쪽이 내 돈인지 헷갈린다. */
@@ -229,6 +414,17 @@ export const LOBBY = `    function renderLobby(){
           payTable +
         '</div>';
 
+      /* 뼈대가 그대로면 남은 시간만 바꾸고 끝낸다. 여기서 돌아가면 아래 바인딩도
+         건너뛰는데, 그래도 되는 이유는 단추가 지워진 적이 없어서 예전에 붙인 리스너가
+         그대로 살아 있기 때문이다. 다시 붙이면 오히려 한 번 누른 것이 두 번 실행된다. */
+      if (shell === lastShell) {
+        if (noteEl && noteEl.isConnected) noteEl.textContent = note;
+        return;
+      }
+      lastShell = shell;
+      lobbyEl.innerHTML = shell.replace(NOTE_SLOT, function(){ return esc(note); });
+      noteEl = lobbyEl.querySelector('.ht-note');
+
       var join = document.getElementById('htJoin');
       if (join) join.addEventListener('click', function(){
         /* 돈이 나가는 신청이면 먼저 묻는다. 프리롤은 잃을 것이 없어 그냥 넣지만,
@@ -239,7 +435,7 @@ export const LOBBY = `    function renderLobby(){
         join.disabled = true;
         post('/api/games/holdem/register', {}).then(function(r){
           if (!r.ok) { alert(r.d && r.d.error ? r.d.error : '등록할 수 없습니다'); join.disabled = false; }
-          poll();
+          pollNow();
         });
       });
       var spec = document.getElementById('htSpectate');
@@ -247,11 +443,23 @@ export const LOBBY = `    function renderLobby(){
       if (leave) leave.addEventListener('click', function(){
         if (!confirm('참가 신청을 취소할까요?'
           + (t.buyIn > 0 ? '\\n참가비 ' + num(t.buyIn) + 'P는 돌려드립니다.' : ''))) return;
+        /* 누른 것이 닿았다는 표시를 즉시 준다. 응답까지 아무 변화가 없으면 안 눌린 줄
+           알고 한 번 더 누르는데, 두 번째는 이미 지워진 등록을 지우려다 "신청하지
+           않으셨습니다" 경고를 띄운다 — 사실 첫 번째가 성공한 것인데도. */
         leave.disabled = true;
+        leave.classList.add('is-busy');
         post('/api/games/holdem/unregister', {}).then(function(r){
-          if (!r.ok) alert(r.d && r.d.error ? r.d.error : '취소할 수 없습니다');
-          leave.disabled = false;
-          poll();
+          if (!r.ok) {
+            alert(r.d && r.d.error ? r.d.error : '취소할 수 없습니다');
+            leave.disabled = false;
+            leave.classList.remove('is-busy');
+            return;
+          }
+          /* 성공했으면 서버 상태를 곧바로 다시 받는다. 다음 폴링을 기다리면 최대 1초
+             동안 [참가 완료]가 남아 있어서, 취소가 된 것인지 아닌지 알 수 없다.
+             참가자 수·내 참가 여부·좌석은 전부 이 한 번의 상태 응답에서 온다 —
+             화면이 저 혼자 앞서 나가서 서버와 어긋나는 길을 만들지 않는다. */
+          pollNow();
         });
       });
       if (spec) spec.addEventListener('click', function(){ spectate = true; render(); });

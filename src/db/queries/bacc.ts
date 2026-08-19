@@ -7,7 +7,7 @@
    의존은 한 방향이다: 게임별 모듈 → core. 반대 방향은 없고, 만들지도 말 것.
    core 가 특정 게임을 알게 되면 순환이 생기고, 그때부터는 어느 파일을 먼저 읽어야
    하는지가 사라진다. */
-import { one, all, run, tx, bumpGameStats, pruneStaleData } from './core';
+import { one, all, run, tx, bumpGameStats, pruneStaleData, payoutAt } from './core';
 
 /* ── 바카라 ──────────────────────────────────────────────────────────────
    포커 플립과 같은 공용 라운드 구조. 다만 배당이 매 라운드 같아서(선택이 없는 게임이라
@@ -71,19 +71,22 @@ function settleBaccaratBets(roundId: number, o: BaccOutcome): void {
      페어에 동시에 걸면 최대 5판으로 세어진다. 유저별로 모아 한 번만 센다.
      한 시장은 맞고 다른 시장은 틀려 순손익이 정확히 0이 되는 경우도 이렇게 하면
      자연히 푸시로 접힌다. */
+  /* 지급은 payoutAt 을 쓴다 — amount * odds 를 그대로 내림하면 배당(16.83 같은 값)의
+     double 표현이 참값보다 조금 작아서 한 칸 더 내려간다. 페어 100P 가 1,683P 가
+     아니라 1,682P 로 나갔다. 오차는 언제나 유저 손해 쪽이었다. */
   const perUser = new Map<string, { staked: number; returned: number }>();
   for (const b of bets) {
     let payout = 0, won = 0;
     if (b.market === 'player' || b.market === 'banker') {
       // 무승부는 승패 베팅에 원금 환불이다 (배당 계산이 이 환불분을 이미 반영하고 있다)
       if (o.winner === 'tie') { payout = b.amount; won = 0; }
-      else if (o.winner === b.market) { payout = Math.floor(b.amount * b.odds); won = 1; }
+      else if (o.winner === b.market) { payout = payoutAt(b.amount, b.odds); won = 1; }
     } else if (b.market === 'tie') {
-      if (o.winner === 'tie') { payout = Math.floor(b.amount * b.odds); won = 1; }
+      if (o.winner === 'tie') { payout = payoutAt(b.amount, b.odds); won = 1; }
     } else if (b.market === 'ppair') {
-      if (o.playerPair) { payout = Math.floor(b.amount * b.odds); won = 1; }
+      if (o.playerPair) { payout = payoutAt(b.amount, b.odds); won = 1; }
     } else if (b.market === 'bpair') {
-      if (o.bankerPair) { payout = Math.floor(b.amount * b.odds); won = 1; }
+      if (o.bankerPair) { payout = payoutAt(b.amount, b.odds); won = 1; }
     }
     run(`UPDATE baccarat_bets SET won = ?, payout = ? WHERE id = ?`, won, payout, b.id);
     // 유저가 사라진 베팅은 건너뛴다 — 여기서 예외가 나면 트랜잭션이 롤백돼
