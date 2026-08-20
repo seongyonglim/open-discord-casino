@@ -38,29 +38,31 @@
   .chat-last.up{animation:chatLastUp .22s cubic-bezier(0,0,.2,1) both}
   @keyframes chatLastUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){.chat-last.up{animation:none}}
-  /* ── 접힌 줄 + 닫기 ────────────────────────────────────────────────
-     둘을 한 상자에 형제로 둔다. 상자 자체가 알약이고, 안에서 줄이 남는 폭을 다 쓴다. */
+  /* ── 접힌 줄을 담는 상자 ──────────────────────────────────────────
+     줄 하나뿐인데 상자를 두르는 이유는 끌기다. 끌리는 것은 상자, 눌리는 것은 안쪽
+     줄 — 같은 요소면 탭과 끌기를 가를 자리가 없다. 옮기는 것도 이 상자의 transform
+     이지 도크의 앵커가 아니다(도크는 left:0;right:0 라 left 를 주면 이동이 아니라
+     폭이 줄고, syncWidth() 가 resize 마다 dock.style.right 를 다시 쓴다). */
   .chat-bar{display:flex;align-items:center;gap:2px;max-width:100%;min-width:0}
-  .chat-bar .chat-tab{flex:1 1 auto;min-width:0;border-top-right-radius:0;
-    border-bottom-right-radius:0;border-right:0}
-  .chat-hide{flex:none;width:30px;align-self:stretch;display:inline-flex;
-    align-items:center;justify-content:center;cursor:pointer;padding:0;
-    background:rgba(22,25,32,.95);border:1px solid #2e3440;border-left:0;
-    border-radius:0 10px 10px 0;color:var(--muted);
-    box-shadow:0 4px 16px rgba(0,0,0,.7);transition:color .12s,border-color .12s}
-  .chat-hide:hover{color:var(--txt);border-color:var(--gold-dim)}
-  .chat-hide svg{width:13px;height:13px;display:block}
-  /* 이번에만 숨겼을 때 — 줄만 걷고 펼친 패널은 그대로 연다 */
-  .chat-dock.bar-off .chat-bar{display:none}
+  .chat-bar .chat-tab{flex:1 1 auto;min-width:0}
+  /* 끈 상태(.bar-off)를 여기서는 읽지 않는다.
+     로비·데스크톱에서 이 줄은 채팅으로 가는 유일한 문이다 — 상단에 채팅 아이콘이
+     없기 때문이다(인게임 상단바에만 있다). 여기서 줄을 걷으면 채팅이 있다는 것조차
+     알 수 없고 되돌릴 자리도 없다. 끄기가 듣는 화면은 켜는 자리가 함께 있는 화면
+     뿐이고, 그 규칙은 18-ig-portrait.css 안에 딱 한 줄 있다. */
   /* 상위 세 사람의 이름 색은 목록과 같은 규칙이다 — 두 곳이 다르면 같은 사람이
      바에서와 목록에서 다른 색으로 보인다. */
-  .chat-last.t1 .chat-nm{color:#fbbf24;font-weight:800}
-  .chat-last.t2 .chat-nm{color:#38bdf8;font-weight:800}
-  .chat-last.t3 .chat-nm{color:#fb923c;font-weight:800}
+  .chat-last.t1 .chat-nm{color:#fcd34d;font-weight:800}
+  .chat-last.t2 .chat-nm{color:#7dd3fc;font-weight:800}
+  .chat-last.t3 .chat-nm{color:#fdba74;font-weight:800}
   /* 펼쳐져 있으면 알약을 치운다. 본체에 최소화 버튼이 이미 있어서 알약은 할 일이 없고,
      우측 패널에 폭을 맞춘 뒤로는 이것이 패널 위에 떠서 사이드바의 탭 줄(칩 순위 · 상금)
      옆에 나란히 앉아 세 번째 탭처럼 보였다. */
   .chat-dock.on .chat-tab{display:none}
+  /* 상자도 같이 걷는다. 줄을 감추면 상자는 빈 flex 상자로 남는데, 그것이 끌기의
+     손잡이라 펼친 패널을 잡고 끄는 일이 생긴다. 세로 인게임은 18-ig-portrait.css 가
+     이미 이렇게 하고 있었고, 그 규칙이 없던 화면이 정확히 로비와 데스크톱이다. */
+  .chat-dock.on .chat-bar{display:none}
   /* 말풍선 그림 하나로 이 바가 무엇인지 말한다 — 옆의 글자는 이제 안내가 아니라
      대화 그 자체라 "채팅"이라고 적을 자리가 없다.
 
@@ -87,25 +89,34 @@
   /* 깜빡임은 알림이지 연출이 아니다. 움직임을 줄여 달라고 한 사람에게는 색만 남긴다. */
   @media (prefers-reduced-motion:reduce){.chat-badge.blink{animation:none}}
 
+  /* ── 창의 색 ──────────────────────────────────────────────────────
+     예전에는 초록이 섞인 검정이었다(rgba(18,26,21) → rgba(8,13,10)). 카지노 테이블의
+     펠트에서 가져온 색인데, 채팅은 테이블 위에 얹히는 것이지 테이블이 아니다 —
+     같은 초록을 옅게 쓰니 판과 창이 한 덩어리로 뭉쳐 보였다.
+
+     딥 슬레이트로 바꾼다. 판에서 확실히 떨어져 나오고, 글자를 얹었을 때 색이 안 튄다.
+     금색은 테두리 전체가 아니라 윗변에만 남긴다 — 사방을 두르면 창이 액자가 되는데,
+     이건 액자가 아니라 위에서 내려온 판이다. */
   .chat-panel{width:320px;height:380px;display:flex;flex-direction:column;
-    background:linear-gradient(180deg,rgba(18,26,21,.98),rgba(8,13,10,.98));
-    border:1px solid var(--gold-dim);border-radius:12px;overflow:hidden;
-    box-shadow:0 14px 40px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05)}
+    background:linear-gradient(180deg,#15171e,#101219);
+    border:1px solid rgba(39,39,42,.8);border-top-color:rgba(212,175,55,.3);
+    border-radius:12px;overflow:hidden;
+    box-shadow:0 18px 50px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.04)}
   /* 배지와 같은 함정. 이게 없으면 최소화 버튼을 눌러도 hidden 만 켜질 뿐 화면에서는
      그대로 남는다 — el.hidden 만 찍어 보면 true 라 눈치채기 어렵다(실제로 그랬다). */
   .chat-panel[hidden]{display:none}
   .chat-head{display:flex;align-items:center;gap:8px;padding:9px 10px 8px 12px;
-    border-bottom:1px solid rgba(255,255,255,.07)}
-  .chat-head b{font-size:13px;color:var(--gold-hi);letter-spacing:-.2px}
+    border-bottom:1px solid rgba(39,39,42,.8)}
+  .chat-head b{font-size:13px;color:#fcd34d;letter-spacing:-.2px;font-weight:700}
   /* 제한·오류 문구가 뜨는 자리. 남는 폭을 다 쓰되 넘치면 자른다 — 도크가 늘어나면
      테이블을 더 가린다. */
   .chat-note{flex:1;min-width:0;font-size:11px;color:#e0a0a0;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
   /* 최소화. ×가 아니라 −인 것이 요점이다 — 누른다고 사라지는 것이 없다. */
   .chat-min{width:22px;height:22px;flex:none;padding:0;cursor:pointer;
-    background:transparent;border:0;color:var(--muted);font-size:17px;line-height:1;
-    font-family:inherit;border-radius:5px}
-  .chat-min:hover{color:var(--txt);background:rgba(255,255,255,.08)}
+    background:transparent;border:0;color:#71717a;font-size:17px;line-height:1;
+    font-family:inherit;border-radius:5px;transition:color .12s,background .12s}
+  .chat-min:hover{color:#d4d4d8;background:rgba(255,255,255,.06)}
 
   /* 줄 간격은 .chat-row 의 margin-bottom 이 갖는다. 여기 gap 을 함께 두면 둘이 더해져
      실제 간격이 13px 이 되고, 어느 쪽을 고쳐야 하는지가 두 곳으로 갈린다. */
@@ -122,9 +133,13 @@
      한 사람의 말이 끝나고 다음 사람이 시작하는지 눈으로 끊기지 않았다 — 간격만으로는
      부족하고, 진한 선을 그으면 대화가 표가 된다. 알파 0.05 는 "있는 줄 모르지만
      없으면 헷갈리는" 세기다. */
-  .chat-row{margin-bottom:8px;padding:3px 0;
+  /* 좌우 여백을 음수 마진으로 되돌린다 — 글자는 제자리에 두고 손이 얹힌 바탕만
+     줄 끝까지 번지게 하려는 것이다. padding 만 주면 글이 안으로 밀린다. */
+  .chat-row{margin:0 -6px 8px;padding:4px 6px;border-radius:6px;
     border-bottom:1px solid rgba(255,255,255,.05);
-    font-size:12.5px;line-height:1.55;color:#f1f5f9;word-break:break-word}
+    font-size:12.5px;line-height:1.6;color:#e2e8f0;word-break:break-word;
+    transition:background .12s}
+  .chat-row:hover{background:rgba(255,255,255,.025)}
   /* 마지막 줄 아래의 선은 그을 것이 없다 — 목록이 잘린 것처럼 보인다. */
   .chat-row:last-child{border-bottom:none;margin-bottom:0}
   /* 이름은 기본이 차분한 슬레이트 회색이다. 예전에는 전부 금색이었는데, 그러면 금색이
@@ -140,17 +155,21 @@
      내가 1위면 "내 줄"보다 "1위"가 먼저 읽혀야 한다. */
   /* <i> 라서 font-style 을 정해 두지 않으면 메달이 기울어 그려진다(이모지에도 먹는다). */
   .chat-md{font-style:normal;margin-right:3px;font-size:12px;line-height:1}
-  .chat-row.t1 .chat-nm{color:#fbbf24;font-weight:800}
-  .chat-row.t2 .chat-nm{color:#38bdf8;font-weight:800}
-  .chat-row.t3 .chat-nm{color:#fb923c;font-weight:800}
+  .chat-row.t1 .chat-nm{color:#fcd34d;font-weight:800}
+  .chat-row.t2 .chat-nm{color:#7dd3fc;font-weight:800}
+  .chat-row.t3 .chat-nm{color:#fdba74;font-weight:800}
   /* 어느 화면에서 말했는지. 방이 하나뿐이라 이것이 유일한 위치 정보다. */
-  .chat-w{font-style:normal;font-size:10px;font-weight:700;color:var(--muted);
+  /* 회색이었다. 회색은 이 화면에서 "물러난 것"의 색인데(이름, 구분자, 안내 문구)
+     이 표는 물러날 것이 아니라 한 번에 읽혀야 하는 정보다 — 방이 하나뿐이라 이것이
+     유일한 위치 정보다. 인디고를 준다. 금색·초록·빨강은 이미 각각 등수·이득·손실이
+     가져갔고, 남은 파랑 계열 중 "내 줄"(#9fd8f5)과도 갈리는 것이 인디고다. */
+  .chat-w{font-style:normal;font-size:10px;font-weight:700;color:#a5b4fc;
     margin-right:4px;padding:1px 5px;border-radius:4px;
-    background:rgba(255,255,255,.06)}
+    background:rgba(30,27,75,.7);border:1px solid rgba(99,102,241,.2)}
   /* 이름표와 말 사이의 끊는 자리. 앞이 [순위][이름][게임]으로 길어져서, 구분자가 없으면
      어디부터가 한 말인지 눈이 한 번 더듬는다. */
   .chat-c{color:#475569;margin-right:5px}
-  .chat-b{color:#f1f5f9}
+  .chat-b{color:#e2e8f0}
 
   /* ── 시스템이 적는 줄 ────────────────────────────────────────────
      사람이 한 말이 아니라 방에 일어난 일이다. 이름표가 없고, 가운데로 모으고, 옅은
@@ -171,16 +190,25 @@
   .chat-last.sys.mute .chat-b{color:#fca5a5}
   .chat-last.sys.unmute .chat-b{color:#6ee7a8}
 
-  .chat-foot{display:flex;gap:6px;padding:8px;border-top:1px solid rgba(255,255,255,.07)}
-  .chat-in{flex:1;min-width:0;padding:8px 10px;border-radius:8px;
-    background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.1);
-    color:var(--txt);font-family:inherit;font-size:12.5px}
-  .chat-in:focus{outline:none;border-color:var(--gold-dim)}
+  /* 쓰는 자리는 읽는 자리보다 한 톤 더 깊다. 색이 같으면 목록의 마지막 줄과 입력칸이
+     이어져 보여서, 내가 쓴 글자가 남의 말줄처럼 읽힌다. */
+  .chat-foot{display:flex;gap:8px;align-items:center;padding:10px;
+    background:#0c0d12;border-top:1px solid rgba(39,39,42,.8)}
+  .chat-in{flex:1;min-width:0;padding:8px 12px;border-radius:12px;
+    background:#181a22;border:1px solid rgba(63,63,70,.5);
+    color:#f4f4f5;font-family:inherit;font-size:12.5px}
+  .chat-in::placeholder{color:#71717a}
+  .chat-in:focus{outline:none;border-color:rgba(251,191,36,.4)}
   .chat-in:disabled{opacity:.5;cursor:not-allowed}
-  .chat-send{flex:none;padding:8px 12px;border-radius:8px;cursor:pointer;
-    font-family:inherit;font-size:12.5px;font-weight:700;color:#141414;
-    background:linear-gradient(180deg,var(--gold-hi),var(--gold));border:0}
-  .chat-send:hover{filter:brightness(1.08)}
+  /* 금색 그러데이션이던 것을 단색으로 편다. 그러데이션은 위아래로 빛이 도는 만큼
+     작은 단추에서 글자가 앉을 자리를 흐린다 — 12.5px 굵은 글자를 얹을 바탕은
+     평평한 편이 낫다. */
+  .chat-send{flex:none;padding:8px 14px;border-radius:12px;cursor:pointer;
+    font-family:inherit;font-size:12.5px;font-weight:700;color:#09090b;
+    background:#fbbf24;border:0;
+    box-shadow:0 1px 2px rgba(0,0,0,.4);transition:background .12s,transform .08s}
+  .chat-send:hover{background:#fcd34d}
+  .chat-send:active{transform:scale(.96)}
 
   /* ── 우측 패널에 폭을 맞춘 상태 ────────────────────────────────────
      app.js 의 syncWidth() 가 게임 화면의 우측 패널(.game-side)을 실측해서 --chat-w 와

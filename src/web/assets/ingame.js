@@ -292,8 +292,17 @@ window.__IG = (function(){
     chat.className = 'ig-btn ig-chat';
     chat.setAttribute('aria-label', '채팅');
     chat.innerHTML = IG.ICON.chat;
+    /* 이 단추가 하는 일은 화면이 정한다.
+         세로 — 떠 있는 한 줄 채팅을 켜고 끈다. 그 줄을 눌러야 채팅창이 열린다.
+         가로 — 지금 그대로 채팅창을 연다.
+       가로에서 스위치가 아닌 이유: 그 화면은 16-ingame.css 가 .chat-bar 를 통째로
+       감추므로 켤 대상이 없다. 여기서 단추를 스위치로 바꾸면 채팅에 닿는 유일한
+       문이 사라지고, 아무 일도 안 일어나는 죽은 단추가 된다. */
     chat.addEventListener('click', function(){
-      if (window.casinoChat && window.casinoChat.open) window.casinoChat.open();
+      var C = window.casinoChat;
+      if (!C) return;
+      if (IG.port() && C.toggleBar) { C.toggleBar(); return; }
+      if (C.open) C.open();
     });
     right.appendChild(chat);
 

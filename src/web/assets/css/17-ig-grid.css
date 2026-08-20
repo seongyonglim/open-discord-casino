@@ -65,9 +65,7 @@
       overflow-x:auto;overflow-y:hidden;margin:0 0 6px;padding:0 0 4px;
       border-bottom:1px solid rgba(255,255,255,.06)}
     .ig-ladder .ig-board .bead-row{display:flex;gap:3px;align-items:center}
-    .ig-ladder .ig-board .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;
-      color:var(--muted)}
-    .ig-ladder .ig-board .bead-cell{flex:none;width:15px;height:15px;font-size:9.5px;
+    .ig-ladder .ig-board .bead-cell{flex:none;width:21px;height:19px;font-size:10.5px;
       display:flex;align-items:center;justify-content:center;border-radius:4px}
     .ig-ladder .ig-board .board-stage{flex:1 1 auto;min-height:0;position:relative;
       display:flex;align-items:center;justify-content:center;padding:0;max-height:none}
@@ -191,7 +189,10 @@
        사다리 칸(약 290px)에 두 줄로 넣었더니 여덟 개만 보이고 잘렸다.
        가로 915px 을 다 쓰면 한 줄에 스물여섯 개가 들어간다.
        예산에서 34px 을 쓰고 나머지를 격자가 받는다. */
-    .ig-hist{flex:none;height:34px;box-sizing:border-box;margin:40px 8px 0;
+    /* 46px = 두 줄(18) + 줄 사이(2) + 아래위 여백(6) + 테두리(2).
+       34px 이던 시절에는 칸이 12px 이라 딱 맞았는데, 칸을 키우고도 상자를 그대로 두어
+       윗줄이 잘렸다 — overflow:hidden 이라 잘린 줄도 모른다(실측 38 > 28). */
+    .ig-hist{flex:none;height:46px;box-sizing:border-box;margin:40px 8px 0;
       padding:3px 8px;display:flex;align-items:center;overflow:hidden;
       background:rgba(18,18,20,.62);border:1px solid var(--line);border-radius:10px}
     /* 띠가 40px 를 차지하므로 격자는 그만큼 위 여백을 뺀다 */
@@ -199,8 +200,7 @@
     .ig-hist .bead{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
       gap:2px;overflow-x:auto;overflow-y:hidden;margin:0;padding:0;border:none;height:auto}
     .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none}
-    .ig-hist .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;color:var(--muted)}
-    .ig-hist .bead-cell{flex:none;width:15px;height:12px;font-size:9px;
+    .ig-hist .bead-cell{flex:none;width:22px;height:18px;font-size:10.5px;
       display:flex;align-items:center;justify-content:center;border-radius:3px}
     /* 판 칸에는 이제 기록 줄이 없다 */
     .ig-ladder .ig-board .bead{display:none}

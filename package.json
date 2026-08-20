@@ -15,6 +15,7 @@
     "bots": "node --experimental-sqlite --require tsx/cjs preview-bots.ts",
     "smoke": "node --experimental-sqlite --require tsx/cjs scripts/smoke.ts",
     "sfx:mono": "node --experimental-sqlite --require tsx/cjs scripts/sfx-mono.ts",
+    "audit:pick": "node --experimental-sqlite --require tsx/cjs scripts/audit-pick.ts",
     "audit:pages": "node --experimental-sqlite --require tsx/cjs scripts/audit-pages.ts",
     "audit:economy": "node --experimental-sqlite --require tsx/cjs scripts/audit-economy.ts",
     "audit:cards": "node --experimental-sqlite --require tsx/cjs scripts/audit-cards.ts",

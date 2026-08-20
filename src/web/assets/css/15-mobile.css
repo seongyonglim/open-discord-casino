@@ -51,9 +51,10 @@
       align-items:center;padding:0 12px;box-sizing:border-box;pointer-events:none}
     .chat-dock .chat-bar{width:100%;max-width:360px;pointer-events:auto}
     .chat-dock .chat-panel{pointer-events:auto}
-    .chat-dock.bar-off:not(.on){display:none}
-    /* 본문이 그 줄 뒤로 숨지 않게 자리를 비운다 — 로비는 스크롤되므로 아래 여백만 준다 */
-    html.chat-bar-on body{padding-bottom:calc(50px + 46px + env(safe-area-inset-bottom,0px))}
+    /* 예전에는 여기서 아래 여백을 46px 더 줬다(html.chat-bar-on body). 그 짝이
+       18-ig-portrait.css 의 main height -46px 이었고, 둘이 합쳐 정확히 100vh 였다.
+       한쪽만 지우면 세로 인게임 문서가 화면보다 46px 커져 check-mobile 이 잡는다 —
+       그래서 둘은 같이 산다. 지금은 줄이 못 박혀 있지 않고 떠 있으므로 둘 다 없다. */
 
     /* ── 게임 전환: 접었다 편다 ───────────────────────────────────
        일곱 개를 늘어놓으면 세 줄이 된다. 평소에는 지금 하는 게임 하나만 보이고,

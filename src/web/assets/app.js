@@ -1330,20 +1330,177 @@ window.__ICON = (function(){
   function store(k, v){ try { localStorage.setItem(k, v); } catch (e) { } }
 
   /* ── 아래 한 줄 바를 볼 것인가 ────────────────────────────────────
-     ×를 누르면 지금만 안 본다. 새로 고치면 다시 나온다.
+     스위치는 하나다: 판 위 상단바의 💬. 누르면 줄이 나타나고, 다시 누르면 사라지며,
+     그 선택은 이 기기에 남아 다른 판으로 가도 그대로다.
 
-     영구히 끄는 스위치도 두었다가 뺐다. 채팅 머리에 체크박스로 앉아 있었는데,
-     제목 옆에 붙어 제목의 일부처럼 보였고 이름("아래 한 줄 바")도 코드에서 부르던
-     말이라 읽히지 않았다. 설정 하나를 알아보게 만드는 값이 그 설정이 주는 값보다
-     컸다. 남는 길은 ×뿐이고, 그건 되돌리는 방법이 새로 고침이라 잃을 것이 없다. */
-  var barHidden = false;
-  function hideBarNow(){ barHidden = true; applyBar(); }
-  /* 이번에 숨기지 않았을 때만 보인다. 화면을 덮지 않도록 자리를 비우는 일은
-     CSS 가 이 클래스를 보고 한다(--chat-bar-h). */
+     줄에 붙여 두었던 ×를 뺐다. 같은 일을 하는 손잡이가 둘이었고, 하필 오른손 엄지가
+     얹히는 자리에 있었다. 그리고 ×로 끈 것을 되돌리는 길이 "새로 고침" 뿐이었는데,
+     화면에 없는 길은 없는 것과 같다. 💬 는 늘 같은 자리에 있으므로 끄는 자리와
+     켜는 자리가 하나로 겹친다.
+
+     기본은 켜짐이다. 끈 사람만 '0' 이 남는다. */
+  var BAR_KEY = 'od_chat_bar';
+  function barOn(){ return stored(BAR_KEY, '1') !== '0'; }
+  function setBar(on){ store(BAR_KEY, on ? '1' : '0'); applyBar(); return on; }
+  /* 상태를 두 곳에 적는다. 도크의 .bar-off 는 줄 자신이 읽고, <html> 의 chat-off 는
+     상단바의 💬 가 읽는다 — 아이콘은 도크 밖에 있고, 게다가 방향이 바뀔 때마다
+     상단바가 통째로 다시 지어지므로 상태를 그 안에 들고 있으면 폰을 돌릴 때 날아간다.
+     <html> 에 걸어 두면 CSS 가 그리고, 다시 지어져도 그림이 맞다(html.sfx-off 와 같다).
+
+     화면마다 이 클래스를 어떻게 받는지는 CSS 의 몫이다 — 되돌릴 자리(💬)가 없는
+     화면에서는 아예 읽지 않으므로, 끈 채로 켤 수 없게 갇히는 상태가 존재하지 않는다. */
   function applyBar(){
-    if (!dock) return;
-    dock.classList.toggle('bar-off', barHidden);
-    document.documentElement.classList.toggle('chat-bar-on', !barHidden);
+    var off = !barOn();
+    document.documentElement.classList.toggle('chat-off', off);
+    if (dock) dock.classList.toggle('bar-off', off);
+  }
+
+  /* ── 끌어서 옮기기 ────────────────────────────────────────────────
+     판 위(세로 인게임)에서만 한다. 옮길 이유가 거기서만 생기기 때문이다 — 줄이
+     [베팅하기] 를 덮는 화면이 거기고, 로비는 스크롤되므로 무엇도 영영 가리지 않는다.
+     그리고 끌려면 그 줄 위의 손가락을 스크롤에서 빼앗아야 하는데(touch-action:none),
+     로비에서 그러면 바 위에 엄지가 얹힌 사람의 화면이 안 넘어간다.
+
+     옮기는 것은 도크가 아니라 바의 transform 이다. 도크는 left:0;right:0 로 좌우가
+     묶여 있어서 left 를 주면 이동이 아니라 폭이 줄고, syncWidth() 가 resize 마다
+     dock.style.right 를 다시 쓴다. transform 은 배치에 손대지 않으므로 그 둘과
+     다투지 않는다. */
+  var POS_KEY = 'od_chat_pos';
+  var barEl = null, posTimer = null;
+
+  function onBoard(){
+    var c = document.documentElement.classList;
+    return c.contains('ig-port') && c.contains('ingame');
+  }
+  function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+  function px(el, name){
+    var n = parseFloat(el.style.getPropertyValue(name));
+    return isFinite(n) ? n : 0;
+  }
+  function setXY(dx, dy){
+    barEl.style.setProperty('--chat-dx', Math.round(dx) + 'px');
+    barEl.style.setProperty('--chat-dy', Math.round(dy) + 'px');
+  }
+
+  /* 제자리(옮기기 전) 사각형과 갈 수 있는 범위. transform 은 사각형에 반영되므로
+     재기 전에 0 으로 되돌려야 한다. 안 보이는 동안 재면 전부 0 이 나오는데, 그 값을
+     저장하면 다음에도 이상한 자리에서 시작한다 — 그래서 null 로 물러난다. */
+  function range(){
+    if (!barEl) return null;
+    var hadX = barEl.style.getPropertyValue('--chat-dx');
+    var hadY = barEl.style.getPropertyValue('--chat-dy');
+    barEl.style.setProperty('--chat-dx', '0px');
+    barEl.style.setProperty('--chat-dy', '0px');
+    var r = barEl.getBoundingClientRect();
+    if (hadX) barEl.style.setProperty('--chat-dx', hadX);
+    if (hadY) barEl.style.setProperty('--chat-dy', hadY);
+    if (r.width < 20 || r.height < 10) return null;
+    var TOP = 44;                     // 상단바 아래로는 못 올라간다
+    return {
+      left: r.left, right: r.right, top: r.top, bottom: r.bottom, h: r.height,
+      dxMin: -Math.max(0, r.left - 8),
+      dyMin: -Math.max(0, r.top - TOP),
+    };
+  }
+
+  /* 처음 자리는 맨 아래다 — 엄지가 가는 곳.
+
+     한때 여기서 "조작부와 안 겹치는 가장 아래 칸"을 찾아 앉혔다. 계산은 맞게
+     돌았는데(사다리 y≈434, 지뢰 y≈658) 사다리에서 화면 한가운데까지 올라가 배당
+     카드를 덮었다. 판 아래가 줄들로 꽉 차 있어서 "안 겹치는 칸" 이 거기밖에 없었던
+     것이다. 안 겹치는 자리를 고르느라 손이 안 닿는 자리로 간 셈이다.
+
+     이 줄은 대화를 흘려 보는 것이지 판독하는 것이 아니다. 눈이 아니라 손이 기준이
+     되어야 하고, 무엇을 덮는지가 마음에 안 들면 끌어 올리면 된다 — 그 자리는
+     기억된다. 계산이 사람 대신 고르지 않는다. */
+
+  function readPos(){
+    var p = String(stored(POS_KEY, '')).split(',');
+    var fx = parseFloat(p[0]), fy = parseFloat(p[1]);
+    if (!isFinite(fx) || !isFinite(fy)) return null;
+    return { fx: clamp(fx, 0, 1), fy: clamp(fy, 0, 1) };
+  }
+  function savePos(g){
+    if (!g) return;
+    var fx = g.dxMin ? clamp(px(barEl, '--chat-dx') / g.dxMin, 0, 1) : 0;
+    var fy = g.dyMin ? clamp(px(barEl, '--chat-dy') / g.dyMin, 0, 1) : 0;
+    store(POS_KEY, fx.toFixed(4) + ',' + fy.toFixed(4));
+  }
+
+  /* 저장한 것은 픽셀이 아니라 비율이다. 화면 크기가 달라지면 픽셀은 뜻을 잃는다 —
+     폰을 돌리면, 주소창이 접히면, 다른 기기로 옮기면 같은 값이 다른 자리를 가리킨다.
+     비율은 "갈 수 있는 만큼 중 어디쯤" 이라 어느 화면에서도 같은 뜻이다. */
+  function applyPos(){
+    if (!barEl) return;
+    if (!onBoard()) {
+      barEl.style.removeProperty('--chat-dx');
+      barEl.style.removeProperty('--chat-dy');
+      return;
+    }
+    var g = range();
+    if (!g) return;
+    var p = readPos();
+    if (p) setXY(p.fx * g.dxMin, p.fy * g.dyMin);
+    else setXY(0, 0);
+  }
+  /* 늦춰서 부른다. 세로↔가로가 바뀔 때 뷰포트 값이 먼저 갱신되고 인게임 클래스가
+     뒤따라 붙는데, 그 사이에 재면 옛 화면의 치수로 자리를 잡는다.
+     orientationchange 가 아니라 resize 에 거는 이유는 검사가 resize 만 던지기
+     때문이다 — 회전을 안 재는 검사를 통과하면서 실기기에서 깨지면 안 된다. */
+  function repos(){
+    if (posTimer) clearTimeout(posTimer);
+    posTimer = setTimeout(function(){ posTimer = null; applyPos(); }, 180);
+  }
+
+  function addDrag(){
+    if (!barEl) return;
+    var down = false, sx = 0, sy = 0, bx = 0, by = 0, moved = 0, captured = false, g = null;
+    barEl.addEventListener('pointerdown', function(e){
+      if (e.button !== 0 || !onBoard()) return;
+      if (dock.classList.contains('on')) return;   // 펼친 창은 끌지 않는다
+      g = range();
+      if (!g) return;
+      down = true; moved = 0; captured = false;
+      sx = e.clientX; sy = e.clientY;
+      bx = px(barEl, '--chat-dx'); by = px(barEl, '--chat-dy');
+    });
+    barEl.addEventListener('pointermove', function(e){
+      if (!down) return;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      /* 두 축을 다 센다. 한 축만 재면 옆으로 휙 밀고 놓았을 때 moved 가 0 이라
+         클릭이 그대로 터진다 — 옮기려던 손이 채팅창을 연다. */
+      moved = Math.max(moved, Math.abs(dx), Math.abs(dy));
+      if (moved <= 4) return;
+      if (!captured) {
+        captured = true;
+        dock.classList.add('dragging');
+        /* 끌기가 실제로 시작된 뒤에야 잡는다. 누르는 순간에 잡으면 뒤이은 click 이
+           눌린 것이 아니라 «잡은 요소» 로 날아간다(leaderboard.ts 에 같은 제보가
+           주석으로 남아 있다). 잡는 대상은 e.target 이 아니라 이 상자다 — 채팅이
+           1초마다 안쪽 줄을 새로 그리므로, 갈아엎히는 노드를 잡으면 끌기가 조용히
+           죽는다. */
+        try { barEl.setPointerCapture(e.pointerId); } catch (err) { /* 구형 브라우저 */ }
+      }
+      setXY(clamp(bx + dx, g.dxMin, 0), clamp(by + dy, g.dyMin, 0));
+    });
+    function release(e){
+      if (!down) return;
+      down = false;
+      dock.classList.remove('dragging');
+      if (captured) {
+        captured = false;
+        try { barEl.releasePointerCapture(e.pointerId); } catch (err) { /* 위와 같다 */ }
+        savePos(g);
+      }
+    }
+    barEl.addEventListener('pointerup', release);
+    barEl.addEventListener('pointercancel', release);
+    /* 끌고 놓은 것을 클릭으로 세지 않는다. 캡처 단계여야 한다 — 버블 단계에 걸면
+       안쪽 줄이 이미 제 일을 끝낸 뒤다. */
+    barEl.addEventListener('click', function(e){
+      if (moved > 4) { e.stopPropagation(); e.preventDefault(); }
+      moved = 0;
+    }, true);
   }
 
   function build(){
@@ -1355,19 +1512,15 @@ window.__ICON = (function(){
          열어 보기 전까지 방이 살아 있는지 알 수 없다 — 동시 접속이 다섯인 방에서 그건
          아무도 안 열고 아무도 안 쓰는 쪽으로 굴러간다.
          마지막 줄을 그 자리에 그대로 띄우면, 접힌 채로도 대화가 보인다. */
-      /* 접힌 줄과 그 옆의 닫기. 닫기를 줄 안에 넣을 수는 없다 — 둘 다 <button> 이라
-         겹쳐지면 어느 쪽이 눌렸는지 브라우저가 정하고, 그건 우리가 정할 일이다.
-         한 상자에 형제로 두고 각자 제 일을 맡는다. */
+      /* 상자를 한 겹 두르는 이유는 이제 하나다 — 끌어 옮길 손잡이가 줄 전체여야
+         하는데, 미는 대상과 눌리는 대상이 같은 요소면 탭과 끌기를 가를 자리가 없다.
+         바깥 상자가 끌리고 안쪽 줄이 눌린다. */
       '<div class="chat-bar">'
         + '<button type="button" class="chat-tab" aria-label="채팅 열기">'
           + '<i class="chat-ico" aria-hidden="true">' + window.__ICON.chat + '</i>'
           + '<span class="chat-last"><span class="chat-last-e">채팅</span></span>'
           + '<i class="chat-badge" hidden></i>'
         + '</button>'
-        /* 지금만 숨긴다. 아주 끄는 것은 채팅창 안의 스위치가 맡는다 —
-           실수로 눌렀을 때 되돌리는 길이 화면에 없으면 그건 끄는 것이 아니라 잃는 것이다. */
-        + '<button type="button" class="chat-hide" title="지금 숨기기" aria-label="지금 숨기기">'
-          + window.__ICON.close + '</button>'
       + '</div>'
       + '<div class="chat-panel" hidden>'
         + '<div class="chat-head"><b>채팅</b>'
@@ -1390,11 +1543,18 @@ window.__ICON = (function(){
     noteEl = dock.querySelector('.chat-note');
     dock.querySelector('.chat-tab').addEventListener('click', function(){ toggle(); });
     dock.querySelector('.chat-min').addEventListener('click', function(){ toggle(false); });
-    dock.querySelector('.chat-hide').addEventListener('click', function(e){
-      e.stopPropagation();
-      hideBarNow();
-    });
+    barEl = dock.querySelector('.chat-bar');
+    addDrag();
     applyBar();
+    repos();
+    window.addEventListener('resize', repos);
+    /* 판에 들어왔는지는 <html> 의 클래스가 말한다. 그 클래스는 ingame.js 가 붙이는데
+       언제 붙는지를 여기서 알 방법이 없다 — 첫 화면에서도, 폰을 돌릴 때도 우리보다
+       늦을 수 있다. 타이머를 여러 개 놓고 찍어 보는 대신 클래스가 바뀌는 것을 본다. */
+    if (window.MutationObserver) {
+      new MutationObserver(repos).observe(document.documentElement,
+        { attributes: true, attributeFilter: ['class'] });
+    }
     dock.querySelector('.chat-send').addEventListener('click', send);
     inputEl.addEventListener('keydown', function(e){
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -1725,7 +1885,12 @@ window.__ICON = (function(){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  window.casinoChat = { note: note, open: function(){ toggle(true); }, onMessage: onMessage };
+  /* barOn/toggleBar 는 상단바의 💬 가 쓴다. 도크는 app.js 가 만들고 상단바는
+     ingame.js 가 만드는데, 둘은 서로의 안을 모른다 — 주고받는 것은 이 세 함수뿐이다. */
+  window.casinoChat = {
+    note: note, open: function(){ toggle(true); }, onMessage: onMessage,
+    barOn: barOn, toggleBar: function(){ return setBar(!barOn()); },
+  };
 })();
 
 /* ── 서비스워커 등록 ──────────────────────────────────────────────────

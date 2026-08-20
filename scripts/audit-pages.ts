@@ -1046,6 +1046,23 @@ async function main(): Promise<void> {
     }
     ck('주석 밖에 닫는 표시가 남지 않았다', orphan.length === 0,
       orphan.join(', ') + ' — 그 뒤 규칙이 통째로 무시된다');
+
+    /* 중괄호 짝도 센다. 주석과 같은 종류의 사고인데 더 조용하다 — 규칙을 지우면서
+       닫는 } 를 하나 흘리면 그 아래 규칙이 전부 앞 규칙의 안쪽으로 빨려 들어가고,
+       @media 나 @supports 안이면 파일 끝까지 삼켜진다. 화면은 뜨고 그 규칙만 없다.
+       (죽은 .bead-lbl 규칙을 걷다가 실제로 두 줄을 반쪽만 지웠다. 눈으로는 못 봤다.)
+       주석과 문자열 안의 괄호는 세지 않는다 — content:'{' 같은 것이 있다. */
+    const brace: string[] = [];
+    for (const f of onDisk) {
+      const bare = readFileSync(join(dir, f), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""');
+      const open = (bare.match(/\{/g) || []).length;
+      const close = (bare.match(/\}/g) || []).length;
+      if (open !== close) brace.push(`${f}: { ${open} / } ${close}`);
+    }
+    ck('중괄호 짝이 맞는다', brace.length === 0,
+      brace.join(', ') + ' — 짝이 안 맞으면 그 아래 규칙이 통째로 빨려 들어간다');
     // 실제로 그 규칙이 app.css 에 실렸는지까지 본다
     const css = (await get('/app.css', cookie)).text;
     ck('경고 토스트 규칙이 실제로 실린다', /\.toast\.warn/.test(css));

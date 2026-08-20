@@ -550,19 +550,30 @@ export function ladderPage(user: WebUser): string {
         });
       }
 
-      // 출목표: 출발(좌/우) 행 / 도착(홀/짝) 행 — 베팅 대상과 정확히 같은 두 가지를 보여준다 (최신이 왼쪽)
+      /* 출목표: 출발(좌/우) 행 / 도착(홀/짝) 행 — 베팅 대상과 정확히 같은 두 가지 (최신이 왼쪽)
+
+         스무 개를 빽빽하게 늘어놓던 것을 열둘로 줄인다. 스무 개가 들어가긴 했지만
+         (폰에서 15px 칸 스무 개 = 357px) 그건 "들어간다"이지 "읽힌다"가 아니었다 —
+         칸을 그만큼 줄여야 들어가고, 줄이면 글자가 안 보인다. 패턴을 읽는 데 필요한
+         것은 개수가 아니라 최근 몇 판의 흐름이다.
+
+         줄머리의 [출발] [도착] 도 뺐다. 칸에 이미 좌/우 · 홀/짝 이라고 적혀 있어서
+         어느 줄인지는 칸이 말한다 — 라벨은 같은 말을 한 번 더 하면서 22px 을 먹었고,
+         그 22px 이 칸을 키울 자리다. */
+      var HIST_MAX = 12;
       function renderHistory(history){
         if (!history.length) { historyEl.innerHTML = ''; return; }
-        var startCells = history.map(function(r){
+        var rows = history.slice(0, HIST_MAX);
+        var startCells = rows.map(function(r){
           return '<span class="bead-cell '+(r.startSide==='L'?'l':'r')+'">'+(r.startSide==='L'?'좌':'우')+'</span>';
         }).join('');
-        var parityCells = history.map(function(r){
+        var parityCells = rows.map(function(r){
           var odd = parityOf(r) === 'ODD';
           return '<span class="bead-cell '+(odd?'odd':'even')+'">'+(odd?'홀':'짝')+'</span>';
         }).join('');
         historyEl.innerHTML =
-          '<div class="bead-row"><span class="bead-lbl">출발</span>'+startCells+'</div>' +
-          '<div class="bead-row"><span class="bead-lbl">도착</span>'+parityCells+'</div>';
+          '<div class="bead-row">'+startCells+'</div>' +
+          '<div class="bead-row">'+parityCells+'</div>';
       }
 
       async function play(){

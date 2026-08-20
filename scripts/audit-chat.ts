@@ -363,21 +363,28 @@ async function main(): Promise<void> {
       !/rankHtml/.test(chatCode) && !/'#' \+ /.test(chatCode) && !/👑/.test(chatCode));
     /* 메달도 <i> 다 — font-style 을 안 정하면 이모지까지 기울어 그려진다. */
     ck('메달이 기울지 않는다', /\.chat-md\{font-style:normal/.test(css));
-    ck('1위 이름은 골드', /\.chat-row\.t1 \.chat-nm\{color:#fbbf24;font-weight:800\}/.test(css));
-    ck('2위 이름은 스카이블루', /\.chat-row\.t2 \.chat-nm\{color:#38bdf8;font-weight:800\}/.test(css));
-    ck('3위 이름은 코랄 오렌지', /\.chat-row\.t3 \.chat-nm\{color:#fb923c;font-weight:800\}/.test(css));
+    /* 색을 한 단씩 눅였다(#fbbf24 → #fcd34d 등). 어두운 바탕에서 채도가 높은 원색은
+       글자가 배경에서 떠 보이고, 세 색이 나란히 놓이면 서로 다툰다. 뜻은 그대로다 —
+       금 · 하늘 · 코랄. */
+    ck('1위 이름은 골드', /\.chat-row\.t1 \.chat-nm\{color:#fcd34d;font-weight:800\}/.test(css));
+    ck('2위 이름은 스카이블루', /\.chat-row\.t2 \.chat-nm\{color:#7dd3fc;font-weight:800\}/.test(css));
+    ck('3위 이름은 코랄 오렌지', /\.chat-row\.t3 \.chat-nm\{color:#fdba74;font-weight:800\}/.test(css));
     /* 예전에는 이름이 전부 금색이었다. 그러면 금색이 "이름"이라는 뜻밖에 못 갖는다. */
     ck('4위 이하 이름은 슬레이트 회색', /\.chat-nm\{font-weight:600;color:#94a3b8/.test(css));
     ck('이름이 더는 전부 금색이 아니다', !/\.chat-nm\{[^}]*var\(--gold-hi\)/.test(css));
-    ck('본문은 선명한 오프화이트', /\.chat-b\{color:#f1f5f9\}/.test(css));
+    ck('본문은 눈이 편한 오프화이트', /\.chat-b\{color:#e2e8f0\}/.test(css));
     /* 특이도가 같아서 순서가 곧 결과다 — 순위 규칙이 .me 뒤에 와야 이긴다. */
     ck('순위 색이 "내 줄" 색을 이긴다',
       css.indexOf('.chat-row.t1 .chat-nm') > css.indexOf('.chat-row.me .chat-nm'));
 
     /* ── 줄 사이 구분 ────────────────────────────────────────────
        여러 줄로 접히는 말이 섞이면 어디서 한 사람의 말이 끝나는지 눈으로 안 끊긴다. */
+    /* 좌우 padding 은 음수 마진이 되돌린다 — 손이 얹힌 바탕만 줄 끝까지 번지고
+       글자는 제자리에 남는다. 그래서 마진의 좌우가 padding 의 좌우와 부호만 달라야 한다. */
     ck('줄마다 간격과 위아래 여백이 있다',
-      /\.chat-row\{margin-bottom:8px;padding:3px 0;/.test(css));
+      /\.chat-row\{margin:0 -6px 8px;padding:4px 6px;/.test(css));
+    ck('손이 얹히면 줄이 밝아진다',
+      /\.chat-row:hover\{background:rgba\(255,255,255,\.025\)\}/.test(css));
     ck('아주 옅은 구분선이 있다',
       /border-bottom:1px solid rgba\(255,255,255,\.05\)/.test(css));
     ck('마지막 줄 아래에는 선이 없다',
@@ -447,11 +454,18 @@ async function main(): Promise<void> {
     ck('새 줄일 때만 움직인다', /if \(!fresh\) return;\s*\r?\n\s*lastEl\.classList\.remove\('up'\);/.test(app));
     ck('넘치는 말은 자른다', /\.chat-last \.chat-b\{min-width:0;overflow:hidden;text-overflow:ellipsis\}/.test(css));
     ck('바가 사이드바 폭을 따라간다', /\.chat-dock\.sync \.chat-tab\{width:var\(--chat-w\)\}/.test(css));
-    /* 같은 사람이 바와 목록에서 다른 색이면 안 된다. */
+    /* 같은 사람이 바와 목록에서 다른 색이면 안 된다.
+       예전에는 여기서 색 값을 직접 못 박았다. 그러면 검사 이름은 "둘이 같다"고 말하면서
+       실제로는 "옛날 그 색이다"를 재게 되어, 두 곳을 «같이» 옮겨도 실패한다(그렇게
+       실패했다). 이름이 말하는 것을 재려면 둘을 꺼내서 견줘야 한다. */
+    const hueOf = (scope: string) => [1, 2, 3].map(n => {
+      const m = new RegExp(`\\.${scope}\\.t${n} \\.chat-nm\\{color:(#[0-9a-f]{3,8})`, 'i').exec(css);
+      return m ? m[1].toLowerCase() : `없음(t${n})`;
+    });
+    const barHue = hueOf('chat-last'), listHue = hueOf('chat-row');
     ck('바의 이름 색이 목록과 같다',
-      /\.chat-last\.t1 \.chat-nm\{color:#fbbf24/.test(css)
-      && /\.chat-last\.t2 \.chat-nm\{color:#38bdf8/.test(css)
-      && /\.chat-last\.t3 \.chat-nm\{color:#fb923c/.test(css));
+      barHue.join() === listHue.join() && !barHue.some(h => h.startsWith('없음')),
+      `${barHue.join(' ')} vs ${listHue.join(' ')}`);
     ck('바가 본체와 같은 딥 차콜이다', /\.chat-tab\{[^}]*background:rgba\(22,25,32,\.95\)/.test(css));
     ck('"채팅"이라고만 적던 알약이 아니다', !/chat-tab-t/.test(app) && !/chat-tab-t/.test(css));
     /* 접혀 있을 때만 깜빡인다 — 펼쳐 놓고 보는 중에 깜빡이면 그냥 시끄러운 것이다. */
@@ -502,6 +516,118 @@ async function main(): Promise<void> {
     /* 홀덤은 로비를 보다가 테이블이 열릴 때 비로소 패널에 크기가 생긴다.
        resize 만으로는 그 순간을 못 듣는다. */
     ck('패널에 크기가 생기는 순간도 듣는다', /new ResizeObserver\(syncWidth\)\.observe\(side\)/.test(app));
+  }
+
+  console.log('\n[9-2] 떠 있는 한 줄 채팅 — 켜고 끄기 · 끌어 옮기기');
+  {
+    const app = readFileSync('src/web/assets/app.js', 'utf8');
+    const ig = readFileSync('src/web/assets/ingame.js', 'utf8');
+    const c14 = readFileSync('src/web/assets/css/14-chat.css', 'utf8');
+    const c15 = readFileSync('src/web/assets/css/15-mobile.css', 'utf8');
+    const c18 = readFileSync('src/web/assets/css/18-ig-portrait.css', 'utf8');
+
+    /* ── 스위치는 하나이고, 끄는 자리와 켜는 자리가 같아야 한다 ────────
+       손잡이가 둘이면 "어느 쪽으로 껐는지"를 사람이 기억해야 한다. 그리고 되돌리는
+       길이 화면에 없으면 그건 끄는 것이 아니라 잃는 것이다. */
+    ck('줄에 붙어 있던 ×가 없다',
+      !/chat-hide/.test(app) && !/chat-hide/.test(c14) && !/chat-hide/.test(c15));
+    ck('끈 상태는 기기에 남는다', /var BAR_KEY = 'od_chat_bar';/.test(app)
+      && /store\(BAR_KEY, on \? '1' : '0'\)/.test(app));
+    ck('기본은 켜짐이다', /stored\(BAR_KEY, '1'\) !== '0'/.test(app));
+    ck('상단바가 쓸 창구가 열려 있다',
+      /barOn: barOn, toggleBar: function\(\)\{ return setBar\(!barOn\(\)\); \}/.test(app));
+    ck('세로에서 💬는 줄을 켜고 끈다',
+      /if \(IG\.port\(\) && C\.toggleBar\) \{ C\.toggleBar\(\); return; \}/.test(ig));
+    /* 가로는 .chat-bar 가 통째로 display:none 이라 켤 대상이 없다. 거기서 이 단추를
+       스위치로 바꾸면 채팅에 닿는 유일한 문이 사라진다. */
+    ck('가로에서 💬는 채팅창을 연다', /if \(C\.open\) C\.open\(\);/.test(ig)
+      && /html\.ingame \.chat-dock \.chat-bar\{display:none\}/.test(
+        readFileSync('src/web/assets/css/16-ingame.css', 'utf8')));
+
+    /* ── 끄기가 듣는 화면은 켜는 자리가 함께 있는 화면뿐이다 ──────────
+       로비·데스크톱 상단에는 채팅 아이콘이 없다(인게임 전용). 거기서 줄을 걷으면
+       채팅에 닿을 길이 아예 사라진다. 그래서 .bar-off 를 읽는 규칙은 딱 하나다. */
+    const offRules = (c14 + c15 + c18).match(/^[^\r\n/*]*\.bar-off[^\r\n]*\{/gm) || [];
+    ck('.bar-off 를 읽는 규칙이 하나뿐이다', offRules.length === 1, offRules.join(' | '));
+    ck('그 하나가 세로 인게임 전용이다',
+      /html\.ig-port\.ingame \.chat-dock\.bar-off:not\(\.on\)\{display:none\}/.test(c18));
+    /* 꺼짐을 아이콘에 표시한다 — 흐리게만 하면 "못 누른다"로 읽혀서, 하필 그것이
+       다시 켜는 유일한 자리인데 눌러 볼 생각을 안 하게 된다. */
+    ck('꺼지면 💬에 사선이 그어진다',
+      /html\.ig-port\.chat-off \.ig-bar \.ig-chat::after\{content:''/.test(c18));
+    ck('그 표시는 세로 파일 안에만 있다', !/chat-off/.test(c14) && !/chat-off/.test(c15));
+
+    /* ── 자리를 떼어 주던 46px 은 짝이었다 ───────────────────────────
+       15-mobile 의 body padding +46 과 18 의 main height -46 이 합쳐 정확히 100vh 다.
+       한쪽만 지우면 세로 인게임 문서가 화면보다 46px 커진다. */
+    /* 이름이 주석에 남아 있는 것은 괜찮다 — 왜 뺐는지가 거기 적혀 있다.
+       금지하는 것은 그것이 다시 «규칙»과 «토글»로 살아나는 것이다. */
+    const barOnRule = (c15 + c18).match(/^[^\r\n/*]*chat-bar-on[^\r\n]*\{/gm) || [];
+    ck('46px 예약이 양쪽 다 없다',
+      barOnRule.length === 0 && !/classList\.toggle\('chat-bar-on'/.test(app),
+      barOnRule.join(' | '));
+
+    /* ── 끌어 옮기기 ─────────────────────────────────────────────── */
+    ck('옮기는 것은 도크가 아니라 바의 transform 이다',
+      /transform:translate\(var\(--chat-dx,0px\), var\(--chat-dy,0px\)\)/.test(c18)
+      && /barEl\.style\.setProperty\('--chat-dx'/.test(app));
+    /* 도크는 left:0;right:0 라 left 를 주면 이동이 아니라 폭이 줄고, syncWidth() 가
+       resize 마다 dock.style.right 를 다시 쓴다. 그 둘과 다투지 않으려는 것이다. */
+    ck('도크의 앵커는 안 건드린다',
+      !/dock\.style\.(left|top|bottom)\s*=/.test(app));
+    ck('4px 안쪽은 끌기로 안 센다', /if \(moved <= 4\) return;/.test(app));
+    /* 한 축만 재면 옆으로 휙 밀고 놓았을 때 moved 가 0 이라 클릭이 그대로 터진다. */
+    ck('두 축을 다 센다', /moved = Math\.max\(moved, Math\.abs\(dx\), Math\.abs\(dy\)\);/.test(app));
+    /* 누르는 순간에 잡으면 뒤이은 click 이 «잡은 요소»로 날아가 탭이 통째로 죽는다. */
+    ck('끌기가 시작된 뒤에야 포인터를 잡는다',
+      /if \(!captured\) \{[\s\S]{0,400}?setPointerCapture/.test(app));
+    ck('잡는 대상이 바 자신이다 (채팅이 갈아엎는 노드가 아니다)',
+      /barEl\.setPointerCapture\(e\.pointerId\)/.test(app));
+    /* audit 이 .chat-tab 의 핸들러를 한 글자까지 못 박고 있으므로, 드래그 판정은
+       그 안에 못 들어간다. 캡처 단계에서 삼켜야 한다. */
+    /* 리스너를 통째로 본다. `}, true);` 만 찾으면 파일 안 다른 캡처 리스너가
+       대신 걸려 통과해 버린다(실제로 그렇게 새어 나갔다). */
+    ck('끌고 놓은 것은 클릭으로 안 센다',
+      /barEl\.addEventListener\('click', function\(e\)\{\s*\r?\n\s*if \(moved > 4\) \{ e\.stopPropagation\(\); e\.preventDefault\(\); \}[\s\S]{0,80}?\}, true\);/.test(app));
+    ck('펼친 창은 안 끈다', /if \(dock\.classList\.contains\('on'\)\) return;/.test(app));
+    /* 브라우저가 먼저 스크롤로 판정하면 pointercancel 이 날아와 끌기가 끊긴다 —
+       pointermove 안의 preventDefault() 로는 이미 늦다. */
+    ck('세로 인게임에서만 손가락을 스크롤에서 뺏는다',
+      /touch-action:none/.test(c18) && !/touch-action/.test(c15) && !/touch-action/.test(c14));
+
+    /* ── 옮긴 자리 ──────────────────────────────────────────────── */
+    ck('자리는 비율로 저장한다', /store\(POS_KEY, fx\.toFixed\(4\) \+ ',' \+ fy\.toFixed\(4\)\)/.test(app));
+    /* 저장값이 숫자가 아니면 var() 폴백이 안 먹고 선언이 통째로 죽어 도크가 사라진다. */
+    ck('저장값을 숫자로 검사한다',
+      /if \(!isFinite\(fx\) \|\| !isFinite\(fy\)\) return null;/.test(app));
+    ck('복원값도 0~1 로 조인다', /clamp\(fx, 0, 1\), fy: clamp\(fy, 0, 1\)/.test(app));
+    ck('화면 밖으로 못 나간다',
+      /setXY\(clamp\(bx \+ dx, g\.dxMin, 0\), clamp\(by \+ dy, g\.dyMin, 0\)\)/.test(app));
+    /* 안 보이는 동안 재면 사각형이 전부 0 이라 여유 높이가 0 이 되고, 그 값을 저장하면
+       다음에도 이상한 자리에서 시작한다. */
+    ck('안 보이는 동안 잰 값은 안 쓴다', /if \(r\.width < 20 \|\| r\.height < 10\) return null;/.test(app));
+    /* transform 은 사각형에 반영된다 — 제자리를 재려면 먼저 0 으로 되돌려야 한다. */
+    ck('제자리를 재기 전에 transform 을 0 으로 돌린다',
+      /barEl\.style\.setProperty\('--chat-dx', '0px'\);[\s\S]{0,120}?getBoundingClientRect\(\)/.test(app));
+    /* 검사 스크립트는 resize 만 던진다 — orientationchange 에만 걸면 검사를 통과하면서
+       실기기에서 깨진다. */
+    ck('회전은 resize 로 듣는다', /addEventListener\('resize', repos\)/.test(app)
+      && !/orientationchange[^\r\n]*repos/.test(app));
+    ck('늦춰서 다시 잰다', /setTimeout\(function\(\)\{ posTimer = null; applyPos\(\); \}, 180\)/.test(app));
+    /* 판에 들어왔는지는 <html> 클래스가 말하는데, 그것을 ingame.js 가 언제 붙이는지
+       app.js 는 모른다. 타이머를 여러 개 놓고 찍는 대신 바뀌는 것을 본다. */
+    ck('인게임 클래스가 붙는 순간을 본다',
+      /new MutationObserver\(repos\)\.observe\(document\.documentElement/.test(app));
+    ck('판 밖에서는 옮긴 자리를 안 쓴다',
+      /if \(!onBoard\(\)\) \{[\s\S]{0,200}?removeProperty\('--chat-dx'\)/.test(app));
+
+    /* ── 폭 ─────────────────────────────────────────────────────── */
+    ck('세로 인게임에서 폭이 70% 다',
+      /html\.ig-port\.ingame \.chat-dock:not\(\.on\) \.chat-bar\{display:flex;width:70%/.test(c18));
+    /* 도크는 flex-direction:column 이라 가로 정렬은 align-items 쪽이다.
+       justify-content 를 건드리면 아무 일도 안 일어난다(가운데 그대로 남는다). */
+    ck('오른쪽으로 붙는다 (align-items 로)', /align-items:flex-end;justify-content:center/.test(c18));
+    ck('펼치면 끌 손잡이를 치운다', /\.chat-dock\.on \.chat-bar\{display:none\}/.test(c14));
   }
 
   console.log('\n[10] 홀덤 테이블 말풍선 — 실제로 실행해 본다');
