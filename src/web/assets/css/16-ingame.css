@@ -1106,3 +1106,40 @@
     html.ingame .game-shell:has(.bj-table) .bj-dealer-head{font-size:12px;margin-bottom:2px}
     html.ingame .game-shell:has(.bj-table) .bj-status{margin:2px 0;padding:0;min-height:0}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 블랙잭 가로: 펠트에 화면을 다 준다 ──────────────────────────
+       실측(780×360): 게임 영역 316px 인데 펠트는 224px 만 쓰고 있었다. 나머지 92px 은
+       펠트가 아니라 «펠트를 담은 것들» 이 먹고 있었다.
+
+         바깥 카드 상자   패딩 11+11 · 테두리 2      24
+         펠트 아래 여백                              12
+         칩 트레이(별도 카드) + 사이                 56
+
+       바깥 상자는 지울 수 있다 — 펠트가 이미 상자다. 검은 사각형 안에 초록 사각형을
+       넣어 두면 테두리가 두 겹이 되고, 좁은 화면에서 그 두 겹이 24px 이다.
+       칩 트레이는 지울 수 없다(눌러야 한다). 대신 펠트 «위에» 띄운다 — 아래에 따로
+       줄을 세우면 그 줄의 높이만큼 펠트가 줄지만, 위에 띄우면 펠트는 그대로다.
+
+       띄운 자리만큼 펠트 아래에 여백을 준다. 안 그러면 트레이가 좌석을 덮는다 —
+       가리는 것을 없애려다 다른 것을 가리게 된다. */
+    html.ingame .game-shell:has(.bj-table) .game-main{position:relative}
+    html.ingame .game-shell:has(.bj-table) .game-main > .card:first-child{
+      padding:0;border:0;background:none;border-radius:0;
+      flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+    html.ingame .game-shell:has(.bj-table) .bj-table{
+      margin:0;flex:1 1 auto;min-height:0;padding:2px 8px 58px}
+    /* 반투명 독. 뒤가 비쳐야 «펠트 위에 얹힌 것» 으로 읽힌다 — 불투명하면 아까 그
+       검은 줄이 자리만 옮긴 것이 된다. */
+    html.ingame .game-shell:has(.bj-table) .game-main > .game-controls{
+      position:absolute;left:50%;bottom:6px;transform:translateX(-50%);
+      width:calc(100% - 16px);
+      background:rgba(0,0,0,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+      border:1px solid rgba(255,255,255,.10);border-radius:999px;
+      padding:4px 10px;z-index:20}
+    /* 칩은 한 줄이다. width:auto 로 뒀더니 상자가 내용에 맞춰 287px 로 오그라들고
+       그 안에서 칩 여섯 개가 세 줄로 접혀 독이 136px 이 됐다 — 자리를 아끼려고 띄운
+       것이 오히려 좌석을 89px 덮었다. 폭을 먼저 정하고 줄바꿈을 막는다. */
+    html.ingame .game-shell:has(.bj-table) .game-main > .game-controls .coin-row{
+      flex-wrap:nowrap;justify-content:center;min-width:0}
+  }
