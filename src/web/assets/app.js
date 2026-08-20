@@ -763,8 +763,11 @@ window.__ICON = (function(){
     if (p) p.textContent = pct + '%';
     var b = document.getElementById('sfxBtn');
     if (b) {
-      b.setAttribute('aria-pressed', pct > 0 ? 'false' : 'true');
-      b.setAttribute('title', pct > 0 ? '음소거' : '소리 켜기');
+      /* 이 단추는 이제 끄고 켜지 않고 조절 바를 연다. 그래서 aria-pressed(눌린 상태)가
+         아니라 aria-expanded(펼쳐졌는가)이고, 말도 "음소거"가 아니라 지금 크기다 —
+         누르면 무엇이 일어나는지와 지금 어떤 상태인지를 같은 문장이 말한다. */
+      b.removeAttribute('aria-pressed');
+      b.setAttribute('title', pct > 0 ? '음량 ' + pct + '%' : '소리 꺼짐');
     }
   }
   function afterSfxChange(quiet){
@@ -795,11 +798,11 @@ window.__ICON = (function(){
     return masterLevel();
   };
 
-  document.addEventListener('click', function(e){
-    var t = e.target;
-    if (!t || !t.closest || !t.closest('#sfxBtn')) return;
-    window.casinoSfxToggle();
-  });
+  /* 단추를 눌러도 소리는 안 끈다. 예전에는 누른 즉시 음소거였는데, 그건 되돌릴 수
+     없는 만큼 큰 동작을 가장 누르기 쉬운 자리에 둔 것이었다 — 크기를 조금 줄이려다
+     통째로 꺼지고, 다시 켜면 예전 크기가 아니라 절반에서 시작한다.
+     이제 이 단추는 조절 바를 여닫기만 한다. 끄는 것은 바를 0 까지 내리는 일이고
+     (casinoVolume 이 0 을 음소거로 본다), 그건 손이 미끄러져서는 안 일어난다. */
   document.addEventListener('input', function(e){
     var r = e.target;
     if (!r || r.id !== 'sfxRange') return;
@@ -811,7 +814,19 @@ window.__ICON = (function(){
   document.addEventListener('pointerdown', function(e){
     var w = document.getElementById('sfxWrap');
     if (!w) return;
-    w.classList.toggle('open', !!(e.target && e.target.closest && e.target.closest('#sfxWrap')));
+    var t = e.target;
+    var inWrap = !!(t && t.closest && t.closest('#sfxWrap'));
+    var onBtn = !!(t && t.closest && t.closest('#sfxBtn'));
+    /* 단추를 다시 누르면 닫힌다. 예전에는 "감쌈 안이면 연다" 뿐이라 한 번 열면
+       바깥을 눌러야만 닫혔는데, 여는 것과 닫는 것이 같은 자리에 있어야 스위치로 읽힌다. */
+    if (onBtn) w.classList.toggle('open');
+    else w.classList.toggle('open', inWrap);
+    /* 닫을 때는 단추에서 초점도 뗀다. 안 그러면 눌린 단추가 계속 :focus 라,
+       키보드용으로 둔 규칙이 손가락으로 닫은 바를 다시 열어 둔다. */
+    if (!w.classList.contains('open')) {
+      var b = document.getElementById('sfxBtn');
+      if (b && b.blur) b.blur();
+    }
   }, true);
   // 서버는 모두에게 같은 머리를 내려보내므로(golden) 저장해 둔 값은 여기서 채운다.
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncSfxUi);
@@ -903,7 +918,39 @@ window.__ICON = (function(){
    네이티브 <dialog>라 Esc 닫기·포커스 가둠·배경 처리는 브라우저가 해준다.
    여기서는 열고 닫는 것과 "배경을 눌러 닫기"만 붙인다.
    이 파일은 <head>에서 실행돼 DOM이 아직 없으므로 document에 위임한다. */
+
+/* ── 접으면서 사라지기 ────────────────────────────────────────────────
+   펼칠 때는 CSS 만으로 되지만(없던 것이 나타나면 animation 이 저절로 돈다) 접을 때는
+   안 된다 — display:none 이 되는 순간 그릴 것이 없어진다. 그래서 순서를 뒤집는다:
+   .folding 을 붙여 되감기를 먼저 틀고, 그것이 끝난 뒤에 진짜로 감춘다.
+
+   끝을 animationend 로 듣되 타이머도 같이 건다. 애니메이션이 아예 안 도는 경우가
+   있기 때문이다(움직임 줄이기, 이미 화면 밖, 탭이 백그라운드). 그때 이벤트만 기다리면
+   창이 영영 안 닫힌다 — 안 닫히는 것은 늦게 닫히는 것보다 훨씬 나쁘다. */
+window.__foldOut = function(el, done){
+  var end = function(){ if (el) el.classList.remove('folding'); if (done) done(); };
+  if (!el) return end();
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion:reduce)').matches; } catch (e) { }
+  if (reduce) return end();
+  el.classList.add('folding');
+  var t = setTimeout(end, 220);
+  el.addEventListener('animationend', function h(){
+    el.removeEventListener('animationend', h);
+    clearTimeout(t);
+    end();
+  });
+};
+
 (function(){
+  /* 규칙 창은 네이티브 <dialog> 라 close() 가 즉시 화면에서 걷어 간다. 되감기를 먼저
+     틀고 끝난 뒤에 닫는다 — 배경(::backdrop)까지 같이 사라지므로 창만 접히는 것보다
+     자연스럽다. 이미 닫혀 있으면 아무 일도 안 한다. */
+  function fold(d){
+    if (!d || !d.open) return;
+    window.__foldOut(d, function(){ if (d.open) d.close(); });
+  }
+
   document.addEventListener('click', function(e){
     var t = e.target;
     if (!t.closest) return;
@@ -915,12 +962,11 @@ window.__ICON = (function(){
       return;
     }
     if (t.closest('[data-help-close]')) {
-      var d = t.closest('dialog');
-      if (d) d.close();
+      fold(t.closest('dialog'));
       return;
     }
     // 배경(dialog 자신)을 눌렀을 때만 닫는다 — 내용 위 클릭은 그대로 통과시킨다
-    if (t.tagName === 'DIALOG' && t.classList.contains('helpdlg')) t.close();
+    if (t.tagName === 'DIALOG' && t.classList.contains('helpdlg')) fold(t);
   });
 
   // Esc 닫기는 <dialog>가 기본으로 해주지만, 그 기본 동작이 막히는 환경이 있어 직접도 처리한다.
@@ -1046,9 +1092,11 @@ window.__ICON = (function(){
   function close(){
     var menu = menuEl(), btn = btnEl();
     if (!menu || !btn) return;
-    menu.setAttribute('hidden', '');
+    if (menu.hasAttribute('hidden')) return;      // 이미 닫혀 있으면 되감을 것도 없다
     btn.classList.remove('open');
     btn.setAttribute('aria-expanded', 'false');
+    /* 감추는 것을 되감기가 끝난 뒤로 미룬다 — 먼저 감추면 그릴 것이 없어진다. */
+    window.__foldOut(menu, function(){ menu.setAttribute('hidden', ''); });
   }
   function open(){
     var menu = menuEl(), btn = btnEl();
@@ -1341,7 +1389,16 @@ window.__ICON = (function(){
      기본은 켜짐이다. 끈 사람만 '0' 이 남는다. */
   var BAR_KEY = 'od_chat_bar';
   function barOn(){ return stored(BAR_KEY, '1') !== '0'; }
-  function setBar(on){ store(BAR_KEY, on ? '1' : '0'); applyBar(); return on; }
+  function setBar(on){
+    store(BAR_KEY, on ? '1' : '0');
+    /* 끄면 펼쳐 둔 창도 같이 접는다. "채팅을 끈다"는 것은 지금 채팅을 안 본다는 뜻인데,
+       줄만 걷고 창을 남기면 화면의 절반이 여전히 채팅이다 — 아이콘에는 사선이 그어진 채로.
+       켤 때는 창을 열지 않는다. 켜는 것은 "다시 보이게 한다"까지이고, 창을 열지 말지는
+       그다음에 줄을 눌러 정할 일이다. */
+    if (!on && open) toggle(false);
+    applyBar();
+    return on;
+  }
   /* 상태를 두 곳에 적는다. 도크의 .bar-off 는 줄 자신이 읽고, <html> 의 chat-off 는
      상단바의 💬 가 읽는다 — 아이콘은 도크 밖에 있고, 게다가 방향이 바뀔 때마다
      상단바가 통째로 다시 지어지므로 상태를 그 안에 들고 있으면 폰을 돌릴 때 날아간다.
@@ -1603,10 +1660,22 @@ window.__ICON = (function(){
   }
 
   function toggle(want){
+    var was = open;
     open = want === undefined ? !open : !!want;
-    dock.querySelector('.chat-panel').hidden = !open;
+    var panel = dock.querySelector('.chat-panel');
+    if (open) panel.hidden = false;
+    /* 접을 때는 되감기가 끝난 뒤에 감춘다. 접히는 도중에 다시 열렸으면 감추지 않는다 —
+       빠르게 두 번 누르면 방금 연 창이 뒤늦은 타이머에 닫히는 일이 생긴다. */
+    else if (was) window.__foldOut(panel, function(){ if (!open) panel.hidden = true; });
+    else panel.hidden = true;
     dock.classList.toggle('on', open);
     store('od_chat_open', open ? '1' : '0');
+    /* 열렸다는 것을 밖에 알린다. 판 위의 참가자 서랍이 이 소리를 듣고 접힌다 —
+       둘 다 아래에서 올라와 같은 자리를 덮으므로 같이 떠 있으면 뒤엣것은 보이지도
+       않으면서 화면만 잠근다. 여기서 서랍을 직접 부르지 않는 이유는 이 파일이
+       인게임이라는 개념을 모르기 때문이다(지금도 모르고, 몰라야 한다). */
+    try { document.dispatchEvent(new CustomEvent('casino:chat', { detail: { open: open } })); }
+    catch (e) { /* CustomEvent 를 못 만드는 아주 오래된 브라우저 */ }
     if (open) {
       syncWidth();                             // 접혀 있는 동안 창이 바뀌었을 수 있다
       markSeen(); unread = 0; paintBadge();
@@ -1878,7 +1947,18 @@ window.__ICON = (function(){
     build();
     lastId = 0;
     pull();                                   // 최근 줄을 한 번 받아 배지를 세운다
-    if (stored('od_chat_open', '0') === '1') toggle(true);
+    /* 넓은 화면은 펼친 채로 시작한다. 320×380 짜리 창이 오른쪽 아래 구석에 앉을 뿐이라
+       가릴 것이 없고, 접어 두면 방이 살아 있는지 열어 보기 전까지 모른다 — 동시 접속이
+       다섯인 방에서 그건 아무도 안 열고 아무도 안 쓰는 쪽으로 굴러간다.
+       폰은 접힌 채로 시작한다. 거기서 펼치면 화면을 거의 다 덮는다.
+
+       기준을 15-mobile.css 의 조건과 같은 문장으로 쓴다 — 두 곳이 다르면 어떤 화면에서는
+       "폰처럼 그려지는데 PC 처럼 열리는" 상태가 생긴다.
+       한 번이라도 접거나 펼치면 그 선택이 저장되어 이 기본값을 이긴다. */
+    var PHONE = '(max-width:768px), (max-width:1024px) and (max-height:560px)';
+    var wide = true;
+    try { wide = !window.matchMedia(PHONE).matches; } catch (e) { /* 아주 오래된 브라우저 */ }
+    if (stored('od_chat_open', wide ? '1' : '0') === '1') toggle(true);
     else paintBadge();
   }
 
@@ -1888,7 +1968,8 @@ window.__ICON = (function(){
   /* barOn/toggleBar 는 상단바의 💬 가 쓴다. 도크는 app.js 가 만들고 상단바는
      ingame.js 가 만드는데, 둘은 서로의 안을 모른다 — 주고받는 것은 이 세 함수뿐이다. */
   window.casinoChat = {
-    note: note, open: function(){ toggle(true); }, onMessage: onMessage,
+    note: note, open: function(){ toggle(true); }, close: function(){ toggle(false); },
+    onMessage: onMessage,
     barOn: barOn, toggleBar: function(){ return setBar(!barOn()); },
   };
 })();

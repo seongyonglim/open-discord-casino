@@ -65,6 +65,7 @@
       overflow-x:auto;overflow-y:hidden;margin:0 0 6px;padding:0 0 4px;
       border-bottom:1px solid rgba(255,255,255,.06)}
     .ig-ladder .ig-board .bead-row{display:flex;gap:3px;align-items:center}
+    .ig-ladder .ig-board .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;color:var(--muted)}
     .ig-ladder .ig-board .bead-cell{flex:none;width:21px;height:19px;font-size:10.5px;
       display:flex;align-items:center;justify-content:center;border-radius:4px}
     .ig-ladder .ig-board .board-stage{flex:1 1 auto;min-height:0;position:relative;
@@ -199,8 +200,9 @@
     .ig-hist + .ig-body{margin-top:6px}
     .ig-hist .bead{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
       gap:2px;overflow-x:auto;overflow-y:hidden;margin:0;padding:0;border:none;height:auto}
-    .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none}
-    .ig-hist .bead-cell{flex:none;width:22px;height:18px;font-size:10.5px;
+    .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none;width:auto;min-width:0}
+    .ig-hist .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;color:var(--muted)}
+    .ig-hist .bead-cell{flex:1 1 0;min-width:0;max-width:22px;height:18px;font-size:10.5px;
       display:flex;align-items:center;justify-content:center;border-radius:3px}
     /* 판 칸에는 이제 기록 줄이 없다 */
     .ig-ladder .ig-board .bead{display:none}

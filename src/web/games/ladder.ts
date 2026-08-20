@@ -557,9 +557,11 @@ export function ladderPage(user: WebUser): string {
          칸을 그만큼 줄여야 들어가고, 줄이면 글자가 안 보인다. 패턴을 읽는 데 필요한
          것은 개수가 아니라 최근 몇 판의 흐름이다.
 
-         줄머리의 [출발] [도착] 도 뺐다. 칸에 이미 좌/우 · 홀/짝 이라고 적혀 있어서
-         어느 줄인지는 칸이 말한다 — 라벨은 같은 말을 한 번 더 하면서 22px 을 먹었고,
-         그 22px 이 칸을 키울 자리다. */
+         줄머리의 [출발] [도착] 은 한 번 뺐다가 되돌렸다. 칸에 좌/우 · 홀/짝 이라고
+         적혀 있으니 어느 줄인지는 칸이 말한다고 봤는데, 그건 이 판을 아는 사람의 눈이다 —
+         처음 보는 사람에게 두 줄은 그냥 색이 다른 두 줄이고, 좌/우 와 홀/짝 이 각각
+         출발과 도착이라는 것은 판을 한참 본 뒤에야 이어진다. 라벨이 그 연결을 공짜로
+         해 준다. 개수를 줄여 생긴 자리를 여기에 쓴다. */
       var HIST_MAX = 12;
       function renderHistory(history){
         if (!history.length) { historyEl.innerHTML = ''; return; }
@@ -572,8 +574,8 @@ export function ladderPage(user: WebUser): string {
           return '<span class="bead-cell '+(odd?'odd':'even')+'">'+(odd?'홀':'짝')+'</span>';
         }).join('');
         historyEl.innerHTML =
-          '<div class="bead-row">'+startCells+'</div>' +
-          '<div class="bead-row">'+parityCells+'</div>';
+          '<div class="bead-row"><span class="bead-lbl">출발</span>'+startCells+'</div>' +
+          '<div class="bead-row"><span class="bead-lbl">도착</span>'+parityCells+'</div>';
       }
 
       async function play(){

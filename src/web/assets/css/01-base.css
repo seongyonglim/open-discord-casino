@@ -61,9 +61,12 @@
   /* 음량 — 프로필 옆에 그대로 둔다. 아이콘 모양이 곧 현재 크기다.
      꺼져 있을 때만 색이 죽어서, 멀리서 봐도 소리가 나가는 중인지 알 수 있다. */
   .volwrap{position:relative;display:flex;align-items:center;flex:none}
+  /* 바탕을 채우지 않는다. 예전에는 여기만 var(--panel2) 로 채워져 있어서, 옆의 종은
+     비어 있는데 이 단추만 칩처럼 도드라졌다 — 폰의 상단바에서는 셋 다 비어 있으므로
+     같은 단추가 두 화면에서 다르게 보였다. 테두리와 색만으로 선다. */
   .sfxbtn{display:inline-flex;align-items:center;justify-content:center;flex:none;
     width:34px;height:34px;padding:0;cursor:pointer;
-    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    background:none;border:1px solid var(--line);border-radius:10px;
     /* 색에는 transition을 걸지 않는다 — 켜짐/꺼짐은 hover 같은 장식이 아니라 상태 표시라
        즉시 바뀌어야 하고, 페이드가 끼면 눌렀는데 안 바뀐 것처럼 보이는 순간이 생긴다 */
     color:var(--gold);transition:border-color .12s}
@@ -86,8 +89,42 @@
     transition:opacity .12s,transform .12s,visibility .12s}
   /* 버튼과 팝업 사이의 8px 틈. 이게 없으면 마우스가 내려오는 도중에 hover가 끊겨 닫힌다. */
   .volpop::before{content:'';position:absolute;left:0;right:0;top:-9px;height:9px}
-  .volwrap:hover .volpop,.volwrap:focus-within .volpop,.volwrap.open .volpop{
-    opacity:1;visibility:visible;transform:none}
+  /* 마우스가 있는 화면에서만 hover 로 연다. 손가락에는 hover 가 «누른 뒤에도» 붙어
+     있어서, 한 번 연 바가 다시 눌러도 안 닫혔다 — .open 을 걷어도 :hover 가 그대로
+     열어 두고 있었다(제보). */
+  @media (hover:hover){
+    .volwrap:hover .volpop{opacity:1;visibility:visible;transform:none}
+  }
+  .volwrap.open .volpop{opacity:1;visibility:visible;transform:none}
+  /* 판 위 게임 목록이 내려오는 움직임. 규칙 자체는 16-ingame.css 에 있는데 키프레임만
+     여기 둔다 — 그 파일은 통째로 @media 안이라 @keyframes 를 넣으면 중괄호가 두 겹이
+     되고, 그러면 smoke 의 중복 검사가 그 블록을 최상위로 잘못 읽는다. */
+  @keyframes igGamesDrop{from{opacity:0;transform:translateY(-8px) scale(.97)}
+    to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.ig-games.on{animation:none}}
+
+  /* ── 접힐 때 ──────────────────────────────────────────────────────
+     펼칠 때만 움직이고 접을 때는 그냥 사라졌다. 나타나는 것에는 이유가 붙는데
+     사라지는 것에는 안 붙으니, 같은 동작이 반쪽만 있는 것처럼 느껴진다.
+
+     display:none 으로 사라지는 것은 «사라진 뒤» 를 그릴 수 없다 — 그래서 접는 쪽은
+     JS 가 맡는다: .folding 을 붙여 되감기를 틀고, 끝난 뒤에야 실제로 감춘다
+     (app.js 의 foldOut).
+
+     되감는 방향은 나온 방향과 같아야 한다. 아래에서 자란 것(채팅)은 아래로 접히고,
+     위에서 내려온 것(알림·게임 목록)은 위로 접힌다. 기준점은 각자 이미 갖고 있다. */
+  @keyframes popOutDown{to{opacity:0;transform:translateY(8px) scale(.97)}}
+  @keyframes popOutUp{to{opacity:0;transform:translateY(-8px) scale(.97)}}
+
+  /* 판 위 상단바 단추의 hover. 원래는 16-ingame.css 와 18-ig-portrait.css 에 있었는데
+     그 자리에서는 손가락에 «누른 뒤에도» 붙어 있어서, 게임 이름을 눌러 목록을 열면
+     그 둘레에 금색 네모가 남았다(제보). 마우스가 있는 화면에서만 걸리게 여기로 옮긴다 —
+     그 두 파일은 통째로 @media 안이라 안에 또 @media 를 쓰면 중괄호가 두 겹이 되고,
+     smoke 의 중복 검사가 그 블록을 최상위로 잘못 읽는다.
+     .ig-btn 은 판 위 상단바에만 있으므로 여기 두어도 새어 나가지 않는다. */
+  @media (hover:hover){
+    .ig-btn:hover{border-color:var(--gold-dim);color:var(--gold)}
+  }
   .volrange{-webkit-appearance:none;appearance:none;flex:none;
     width:96px;height:4px;margin:0;border-radius:999px;outline:none;cursor:pointer;
     /* --fill 은 app.js가 넣는다. 없을 때(스크립트가 죽었을 때) 가득 찬 것으로 보이면

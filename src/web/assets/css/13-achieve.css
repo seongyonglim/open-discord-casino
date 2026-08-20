@@ -153,11 +153,21 @@ button.ac-who:hover .ac-who-n { color: var(--gold); }
   border: 1.5px solid var(--bg, #0c0c10); }
 .belbadge[hidden] { display: none; }
 
+/* 종 아래에서 한 번 내려온다. 채팅 창과 같은 움직임이고 기준점만 다르다 — 채팅은
+   오른쪽 «아래» 줄에서, 이 목록은 오른쪽 «위» 종에서 나온다. 어디서 나왔는지가
+   보이면 무엇을 눌러서 열린 것인지 되짚을 필요가 없다.
+   transition 이 아니라 animation 인 이유는 이것이 display:none 에서 나타나기
+   때문이다 — 없던 것에는 전환할 이전 값이 없다. */
 .belmenu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
   width: min(340px, calc(100vw - 28px));
   background: #14141a; border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
-  box-shadow: 0 18px 44px rgba(0,0,0,.6); overflow: hidden; }
+  box-shadow: 0 18px 44px rgba(0,0,0,.6); overflow: hidden;
+  transform-origin: 100% 0; animation: belDrop .17s cubic-bezier(0,0,.2,1) both; }
 .belmenu[hidden] { display: none; }
+.belmenu.folding { animation: popOutUp .15s ease-in both; }
+@keyframes belDrop { from { opacity: 0; transform: translateY(-8px) scale(.97); }
+  to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .belmenu { animation: none; } }
 .bel-head { display: flex; align-items: center; justify-content: space-between;
   padding: 10px 13px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 13px; }
 .bel-all { background: none; border: 0; color: var(--dim); font-size: 12px; cursor: pointer; }

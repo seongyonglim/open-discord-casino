@@ -524,8 +524,18 @@ async function main(): Promise<void> {
       && /html\.sfx-off \.sfxbtn \.i-off\{display:block\}/.test(css));
     /* opacity 만 0 으로 두면 안 보이는 채로 클릭을 먹는다 — 헤더 위에 투명한 판이 덮인다 */
     ck('접힌 슬라이더는 클릭도 안 먹는다', /\.volpop\{[^}]*visibility:hidden/.test(css));
+    /* 예전에는 셋을 한 줄에 묶어(:hover, :focus-within, .open) 그 «묶음» 을 정규식으로
+       확인했다. 지금은 hover 를 (hover:hover) 안에 넣어 갈라 두었으므로 각각을 본다 —
+       손가락에는 hover 가 누른 뒤에도 붙어 있어서, 한 번 연 바가 다시 눌러도 안 닫혔다.
+       마우스는 hover 로, 손가락은 .open 으로 편다. 둘 다 있어야 통과다. */
+    const flat = css.replace(/\s+/g, ' ');
     ck('마우스와 손가락 둘 다 펼 수 있다',
-      /\.volwrap:hover \.volpop[^{]*\.volwrap\.open \.volpop/.test(css.replace(/\s+/g, ' ')));
+      /@media \(hover:hover\)\{ ?\.volwrap:hover \.volpop\{[^}]*visibility:visible/.test(flat)
+      && /\.volwrap\.open \.volpop\{[^}]*visibility:visible/.test(flat));
+    /* 손가락으로 연 바는 손가락으로 닫혀야 한다. 닫을 때 초점을 떼지 않으면 눌린 단추가
+       계속 :focus 라, 키보드용 규칙이 방금 닫은 바를 도로 열어 둔다. */
+    ck('다시 누르면 닫힌다', /if \(onBtn\) w\.classList\.toggle\('open'\);/.test(app)
+      && /if \(b && b\.blur\) b\.blur\(\);/.test(app));
   }
 
   /* ── 공지 웹훅 ─────────────────────────────────────────────────────

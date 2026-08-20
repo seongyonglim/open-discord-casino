@@ -199,7 +199,12 @@
       background:#15161a;border:1px solid var(--line);border-radius:12px;
       box-shadow:0 14px 34px rgba(0,0,0,.6);
       max-height:calc(100vh - 96px);overflow-y:auto}
-    html.ig-port .ig-games.on{display:block}
+    /* 세로에도 같은 움직임을 준다. 16-ingame.css 의 같은 규칙은 통째로 가로 미디어
+       쿼리 안이라 여기까지 안 온다 — 두 방향에 다 필요한 것은 양쪽에 다 적는다.
+       키프레임은 01-base.css 에 한 벌만 있다. */
+    html.ig-port .ig-games.on{display:block;transform-origin:0 0;
+      animation:igGamesDrop .17s cubic-bezier(0,0,.2,1) both}
+    html.ig-port .ig-games.on.folding{animation:popOutUp .15s ease-in both}
     html.ig-port .ig-g{display:flex;align-items:center;gap:9px;min-height:40px;
       padding:0 10px;border-radius:8px;text-decoration:none;color:var(--muted);
       font-size:13.5px;font-weight:600;white-space:nowrap}
@@ -216,8 +221,15 @@
     html.ig-port .ig-bar .ig-vol .sfxbtn{
       width:34px;height:34px;min-width:34px;min-height:34px;padding:0;flex:none;
       display:inline-flex;align-items:center;justify-content:center;
-      background:none;border:1px solid var(--line);border-radius:9px;
-      color:var(--muted);font-family:inherit;font-size:14px;line-height:1;cursor:pointer}
+      background:none;border:1px solid var(--line);border-radius:10px;
+      font-family:inherit;font-size:14px;line-height:1;cursor:pointer}
+    /* 색은 여기서 정하지 않는다 — 소리 단추의 색은 «상태»다(01-base: 켜짐 금색,
+       꺼짐 회색). 셋을 묶어 muted 로 칠했더니 폰에서는 소리가 켜져 있는데도 꺼진
+       것처럼 보였고, PC 와 나란히 놓으면 같은 단추가 다른 뜻으로 읽혔다.
+       바로 아래 display 와 같은 규칙이다: 크기와 모양만 정하고, 뜻을 지닌 것은
+       원래 주인에게 남긴다. */
+    html.ig-port .ig-bar .ig-help,
+    html.ig-port .ig-bar .ig-bel .belbtn{color:var(--muted)}
     /* 크기만 정한다. display 까지 건드리면 안 된다 — 소리 단추 안에는 아이콘이 셋
        들어 있고(켬·작게·끔), 그중 하나만 보이게 하는 규칙이 01-base 에 있다.
        여기서 display:block 을 걸었더니 셋이 한꺼번에 나와 겹쳐 보였다. */
@@ -231,7 +243,6 @@
        삼각형과 떨어뜨릴 만큼 남긴다. */
     html.ig-port .ig-bar .ig-gamesel{width:auto;min-width:0;flex:0 1 auto;
       gap:4px;padding:0 6px 0 2px;border-color:transparent;justify-content:flex-start}
-    html.ig-port .ig-bar .ig-gamesel:hover{border-color:var(--line)}
     /* 03-lobby 의 margin-left:auto 를 벗긴다 — 상단바에서는 이름 바로 옆이 제자리다 */
     html.ig-port .ig-bar .ig-help{margin:0}
     html.ig-port .ig-bar .ig-gamesel .ig-name{flex:0 1 auto;min-width:0;
@@ -264,7 +275,6 @@
     html.ig-port .ig-bar .profwrap .prof{padding:0 7px;height:34px;gap:4px;white-space:nowrap}
     /* 잔액 상자의 펼침 화살표는 남긴다(프로필 메뉴가 거기 붙는다) — 크기만 줄인다 */
     html.ig-port .ig-bar .profwrap .prof svg{width:12px;height:12px}
-    html.ig-port .ig-bar .ig-btn:hover{border-color:var(--gold-dim)}
     /* SVG 는 제 크기를 못 정한다 — viewBox 만 있고 width 가 없으면 기본 300x150 으로
        그려져 단추를 밀어낸다. 여기서 못 박는다. */
     html.ig-port .ig-bar .ig-btn svg{width:16px;height:16px;display:block}
@@ -299,8 +309,14 @@
     html.ig-port .ig-hist .bead{flex:1 1 auto;min-width:0;display:flex;
       flex-direction:column;gap:2px;overflow-x:auto;overflow-y:hidden;
       margin:0;padding:0;border:none;height:auto}
-    html.ig-port .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none}
-    html.ig-port .ig-hist .bead-cell{flex:none;width:22px;height:18px;font-size:10.5px;
+    /* 줄이 제 폭을 고집하지 않게 한다 — 04-board.css 의 width:max-content 를 되돌린다.
+       그래야 칸이 남는 폭을 나눠 갖고, 좁은 화면에서 잘리는 대신 줄어든다. */
+    html.ig-port .ig-hist .bead-row{display:flex;gap:3px;align-items:center;flex:none;
+      width:auto;min-width:0}
+    html.ig-port .ig-hist .bead-lbl{flex:none;width:22px;font-size:9.5px;font-weight:700;color:var(--muted)}
+    /* 넓으면 22px, 좁으면 알아서 준다. 320px 에서 고정 22px 은 36px 이 넘쳤다 —
+       넘친 자리는 마스크로 옅어진 곳과 겹쳐서, 옅어진 것인지 잘린 것인지 구별이 안 됐다. */
+    html.ig-port .ig-hist .bead-cell{flex:1 1 0;min-width:0;max-width:22px;height:18px;font-size:10.5px;
       display:flex;align-items:center;justify-content:center;border-radius:3px}
     /* 판 칸 안의 원래 기록 줄은 띠로 옮겼으므로 끈다 */
     html.ig-port .ig-board .bead{display:none}

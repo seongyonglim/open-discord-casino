@@ -170,6 +170,14 @@
   .helpdlg{max-width:440px;width:calc(100% - 32px);padding:0;color:var(--txt);
     background:var(--panel);border:1px solid var(--line);border-radius:14px;
     box-shadow:0 24px 60px rgba(0,0,0,.7)}
+  /* 화면 한가운데 서는 창이라 어느 구석에서 나올 것이 없다 — 제자리에서 자란다.
+     열 때는 [open] 이 붙는 순간 저절로 돌고, 접을 때는 app.js 가 .folding 을 붙인 뒤
+     되감기가 끝나기를 기다렸다가 close() 한다. */
+  .helpdlg[open]{animation:helpGrow .17s cubic-bezier(0,0,.2,1) both}
+  .helpdlg[open].folding{animation:helpFold .15s ease-in both}
+  @keyframes helpGrow{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+  @keyframes helpFold{to{opacity:0;transform:scale(.96)}}
+  @media (prefers-reduced-motion:reduce){.helpdlg[open]{animation:none}}
   .helpdlg::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
   .help-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
     padding:14px 16px;border-bottom:1px solid var(--line)}

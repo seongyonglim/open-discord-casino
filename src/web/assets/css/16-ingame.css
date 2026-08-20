@@ -50,7 +50,6 @@
     .ig-btn{flex:none;width:28px;height:26px;display:inline-flex;align-items:center;
       justify-content:center;background:none;border:1px solid var(--line);
       border-radius:7px;font-size:13px;line-height:1;cursor:pointer;padding:0}
-    .ig-btn:hover{border-color:var(--gold-dim);color:var(--gold)}
     /* 아이콘을 이모지에서 SVG 로 바꿨다. 두 가지를 같이 못 박아야 한다.
        크기: viewBox 만 있는 SVG 는 기본 300x150 으로 그려져 단추를 밀어낸다.
        색  : <button> 의 기본 color 는 buttontext(검정)다. 이모지는 제 색이 있어서
@@ -76,7 +75,9 @@
     /* 게임 이름은 이제 단추다. 눌러서 다른 게임으로 간다. */
     .ig-gamesel{flex:0 1 auto;min-width:0;width:auto;gap:4px;padding:0 8px;
       border-color:transparent}
-    .ig-gamesel:hover{border-color:var(--line)}
+    /* hover 로 테두리를 그리지 않는다. 이 단추는 폰에만 있고, 손가락에는 hover 가
+       «누른 뒤에도» 붙어 있다 — 눌러서 목록을 닫고 나면 이름 둘레에 네모가 남는다.
+       무엇이 눌리는 것인지는 옆의 삼각형이 이미 말한다. */
     .ig-gamesel .ig-name{flex:0 1 auto;min-width:0;overflow:hidden;
       text-overflow:ellipsis;white-space:nowrap}
     /* 아래쪽 삼각형. 글자가 아니라 도형이라 글꼴에 안 휘둘린다. */
@@ -91,7 +92,16 @@
       min-width:168px;max-width:min(72vw,260px);padding:6px;
       background:#15161a;border:1px solid var(--line);border-radius:12px;
       box-shadow:0 14px 34px rgba(0,0,0,.6)}
-    .ig-games.on{display:block}
+    /* 이름 단추 아래에서 한 번 내려온다 — 채팅 창·알림 목록과 같은 움직임이고
+       기준점만 다르다(여기는 왼쪽 위, 그 단추가 있는 자리). 어디서 나왔는지가
+       보이면 무엇을 눌러서 열린 것인지 되짚을 필요가 없다. */
+    /* 키프레임과 움직임-줄이기 규칙은 01-base.css 에 있다. 이 파일 전체가 이미
+       @media 안이라 여기에 또 @media 나 @keyframes 를 쓰면 중괄호가 두 겹이 되는데,
+       smoke 의 "같은 클래스를 두 번 정의하지 않음" 검사가 미디어 블록을 한 겹만
+       걷어내므로 이 블록 전체가 최상위로 새어 보인다(실제로 그렇게 실패했다). */
+    .ig-games.on{display:block;transform-origin:0 0;
+      animation:igGamesDrop .17s cubic-bezier(0,0,.2,1) both}
+    .ig-games.on.folding{animation:popOutUp .15s ease-in both}
     .ig-g{display:flex;align-items:center;gap:9px;min-height:38px;padding:0 10px;
       border-radius:8px;text-decoration:none;color:var(--muted);
       font-size:13px;font-weight:600;white-space:nowrap}
@@ -112,7 +122,11 @@
       width:32px;height:32px;min-width:32px;min-height:32px;padding:0;flex:none;
       display:inline-flex;align-items:center;justify-content:center;
       background:none;border:1px solid var(--line);border-radius:8px;
-      color:var(--muted);font-family:inherit;font-size:13px;line-height:1;cursor:pointer}
+      font-family:inherit;font-size:13px;line-height:1;cursor:pointer}
+    /* 색은 여기서 정하지 않는다 — 소리 단추의 색은 상태다(자세한 이유는 18-ig-portrait.css
+       의 같은 자리에 적어 두었다). 세로와 가로가 같은 실수를 하고 있었다. */
+    .ig-bar .ig-help,
+    .ig-bar .ig-bel .belbtn{color:var(--muted)}
     /* 크기만 정한다 — 소리 단추 안의 아이콘 셋 중 하나만 보이는 규칙(01-base)을
        display 로 덮으면 셋이 한꺼번에 나온다. */
     .ig-bar .ig-btn svg,
@@ -129,7 +143,6 @@
     /* 이름 단추만 글자를 따라간다 */
     .ig-bar .ig-gamesel{width:auto;min-width:0;flex:0 1 auto;height:32px;
       gap:5px;padding:0 9px;border-color:transparent;justify-content:flex-start}
-    .ig-bar .ig-gamesel:hover{border-color:var(--line)}
     /* 로비 전환 바에서 오른쪽 끝으로 밀리라고 붙어 있던 margin-left:auto(03-lobby)가
        따라온다. 상단바에서는 이름 바로 옆이 제자리다. */
     .ig-bar .ig-help{margin:0}
@@ -923,6 +936,7 @@
       display:flex;flex:none;gap:3px;overflow-x:auto;padding:0 0 5px;margin:0}
     html.ingame .bead-row{gap:3px}
     html.ingame .bead-cell{width:22px;height:20px;font-size:10.5px;flex:none}
+    html.ingame .bead-lbl{width:20px;font-size:10px}
     /* 마감 타이머를 판 위 가운데에 뱃지로 */
     html.ingame .stage-status{align-self:center;background:rgba(212,175,55,.12);
       border:1px solid var(--gold-dim);border-radius:999px;padding:3px 12px;

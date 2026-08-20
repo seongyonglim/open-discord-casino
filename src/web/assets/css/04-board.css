@@ -100,6 +100,8 @@
   /* width:max-content 가 있어야 줄이 제 내용만큼 넓어지고, 그래야 바깥 상자가
      넘친 것을 알아채 스크롤이 생긴다. 안 주면 줄이 상자 폭에 갇혀 칸만 잘린다. */
   .bead-row{display:flex;align-items:center;gap:5px;width:max-content;min-width:100%}
+  /* 줄머리. 마스크가 오른쪽만 옅게 하므로 이 자리는 늘 또렷하다. */
+  .bead-lbl{width:30px;flex:none;font-size:11px;font-weight:700;color:var(--muted)}
   /* 테두리를 걷었다. 칸마다 선을 두르면 열두 개가 나란히 설 때 선이 스물넷이 되어,
      읽어야 할 것(색의 흐름)보다 격자가 먼저 보인다. 바탕을 한 단 진하게 해서
      선 없이도 칸이 서게 한다. */

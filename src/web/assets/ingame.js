@@ -230,9 +230,14 @@ window.__IG = (function(){
   }
   function closeGames(){
     var p = document.querySelector('.ig-games');
-    if (p) p.classList.remove('on');
     var b = document.querySelector('.ig-gamesel');
     if (b) b.setAttribute('aria-expanded', 'false');
+    if (!p || !p.classList.contains('on')) return;
+    /* 되감기가 끝난 뒤에 .on 을 뗀다 — 먼저 떼면 display:none 이라 그릴 것이 없다.
+       도중에 다시 열렸으면 그대로 둔다(빠르게 두 번 누르는 경우). */
+    window.__foldOut(p, function(){
+      if (b && b.getAttribute('aria-expanded') !== 'true') p.classList.remove('on');
+    });
   }
 
   function build(mode){
@@ -272,9 +277,13 @@ window.__IG = (function(){
     sel.addEventListener('click', function(e){
       e.stopPropagation();
       var p = gamesPop();
-      var on = p.classList.toggle('on');
-      sel.setAttribute('aria-expanded', on ? 'true' : 'false');
-      if (!on) closeGames();
+      /* 닫는 일은 closeGames() 한 곳이 맡는다. 예전에는 여기서 .on 을 먼저 토글해
+         떼어 버리고 closeGames() 를 불렀는데, 그 함수는 "이미 닫혀 있으면 되감을 것도
+         없다"고 판단해 그대로 돌아갔다 — 접히는 움직임이 영영 안 돌았다. */
+      if (p.classList.contains('on')) { closeGames(); return; }
+      p.classList.remove('folding');        // 접히다 만 것이 남아 있으면 걷는다
+      p.classList.add('on');
+      sel.setAttribute('aria-expanded', 'true');
     });
     left.appendChild(sel);
     if (help) { help.classList.add('ig-help'); left.appendChild(help); }
@@ -618,13 +627,21 @@ window.__IG = (function(){
     }
     return s;
   }
+  /* 참가자 서랍과 채팅 창은 둘 다 아래에서 올라와 같은 자리를 덮는다. 같이 떠 있으면
+     뒤엣것은 보이지 않으면서 화면만 잠그므로, 하나가 열리면 다른 하나는 접힌다.
+     서로를 직접 부르지는 않는다 — 채팅은 app.js 것이고 서랍은 여기 것이라, 아는
+     것은 창구(casinoChat)와 알림(casino:chat)뿐이다. */
   function openDrawer(){
     var d = drawer(); if (!d) return;
+    if (window.casinoChat && window.casinoChat.close) window.casinoChat.close();
     d.classList.add('ig-open');
     scrim().classList.add('on');
     var b = document.querySelector('.ig-people');
     if (b) b.setAttribute('aria-expanded', 'true');
   }
+  document.addEventListener('casino:chat', function(e){
+    if (e && e.detail && e.detail.open) closeDrawer();
+  });
   function closeDrawer(){
     var d = drawer(); if (d) d.classList.remove('ig-open');
     var s = document.querySelector('.ig-scrim'); if (s) s.classList.remove('on');
