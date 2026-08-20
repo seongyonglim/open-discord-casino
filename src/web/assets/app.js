@@ -1430,7 +1430,11 @@ window.__foldOut = function(el, done){
      묶여 있어서 left 를 주면 이동이 아니라 폭이 줄고, syncWidth() 가 resize 마다
      dock.style.right 를 다시 쓴다. transform 은 배치에 손대지 않으므로 그 둘과
      다투지 않는다. */
-  var POS_KEY = 'od_chat_pos';
+  /* 이름을 한 번 갈았다(od_chat_pos → od_chat_xy). 비율의 «뜻» 이 바뀌었기
+     때문이다 — 예전에는 0 이 제자리, 1 이 왼쪽·위 끝이었고 지금은 0 과 1 이 각각
+     반대쪽 끝이다. 같은 이름으로 두면 예전에 옮겨 둔 사람의 줄이 엉뚱한 데로 간다.
+     이름을 갈면 그 값은 그냥 안 읽히고 기본 자리에서 다시 시작한다. */
+  var POS_KEY = 'od_chat_xy';
   var barEl = null, posTimer = null;
 
   /* 끌어 옮길 수 있는 화면인가. 폰이면 로비든 판이든 옮길 수 있다 — 옮긴 자리를 한
@@ -1467,13 +1471,26 @@ window.__foldOut = function(el, done){
     if (hadX) barEl.style.setProperty('--chat-dx', hadX);
     if (hadY) barEl.style.setProperty('--chat-dy', hadY);
     if (r.width < 20 || r.height < 10) return null;
+    /* 네 방향 모두 잰다. 예전에는 왼쪽·위로 가는 쪽만 쟀는데, 그건 제자리가 화면
+       오른쪽 «아래» 일 때만 맞는 이야기였다(세로). 가로는 제자리가 오른쪽 «위» 라
+       위쪽이 이미 끝이어서 세로로 한 픽셀도 안 움직였다(제보).
+       제자리에서 각 방향으로 얼마나 갈 수 있는지를 따로 구하면 두 방향 다 성립한다. */
     var TOP = 44;                     // 상단바 아래로는 못 올라간다
+    var PAD = 8;
+    var vw = document.documentElement.clientWidth || window.innerWidth;
+    var vh = window.innerHeight;
     return {
       left: r.left, right: r.right, top: r.top, bottom: r.bottom, h: r.height,
-      dxMin: -Math.max(0, r.left - 8),
+      dxMin: -Math.max(0, r.left - PAD),
+      dxMax: Math.max(0, (vw - PAD) - r.right),
       dyMin: -Math.max(0, r.top - TOP),
+      dyMax: Math.max(0, (vh - PAD) - r.bottom),
     };
   }
+  /* 0~1 을 실제 픽셀로, 그 반대로. 0 이 한쪽 끝, 1 이 반대쪽 끝이다 —
+     «갈 수 있는 만큼 중 어디쯤» 이라는 뜻이 화면이 달라져도 그대로 산다. */
+  function toPx(f, lo, hi){ return lo + (hi - lo) * f; }
+  function toFrac(px, lo, hi){ return hi === lo ? 0 : clamp((px - lo) / (hi - lo), 0, 1); }
 
   /* 처음 자리는 맨 아래다 — 엄지가 가는 곳.
 
@@ -1494,8 +1511,8 @@ window.__foldOut = function(el, done){
   }
   function savePos(g){
     if (!g) return;
-    var fx = g.dxMin ? clamp(px(barEl, '--chat-dx') / g.dxMin, 0, 1) : 0;
-    var fy = g.dyMin ? clamp(px(barEl, '--chat-dy') / g.dyMin, 0, 1) : 0;
+    var fx = toFrac(px(barEl, '--chat-dx'), g.dxMin, g.dxMax);
+    var fy = toFrac(px(barEl, '--chat-dy'), g.dyMin, g.dyMax);
     store(POS_KEY, fx.toFixed(4) + ',' + fy.toFixed(4));
   }
 
@@ -1513,7 +1530,7 @@ window.__foldOut = function(el, done){
     var g = range();
     if (!g) return false;
     var p = readPos();
-    if (p) setXY(p.fx * g.dxMin, p.fy * g.dyMin);
+    if (p) setXY(toPx(p.fx, g.dxMin, g.dxMax), toPx(p.fy, g.dyMin, g.dyMax));
     else setXY(0, 0);
     return true;
   }
@@ -1555,7 +1572,7 @@ window.__foldOut = function(el, done){
            죽는다. */
         try { barEl.setPointerCapture(e.pointerId); } catch (err) { /* 구형 브라우저 */ }
       }
-      setXY(clamp(bx + dx, g.dxMin, 0), clamp(by + dy, g.dyMin, 0));
+      setXY(clamp(bx + dx, g.dxMin, g.dxMax), clamp(by + dy, g.dyMin, g.dyMax));
     });
     function release(e){
       if (!down) return;

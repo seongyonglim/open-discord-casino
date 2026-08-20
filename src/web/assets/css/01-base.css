@@ -106,6 +106,14 @@
   html.chat-off .chatbtn::after{content:'';position:absolute;left:8px;right:8px;
     top:calc(50% - 1px);height:2px;border-radius:1px;background:currentColor;
     transform:rotate(-45deg)}
+  /* 판 위 상단바의 💬 도 같은 표시를 쓴다. 한때 이 규칙이 세로 전용 파일에만 있었다 —
+     그때는 가로에서 이 단추가 스위치가 아니었기 때문이다. 이제 두 방향 다 스위치이므로
+     여기(방향을 안 가리는 자리)에 둔다. 안 그러면 가로에서 눌러도 그림이 그대로다. */
+  .ig-chat{position:relative}
+  html.chat-off .ig-chat{color:var(--muted)}
+  html.chat-off .ig-chat::after{content:'';position:absolute;left:7px;right:7px;
+    top:calc(50% - 1px);height:2px;border-radius:1px;background:currentColor;
+    transform:rotate(-45deg)}
   .sfxbtn{display:inline-flex;align-items:center;justify-content:center;flex:none;
     width:34px;height:34px;padding:0;cursor:pointer;
     background:none;border:1px solid var(--line);border-radius:10px;

@@ -536,13 +536,18 @@ async function main(): Promise<void> {
     ck('기본은 켜짐이다', /stored\(BAR_KEY, '1'\) !== '0'/.test(app));
     ck('상단바가 쓸 창구가 열려 있다',
       /barOn: barOn, toggleBar: function\(\)\{ return setBar\(!barOn\(\)\); \}/.test(app));
-    ck('세로에서 💬는 줄을 켜고 끈다',
-      /if \(IG\.port\(\) && C\.toggleBar\) \{ C\.toggleBar\(\); return; \}/.test(ig));
-    /* 가로는 .chat-bar 가 통째로 display:none 이라 켤 대상이 없다. 거기서 이 단추를
-       스위치로 바꾸면 채팅에 닿는 유일한 문이 사라진다. */
-    ck('가로에서 💬는 채팅창을 연다', /if \(C\.open\) C\.open\(\);/.test(ig)
-      && /html\.ingame \.chat-dock \.chat-bar\{display:none\}/.test(
-        readFileSync('src/web/assets/css/16-ingame.css', 'utf8')));
+    /* 한때 이 단추는 화면에 따라 다른 일을 했다 — 가로에서는 줄이 통째로 감춰져
+       있어서 켤 대상이 없었기 때문이다. 이제 가로에도 줄이 떠 있으므로 갈릴 이유가
+       없어졌다. 같은 단추가 화면마다 다르게 동작하지 않는 것이 낫다. */
+    ck('💬는 어느 방향에서나 줄을 켜고 끈다',
+      /if \(C && C\.toggleBar\) C\.toggleBar\(\);/.test(ig)
+      && !/IG\.port\(\)[\s\S]{0,60}?C\.open\(\)/.test(ig));
+    const c16 = readFileSync('src/web/assets/css/16-ingame.css', 'utf8');
+    ck('가로에도 줄이 떠 있다',
+      /html\.ingame \.chat-dock:not\(\.on\) \.chat-bar\{display:flex/.test(c16));
+    ck('가로에서도 끄기가 듣는다',
+      /html\.ingame \.chat-dock\.bar-off:not\(\.on\)\{display:none\}/.test(c16));
+    ck('가로에서도 끌 수 있다', /html\.ingame \.chat-dock:not\(\.on\) \.chat-bar\{[^}]*touch-action:none/.test(c16));
 
     /* ── 끄기가 듣는 화면은 켜는 자리가 함께 있는 화면뿐이다 ──────────
        줄을 걷어 놓고 되돌릴 단추가 그 화면에 없으면, 끈 것이 아니라 잃은 것이다.
@@ -574,9 +579,12 @@ async function main(): Promise<void> {
     ck('판 안에서는 머리 단추를 접는다', /html\.ingame \.chatbtn\{display:none\}/.test(c15));
     /* 꺼짐을 아이콘에 표시한다 — 흐리게만 하면 "못 누른다"로 읽혀서, 하필 그것이
        다시 켜는 유일한 자리인데 눌러 볼 생각을 안 하게 된다. */
+    /* 사선은 방향을 안 가리는 자리(01-base)에 있다. 한때 세로 전용 파일에 뒀는데,
+       그때는 가로에서 이 단추가 스위치가 아니었기 때문이다 — 이제 두 방향 다
+       스위치라 거기 두면 가로에서 눌러도 그림이 안 바뀐다(제보). */
     ck('꺼지면 💬에 사선이 그어진다',
-      /html\.ig-port\.chat-off \.ig-bar \.ig-chat::after\{content:''/.test(c18));
-    ck('그 표시는 세로 파일 안에만 있다', !/chat-off/.test(c14) && !/chat-off/.test(c15));
+      /html\.chat-off \.ig-chat::after\{content:''/.test(c01));
+    ck('그 표시가 방향을 안 가린다', !/chat-off[^\r\n]*ig-chat/.test(c18));
 
     /* ── 자리를 떼어 주던 46px 은 짝이었다 ───────────────────────────
        15-mobile 의 body padding +46 과 18 의 main height -46 이 합쳐 정확히 100vh 다.
@@ -635,8 +643,13 @@ async function main(): Promise<void> {
     ck('저장값을 숫자로 검사한다',
       /if \(!isFinite\(fx\) \|\| !isFinite\(fy\)\) return null;/.test(app));
     ck('복원값도 0~1 로 조인다', /clamp\(fx, 0, 1\), fy: clamp\(fy, 0, 1\)/.test(app));
+    /* 네 방향 모두 조인다. 한때 위·왼쪽만 쟀는데, 그건 제자리가 화면 오른쪽 «아래» 일
+       때만 맞는 이야기였다 — 가로는 제자리가 오른쪽 «위» 라 위가 이미 끝이어서 세로로
+       한 픽셀도 안 움직였다(제보). */
     ck('화면 밖으로 못 나간다',
-      /setXY\(clamp\(bx \+ dx, g\.dxMin, 0\), clamp\(by \+ dy, g\.dyMin, 0\)\)/.test(app));
+      /setXY\(clamp\(bx \+ dx, g\.dxMin, g\.dxMax\), clamp\(by \+ dy, g\.dyMin, g\.dyMax\)\)/.test(app));
+    ck('네 방향을 다 잰다', /dxMax: Math\.max\(0, \(vw - PAD\) - r\.right\)/.test(app)
+      && /dyMax: Math\.max\(0, \(vh - PAD\) - r\.bottom\)/.test(app));
     /* 안 보이는 동안 재면 사각형이 전부 0 이라 여유 높이가 0 이 되고, 그 값을 저장하면
        다음에도 이상한 자리에서 시작한다. */
     ck('안 보이는 동안 잰 값은 안 쓴다', /if \(r\.width < 20 \|\| r\.height < 10\) return null;/.test(app));

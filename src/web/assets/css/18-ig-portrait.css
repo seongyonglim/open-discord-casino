@@ -313,11 +313,8 @@
        지어지므로(tearDown→build) 그림을 DOM 에 들고 있으면 폰을 돌릴 때 날아간다.
        그리고 이 규칙이 세로 전용 파일 안에 있으므로, 스위치가 뜻을 갖지 않는 가로
        화면에는 사선이 저절로 안 뜬다 — 파일의 자리가 범위를 지킨다. */
-    html.ig-port .ig-bar .ig-chat{position:relative}
-    html.ig-port.chat-off .ig-bar .ig-chat{color:var(--muted)}
-    html.ig-port.chat-off .ig-bar .ig-chat::after{content:'';position:absolute;
-      left:7px;right:7px;top:calc(50% - 1px);height:2px;border-radius:1px;
-      background:currentColor;transform:rotate(-45deg)}
+    /* 사선은 01-base.css 로 옮겼다 — 이제 가로에서도 같은 단추가 켜고 끄므로
+       세로 전용 파일에 두면 가로에서는 아무 표시도 안 뜬다(제보). */
 
     /* ── 기록 띠 34 — 한 덩어리, 가로로 넘치면 밀어서 본다 ──── */
     /* 상단바 40px 자리를 예전에는 이 줄의 margin-top 이 비웠다. 그런데 출목표가
