@@ -585,6 +585,13 @@ async function main(): Promise<void> {
     ck('꺼지면 💬에 사선이 그어진다',
       /html\.chat-off \.ig-chat::after\{content:''/.test(c01));
     ck('그 표시가 방향을 안 가린다', !/chat-off[^\r\n]*ig-chat/.test(c18));
+    /* 색도 상태다. 그냥 .ig-chat 으로 쓰면 두 방향 다 다른 규칙에 진다 —
+       세로는 html.ig-port .ig-bar .ig-help 묶음의 color:inherit (0,3,1) 에,
+       가로는 .ig-btn{color:var(--muted)} 에. 실측으로 «세로 켜짐 밝은 흰색 ·
+       가로 켜짐 회색 · 양쪽 다 꺼도 안 바뀜» 이 나왔다. 이길 만큼 명시한다. */
+    ck('켜짐은 밝은 흰색, 꺼짐은 회색 (두 방향 같다)',
+      /html \.ig-bar \.ig-chat\.ig-btn\{color:var\(--txt\)\}/.test(c01)
+      && /html\.chat-off \.ig-bar \.ig-chat\.ig-btn\{color:var\(--muted\)\}/.test(c01));
 
     /* ── 자리를 떼어 주던 46px 은 짝이었다 ───────────────────────────
        15-mobile 의 body padding +46 과 18 의 main height -46 이 합쳐 정확히 100vh 다.

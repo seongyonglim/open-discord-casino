@@ -109,7 +109,15 @@
   /* 판 위 상단바의 💬 도 같은 표시를 쓴다. 한때 이 규칙이 세로 전용 파일에만 있었다 —
      그때는 가로에서 이 단추가 스위치가 아니었기 때문이다. 이제 두 방향 다 스위치이므로
      여기(방향을 안 가리는 자리)에 둔다. 안 그러면 가로에서 눌러도 그림이 그대로다. */
+  /* 켜짐은 밝은 흰색, 꺼짐은 회색 — 두 방향이 같아야 한다.
+     그냥 .ig-chat 으로 쓰면 둘 다 진다: 세로는 html.ig-port .ig-bar .ig-help 묶음이
+     color:inherit 로 (0,3,1) 이고, 가로는 .ig-btn{color:var(--muted)} 가 걸려서
+     «켜져 있는데 회색» 이 됐다. 실측이 그것을 보여 줬다 —
+       세로 켜짐 #ececee · 가로 켜짐 #8b8b92 · 양쪽 다 꺼도 안 바뀜
+     이 단추의 색은 상태다. 다른 규칙이 지나가다 덮게 두면 안 된다. */
   .ig-chat{position:relative}
+  html .ig-bar .ig-chat.ig-btn{color:var(--txt)}
+  html.chat-off .ig-bar .ig-chat.ig-btn{color:var(--muted)}
   html.chat-off .ig-chat{color:var(--muted)}
   html.chat-off .ig-chat::after{content:'';position:absolute;left:7px;right:7px;
     top:calc(50% - 1px);height:2px;border-radius:1px;background:currentColor;
