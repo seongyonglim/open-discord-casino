@@ -55,6 +55,26 @@ window.__IG = (function(){
   /* 껍데기를 쓸 상황인가 — 게임 페이지이고, 그 게임에 맞는 방향/크기인가 */
   function on(){ return !!key() && (land() || port()); }
 
+  /* 지금 화면이 어느 게임의 판인가 — 주소가 아니라 실제로 그려진 판을 보고 가린다.
+     주소는 /games/graph 인데 판은 크래시 그래프이듯, 이름과 판 모양이 늘 같지는
+     않기 때문이다.
+
+     여기(정책)에 두는 이유: 이 값을 쓰는 곳이 두 군데인데 서로 다른 IIFE 다.
+     한쪽에만 두었더니 다른 쪽에서 부를 때 ReferenceError 가 났고, 그 예외가
+     그 뒤의 일을 통째로 삼켰다 — 사다리의 라이브 띠가 사라지고 쓸어내려 닫기가
+     안 붙었다. 한 벌만 두고 둘 다 여기서 읽는다. */
+  function kind(){
+    var s = document.querySelector('.game-shell');
+    if (!s) return null;
+    if (s.classList.contains('ht-shell')) return 'holdem';
+    if (s.classList.contains('mines-shell')) return 'mines';
+    if (s.classList.contains('poker-shell')) return 'poker';
+    if (s.querySelector('.bacc-table')) return 'baccarat';
+    if (s.querySelector('.bj-table')) return 'blackjack';
+    if (s.querySelector('.crash-graph')) return 'graph';
+    return 'ladder';
+  }
+
   function subscribe(fn){
     [LAND, PORT].forEach(function(q){
       var m = window.matchMedia(q);
@@ -83,7 +103,7 @@ window.__IG = (function(){
      를 이어 붙인 것이라 app.js 가 먼저 돈다. 여기서 또 만들면 두 벌이 되어 언젠가 어긋난다. */
   var ICON = window.__ICON;
 
-  return { key: key, land: land, port: port, on: on, subscribe: subscribe, lock: lock,
+  return { key: key, kind: kind, land: land, port: port, on: on, subscribe: subscribe, lock: lock,
            ICON: ICON };
 })();
 
@@ -435,17 +455,8 @@ window.__IG = (function(){
   var body = null;
   var home = [];      // [노드, 원래 부모, 원래 다음 형제]
 
-  function shellKind(){
-    var s = document.querySelector('.game-shell');
-    if (!s) return null;
-    if (s.classList.contains('ht-shell')) return 'holdem';
-    if (s.classList.contains('mines-shell')) return 'mines';
-    if (s.classList.contains('poker-shell')) return 'poker';
-    if (s.querySelector('.bacc-table')) return 'baccarat';
-    if (s.querySelector('.bj-table')) return 'blackjack';
-    if (s.querySelector('.crash-graph')) return 'graph';
-    return 'ladder';
-  }
+  /* 판단은 __IG 한 곳에 있다 — 여기서 또 만들면 두 벌이 되어 언젠가 어긋난다 */
+  function shellKind(){ return IG.kind(); }
 
   function take(node, cell){
     if (!node) return;
@@ -726,6 +737,78 @@ window.__IG = (function(){
 
      값은 새로 세지 않는다. 패널 머리(#lBetCount·#lPot)에 이미 적혀 있는 것을
      비춘다 — 같은 값을 두 곳에서 따로 세면 언젠가 어긋난다. */
+  /* 지뢰찾기 격자를 자리에 맞춘다.
+
+     격자는 5×5 정사각형이고, 타일이 제 비율을 지키므로 높이가 폭을 따라간다.
+     그래서 자리에 넣으려면 폭을 "남는 폭과 남는 높이 중 작은 쪽" 으로 정해야 하는데,
+     그 값은 CSS 로 쓸 수가 없다(container query 없이는). 실제로 폭만 보고 키웠더니
+     360×640 에서 마지막 줄이 25px 잘렸고, 판 칸이 overflow:hidden 이라 소리 없이
+     사라졌다.
+
+     여기서 재서 정한다. apply 는 1초마다 돌고 방향이 바뀔 때도 돌므로 화면이
+     달라지면 따라온다. 값이 그대로면 style 을 건드리지 않는다 — 매초 레이아웃을
+     다시 계산하게 만들 이유가 없다. */
+  function fitMinesGrid(){
+    var grid = document.querySelector('html.ig-port .ig-board .mines-grid');
+    if (!grid) return;
+    var stage = grid.closest('.board-stage') || grid.parentNode;
+    var cell = grid.closest('.ig-cell.ig-board');
+    var body = grid.closest('.ig-body');
+    var bet = body && body.querySelector('.ig-cell.ig-bet');
+    if (!stage || !cell || !body) return;
+
+    var px = function(el, a, b2){
+      var c = window.getComputedStyle(el);
+      return (parseFloat(c[a]) || 0) + (parseFloat(c[b2]) || 0);
+    };
+
+    /* 쓸 수 있는 폭도 **본문**에서 잰다. 아래에서 칸 폭을 우리가 정하기 때문에,
+       칸에서 재면 그 값이 다시 입력으로 돌아와 매 초 조금씩 줄어든다. */
+    var w = body.clientWidth - px(body, 'paddingLeft', 'paddingRight')
+          - px(cell, 'paddingLeft', 'paddingRight')
+          - px(stage, 'paddingLeft', 'paddingRight');
+
+    /* 쓸 수 있는 높이는 **본문**에서 잰다. 판 칸에서 재면 안 된다 — 아래에서 그 칸의
+       높이를 우리가 정하기 때문에, 그 값이 다시 입력으로 돌아와 매 초 조금씩 줄어든다.
+       본문 높이와 조작부 높이는 우리가 안 건드리므로 기준으로 삼을 수 있다. */
+    var gap = parseFloat(window.getComputedStyle(body).rowGap || window.getComputedStyle(body).gap) || 0;
+    var h = body.clientHeight - px(body, 'paddingTop', 'paddingBottom')
+          - (bet ? bet.offsetHeight : 0) - (bet ? gap : 0)
+          - px(cell, 'paddingTop', 'paddingBottom') - px(stage, 'paddingTop', 'paddingBottom');
+
+    var side = Math.floor(Math.min(w, h));
+    if (!(side > 0)) return;
+    /* 너무 커지면 다섯 칸이 한 손에 안 들어와 엄지가 화면을 가로지른다 */
+    if (side > 340) side = 340;
+
+    var want = side + 'px';
+    if (grid.style.width !== want) { grid.style.width = want; grid.style.height = want; }
+    /* 판 칸을 격자에 맞춘다 — 가로도, 세로도.
+
+       늘어난 채로 두면 격자 위아래로 130px 이 비어 "가로는 꽉 차고 세로는 휑한"
+       상자가 됐다. 세로만 맞추면 이번에는 반대가 된다: 화면이 짧아 높이가 먼저
+       모자라면 격자가 작아지는데 카드는 폭을 다 쓰고 있어 좌우로 51px 씩 빈다.
+       카드가 격자를 감싸면 어느 쪽이 기준이 되든 테두리가 격자에서 같은 거리에 있다.
+
+       남는 자리는 칸 밖으로 나가고 본문이 가운데로 모은다(CSS 의 justify-content). */
+    var padH = px(cell, 'paddingTop', 'paddingBottom') + px(stage, 'paddingTop', 'paddingBottom');
+    var padW = px(cell, 'paddingLeft', 'paddingRight') + px(stage, 'paddingLeft', 'paddingRight');
+    var wantH = (side + padH) + 'px';
+    var wantW = (side + padW) + 'px';
+    if (cell.style.height !== wantH) { cell.style.height = wantH; cell.style.flex = '0 0 auto'; }
+    if (cell.style.width !== wantW) { cell.style.width = wantW; cell.style.margin = '0 auto'; }
+  }
+  function clearMinesGrid(){
+    var grid = document.querySelector('.mines-grid');
+    if (!grid) return;
+    if (grid.style.width) { grid.style.width = ''; grid.style.height = ''; }
+    var cell = grid.closest('.ig-cell.ig-board');
+    if (cell && cell.style.height) {
+      cell.style.height = ''; cell.style.flex = '';
+      cell.style.width = ''; cell.style.margin = '';
+    }
+  }
+
   function addLiveBar(){
     var body = movedGrid(), bet = document.querySelector('.ig-cell.ig-bet');
     if (!body || !bet || body.querySelector('.ig-livebar')) return;
@@ -898,6 +981,7 @@ window.__IG = (function(){
     if (!movedGrid() || !IG.on()) {
       restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
       removePeopleBtn(); removeScrim(); removeLiveBar(); removeSheetClose();
+      clearMinesGrid();
       return;
     }
     if (IG.land()) {
@@ -911,6 +995,7 @@ window.__IG = (function(){
          목록의 첫 줄로 들어가 사라졌기 때문이다. */
       removeLiveBar();
       moveClock(); addPeopleBtn(); restoreSettings(); addSheetClose();
+      clearMinesGrid();
     } else {
       /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로.
          소리·규칙은 상단바에 그대로 둔다(⚙️ 를 없앴다 — 위 가로 갈래의 설명을 보라). */
@@ -919,11 +1004,12 @@ window.__IG = (function(){
       /* 라이브 띠는 여럿이 같은 판에 거는 게임만 쓴다. 지뢰찾기는 혼자 하는 판이라
          "실시간 참가자 0명 · 총 베팅 0P" 가 언제나 0 이고, 그건 알려 주는 것이
          없으면서 한 줄을 먹는다. 그런 게임에서는 아예 안 붙인다. */
-      if (shellKind() === 'ladder') { addLiveBar(); syncLiveBar(); syncChatTop(); }
+      if (IG.kind() === 'ladder') { addLiveBar(); syncLiveBar(); syncChatTop(); }
       else removeLiveBar();
       /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
       removeSheetClose(); addSwipeClose();
       restoreSettings();
+      fitMinesGrid();
     }
   }
 

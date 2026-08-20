@@ -21,19 +21,24 @@
 
   /* 지뢰찾기 */
   .mines-grid.shake{animation:gridShake .4s}
-  .mines-tile{aspect-ratio:1;border-radius:10px;background:var(--panel2);border:1px solid var(--line);
+  /* 안 연 칸은 아무 말도 하지 않는다.
+     가운데에 흐린 물음표를 하나씩 찍어 두었는데, 스물다섯 개가 한꺼번에 있으면
+     그게 무늬가 되어 판이 지저분해 보였다("점 노이즈"). 안 연 칸이라는 것은 색이
+     이미 말하고 있으므로 표식이 없어도 읽힌다. */
+  .mines-tile{aspect-ratio:1;border-radius:10px;
+    background:rgba(39,39,42,.9);border:1px solid rgba(63,63,70,.5);
     cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
     transition:border-color .12s,background .12s,transform .1s}
   .mines-tile svg{width:52%;height:52%}
-  .mines-tile .mark{color:var(--gold-dim);width:30%;height:30%}
-  .mines-tile:hover:not(:disabled){border-color:var(--gold);background:#1f1a10;transform:translateY(-1px)}
-  .mines-tile:active:not(:disabled){transform:scale(.93)}
+  .mines-tile .mark{display:none}
+  .mines-tile:hover:not(:disabled){border-color:var(--gold-dim);background:rgba(52,52,56,.95)}
+  .mines-tile:active:not(:disabled){transform:scale(.94)}
   .mines-tile:disabled{cursor:default}
   /* 안전 칸은 금화 — 초록 보석보다 "돈을 벌었다"는 신호가 직관적이다 */
   .mines-tile.safe{background:rgba(212,175,55,.14);border-color:var(--gold);color:var(--gold-hi);
-    animation:tilePop .3s cubic-bezier(.34,1.56,.64,1)}
+    animation:tileOpen .22s cubic-bezier(.2,.8,.3,1)}
   .mines-tile.mine{background:rgba(229,72,77,.16);border-color:var(--lose);color:var(--lose);
-    animation:tilePop .3s cubic-bezier(.34,1.56,.64,1)}
+    animation:tileOpen .22s cubic-bezier(.2,.8,.3,1)}
 
   /* 사다리게임 */
   .ladder-board{width:100%;display:flex;justify-content:center}

@@ -19,6 +19,9 @@
   .footer{margin-top:32px;text-align:center;color:var(--muted);font-size:12px}
 
   @keyframes tilePop{0%{transform:scale(.5);opacity:0}55%{transform:scale(1.16)}100%{transform:scale(1);opacity:1}}
+  /* 지뢰찾기 칸이 열릴 때. 살짝 커졌다 제자리로 — 예전 tilePop 은 0.5 에서 시작해
+     스물다섯 칸이 연달아 열릴 때 판 전체가 튀는 것처럼 보였다. */
+  @keyframes tileOpen{0%{transform:scale(1.05);opacity:.55}100%{transform:scale(1);opacity:1}}
   @keyframes gridShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(3px)}
     30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
   @keyframes statBump{0%{text-shadow:0 0 0 rgba(212,175,55,0)}35%{text-shadow:0 0 16px currentColor}100%{text-shadow:0 0 0 rgba(212,175,55,0)}}

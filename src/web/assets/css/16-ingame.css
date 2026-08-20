@@ -119,6 +119,11 @@
     .ig-bar .ig-bel .belbtn svg,
     .ig-bar .ig-vol .sfxbtn svg{width:16px;height:16px}
     .ig-bar .ig-bel{display:flex;flex:none;position:relative}
+    /* 가로는 폭이 넉넉하다 — 종 아래 오른쪽에 붙이되 화면을 넘지 않게만 묶는다.
+       높이는 상단바(36) 아래로 남는 만큼만 쓴다. */
+    .ig-bar .ig-bel .belmenu{position:fixed;top:40px;right:8px;left:auto;
+      width:min(332px, calc(100vw - 16px));max-width:none;
+      max-height:calc(100vh - 52px);overflow-y:auto}
     .ig-bar .ig-vol{display:flex;flex:none;transform:none;position:relative}
 
     /* 이름 단추만 글자를 따라간다 */

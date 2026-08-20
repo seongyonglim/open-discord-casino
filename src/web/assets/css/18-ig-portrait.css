@@ -127,7 +127,15 @@
     html.ig-port .ig-bar .ig-gamesel .ig-name{flex:0 1 auto;min-width:0;order:0;
       font-size:14px;font-weight:700;color:var(--gold);
       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    html.ig-port .ig-caret{border-top-color:var(--gold)}
+    /* 삼각형을 여기서도 그린다.
+       16-ingame.css 에 한 벌 있지만 그 파일은 통째로 가로 미디어쿼리 안이라 세로에는
+       안 걸린다 — 색만 바꿔 두었더니 테두리가 없어 크기 0 인 채로 아무것도 안 보였고,
+       게임 이름이 눌리는 단추라는 표시가 사라졌다. 팝오버 상자도 같은 이유로
+       모양이 없었다(그건 앞서 고쳤다). */
+    html.ig-port .ig-caret{flex:none;width:0;height:0;
+      border-left:4px solid transparent;border-right:4px solid transparent;
+      border-top:5px solid var(--gold);opacity:.75}
+    html.ig-port .ig-gamesel[aria-expanded="true"] .ig-caret{transform:rotate(180deg)}
 
     /* 잔액은 맨 끝 앵커다. 자라도 제 자리에서 늘어난다. */
     html.ig-port .ig-bar .profwrap{flex:none;margin-left:0}
@@ -170,8 +178,11 @@
     html.ig-port .ig-bar .ig-vol .sfxbtn svg{width:17px;height:17px}
 
     /* 이름 단추만 폭이 글자를 따라간다. 위 규칙이 정사각형으로 못 박으므로 되돌린다. */
+    /* 삼각형(8px)과 그 틈이 더해지면서 360px 에서 "사다리게임" 이 6px 모자라 잘렸다.
+       이름은 단추 안에서 왼쪽 끝에 붙으므로 왼쪽 여백은 거의 필요 없다 — 오른쪽만
+       삼각형과 떨어뜨릴 만큼 남긴다. */
     html.ig-port .ig-bar .ig-gamesel{width:auto;min-width:0;flex:0 1 auto;
-      gap:5px;padding:0 9px;border-color:transparent;justify-content:flex-start}
+      gap:4px;padding:0 6px 0 2px;border-color:transparent;justify-content:flex-start}
     html.ig-port .ig-bar .ig-gamesel:hover{border-color:var(--line)}
     /* 03-lobby 의 margin-left:auto 를 벗긴다 — 상단바에서는 이름 바로 옆이 제자리다 */
     html.ig-port .ig-bar .ig-help{margin:0}
@@ -184,9 +195,21 @@
     html.ig-port .ig-bar .ig-vol{display:flex;flex:none;transform:none;position:relative}
     /* 종은 잔액 상자에서 꺼내 왔다 — 상자 안에 있을 때의 감춤 규칙을 벗긴다 */
     html.ig-port .ig-bar .ig-bel{display:flex;flex:none;position:relative}
-    /* 안 읽은 알림 표시(빨간 점)는 종을 따라 나온다 */
-    html.ig-port .ig-bar .ig-bel .belbadge,
-    html.ig-port .ig-bar .ig-bel .bel-dot{display:block}
+    /* 알림 목록은 종 기준이 아니라 화면 기준으로 편다.
+
+       원래는 종 오른쪽 끝에 맞춰 왼쪽으로 펼치게 되어 있다(right:0). 그 종이
+       헤더 오른쪽에 있을 때는 맞는 자리인데, 목록 폭이 332px 이라 360px 화면에서는
+       왼쪽으로 119px 이 화면 밖으로 나가 글자가 잘렸다(실측).
+
+       좁은 화면에서 이만한 목록이 있을 자리는 하나뿐이다 — 화면 폭 전체. */
+    html.ig-port .ig-bar .ig-bel .belmenu{position:fixed;top:44px;
+      left:12px;right:12px;width:auto;max-width:none;
+      max-height:calc(100vh - 100px);overflow-y:auto}
+    /* 안 읽은 알림 표시는 건드리지 않는다.
+       한때 여기서 display:block 을 걸었는데, 그 표시는 hidden 속성으로 감춰지는
+       요소라 [hidden]{display:none} 을 덮어 버렸다 — 알림이 하나도 없어도 빨간
+       점이 계속 떠 있었다. 소리 아이콘 셋이 한꺼번에 나왔던 것과 같은 실수다:
+       옮겨 온 부품의 display 는 원래 주인이 정한다. 우리는 자리와 크기만 정한다. */
 
     /* 잔액은 맨 끝 앵커. 안쪽 여백을 줄여 자리를 번다. */
     html.ig-port .ig-bar .profwrap{flex:none;margin-left:0}
@@ -263,11 +286,29 @@
 
        상한을 두는 이유: 큰 폰에서 타일이 80px 을 넘으면 다섯 칸이 한 손에 안 들어와
        엄지가 화면을 가로질러야 한다. */
-    html.ig-port .ig-board .mines-grid{width:100%;max-width:min(100%, 380px);
-      margin:0 auto}
-    /* 판 안에서 격자를 가운데에 둔다 — 위아래로 남는 자리가 반씩 나뉜다 */
+    /* 격자 크기는 ingame.js 가 재서 정한다(fitMinesGrid).
+
+       CSS 로는 "내 폭과 높이 중 작은 쪽" 을 쓸 수가 없다. 폭만 보고 키웠더니
+       360×640 에서 마지막 줄이 25px 잘렸고(판 칸이 overflow:hidden 이라 소리 없이
+       사라졌다), aspect-ratio 에 max-height 를 걸었더니 상자만 줄고 안의 다섯 줄은
+       그대로라 오히려 더 잘렸다. 행을 1fr 로 나눠 봤더니 타일이 59×76 으로 늘어나
+       격자가 찌그러졌다.
+
+       그래서 자리에 맞추는 일은 JS 한 곳이 맡는다. 여기 남은 것은 그 값이 들어오기
+       전과 못 들어왔을 때를 위한 안전망이다 — 넘치느니 작은 편이 낫다.
+       04-board.css 의 max-width:290px 을 반드시 풀어야 한다: 그게 남아 있으면
+       JS 가 정한 폭이 290 에서 잘리고 타일이 격자 밖으로 넘친다(실측). */
+    html.ig-port .ig-board .mines-grid{max-width:100%;max-height:100%;margin:0 auto}
+    /* 판 안에서 격자를 가운데에 둔다. 좌우 여백은 12px — 예전에는 10px 이라 타일이
+       카드 테두리에 거의 닿아 답답했다(그러면서 위아래로는 130px 이 비었다).
+       위쪽 24px 은 원래 카운트다운 자리였는데 지뢰찾기에는 카운트다운이 없다. */
     html.ig-port .ig-board .board-stage{display:flex;align-items:center;
       justify-content:center}
+    html.ig-port .ig-mines .ig-board .board-stage{padding:12px}
+    /* 남는 세로 자리는 칸 밖으로 나간다 — 판과 조작부를 한 덩이로 가운데에 모은다 */
+    html.ig-port .ig-body.ig-mines{justify-content:center}
+    /* 타일 사이를 조금 벌린다. 붙어 있으면 스물다섯 개가 한 덩어리로 보인다. */
+    html.ig-port .ig-board .mines-grid{gap:9px}
 
     /* ── 타이머 자리 ─────────────────────────────────────────
        모양은 19-timer.css 가 정한다(데스크톱·가로·세로 공통). 여기서는 자리만
