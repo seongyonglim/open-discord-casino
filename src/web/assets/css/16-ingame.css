@@ -203,6 +203,12 @@
        정하면 그걸 놓친다. 포커 앱들이 가로에서 테이블 위·액션 아래로 두는 이유다.
        폭 상한은 app.js 의 capOf 가 배율을 나눠서 건다. */
     html.ingame .ht-shell .game-main{flex-direction:column}
+    /* 대회 로비(.ht-lobby)는 가로 360px 에 안 들어간다 — 아래로 362px 넘치고, 넘친 것을
+       감추기만 해서 [참가 신청] 과 신청자 목록이 화면에 없다.
+       여기에 overflow-y:auto 만 얹어 봤더니 더 나빠졌다: 부모가 이 상자에 24px 밖에
+       안 줘서, 684px 짜리 내용을 24px 창으로 보게 됐다(실측). 스크롤을 붙이기 전에
+       이 상자가 «자리를 받게» 만드는 것이 먼저다 — 부모 사슬을 손봐야 하고 그건 홀덤
+       가로 배치 작업이다. 다른 게임을 먼저 하고 여기로 돌아온다. */
     /* ── 홀덤은 배율이 아니라 크기 변수로 맞춘다 ────────────────────
        zoom 으로 줄였더니 닉네임이 10.5px → 4.6px 가 되어 읽을 수 없었다. 배율은 글자와
        그림을 가리지 않고 같이 줄인다 — 애초에 잘못된 손잡이였다.
@@ -362,7 +368,11 @@
     /* ── 그래프 캔버스 높이를 줄인다 ────────────────────────────
        조작부가 68px 밖으로 밀렸다. 곡선은 가로로 길수록 읽기 좋으므로 높이를 내준다. */
     html.ingame .crash-area{min-height:0}
-    html.ingame .crash-graph{max-height:190px}
+    /* 상자가 주는 높이를 그대로 쓴다. height:auto 로 두면 svg 가 제 비율(660:250)대로
+       150px 을 고집하는데 상자는 75px 뿐이라, 아래 축 글자가 통째로 잘렸다(실측 34px).
+       preserveAspectRatio="none"(crash.ts)와 짝이다 — 높이를 정해 주고 늘어나게 한다. */
+    html.ingame .crash-graph{max-height:190px;height:100%}
+    html.ingame .crash-stage{height:100%;display:flex}
   }
 
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
@@ -459,7 +469,10 @@
     html.ingame .game-shell:has(.bacc-table) .bacc-seats{padding:2px 0}
     html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:25px;height:35px}
     html.ingame .game-shell:has(.bacc-table) .market{height:40px}
-    html.ingame .game-shell:has(.bj-table) .bj-seat{height:68px}
+    /* 좌석 줄이 테이블 아래로 8px 넘쳐 카드 아랫부분이 잘렸다(실측: 좌석 216~282,
+       테이블 50~274). 68 → 58 로 줄이면 그 8px 이 사라지고 2px 이 남는다.
+       카드는 26x36 그대로 둔다 — 줄일 것은 칸의 여유이지 읽어야 하는 것이 아니다. */
+    html.ingame .game-shell:has(.bj-table) .bj-seat{height:58px;padding:4px 5px 3px}
     html.ingame .game-shell:has(.bj-table) .pcard{width:26px;height:36px}
     html.ingame .mines-shell .board-stage{max-height:198px}
     html.ingame .mines-grid{height:198px;width:198px}
@@ -589,7 +602,10 @@
       padding:6px 10px 10px}
     /* 자리를 계단식으로 어긋나게 두던 것을 이 화면에서는 편다 — 아래로 밀린 자리가
        펠트를 넘는다. */
-    html.ingame .game-shell:has(.bj-table) .bj-seat{--dy:0px;height:66px}
+    /* 66 → 58. 그래도 좌석 줄이 펠트 아래로 8px 넘쳐 카드 아랫부분이 잘렸다
+       (실측: 좌석 216~282 · 펠트 50~274). 이 파일에 .bj-seat 높이를 정하는 규칙이
+       일곱 개 쌓여 있고 이기는 것은 여기다 — 앞의 것을 고치면 아무 일도 안 일어난다. */
+    html.ingame .game-shell:has(.bj-table) .bj-seat{--dy:0px;height:58px}
     html.ingame .game-shell:has(.bj-table) .pcard{width:30px;height:42px}
   }
 
@@ -1000,4 +1016,38 @@
     html.ingame .bet-row .game-input{min-width:76px;padding:0 8px}
     html.ingame .bet-row .chip-btn{min-width:34px;padding:0 6px;font-size:11px}
     html.ingame .ig-max{min-width:40px;padding:0 6px;font-size:10.5px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 바카라 마켓: 이름 줄이 상자 밖으로 9px 밀려 잘렸다 ────────────
+       실측(780×360): 상자 62px 인데 안쪽이 m-top 24.5 + m-pile 26 + m-body 20 = 70.5.
+       그래서 "플레이어 / PLAYER · 44.7%" 가 아래에서 잘리고, 배당만 남아 무엇에 거는
+       칸인지 모르는 화면이 됐다.
+
+       칩 더미(26px)는 안 건드린다 — 한 번 16px 로 눌렀다가 칩이 위로 넘쳐 총액과 배당을
+       덮은 적이 있다(바로 위 블록에 그 기록이 있다). 상자에 필요한 만큼을 준다.
+       아래 칩 줄과의 사이에 그만한 여유가 있다(마켓 294 · 화면 360). */
+    html.ingame .game-shell:has(.bacc-table) .game-main .market{height:74px}
+    /* 앞줄 세 칸(플레이어·타이·뱅커)은 폭이 87px 뿐인데 배당이 17px 이라 윗줄을 10~20px
+       넘겼다 — "10.57x" 가 "10.5" 로 잘려 보였다. 뒤 두 칸(페어)은 133px 이라 멀쩡하다.
+       좁은 줄에만 글자를 줄인다. 13px 이면 "10.57x" 가 46px 로 50px 안에 들어간다. */
+    html.ingame .game-shell:has(.bacc-table) .market-row.bacc-main .m-odds{font-size:12px}
+    html.ingame .game-shell:has(.bacc-table) .market-row.bacc-main .m-top{padding:2px 3px;gap:3px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 사다리 가로: 액션 버튼이 칸 밖으로 9px ─────────────────────
+       실측(780×360): 베팅 칸 100~352 인데 버튼이 313~361 이라 아래가 잘렸다.
+       48 → 40 이면 8px 이 돌아오고 1px 이 남는다. 손가락 최소치(실무 32~36)는
+       지킨다 — 이 화면에서 가장 자주 누르는 자리다. */
+    html.ingame .ig-cell.ig-bet .btn{height:40px;min-height:40px}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 지뢰 가로: [2×] 와 [MAX] 가 통째로 안 보였다 ────────────────
+       실측(780×360): 조작부 칸은 266px 인데 베팅 줄은 117px 만 썼다. 2열 격자의 한 칸에
+       갇혀 있었고, 그 줄이 필요한 폭은 199px 이라 뒤 두 단추가 잘려 나갔다 —
+       금액을 두 배로 올리거나 전부 거는 길이 화면에 없었다.
+       그 칸만 두 열을 쓰게 한다. 오른쪽에서 놀던 138px 이 이 줄로 온다. */
+    html.ingame .mines-shell .field-grid > .field:has(.bet-row){grid-column:1 / -1}
   }

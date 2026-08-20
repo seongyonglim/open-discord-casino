@@ -40,6 +40,13 @@
        [채팅][종][소리][잔액] 이 된다. */
     .volwrap{display:flex}
     .chatbtn{display:inline-flex}
+    /* 알림 목록은 화면에 맞춘다. 기본은 종 아이콘 기준 right:0 인데, 폰에서 종은
+       화면 오른쪽에서 200px 쯤 안쪽에 있어서 322px 짜리 창이 왼쪽으로 161px 밀려
+       났다(실측: left -161). 판 안에서는 18-ig-portrait.css 가 이미 이렇게 못 박아
+       두었고 그래서 거기서는 멀쩡했다 — 로비에만 규칙이 없었다.
+       화면 양옆 12px 을 남기고 폭을 화면이 정하게 한다. */
+    .belmenu{position:fixed;top:46px;left:12px;right:12px;width:auto;max-width:none;
+      max-height:calc(100vh - 110px);overflow-y:auto}
     /* 판 안에서는 상단바가 제 채팅 단추를 따로 만든다. 여기 것까지 나오면 둘이 된다 —
        .profwrap 이 통째로 상단바로 옮겨 가므로 이것도 같이 딸려 간다. */
     html.ingame .chatbtn{display:none}

@@ -285,7 +285,14 @@ export function crashPage(user: WebUser): string {
               <div id="cMulti" class="crash-multi">1.000x</div>
               <div id="cStatus" class="crash-status"></div>
             </div>
-            <svg id="cGraph" class="crash-graph" viewBox="0 0 660 250">
+            <!-- preserveAspectRatio="none": 상자가 주는 만큼 늘어난다.
+                 세로·데스크톱에서는 CSS 가 height:auto 라 상자 비율이 viewBox 와 같고,
+                 그래서 아무것도 안 달라진다. 달라지는 곳은 가로 폰 하나다 —
+                 거기서는 높이가 75px 밖에 안 나오는데 svg 는 제 비율대로 150px 을
+                 고집해서 아래 34px(축 글자 줄)이 잘렸다(실측).
+                 이건 사진이 아니라 판이다. 가로세로가 각각 선형으로 늘어나는 것은
+                 눈금이 말하는 바를 바꾸지 않는다 — 잘려서 안 보이는 것과 다르다. -->
+            <svg id="cGraph" class="crash-graph" viewBox="0 0 660 250" preserveAspectRatio="none">
               <g id="cGrid"></g>
               <path id="cArea" class="crash-area" d=""></path>
               <path id="cCurve" class="crash-curve" d=""></path>
