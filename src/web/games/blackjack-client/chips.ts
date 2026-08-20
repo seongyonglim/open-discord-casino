@@ -10,6 +10,7 @@ export function bjChips(p0: string | number): string {
          초당 다시 시작되고 쌓이는 느낌이 사라진다.
          (자리가 132px이라 5열짜리 더미가 들어간다 — 좁은 창 기준으로 재고 안 된다고 판단했었다) */
       var piles = {};
+      var drewOnce = false;   // 자리를 한 바퀴 다 그려 봤다 (seats.ts 가 세운다)
       var MAX_CHIPS = 18;
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
       // 뒤 세 단위(1000·5000·1만)는 골드바, 앞은 동전 — 다른 게임과 같은 규칙
@@ -64,11 +65,38 @@ export function bjChips(p0: string | number): string {
         }
       }
       function rebuildPile(el, seat, bet, owner, roundId){
+        var prev = piles[seat];
+        /* 남의 자리에 베팅이 새로 나타난 것은 «방금 일어난 일» 이므로 날려서 보여 준다.
+           단 페이지에 막 들어와 이미 걸려 있던 것을 발견한 경우는 그냥 그린다 — 그건
+           방금 일어난 일이 아니라 이미 있던 상태다. 그래서 첫 한 바퀴만 조용히 그린다.
+
+           처음엔 «다른 자리가 이 라운드로 그려져 있나» 로 판정했는데, 그러면 그 라운드에서
+           가장 먼저 도는 자리는 아직 아무도 안 그려져 있어 늘 조용히 지나갔다
+           (실측: 다섯 자리가 걸었는데 날아온 자리는 넷). 자리 순서에 기대지 않도록,
+           한 바퀴를 다 돌아 봤는지만 본다 — 그 표시는 seats.ts 가 세운다.
+
+           이 갈래가 없어서 남의 베팅은 한 번도 안 날았다. 봇이든 사람이든 대개
+           라운드마다 «한 번에» 거는데, 그러면 그 자리를 처음 보는 순간이 곧 그 금액이라
+           아래 syncPile 의 delta 가지에 갈 일이 없고 늘 여기로 온다.
+           실측: 100초 동안 남의 금액이 54번 바뀌었는데 날아간 칩은 0개였다. */
+        var arrived = drewOnce && owner !== MEID && bet > 0
+          && (!prev || prev.round !== roundId || prev.bet < bet);
         var pile = piles[seat] = { round: roundId, bet: 0, list: [], n: 0 };
         el.style.opacity = '';
         el.innerHTML = '';
         // 판 도중에 들어왔거나 남의 자리를 처음 볼 땐 총액밖에 모르니 그때만 쪼갠다
-        if (bet > 0) { pile.bet = bet; pushChips(el, pile, decompose(bet), owner, ''); }
+        if (bet > 0) {
+          pile.bet = bet;
+          var added = pushChips(el, pile, decompose(bet), owner, arrived ? 'pending' : '');
+          if (arrived) { tossFrom(rosterAvatar(owner), added); betSfx(); }
+        }
+      }
+      /* 남이 걸 때 나는 소리. 여럿이 동시에 걸면 겹쳐 지저분해지므로 150ms 에 한 번만
+         낸다 — 알리는 것이 목적이지 개수를 세어 주는 것이 아니다. */
+      function betSfx(){
+        if (Date.now() - lastBetSfx <= 150) return;
+        lastBetSfx = Date.now();
+        if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
       }
       /* 지금 그려 둔 칩들의 합. pile.bet 이라는 별도 카운터가 아니라 이 값을 근거로 삼는다 —
          카운터는 "올렸다고 믿는 금액"이고 이건 "실제로 화면에 있는 금액"이다. 둘이 어긋나는
@@ -94,10 +122,15 @@ export function bjChips(p0: string | number): string {
         if (!pile || pile.round !== roundId) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
         // 줄었으면(회수) 애니메이션 없이 다시 그린다
         if (s.bet < pile.bet) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
-        /* 화면에 그려진 합이 서버 금액과 다르면 무슨 경로로든 어긋난 것이다 — 다시 그린다.
-           여기가 마지막 안전망이라 조건을 금액 하나로만 둔다. 아래 delta 계산은 "얼마나
-           더 날려 보낼까"를 정하는 것이고, 이 검사는 "지금 화면이 맞나"를 본다. */
-        if (pileSum(pile) !== s.bet) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
+        /* 화면에 그려진 합이 «우리가 그렸다고 적어 둔 값» 과 다르면 어긋난 것이다.
+           한때 여기서 서버 금액(s.bet)과 견줬는데, 그러면 남이 «더» 걸 때마다 이 줄에
+           걸렸다 — 그려진 합은 아직 옛 금액이고 서버는 새 금액이니 당연히 다르다.
+           그래서 아래 delta 가지(칩을 날리는 자리)에 영영 못 갔고, 남의 베팅은 조용히
+           다시 그려지기만 했다. 실측: 100초 동안 남의 금액이 52번 바뀌었는데 날아간
+           칩은 0개(정산 회수만 28개).
+           이 검사가 물어야 하는 것은 "지금 화면이 내 기록과 맞나" 이지 "서버와 맞나" 가
+           아니다. 서버와의 차이는 바로 아래 delta 가 다룬다. */
+        if (pileSum(pile) !== pile.bet) return rebuildPile(el, s.seat, s.bet, s.userId, roundId);
         var delta = s.bet - pile.bet;
         if (delta > 0) {
           pile.bet = s.bet;
@@ -105,14 +138,7 @@ export function bjChips(p0: string | number): string {
           if (s.userId === MEID) return;
           var added = pushChips(el, pile, decompose(delta), s.userId, 'pending');
           tossFrom(rosterAvatar(s.userId), added);
-          /* 남이 걸 때도 같은 소리를 낸다 — 지금까지는 칩만 날고 조용해서, 옆에서
-             판이 커지고 있다는 것이 눈을 그쪽에 두고 있을 때만 전해졌다.
-             다만 한 번에 여럿이 걸면 소리가 겹쳐 지저분해지므로 150ms 안에는 한 번만
-             낸다. 알리는 것이 목적이지 개수를 세어 주는 것이 아니다. */
-          if (Date.now() - lastBetSfx > 150) {
-            lastBetSfx = Date.now();
-            if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
-          }
+          betSfx();
           return;
         }
         // 금액은 그대로인데 칸이 비었다면 골격을 다시 그린 것이다 — 기록대로 복원
@@ -133,15 +159,18 @@ export function bjChips(p0: string | number): string {
       function cloneAt(chip, rect, cls){
         var c = chip.cloneNode(true);
         c.className = chip.className.replace(/\\b(toss|pending|fly)\\b/g, '').trim() + ' ' + cls;
-        /* 동전은 동전이어야 한다. 원본의 사각형을 그대로 베끼면, 그 칩이 담긴 자리가
-           한 축으로 눌려 있을 때(가로에서 칩 더미를 20px 로 줄여 두었다) 그 눌린 비율이
-           그대로 복사돼 날아가는 내내 타원으로 보인다.
-           동전은 두 변 중 긴 쪽에 맞춰 1:1 로 띄운다 — 막대칩(c-bar)은 원래 직사각형
-           이므로 건드리지 않는다. */
+        /* 동전은 동전이어야 한다. 눌리는 원인이 두 겹이었다.
+           (1) 칩이 담긴 자리가 한 축으로 눌려 있으면(가로에서 더미를 줄여 둔다) 그 눌린
+               비율이 복제본에 그대로 복사된다 — 긴 변에 맞춰 1:1 로 편다.
+           (2) 진짜 원인. .pchip.c-coin 에 min-width:21px 이 박혀 있어서, 인라인으로
+               width 를 줄여도 min-width 가 이긴다. 축소된 더미에서 날리면 폭만 21px 로
+               버티고 높이는 13px 이 되어 눌린 타원이 된다(실측 55×34, 정사각 아님).
+               인라인에서 min- 쪽도 같이 덮어써야 한다.
+           막대칩(c-bar)은 원래 직사각형이므로 1:1 로 펴지 않는다. */
         var w = rect.width, h = rect.height;
         if (c.className.indexOf('c-coin') >= 0) { var d = Math.max(w, h); w = d; h = d; }
         c.style.cssText = 'position:fixed;margin:0;left:'+rect.left+'px;top:'+rect.top+'px;' +
-          'width:'+w+'px;height:'+h+'px;';
+          'width:'+w+'px;height:'+h+'px;min-width:'+w+'px;min-height:'+h+'px;';
         getFxLayer().appendChild(c);
         return c;
       }

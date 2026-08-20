@@ -878,11 +878,37 @@ async function main(): Promise<void> {
     ck('좌석 루프보다 먼저 버린다', /dropStalePiles\(st\.seats \|\| \[\]\);/.test(se2)
       && se2.indexOf('dropStalePiles') < se2.indexOf('syncPile(s, r.id)'));
     /* pile.bet 은 "올렸다고 믿는 금액"이고 pileSum 은 "실제로 화면에 있는 금액"이다.
-       둘이 어긋나는 경로가 있었으므로 판단은 뒤쪽을 근거로 해야 한다. */
+       둘이 어긋나는 경로가 있었으므로 안전망은 그 «둘» 을 견줘야 한다.
+       한때 이 검사가 pileSum 을 서버 금액(s.bet)과 견주도록 못 박고 있었다. 그러면 남이
+       «더» 걸 때마다 안전망에 걸린다 — 그려진 합은 아직 옛 금액이고 서버는 새 금액이니
+       당연히 다르다. 그래서 칩을 날리는 갈래에 영영 못 갔고, 남의 베팅은 조용히 다시
+       그려지기만 했다(실측: 남의 금액 52번 변화, 날아간 칩 0개).
+       서버와의 차이는 안전망이 아니라 바로 아래 delta 가 다룰 일이다. */
     ck('그려진 칩의 합으로 판단한다', /function pileSum\(pile\)/.test(ch)
-      && /if \(pileSum\(pile\) !== s\.bet\) return rebuildPile/.test(ch));
+      && /if \(pileSum\(pile\) !== pile\.bet\) return rebuildPile/.test(ch));
     ck('합이 어긋나면 delta 계산보다 먼저 다시 그린다',
-      ch.indexOf('pileSum(pile) !== s.bet') < ch.indexOf('var delta = s.bet - pile.bet'));
+      ch.indexOf('pileSum(pile) !== pile.bet') < ch.indexOf('var delta = s.bet - pile.bet'));
+    /* 남이 건 것이 지켜보는 동안 새로 나타났으면 날려서 보여 준다.
+       대개 라운드마다 한 번에 걸므로 그 자리를 처음 보는 순간이 곧 그 금액이고,
+       그때는 delta 갈래가 아니라 rebuildPile 로 온다 — 거기에 이 갈래가 없어서
+       남의 베팅은 한 번도 안 날았다. */
+    ck('남의 베팅도 날아온다', /var arrived = drewOnce && owner !== MEID/.test(ch)
+      && ch.includes('if (arrived) { tossFrom(rosterAvatar(owner), added); betSfx(); }'));
+    /* 페이지에 막 들어와 이미 걸려 있던 것은 방금 일어난 일이 아니다 — 그건 그냥 그린다.
+       판정 근거는 "자리를 한 바퀴 다 그려 봤나" 여야 한다. 한때 "다른 자리가 이 라운드로
+       그려져 있나" 였는데, 그러면 그 라운드에서 가장 먼저 도는 자리는 아직 아무도 안
+       그려져 있어 늘 조용히 지나갔다(실측: 다섯 자리가 걸었는데 날아온 자리는 넷). */
+    ck('이미 걸려 있던 것은 안 날린다', /var drewOnce = false;/.test(ch)
+      && /drewOnce = true;/.test(se2));
+    ck('첫 자리도 날아온다 — 자리 순서를 안 본다', !ch.includes('.round === roundId) { watching'));
+    /* 날아가는 복제본은 정원(正圓)이어야 한다. 크기를 인라인 width 로만 지정하면 CSS 의
+       min-width:21px 이 이겨서 폭만 21px 로 버티고 높이는 줄어든 값이 된다(실측 55×34). */
+    for (const g of ['blackjack', 'baccarat', 'poker']) {
+      const src = readFileSync('src/web/games/' + g + '-client/chips.ts', 'utf8') as string;
+      const flat = src.split(' ').join('');
+      ck(g + ' — 날아가는 칩은 min-width 도 덮어쓴다',
+        flat.includes('min-width:') && flat.includes('min-height:'));
+    }
     /* 복원은 반드시 기록 목록 기준이어야 한다 — 총액을 다시 쪼개면 500 두 개가 1000 한 개로
        합쳐져서 "올린 그대로"가 아니게 된다. 그 규칙은 그대로 남아 있어야 한다. */
     ck('칸이 비었을 때의 복원은 목록 기준이다',

@@ -73,6 +73,7 @@ export const BJ_SEATS_JS = `      /* ── 자리 ─────────�
           markSeatBust(s);
           syncPile(s, r.id);
         });
+        drewOnce = true;   // 여기까지 왔으면 지금 상태를 한 번 다 그린 것이다
         return dealt;
       }
 

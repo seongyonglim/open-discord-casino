@@ -113,7 +113,7 @@ export const PK_CHIPS_JS = `      function renderCoins(){
         var w = rect.width, h = rect.height;
         if (c.className.indexOf('c-coin') >= 0) { var d = Math.max(w, h); w = d; h = d; }
         c.style.cssText = 'position:fixed;margin:0;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
-          'width:' + w + 'px;height:' + h + 'px;';
+          'width:' + w + 'px;height:' + h + 'px;min-width:' + w + 'px;min-height:' + h + 'px;';
         getFxLayer().appendChild(c);
         return c;
       }

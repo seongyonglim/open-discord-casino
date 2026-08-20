@@ -1205,40 +1205,35 @@
     html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand .pcard{width:36px;height:50px}
     html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand{min-height:52px}
 
-    /* ── 베팅 칩과 금액을 카드 «위» 로 ─────────────────────────────
-       바닥에 있으면 아래에서 올라온 조작부에 가장 먼저 가린다 — 하필 그때 가장
-       봐야 하는 것이(얼마 걸었나 · 스탠드인가) 그것이다.
-       마크업은 그대로 두고 순서만 바꾼다: 이름 → 금액·상태 → 칩 → 카드. */
-    html.ingame .game-shell:has(.bj-table) .bj-seat-top{order:-3}
-    html.ingame .game-shell:has(.bj-table) .bj-seat-foot{order:-2;margin-top:0}
-    html.ingame .game-shell:has(.bj-table) .bj-pile{order:-1}
+    /* 좌석 안 순서는 «건드리지 않는다» — 이름 → 카드 → 칩 → 금액·상태.
+       한때 가로에서만 금액·칩을 카드 위로 올렸다. 아래에서 올라온 조작부에 가린다는
+       이유였는데, 지금은 펠트가 아래로 58px 을 비워 두므로 가릴 일이 없다.
+       그리고 그 순서 바꾸기가 «가로만» 다른 화면을 만들었다 — PC 와 세로는 카드가
+       위인데 가로만 아래였고, 사이에 이상한 빈 자리도 생겼다.
+       한 화면을 고치려고 다른 화면과 달라지게 만들면, 고친 것보다 잃은 것이 크다. */
   }
 
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
-    /* ── 안내 문구는 판 «위» 로 (블랙잭 · 바카라 · 포커) ────────────────
-       "베팅 마감까지 9초" 같은 한 줄이 펠트 한가운데에서 세로 한 줄을 통째로 쓰고
-       있었다. 360px 높이에서 그 한 줄은 카드 크기를 정하는 값이다.
+    /* ── 안내 문구 ────────────────────────────────────────────────────
+       블랙잭만 판 오른쪽 위로 뺀다. 이 판은 딜러 위쪽 구석이 실제로 비어 있고,
+       가운데 한 줄을 내주면 그만큼 카드가 커진다.
 
-       사다리처럼 판 오른쪽 위 구석에 띄운다 — 거기는 어느 게임이든 비어 있고,
-       한 줄도 안 쓰면서 같은 것을 말한다. 뒤가 비치는 알약이라 «판 위에 얹힌 것» 으로
-       읽히고, 판 자체를 가리지 않는다. */
-    html.ingame .game-shell:has(.bj-table) .bj-table,
-    html.ingame .game-shell:has(.bacc-table) .bacc-table,
-    html.ingame .poker-shell .poker-table{position:relative}
-    html.ingame .game-shell:has(.bj-table) .bj-status,
-    html.ingame .game-shell:has(.bacc-table) .bacc-status,
-    html.ingame .poker-shell .poker-status{
-      position:absolute;top:8px;right:8px;z-index:20;
-      margin:0;padding:3px 9px;min-height:0;width:auto;max-width:52%;
-      background:rgba(0,0,0,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-      border:1px solid rgba(255,255,255,.12);border-radius:11px;
-      font-size:11px;font-weight:600;line-height:1.35;text-align:right;
-      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    /* 지금 눌러야 하는 순간(베팅 중·내 차례)에는 테두리로 알린다 — 글자 색만으로는
-       구석에서 눈에 안 걸린다. */
-    html.ingame .game-shell:has(.bj-table) .bj-status.live,
-    html.ingame .game-shell:has(.bacc-table) .bacc-status.live,
-    html.ingame .poker-shell .poker-status.live{border-color:rgba(212,175,55,.55)}
+       바카라·포커는 가운데에 그대로 둔다. 그 둘은 오른쪽 위에 «판» 이 있어서,
+       구석에 띄우면 카드와 배당을 가린다 — 자리를 아끼려다 봐야 할 것을 덮는 셈이다.
+       같은 위치를 세 게임에 똑같이 강요할 이유가 없다. 판마다 빈 구석이 다르다.
+
+       모양은 사다리(.stage-status)를 그대로 쓴다. 이 앱에서 "지금 몇 초" 를 말하는
+       뱃지는 이미 그 모양이고, 게임마다 다른 알약을 만들 이유가 없다. */
+    html.ingame .game-shell:has(.bj-table) .bj-table{position:relative}
+    html.ingame .game-shell:has(.bj-table) .bj-status{
+      position:absolute;top:10px;right:10px;z-index:20;
+      margin:0;padding:5px 10px;min-height:0;width:auto;max-width:52%;
+      font-family:var(--mono);font-size:12px;color:var(--muted);
+      background:rgba(20,20,24,.85);border:1px solid var(--line);border-radius:8px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+    /* 지금 눌러야 하는 순간에는 사다리와 같게 금색으로 살아난다 */
+    html.ingame .game-shell:has(.bj-table) .bj-status.live{
+      color:var(--gold);border-color:var(--gold-dim)}
 
     /* ── 확보한 자리를 카드에 준다 (바카라 · 포커) ──────────────────
        블랙잭은 앞 블록에서 36x50 으로 키웠다. 나머지 둘도 같은 이유로 키운다 —
