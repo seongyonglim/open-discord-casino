@@ -25,8 +25,19 @@
   *::-webkit-scrollbar{width:10px;height:10px}
   *::-webkit-scrollbar-track{background:transparent}
   *::-webkit-scrollbar-thumb{background:#2c2c31;border-radius:8px;border:2px solid transparent;background-clip:content-box}
-  body{margin:0;background:var(--bg);color:var(--txt);
+  /* 바탕색은 <html> 이 갖는다. body 에만 두면 브라우저가 그것을 «캔버스» 로 끌어올려
+     화면 전체에 칠하는데, 그때 배경 «이미지» 까지 같이 끌려간다 — 그리고 그 이미지는
+     body 상자 크기로 잘려 타일처럼 반복된다.
+     그래서 문서가 화면보다 짧아지면(줌 아웃, 내용이 적은 페이지) body 아랫변에서
+     금색 번짐이 한 벌 더 시작되고, 그 시작선이 가로로 그어진 단차로 보였다(제보).
+     바탕을 <html> 로 올리면 끌어올릴 것이 없어지고, 번짐은 body 안에만 남는다. */
+  html{background:var(--bg)}
+  body{margin:0;background-color:transparent;color:var(--txt);
+    /* 화면보다 짧아도 최소한 한 화면은 덮는다 — 번짐의 기준 상자가 화면과 같아진다 */
+    min-height:100vh;
     background-image:radial-gradient(1000px 460px at 50% -60px, rgba(212,175,55,.10) 0%, rgba(212,175,55,0) 60%);
+    /* 반복하지 않는다. 번짐은 화면 위쪽에 한 번 있는 것이지 무늬가 아니다. */
+    background-repeat:no-repeat;
     font-family:var(--sans);
     /* 자간을 아주 살짝 줄인다. Pretendard 는 기본 자간이 넉넉해서 한글이 성겨 보이는데,
        -0.01em 이면 뭉치지 않으면서 줄이 단단해진다. */

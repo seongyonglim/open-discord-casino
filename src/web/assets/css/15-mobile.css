@@ -68,9 +68,17 @@
        폰에서는 오른쪽 구석에 붙이지 않고 가운데에 둔다. 구석에 두면 폭이 좁아
        마지막 줄이 두세 글자만 보였고, 그러면 "채팅이 있다" 만 말하는 옛 알약과
        다를 것이 없다. 양옆에 여백을 두어 알약으로 남기되 글은 읽히게 한다. */
+    /* 판에서와 같은 줄이어야 한다 — 폭도, 붙는 쪽도, 끌 수 있다는 것도.
+       로비만 화면을 꽉 채운 가운데 줄이면, 게임을 오갈 때마다 같은 것이 다른 물건처럼
+       보인다. 70% · 오른쪽 · 끌기로 맞춘다(자세한 근거는 18-ig-portrait.css). */
     .chat-dock{left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom,0px));
-      align-items:center;padding:0 12px;box-sizing:border-box;pointer-events:none}
-    .chat-dock .chat-bar{width:100%;max-width:360px;pointer-events:auto}
+      align-items:flex-end;padding:0 12px;box-sizing:border-box;pointer-events:none}
+    .chat-dock .chat-bar{width:70%;max-width:360px;min-width:180px;pointer-events:auto;
+      /* 이 줄 위의 손가락은 끌기다. 그만큼 여기서 시작한 화면 스크롤은 안 먹는데,
+         폭이 70% 라 엄지가 얹힐 자리가 좁고 옆으로 조금만 비켜도 그대로 스크롤된다. */
+      touch-action:none;user-select:none;-webkit-user-select:none;
+      transform:translate(var(--chat-dx,0px), var(--chat-dy,0px))}
+    .chat-dock.dragging .chat-bar{transition:none}
     .chat-dock .chat-panel{pointer-events:auto}
     /* 예전에는 여기서 아래 여백을 46px 더 줬다(html.chat-bar-on body). 그 짝이
        18-ig-portrait.css 의 main height -46px 이었고, 둘이 합쳐 정확히 100vh 였다.

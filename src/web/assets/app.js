@@ -1433,9 +1433,16 @@ window.__foldOut = function(el, done){
   var POS_KEY = 'od_chat_pos';
   var barEl = null, posTimer = null;
 
+  /* 끌어 옮길 수 있는 화면인가. 폰이면 로비든 판이든 옮길 수 있다 — 옮긴 자리를 한
+     화면에서만 기억하면 게임을 나오는 순간 도로 제자리로 가고, 그건 기억한 것이 아니다.
+     자리는 «갈 수 있는 만큼 중 어디쯤» 이라 두 화면의 여유 높이가 달라도 같은 뜻이 된다.
+     넓은 화면은 뺀다 — 거기서 도크는 구석에 붙는 알약이고, syncWidth() 가 우측 패널에
+     맞춰 자리를 직접 잡는다. 손으로 옮긴 값과 그 계산이 서로를 덮어쓴다. */
   function onBoard(){
-    var c = document.documentElement.classList;
-    return c.contains('ig-port') && c.contains('ingame');
+    try {
+      return window.matchMedia(
+        '(max-width:768px), (max-width:1024px) and (max-height:560px)').matches;
+    } catch (e) { return false; }
   }
   function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
   function px(el, name){
@@ -1495,18 +1502,20 @@ window.__foldOut = function(el, done){
   /* 저장한 것은 픽셀이 아니라 비율이다. 화면 크기가 달라지면 픽셀은 뜻을 잃는다 —
      폰을 돌리면, 주소창이 접히면, 다른 기기로 옮기면 같은 값이 다른 자리를 가리킨다.
      비율은 "갈 수 있는 만큼 중 어디쯤" 이라 어느 화면에서도 같은 뜻이다. */
+  /* 자리를 잡았으면 true. 아직 잴 수 없으면 false 를 주어 부른 쪽이 다시 시도하게 한다. */
   function applyPos(){
-    if (!barEl) return;
+    if (!barEl) return false;
     if (!onBoard()) {
       barEl.style.removeProperty('--chat-dx');
       barEl.style.removeProperty('--chat-dy');
-      return;
+      return true;
     }
     var g = range();
-    if (!g) return;
+    if (!g) return false;
     var p = readPos();
     if (p) setXY(p.fx * g.dxMin, p.fy * g.dyMin);
     else setXY(0, 0);
+    return true;
   }
   /* 늦춰서 부른다. 세로↔가로가 바뀔 때 뷰포트 값이 먼저 갱신되고 인게임 클래스가
      뒤따라 붙는데, 그 사이에 재면 옛 화면의 치수로 자리를 잡는다.
@@ -1611,7 +1620,12 @@ window.__foldOut = function(el, done){
     barEl = dock.querySelector('.chat-bar');
     addDrag();
     applyBar();
-    repos();
+    /* 처음 한 번은 늦추지 않는다. 늦추면 기본 자리에 한 번 그린 뒤에 옮겨 가고,
+       그 사이가 눈에 «잔상» 으로 남는다 — 화면을 옮길 때마다 줄이 제자리로 갔다가
+       황급히 되돌아오는 것처럼 보였다(제보. 두 장의 사진이 0.5초 안의 일이었다).
+       옮긴 자리는 저장돼 있으므로 그릴 때 이미 알고 있다. 늦출 이유가 없다.
+       아직 잴 수 없으면(그려지기 전) 그때만 늦춰서 다시 시도한다. */
+    if (!applyPos()) repos();
     window.addEventListener('resize', repos);
     /* 판에 들어왔는지는 <html> 의 클래스가 말한다. 그 클래스는 ingame.js 가 붙이는데
        언제 붙는지를 여기서 알 방법이 없다 — 첫 화면에서도, 폰을 돌릴 때도 우리보다
@@ -1694,7 +1708,15 @@ window.__foldOut = function(el, done){
       jumpBottom = true;
       toBottom();                              // 이미 받아 둔 줄은 지금 바로 내린다
       pull();                                  // 그 사이 들어온 줄도 받아 온다
-      if (inputEl) inputEl.focus();
+      /* 폰에서는 초점을 주지 않는다. 초점이 곧 키보드라, 채팅을 «읽으려고» 연 사람에게
+         화면 절반이 자판으로 덮인 채 시작한다 — 대화를 보려고 열었는데 대화가 안 보인다.
+         쓸 때는 입력칸을 한 번 더 누르면 되고, 그건 원래 하려던 동작이다.
+         넓은 화면은 그대로 둔다. 거기서는 키보드가 튀어나오지 않고, 바로 칠 수 있는
+         편이 낫다. 기준은 CSS 의 폰 조건과 같은 문장을 쓴다. */
+      var narrow = false;
+      try { narrow = window.matchMedia(
+        '(max-width:768px), (max-width:1024px) and (max-height:560px)').matches; } catch (e) { }
+      if (inputEl && !narrow) inputEl.focus();
       startIdle();
     } else {
       stopIdle();

@@ -612,9 +612,22 @@ async function main(): Promise<void> {
       /barEl\.addEventListener\('click', function\(e\)\{\s*\r?\n\s*if \(moved > 4\) \{ e\.stopPropagation\(\); e\.preventDefault\(\); \}[\s\S]{0,80}?\}, true\);/.test(app));
     ck('펼친 창은 안 끈다', /if \(dock\.classList\.contains\('on'\)\) return;/.test(app));
     /* 브라우저가 먼저 스크롤로 판정하면 pointercancel 이 날아와 끌기가 끊긴다 —
-       pointermove 안의 preventDefault() 로는 이미 늦다. */
-    ck('세로 인게임에서만 손가락을 스크롤에서 뺏는다',
-      /touch-action:none/.test(c18) && !/touch-action/.test(c15) && !/touch-action/.test(c14));
+       pointermove 안의 preventDefault() 로는 이미 늦다. 그래서 «끌 수 있는 화면» 에서는
+       손가락을 스크롤에서 가져와야 하고, 그 두 곳은 폰 로비(15)와 판 위(18)다.
+       한때 이 검사는 "18 에만 있고 15 에는 없어야 한다" 였다. 로비 줄이 못 박혀 있던
+       시절의 이야기고, 지금은 로비에서도 끌 수 있으므로 둘 다 있어야 한다.
+       넓은 화면(14-chat, 미디어 쿼리 밖)에는 없어야 한다 — 거기서는 끌지 않는다. */
+    ck('끌 수 있는 화면에서 손가락을 스크롤에서 뺏는다',
+      /touch-action:none/.test(c18) && /touch-action:none/.test(c15));
+    ck('넓은 화면에서는 스크롤을 안 뺏는다', !/touch-action/.test(c14));
+    /* 로비와 판이 같은 줄로 보여야 한다 — 폭도, 붙는 쪽도. */
+    ck('로비 줄도 70% · 오른쪽', /\.chat-dock \.chat-bar\{width:70%/.test(c15)
+      && /\.chat-dock\{[^}]*align-items:flex-end/.test(c15));
+    /* 옮긴 자리는 화면을 옮겨도 그대로여야 한다 — 한 화면에서만 기억하면 기억한 것이 아니다. */
+    ck('끌 수 있는 화면을 미디어 쿼리로 가른다',
+      /max-width:768px\), \(max-width:1024px\) and \(max-height:560px\)'\)\.matches;\s*\r?\n\s*\} catch \(e\) \{ return false; \}/.test(app));
+    /* 처음 한 번은 늦추지 않는다 — 늦추면 기본 자리가 한 번 보였다 사라진다(잔상). */
+    ck('첫 자리는 곧바로 잡는다', /if \(!applyPos\(\)\) repos\(\);/.test(app));
 
     /* ── 옮긴 자리 ──────────────────────────────────────────────── */
     ck('자리는 비율로 저장한다', /store\(POS_KEY, fx\.toFixed\(4\) \+ ',' \+ fy\.toFixed\(4\)\)/.test(app));

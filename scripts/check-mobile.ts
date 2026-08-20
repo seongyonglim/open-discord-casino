@@ -125,6 +125,30 @@ const PROBE = `(() => {
     grid: document.documentElement.classList.contains('ig-grid'),
     barH: (function(){ var b = document.querySelector('.ig-bar');
       return b ? Math.round(b.getBoundingClientRect().height) : null; })(),
+    /* 상단바 단추가 실제로 «눌리는가». 보이는 것과 눌리는 것은 다르다 — 안 보이는
+       상자가 위에 겹쳐 있으면 그림은 멀쩡한데 클릭만 먹힌다.
+       실제로 그랬다: 로비 머리를 40px 로 맞추려고 header > .wrap 에 min-height 를
+       줬더니, 판에서는 header 가 height:0 인데도 그 상자가 40px 로 남아 상단바를 덮어
+       여섯 단추가 전부 죽었다. 눈으로도 검사로도 안 잡혔다 — 그래서 여기서 «그 자리를
+       눌렀을 때 무엇이 잡히는가» 를 직접 묻는다. */
+    barDead: (function(){
+      var bar = document.querySelector('.ig-bar');
+      if (!bar) return null;
+      var dead = [];
+      var sel = ['.ig-gamesel', '.ig-help', '.ig-chat', '.belbtn', '.sfxbtn', '.prof', '.ig-back'];
+      for (var i = 0; i < sel.length; i++) {
+        var e = bar.querySelector(sel[i]);
+        if (!e) continue;
+        var b = e.getBoundingClientRect();
+        if (b.width < 4 || b.height < 4) continue;
+        var hit = document.elementFromPoint(
+          Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2));
+        if (!hit || !(hit === e || e.contains(hit) || hit.contains(e))) {
+          dead.push(sel[i] + '→' + (hit ? hit.tagName + '.' + String(hit.className).split(' ')[0] : '없음'));
+        }
+      }
+      return dead;
+    })(),
     navShown: !!(nav && nav.height > 0),
     /* 판이 화면을 얼마나 쓰는가. 남는 높이를 확보해 놓고도 판이 작으면 의미가 없다. */
     boardFill: bb ? Math.round(bb.height / innerHeight * 100) : null,
@@ -275,6 +299,9 @@ async function main(): Promise<void> {
           m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2, `${m.navBottom} vs ${m.vh}`);
         ck(`${g} 상단바가 얇다 (≤44px)`, m.barH !== null && m.barH <= 44,
           m.barH === null ? '.ig-bar 없음' : `${m.barH}px`);
+        /* 보이는 것으로는 모자란다 — 그 자리를 눌렀을 때 그 단추가 잡혀야 한다. */
+        ck(`${g} 상단바 단추가 눌린다`, (m.barDead ?? []).length === 0,
+          (m.barDead ?? []).join(' · ') + ' — 안 보이는 상자가 위를 덮고 있다');
         /* 자리를 비워 놓고 판이 그대로면 아무것도 얻은 게 없다. */
         /* 40% 로 둔다. 처음에 45% 로 잡았는데 사다리가 42% 에서 걸렸다 — 그 판은
            출발 둘과 도착 둘, 선 두 개가 전부라 넓은 면적이 필요하지 않다. 기준이

@@ -38,6 +38,13 @@
     /* 헤더는 자리를 안 쓰되 그 안의 하단 탭바(position:fixed)는 남긴다 */
     html.ig-port.ingame header{height:0;min-height:0;padding:0;border:0;
       background:none;box-shadow:none;overflow:visible}
+    /* 안쪽 상자도 같이 접는다. 로비 머리를 40px 로 맞추려고 .wrap 에 min-height 를
+       줬는데, 판에서는 header 가 height:0 이어도 그 상자가 40px 로 남아 상단바 위에
+       그대로 겹쳤다 — 보이지는 않지만 클릭을 전부 먹어서 상단바 단추가 하나도 안
+       눌렸다(제보. elementFromPoint 가 여섯 자리 모두 DIV.wrap 을 돌려줬다).
+       안 보이는 것이 누르는 것을 막는다 — 그래서 감추는 것만으로는 모자라고 자리도
+       없애야 한다. */
+    html.ig-port.ingame header > .wrap{min-height:0;height:0;padding:0;margin:0}
     html.ig-port.ingame header > .wrap > *:not(nav){display:none}
     html.ig-port.ingame header nav{display:flex}
     /* 위 40px 은 상단바 자리다. 상단바가 position:fixed 라 본문이 스스로 비워 줘야
