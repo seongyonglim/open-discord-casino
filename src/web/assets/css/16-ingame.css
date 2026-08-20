@@ -1051,3 +1051,45 @@
        그 칸만 두 열을 쓰게 한다. 오른쪽에서 놀던 138px 이 이 줄로 온다. */
     html.ingame .mines-shell .field-grid > .field:has(.bet-row){grid-column:1 / -1}
   }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 블랙잭 좌석: 판이 도는 동안 안쪽이 밖으로 나갔다 ────────────────
+       실측(780×360): 좌석은 58px 인데 안쪽이 140px 이다
+       (이름 16 + 카드 44 + 칩 더미 48 + 금액·상태 16 + 사이·여백).
+       그래서 칩과 금액 줄이 펠트 밖으로 60~83px 밀려 잘렸다 — 얼마를 걸었는지,
+       스탠드인지 버스트인지가 판이 도는 동안 안 보였다.
+
+       높이를 한 번 더 깎는 것으로는 안 된다. 예산을 다시 나눈다:
+         펠트 224 = 딜러 122 + 빈틈 41 + 좌석 58
+       가운데 41px 은 space-between 이 남긴 빈 자리다. 그것을 좌석에 준다.
+       그리고 좌석 안쪽을 그 크기에 맞춘다 — 줄이는 것은 «여유» 이지 읽어야 하는
+       것이 아니다. 카드는 26x36 그대로, 이름·금액·상태 글자도 그대로 두고,
+       칩 더미와 사이 여백만 줄인다. */
+    html.ingame .game-shell:has(.bj-table) .bj-seat{
+      height:auto;min-height:0;gap:2px;padding:5px 5px 4px}
+    html.ingame .game-shell:has(.bj-table) .bj-hand.small{min-height:36px}
+    /* 칩은 «걸었다» 를 보여 주면 되는 것이라 작아도 뜻이 산다. 48 → 20.
+       한때 이 자리를 통째로 없앨까 했는데, 그러면 얼마를 걸었는지가 아래 숫자
+       하나로만 남는다 — 칩 더미는 그 숫자를 눈으로 확인시켜 주는 장치다. */
+    html.ingame .game-shell:has(.bj-table) .bj-pile{height:20px}
+    html.ingame .game-shell:has(.bj-table) .bj-pile .pchip{transform:scale(.62);
+      transform-origin:center bottom}
+    /* 카드 크기도 이 파일에 여러 번 적혀 있고 이기는 것은 뒤엣것이다 — 30x42 라
+       손패 줄이 56px 이 됐다. 여기서 26x36 으로 못 박는다. */
+    html.ingame .game-shell:has(.bj-table) .bj-hand.small .pcard{width:26px;height:36px}
+    /* 좌석 줄 아래 24px 여백은 자리가 넉넉한 화면의 값이다. 여기서는 그 24px 이
+       그대로 좌석을 펠트 밖으로 밀어낸다. */
+    html.ingame .game-shell:has(.bj-table) .bj-seats{margin-bottom:0}
+    html.ingame .game-shell:has(.bj-table) .bj-seat-top{font-size:10.5px}
+    /* 펠트 안쪽은 218px 인데 딜러 122 + 상태 41 + 좌석 105 = 268 이다. 50px 을 찾아야
+       한다. 좌석은 이미 깎을 만큼 깎았으므로 위쪽에서 낸다 —
+         딜러 손패 72 → 56 (카드를 좌석과 같은 26x36 으로)
+         딜러 머리 32 → 22 (DEALER 글자는 15px 이나 필요한 크기가 아니다)
+         상태 줄 41 → 24 (한 줄인데 위아래 여백이 그만큼이었다)
+       규칙 한 줄("BLACKJACK PAYS 3 TO 2…")은 남긴다. 물음표 안에도 있지만, 판 위에서
+       읽히는 것과 눌러서 읽는 것은 다르다. */
+    html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand .pcard{width:26px;height:36px}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand{min-height:38px}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer-head{font-size:12px;margin-bottom:2px}
+    html.ingame .game-shell:has(.bj-table) .bj-status{margin:2px 0;padding:0;min-height:0}
+  }
