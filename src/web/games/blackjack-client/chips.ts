@@ -105,6 +105,14 @@ export function bjChips(p0: string | number): string {
           if (s.userId === MEID) return;
           var added = pushChips(el, pile, decompose(delta), s.userId, 'pending');
           tossFrom(rosterAvatar(s.userId), added);
+          /* 남이 걸 때도 같은 소리를 낸다 — 지금까지는 칩만 날고 조용해서, 옆에서
+             판이 커지고 있다는 것이 눈을 그쪽에 두고 있을 때만 전해졌다.
+             다만 한 번에 여럿이 걸면 소리가 겹쳐 지저분해지므로 150ms 안에는 한 번만
+             낸다. 알리는 것이 목적이지 개수를 세어 주는 것이 아니다. */
+          if (Date.now() - lastBetSfx > 150) {
+            lastBetSfx = Date.now();
+            if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+          }
           return;
         }
         // 금액은 그대로인데 칸이 비었다면 골격을 다시 그린 것이다 — 기록대로 복원
@@ -121,11 +129,19 @@ export function bjChips(p0: string | number): string {
         }
         return fxLayer;
       }
+      var lastBetSfx = 0;
       function cloneAt(chip, rect, cls){
         var c = chip.cloneNode(true);
         c.className = chip.className.replace(/\\b(toss|pending|fly)\\b/g, '').trim() + ' ' + cls;
+        /* 동전은 동전이어야 한다. 원본의 사각형을 그대로 베끼면, 그 칩이 담긴 자리가
+           한 축으로 눌려 있을 때(가로에서 칩 더미를 20px 로 줄여 두었다) 그 눌린 비율이
+           그대로 복사돼 날아가는 내내 타원으로 보인다.
+           동전은 두 변 중 긴 쪽에 맞춰 1:1 로 띄운다 — 막대칩(c-bar)은 원래 직사각형
+           이므로 건드리지 않는다. */
+        var w = rect.width, h = rect.height;
+        if (c.className.indexOf('c-coin') >= 0) { var d = Math.max(w, h); w = d; h = d; }
         c.style.cssText = 'position:fixed;margin:0;left:'+rect.left+'px;top:'+rect.top+'px;' +
-          'width:'+rect.width+'px;height:'+rect.height+'px;';
+          'width:'+w+'px;height:'+h+'px;';
         getFxLayer().appendChild(c);
         return c;
       }
@@ -135,9 +151,18 @@ export function bjChips(p0: string | number): string {
       // src 위치에서 chips(제자리에 숨겨둔 원본)로 칩이 날아온다
       function tossFrom(src, chips){
         if (!chips || !chips.length) return;
-        if (!src) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
-        var a = src.getBoundingClientRect();
-        if (!a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        /* 출발점이 없으면 예전에는 조용히 건너뛰었다 — 애니메이션만 안 돌고 칩은 그냥
+           나타난다. 그런데 남이 걸었을 때의 출발점은 오른쪽 목록의 그 사람 줄인데,
+           그 줄이 아직 안 그려진 순간이 흔하다(첫 베팅이면 목록 자체가 비어 있다).
+           그래서 남의 베팅에서는 날아오는 모션이 아예 안 보였다(제보).
+           그 사람 줄이 없으면 목록 상자 자체에서 날린다. 정확히 그 자리는 아니지만
+           저쪽에서 왔다는 것은 맞고, 아무 일도 안 일어나는 것보다 훨씬 낫다. */
+        var a = src && src.getBoundingClientRect();
+        if (!a || !a.width) {
+          var rb = rosterEl && rosterEl.getBoundingClientRect();
+          if (rb && rb.width) a = rb;
+        }
+        if (!a || !a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
         chips.forEach(function(ch, i){
           var b = ch.getBoundingClientRect();
           if (!b.width) { ch.classList.remove('pending'); return; }

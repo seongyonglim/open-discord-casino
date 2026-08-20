@@ -165,7 +165,13 @@
   @keyframes balUp{0%{transform:scale(1)}30%{transform:scale(1.18);color:var(--win)}100%{transform:scale(1)}}
   @keyframes balDown{0%{transform:scale(1)}30%{transform:scale(.9);color:var(--lose)}100%{transform:scale(1)}}
 
+  /* 날아가는 칩은 게임 껍데기 «밖» 에 산다 — body 직속 레이어다. 그래서 껍데기 안에서
+     키워 둔 글자 크기(html.ingame .game-shell .pchip{font-size:9.5px})가 안 따라오고
+     기본값 8px 로 떨어졌다. 폰 가로에서 8px 은 못 읽는다(검사가 잡았다).
+     레이어 자신이 제 크기를 갖게 한다. */
   .chip-fly-layer{position:fixed;inset:0;pointer-events:none;z-index:500}
+  .chip-fly-layer .pchip{font-size:9.5px}
+  .chip-fly-layer .pchip.c-bar{font-size:11px}
   @keyframes chipFly{
     0%{transform:none;opacity:1}
     18%{transform:translate(0,-10px) scale(1.12);opacity:1}

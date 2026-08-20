@@ -262,11 +262,16 @@
        조작부라(블랙잭은 칩 독까지 떠 있다) 아래에 두면 반드시 무언가를 덮는다.
        위쪽 구석이 그나마 비어 있고, 마음에 안 들면 끌어 옮기면 된다 — 그 자리는
        기억된다. 오른쪽 158px 은 참가자 레일(150) 을 비켜선 값이다. */
-    html.ingame .chat-dock:not(.on){top:42px;bottom:auto;left:auto;right:158px;
+    /* 오른쪽 위는 이제 안내 뱃지(베팅 마감까지 …)가 쓴다 — 둘 다 그리로 가면 겹친다.
+       채팅은 왼쪽 위로 보낸다. 가로 360px 에서는 어디에 둬도 판 위에 얹히므로,
+       «지금 눌러야 하는 것» 과 안 겹치는 자리를 고르는 것이 최선이다. */
+    html.ingame .chat-dock:not(.on){top:42px;bottom:auto;left:8px;right:auto;
       width:auto;height:auto;transform:none;
-      display:flex;align-items:flex-end;justify-content:flex-end;pointer-events:none}
-    html.ingame .chat-dock:not(.on) .chat-bar{display:flex;width:min(300px,40vw);
-      min-width:180px;pointer-events:auto;
+      display:flex;align-items:flex-start;justify-content:flex-start;pointer-events:none}
+    /* 폭을 240 으로 줄인다. 300px 이면 오른쪽 158px 을 비켜서도 왼쪽 끝이 x=310 이라
+       판 가운데(딜러 점수 자리)를 덮었다 — 블랙잭에서 그 숫자는 지금 봐야 하는 것이다. */
+    html.ingame .chat-dock:not(.on) .chat-bar{display:flex;width:min(240px,34vw);
+      min-width:170px;pointer-events:auto;
       touch-action:none;user-select:none;-webkit-user-select:none;
       transform:translate(var(--chat-dx,0px), var(--chat-dy,0px))}
     html.ingame .chat-dock.dragging .chat-bar{transition:none}
@@ -1160,4 +1165,84 @@
        것이 오히려 좌석을 89px 덮었다. 폭을 먼저 정하고 줄바꿈을 막는다. */
     html.ingame .game-shell:has(.bj-table) .game-main > .game-controls .coin-row{
       flex-wrap:nowrap;justify-content:center;min-width:0}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 블랙잭 가로: 아래 조작부는 «한 번에 하나» ────────────────────
+       칩 트레이는 펠트 위에 띄워 두었는데, 액션 버튼(#bjActions)은 카드 «안» 에 있다.
+       그래서 내 차례가 오면 둘이 같이 나와 겹쳤다 — 칩을 누르려다 힛이 눌리는 종류의
+       사고다. 두 줄은 서로 배타적이어야 한다: 걸 때는 칩, 칠 때는 액션.
+
+       액션 줄도 칩 트레이가 있던 그 자리에 띄운다. 자리가 같아야 손이 한 곳만 기억한다. */
+    html.ingame .game-shell:has(.bj-table):has(.bj-actions:not([hidden])) .game-controls{display:none}
+    html.ingame .game-shell:has(.bj-table) .bj-actions{
+      position:absolute;left:50%;bottom:6px;transform:translateX(-50%);
+      width:calc(100% - 16px);max-width:none;margin:0;
+      background:rgba(0,0,0,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+      border:1px solid rgba(255,255,255,.10);border-radius:999px;
+      padding:4px 10px;gap:6px;z-index:21}
+    /* 슬림한 한 줄. 아이콘을 위에 세우고 설명을 붙이던 것은 자리가 넉넉할 때의 모양이다.
+       여기서는 아이콘과 이름을 옆으로 눕히고 부가 설명(한 장 더 · 여기서 멈춤)은 뺀다 —
+       내 차례에 그 문장을 읽는 사람은 없다. */
+    html.ingame .game-shell:has(.bj-table) .bja{flex-direction:row;gap:6px;
+      padding:5px 8px;border-radius:999px;min-height:0;height:34px}
+    html.ingame .game-shell:has(.bj-table) .bja-t{flex-direction:row;width:auto}
+    html.ingame .game-shell:has(.bj-table) .bja-t i{display:none}
+    html.ingame .game-shell:has(.bj-table) .bja-t b{font-size:12.5px}
+    html.ingame .game-shell:has(.bj-table) .bja svg{width:15px;height:15px}
+
+    /* ── 가운데 룰 문구는 뺀다 ──────────────────────────────────────
+       "BLACKJACK PAYS 3 TO 2 · DEALER STANDS ON ALL 17" 은 한 번 읽으면 되는 규칙이고
+       물음표 안에 그대로 있다. 360px 높이에서 그 한 줄이 16px 을 쓰는데, 그 16px 은
+       카드가 커지는 데 쓰는 편이 낫다. */
+    html.ingame .game-shell:has(.bj-table) .bj-rule{display:none}
+
+    /* ── 카드를 키운다 (26x36 → 36x50, 1.4배) ──────────────────────
+       펠트가 224 → 316px 이 되면서 생긴 자리를 카드에 준다. 카드가 이 게임에서
+       가장 오래 보는 것이고, 26px 짜리 숫자는 흘깃 봐서는 안 읽힌다. */
+    html.ingame .game-shell:has(.bj-table) .bj-hand.small .pcard{width:36px;height:50px}
+    html.ingame .game-shell:has(.bj-table) .bj-hand.small{min-height:50px}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand .pcard{width:36px;height:50px}
+    html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand{min-height:52px}
+
+    /* ── 베팅 칩과 금액을 카드 «위» 로 ─────────────────────────────
+       바닥에 있으면 아래에서 올라온 조작부에 가장 먼저 가린다 — 하필 그때 가장
+       봐야 하는 것이(얼마 걸었나 · 스탠드인가) 그것이다.
+       마크업은 그대로 두고 순서만 바꾼다: 이름 → 금액·상태 → 칩 → 카드. */
+    html.ingame .game-shell:has(.bj-table) .bj-seat-top{order:-3}
+    html.ingame .game-shell:has(.bj-table) .bj-seat-foot{order:-2;margin-top:0}
+    html.ingame .game-shell:has(.bj-table) .bj-pile{order:-1}
+  }
+
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* ── 안내 문구는 판 «위» 로 (블랙잭 · 바카라 · 포커) ────────────────
+       "베팅 마감까지 9초" 같은 한 줄이 펠트 한가운데에서 세로 한 줄을 통째로 쓰고
+       있었다. 360px 높이에서 그 한 줄은 카드 크기를 정하는 값이다.
+
+       사다리처럼 판 오른쪽 위 구석에 띄운다 — 거기는 어느 게임이든 비어 있고,
+       한 줄도 안 쓰면서 같은 것을 말한다. 뒤가 비치는 알약이라 «판 위에 얹힌 것» 으로
+       읽히고, 판 자체를 가리지 않는다. */
+    html.ingame .game-shell:has(.bj-table) .bj-table,
+    html.ingame .game-shell:has(.bacc-table) .bacc-table,
+    html.ingame .poker-shell .poker-table{position:relative}
+    html.ingame .game-shell:has(.bj-table) .bj-status,
+    html.ingame .game-shell:has(.bacc-table) .bacc-status,
+    html.ingame .poker-shell .poker-status{
+      position:absolute;top:8px;right:8px;z-index:20;
+      margin:0;padding:3px 9px;min-height:0;width:auto;max-width:52%;
+      background:rgba(0,0,0,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+      border:1px solid rgba(255,255,255,.12);border-radius:11px;
+      font-size:11px;font-weight:600;line-height:1.35;text-align:right;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    /* 지금 눌러야 하는 순간(베팅 중·내 차례)에는 테두리로 알린다 — 글자 색만으로는
+       구석에서 눈에 안 걸린다. */
+    html.ingame .game-shell:has(.bj-table) .bj-status.live,
+    html.ingame .game-shell:has(.bacc-table) .bacc-status.live,
+    html.ingame .poker-shell .poker-status.live{border-color:rgba(212,175,55,.55)}
+
+    /* ── 확보한 자리를 카드에 준다 (바카라 · 포커) ──────────────────
+       블랙잭은 앞 블록에서 36x50 으로 키웠다. 나머지 둘도 같은 이유로 키운다 —
+       카드가 이 게임들에서 가장 오래 보는 것이고, 25px 짜리 숫자는 흘깃 봐서 안 읽힌다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:34px;height:47px}
+    html.ingame .poker-shell .poker-table .pcard{width:34px;height:47px}
   }

@@ -83,6 +83,14 @@ export const PK_CHIPS_JS = `      function renderCoins(){
           if (uid === st.me) return;
           var added = pushChips(el, pile, decompose(delta), uid, 'pending');
           tossFrom(rosterAvatar(uid), added);
+          /* 남이 걸 때도 같은 소리를 낸다 — 지금까지는 칩만 날고 조용해서, 옆에서
+             판이 커지고 있다는 것이 눈을 그쪽에 두고 있을 때만 전해졌다.
+             다만 한 번에 여럿이 걸면 소리가 겹쳐 지저분해지므로 150ms 안에는 한 번만
+             낸다. 알리는 것이 목적이지 개수를 세어 주는 것이 아니다. */
+          if (Date.now() - lastBetSfx > 150) {
+            lastBetSfx = Date.now();
+            if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+          }
         });
       }
       // 칩이 상자 밖을 지나는 구간은 .market의 overflow:hidden에 잘려 보이지 않으므로,
@@ -97,11 +105,15 @@ export const PK_CHIPS_JS = `      function renderCoins(){
         return fxLayer;
       }
       // 제자리(rect)에 놓인 복제본을 만들어 레이어에 올린다
+      var lastBetSfx = 0;
       function cloneAt(chip, rect, cls){
         var c = chip.cloneNode(true);
         c.className = chip.className.replace(/\\b(drop|toss|pending|fly)\\b/g, '').trim() + ' ' + cls;
+        /* 동전은 동전이어야 한다 — 자세한 이유는 blackjack-client/chips.ts 의 같은 자리. */
+        var w = rect.width, h = rect.height;
+        if (c.className.indexOf('c-coin') >= 0) { var d = Math.max(w, h); w = d; h = d; }
         c.style.cssText = 'position:fixed;margin:0;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
-          'width:' + rect.width + 'px;height:' + rect.height + 'px;';
+          'width:' + w + 'px;height:' + h + 'px;';
         getFxLayer().appendChild(c);
         return c;
       }
@@ -115,9 +127,18 @@ export const PK_CHIPS_JS = `      function renderCoins(){
       // src 요소 위치에서 chips(제자리에 숨겨둔 원본)로 칩이 날아오게 한다
       function tossFrom(src, chips){
         if (!chips || !chips.length) return;
-        if (!src) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
-        var a = src.getBoundingClientRect();
-        if (!a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        /* 출발점이 없으면 예전에는 조용히 건너뛰었다 — 애니메이션만 안 돌고 칩은 그냥
+           나타난다. 그런데 남이 걸었을 때의 출발점은 오른쪽 목록의 그 사람 줄인데,
+           그 줄이 아직 안 그려진 순간이 흔하다(첫 베팅이면 목록 자체가 비어 있다).
+           그래서 남의 베팅에서는 날아오는 모션이 아예 안 보였다(제보).
+           그 사람 줄이 없으면 목록 상자 자체에서 날린다. 정확히 그 자리는 아니지만
+           저쪽에서 왔다는 것은 맞고, 아무 일도 안 일어나는 것보다 훨씬 낫다. */
+        var a = src && src.getBoundingClientRect();
+        if (!a || !a.width) {
+          var rb = rosterEl && rosterEl.getBoundingClientRect();
+          if (rb && rb.width) a = rb;
+        }
+        if (!a || !a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
         chips.forEach(function(ch, i){
           var b = ch.getBoundingClientRect();
           if (!b.width) { ch.classList.remove('pending'); return; }
