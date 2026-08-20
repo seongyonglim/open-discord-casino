@@ -68,10 +68,10 @@
        한 줄도 안 보였고, 채팅이 있다는 것조차 알 수 없었다.
 
        덮는 것이 문제였지 있는 것이 문제가 아니었다. 자리를 비워 주면 된다 —
-       바가 켜져 있으면 본문 높이에서 그만큼을 뺀다(아래 chat-bar-on). 그러면
+       바가 떠 있으면 본문 높이에서 그만큼을 뺀다(아래 chat-bar-on). 그러면
        조작부가 위로 올라가고 버튼이 가려질 자리가 없어진다.
 
-       끄면 그 자리도 같이 돌려받는다. 안 보는 사람에게 46px 을 뺏을 이유가 없다. */
+       ×로 숨기면 그 자리도 같이 돌려받는다. 안 보는 사람에게 46px 을 뺏을 이유가 없다. */
     html.ig-port.ingame .chat-dock:not(.on){display:flex;top:auto;
       left:0;right:0;bottom:calc(50px + env(safe-area-inset-bottom,0px));
       height:auto;padding:0 12px 6px;box-sizing:border-box;

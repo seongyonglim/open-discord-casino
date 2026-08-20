@@ -1330,32 +1330,20 @@ window.__ICON = (function(){
   function store(k, v){ try { localStorage.setItem(k, v); } catch (e) { } }
 
   /* ── 아래 한 줄 바를 볼 것인가 ────────────────────────────────────
-     두 가지를 나눈다.
+     ×를 누르면 지금만 안 본다. 새로 고치면 다시 나온다.
 
-       끔(setBarOn false)  — 아주 안 본다. localStorage 에 남아 다음에 와도 그대로다.
-       숨김(hideBarNow)    — 지금만 안 본다. 새로 고치면 다시 나온다.
-
-     나누는 이유: ×는 손이 미끄러져도 눌리는 자리에 있다. 그 한 번이 영구히 남으면
-     되돌리는 길을 찾아 헤매게 된다. 영구히 끄는 것은 채팅창 안의 스위치가 맡는다 —
-     거기는 일부러 열어야 닿는 자리다. */
-  var BAR_KEY = 'chat_bar_on';
+     영구히 끄는 스위치도 두었다가 뺐다. 채팅 머리에 체크박스로 앉아 있었는데,
+     제목 옆에 붙어 제목의 일부처럼 보였고 이름("아래 한 줄 바")도 코드에서 부르던
+     말이라 읽히지 않았다. 설정 하나를 알아보게 만드는 값이 그 설정이 주는 값보다
+     컸다. 남는 길은 ×뿐이고, 그건 되돌리는 방법이 새로 고침이라 잃을 것이 없다. */
   var barHidden = false;
-  function barOn(){ return stored(BAR_KEY, '1') !== '0'; }
-  function setBarOn(on){
-    store(BAR_KEY, on ? '1' : '0');
-    if (on) barHidden = false;
-    applyBar();
-  }
   function hideBarNow(){ barHidden = true; applyBar(); }
-  /* 켜져 있고 이번에 숨기지도 않았을 때만 보인다. 화면을 덮지 않도록 자리를
-     비우는 일은 CSS 가 이 클래스를 보고 한다(--chat-bar-h). */
+  /* 이번에 숨기지 않았을 때만 보인다. 화면을 덮지 않도록 자리를 비우는 일은
+     CSS 가 이 클래스를 보고 한다(--chat-bar-h). */
   function applyBar(){
     if (!dock) return;
-    var show = barOn() && !barHidden;
-    dock.classList.toggle('bar-off', !show);
-    document.documentElement.classList.toggle('chat-bar-on', show);
-    var t = dock.querySelector('.chat-tick-in');
-    if (t && t.checked !== barOn()) t.checked = barOn();
+    dock.classList.toggle('bar-off', barHidden);
+    document.documentElement.classList.toggle('chat-bar-on', !barHidden);
   }
 
   function build(){
@@ -1386,11 +1374,6 @@ window.__ICON = (function(){
           + '<span class="chat-note"></span>'
           /* 닫기가 아니라 최소화다 — 누르면 대화가 사라지는 것이 아니라 접힐 뿐이고,
              받아 둔 줄과 안 읽은 수는 그대로 남는다. ×로 그리면 "나가기"로 읽힌다. */
-          /* 아래 한 줄 바를 아주 끄는 스위치. 여기 두는 이유는 되돌리는 길이 같은
-             자리에 있어야 하기 때문이다 — 바를 숨긴 사람이 다시 켜려면 채팅을 열 텐데,
-             그때 눈에 보이는 곳이 여기다. */
-          + '<label class="chat-tick"><input type="checkbox" class="chat-tick-in">'
-            + '<span>아래 한 줄 바</span></label>'
           + '<button type="button" class="chat-min" title="최소화" aria-label="최소화">−</button>'
         + '</div>'
         + '<div class="chat-list"></div>'
@@ -1411,9 +1394,6 @@ window.__ICON = (function(){
       e.stopPropagation();
       hideBarNow();
     });
-    var tick = dock.querySelector('.chat-tick-in');
-    tick.checked = barOn();
-    tick.addEventListener('change', function(){ setBarOn(tick.checked); });
     applyBar();
     dock.querySelector('.chat-send').addEventListener('click', send);
     inputEl.addEventListener('keydown', function(e){
