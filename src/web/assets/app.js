@@ -1329,6 +1329,35 @@ window.__ICON = (function(){
   function stored(k, d){ try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
   function store(k, v){ try { localStorage.setItem(k, v); } catch (e) { } }
 
+  /* ── 아래 한 줄 바를 볼 것인가 ────────────────────────────────────
+     두 가지를 나눈다.
+
+       끔(setBarOn false)  — 아주 안 본다. localStorage 에 남아 다음에 와도 그대로다.
+       숨김(hideBarNow)    — 지금만 안 본다. 새로 고치면 다시 나온다.
+
+     나누는 이유: ×는 손이 미끄러져도 눌리는 자리에 있다. 그 한 번이 영구히 남으면
+     되돌리는 길을 찾아 헤매게 된다. 영구히 끄는 것은 채팅창 안의 스위치가 맡는다 —
+     거기는 일부러 열어야 닿는 자리다. */
+  var BAR_KEY = 'chat_bar_on';
+  var barHidden = false;
+  function barOn(){ return stored(BAR_KEY, '1') !== '0'; }
+  function setBarOn(on){
+    store(BAR_KEY, on ? '1' : '0');
+    if (on) barHidden = false;
+    applyBar();
+  }
+  function hideBarNow(){ barHidden = true; applyBar(); }
+  /* 켜져 있고 이번에 숨기지도 않았을 때만 보인다. 화면을 덮지 않도록 자리를
+     비우는 일은 CSS 가 이 클래스를 보고 한다(--chat-bar-h). */
+  function applyBar(){
+    if (!dock) return;
+    var show = barOn() && !barHidden;
+    dock.classList.toggle('bar-off', !show);
+    document.documentElement.classList.toggle('chat-bar-on', show);
+    var t = dock.querySelector('.chat-tick-in');
+    if (t && t.checked !== barOn()) t.checked = barOn();
+  }
+
   function build(){
     if (dock) return;
     dock = document.createElement('div');
@@ -1338,16 +1367,30 @@ window.__ICON = (function(){
          열어 보기 전까지 방이 살아 있는지 알 수 없다 — 동시 접속이 다섯인 방에서 그건
          아무도 안 열고 아무도 안 쓰는 쪽으로 굴러간다.
          마지막 줄을 그 자리에 그대로 띄우면, 접힌 채로도 대화가 보인다. */
-      '<button type="button" class="chat-tab" aria-label="채팅 열기">'
-        + '<i class="chat-ico" aria-hidden="true">' + window.__ICON.chat + '</i>'
-        + '<span class="chat-last"><span class="chat-last-e">채팅</span></span>'
-        + '<i class="chat-badge" hidden></i>'
-      + '</button>'
+      /* 접힌 줄과 그 옆의 닫기. 닫기를 줄 안에 넣을 수는 없다 — 둘 다 <button> 이라
+         겹쳐지면 어느 쪽이 눌렸는지 브라우저가 정하고, 그건 우리가 정할 일이다.
+         한 상자에 형제로 두고 각자 제 일을 맡는다. */
+      '<div class="chat-bar">'
+        + '<button type="button" class="chat-tab" aria-label="채팅 열기">'
+          + '<i class="chat-ico" aria-hidden="true">' + window.__ICON.chat + '</i>'
+          + '<span class="chat-last"><span class="chat-last-e">채팅</span></span>'
+          + '<i class="chat-badge" hidden></i>'
+        + '</button>'
+        /* 지금만 숨긴다. 아주 끄는 것은 채팅창 안의 스위치가 맡는다 —
+           실수로 눌렀을 때 되돌리는 길이 화면에 없으면 그건 끄는 것이 아니라 잃는 것이다. */
+        + '<button type="button" class="chat-hide" title="지금 숨기기" aria-label="지금 숨기기">'
+          + window.__ICON.close + '</button>'
+      + '</div>'
       + '<div class="chat-panel" hidden>'
         + '<div class="chat-head"><b>채팅</b>'
           + '<span class="chat-note"></span>'
           /* 닫기가 아니라 최소화다 — 누르면 대화가 사라지는 것이 아니라 접힐 뿐이고,
              받아 둔 줄과 안 읽은 수는 그대로 남는다. ×로 그리면 "나가기"로 읽힌다. */
+          /* 아래 한 줄 바를 아주 끄는 스위치. 여기 두는 이유는 되돌리는 길이 같은
+             자리에 있어야 하기 때문이다 — 바를 숨긴 사람이 다시 켜려면 채팅을 열 텐데,
+             그때 눈에 보이는 곳이 여기다. */
+          + '<label class="chat-tick"><input type="checkbox" class="chat-tick-in">'
+            + '<span>아래 한 줄 바</span></label>'
           + '<button type="button" class="chat-min" title="최소화" aria-label="최소화">−</button>'
         + '</div>'
         + '<div class="chat-list"></div>'
@@ -1364,6 +1407,14 @@ window.__ICON = (function(){
     noteEl = dock.querySelector('.chat-note');
     dock.querySelector('.chat-tab').addEventListener('click', function(){ toggle(); });
     dock.querySelector('.chat-min').addEventListener('click', function(){ toggle(false); });
+    dock.querySelector('.chat-hide').addEventListener('click', function(e){
+      e.stopPropagation();
+      hideBarNow();
+    });
+    var tick = dock.querySelector('.chat-tick-in');
+    tick.checked = barOn();
+    tick.addEventListener('change', function(){ setBarOn(tick.checked); });
+    applyBar();
     dock.querySelector('.chat-send').addEventListener('click', send);
     inputEl.addEventListener('keydown', function(e){
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }

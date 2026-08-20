@@ -43,8 +43,17 @@
 
     /* 본문이 탭바 뒤로 숨지 않게 자리를 비운다 */
     body{padding-bottom:calc(50px + env(safe-area-inset-bottom,0px))}
-    /* 채팅 도크도 탭바 위로 올린다 — 안 그러면 마지막 줄이 탭에 가린다 */
-    .chat-dock{bottom:calc(58px + env(safe-area-inset-bottom,0px))}
+    /* 채팅 도크도 탭바 위로 올린다 — 안 그러면 마지막 줄이 탭에 가린다.
+       폰에서는 오른쪽 구석에 붙이지 않고 가운데에 둔다. 구석에 두면 폭이 좁아
+       마지막 줄이 두세 글자만 보였고, 그러면 "채팅이 있다" 만 말하는 옛 알약과
+       다를 것이 없다. 양옆에 여백을 두어 알약으로 남기되 글은 읽히게 한다. */
+    .chat-dock{left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom,0px));
+      align-items:center;padding:0 12px;box-sizing:border-box;pointer-events:none}
+    .chat-dock .chat-bar{width:100%;max-width:360px;pointer-events:auto}
+    .chat-dock .chat-panel{pointer-events:auto}
+    .chat-dock.bar-off:not(.on){display:none}
+    /* 본문이 그 줄 뒤로 숨지 않게 자리를 비운다 — 로비는 스크롤되므로 아래 여백만 준다 */
+    html.chat-bar-on body{padding-bottom:calc(50px + 46px + env(safe-area-inset-bottom,0px))}
 
     /* ── 게임 전환: 접었다 편다 ───────────────────────────────────
        일곱 개를 늘어놓으면 세 줄이 된다. 평소에는 지금 하는 게임 하나만 보이고,

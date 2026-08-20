@@ -38,6 +38,25 @@
   .chat-last.up{animation:chatLastUp .22s cubic-bezier(0,0,.2,1) both}
   @keyframes chatLastUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){.chat-last.up{animation:none}}
+  /* ── 접힌 줄 + 닫기 ────────────────────────────────────────────────
+     둘을 한 상자에 형제로 둔다. 상자 자체가 알약이고, 안에서 줄이 남는 폭을 다 쓴다. */
+  .chat-bar{display:flex;align-items:center;gap:2px;max-width:100%;min-width:0}
+  .chat-bar .chat-tab{flex:1 1 auto;min-width:0;border-top-right-radius:0;
+    border-bottom-right-radius:0;border-right:0}
+  .chat-hide{flex:none;width:30px;align-self:stretch;display:inline-flex;
+    align-items:center;justify-content:center;cursor:pointer;padding:0;
+    background:rgba(22,25,32,.95);border:1px solid #2e3440;border-left:0;
+    border-radius:0 10px 10px 0;color:var(--muted);
+    box-shadow:0 4px 16px rgba(0,0,0,.7);transition:color .12s,border-color .12s}
+  .chat-hide:hover{color:var(--txt);border-color:var(--gold-dim)}
+  .chat-hide svg{width:13px;height:13px;display:block}
+  /* 꺼 두었거나 이번에만 숨겼을 때 — 줄만 걷고 펼친 패널은 그대로 연다 */
+  .chat-dock.bar-off .chat-bar{display:none}
+
+  /* 채팅창 머리의 켜기/끄기 스위치 */
+  .chat-tick{display:inline-flex;align-items:center;gap:5px;margin-left:auto;
+    margin-right:6px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none}
+  .chat-tick input{width:13px;height:13px;margin:0;cursor:pointer;accent-color:var(--gold)}
   /* 상위 세 사람의 이름 색은 목록과 같은 규칙이다 — 두 곳이 다르면 같은 사람이
      바에서와 목록에서 다른 색으로 보인다. */
   .chat-last.t1 .chat-nm{color:#fbbf24;font-weight:800}
