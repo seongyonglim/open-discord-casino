@@ -574,15 +574,14 @@ export function minesPage(user: WebUser): string {
             }, delay));
             delay += 90;
           });
-          /* 지뢰가 다 드러난 뒤 남은 안전 칸도 연다 — 판이 어떻게 생겼었는지 한눈에
-             보이게 하는 마무리다. 예전에는 지뢰만 열려서 나머지 칸이 안 눌리는
-             빈칸으로 남았고, 그게 "아직 뭔가 할 수 있나" 처럼 보였다. */
-          pendingTimers.push(setTimeout(function(){
-            for (var t = 0; t < tiles.length; t++) {
-              if (mines.indexOf(t) >= 0) continue;
-              if (tiles[t] && !tiles[t].classList.contains('safe')) markTile(t, 'safe');
-            }
-          }, delay + 120));
+          /* 안 열었던 칸은 그대로 둔다.
+
+             한때 여기서 남은 안전 칸까지 전부 금화로 까 놓았다. "판이 어떻게 생겼었나"
+             를 보여 주려던 것인데, 화면에서는 정반대로 읽혔다 — 내가 실제로 연 금화와
+             안 열어 본 금화가 같은 모양으로 섞여서, 어디까지 가다 밟았는지가 사라졌다.
+
+             이 마지막 화면이 답해야 하는 것은 하나다: "지뢰가 어디 있었나".
+             금화는 내가 연 것만 남아야 그 답이 읽힌다. */
           msg.innerHTML = '<span style="color:var(--lose);font-weight:700">지뢰 적중</span> — 베팅액을 잃었습니다.';
           setBalance(res.data.balance); setIdle();
         } else if (res.data.autoCashedOut) {
