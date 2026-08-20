@@ -808,6 +808,14 @@ window.__ICON = (function(){
     if (!r || r.id !== 'sfxRange') return;
     window.casinoVolume(Number(r.value) / 100);
   });
+  /* 머리의 채팅 단추. 판 위 상단바의 💬 와 같은 스위치를 만진다 — 한 값(od_chat_bar)의
+     양 끝이 아니라 아예 같은 손잡이다. 위임으로 거는 이유는 이 파일이 <head> 에서 도는데
+     그때는 머리가 아직 안 그려져 있기 때문이다. */
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if (!t || !t.closest || !t.closest('#chatBtn')) return;
+    if (window.casinoChat && window.casinoChat.toggleBar) window.casinoChat.toggleBar();
+  });
   /* 슬라이더는 접어 둔다 — 헤더는 자리가 좁고, 음량은 한 번 맞추면 오래 안 건드리는 값이다.
      마우스는 올리면 열린다(CSS). 손가락에는 hover가 없으므로 아이콘을 누른 그 순간에 같이
      연다 — 음소거와 크기 조절을 한 번의 조작 안에서 끝낼 수 있다. */

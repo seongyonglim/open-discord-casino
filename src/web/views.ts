@@ -349,6 +349,20 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
       </div>
     </div>`;
 
+  /* 채팅 켜기/끄기 — 폰에서만 보인다(01-base 가 감추고 15-mobile 이 꺼낸다).
+     판 안에서는 상단바가 제 것을 따로 만들므로 이쪽은 접힌다.
+
+     예전에는 이 자리에 넣을 예산이 없었다(실측: 360px 헤더에서 브랜드 이름 끝과 잔액
+     상자 사이가 16px, 소리 단추는 이미 접혀 있었다). "OD CASINO" 글자를 걷어 107px 이
+     생기면서 소리 단추가 돌아왔고 이것도 들어간다.
+
+     상태 표시는 <html class="chat-off"> 를 보고 CSS 가 그린다 — 음량 단추와 같은
+     방식이다. 자바스크립트로 아이콘을 갈아끼우면 머리가 그려진 뒤에 한 번 바뀌어
+     깜빡인다. */
+  const chatBtn = `<button class="chatbtn" id="chatBtn" type="button" title="채팅" aria-label="채팅 켜기/끄기">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>
+      </button>`;
+
   /* 운영자에게만 보이는 항목. 조건을 마크업 안에 두면 권한이 없는 사람의 화면에도
      빈 줄이 남는다 — 눈에는 안 보이지만 산출물이 달라져서, 화면을 바이트로 비교하는
      검사(scripts/golden.ts)가 "바뀌었다"고 말한다. 여기서 미리 만들어 통째로 끼운다. */
@@ -375,6 +389,7 @@ export function layout(title: string, active: Tab, body: string, bodyClass = "")
 
   const authBox = u
     ? `<div class="profwrap">
+        ${chatBtn}
         ${bellBtn}
         ${sfxBtn}
         <button class="prof" id="profBtn" type="button" aria-haspopup="true" aria-expanded="false">

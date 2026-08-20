@@ -545,12 +545,33 @@ async function main(): Promise<void> {
         readFileSync('src/web/assets/css/16-ingame.css', 'utf8')));
 
     /* ── 끄기가 듣는 화면은 켜는 자리가 함께 있는 화면뿐이다 ──────────
-       로비·데스크톱 상단에는 채팅 아이콘이 없다(인게임 전용). 거기서 줄을 걷으면
-       채팅에 닿을 길이 아예 사라진다. 그래서 .bar-off 를 읽는 규칙은 딱 하나다. */
-    const offRules = (c14 + c15 + c18).match(/^[^\r\n/*]*\.bar-off[^\r\n]*\{/gm) || [];
-    ck('.bar-off 를 읽는 규칙이 하나뿐이다', offRules.length === 1, offRules.join(' | '));
-    ck('그 하나가 세로 인게임 전용이다',
+       줄을 걷어 놓고 되돌릴 단추가 그 화면에 없으면, 끈 것이 아니라 잃은 것이다.
+       그래서 «켜는 단추가 있는 곳» 과 «.bar-off 를 읽는 곳» 이 정확히 같아야 한다.
+
+       한때 이 검사를 "규칙이 딱 하나" 로 셌다. 그때는 실제로 하나였지만(세로 인게임),
+       로비 머리에 단추가 생기면서 규칙도 둘이 되어 이름과 다른 것을 재게 됐다.
+       개수가 아니라 «어느 범위에 있는가» 를 본다.
+
+       단추가 있는 곳:  판 위 상단바(💬, 일곱 게임 세로·가로) · 폰 로비 머리(.chatbtn)
+       단추가 없는 곳:  넓은 화면(01-base 가 .chatbtn 을 display:none 으로 둔다) */
+    /* 주석에 이름이 남아 있는 것은 괜찮다 — 왜 여기서 안 읽는지가 거기 적혀 있다.
+       금지하는 것은 그것이 «규칙» 으로 살아나는 것이다. */
+    const c14Rule = c14.match(/^[^\r\n/*]*\.bar-off[^\r\n]*\{/gm) || [];
+    ck('끄기 규칙이 넓은 화면에는 없다', c14Rule.length === 0,
+      c14Rule.join(' | ') + ' — 14-chat.css 는 미디어 쿼리 밖이라 데스크톱까지 걸린다');
+    ck('판 위에서 듣는다',
       /html\.ig-port\.ingame \.chat-dock\.bar-off:not\(\.on\)\{display:none\}/.test(c18));
+    ck('폰 로비에서 듣는다', /\.chat-dock\.bar-off:not\(\.on\)\{display:none\}/.test(c15));
+    /* 그리고 그 화면에 정말 단추가 있는가 — 규칙만 있고 단추가 없으면 갇힌다. */
+    const views = readFileSync('src/web/views.ts', 'utf8');
+    const c01 = readFileSync('src/web/assets/css/01-base.css', 'utf8');
+    ck('폰 로비에 켜는 단추가 있다', /id="chatBtn"/.test(views)
+      && /\.chatbtn\{display:none/.test(c01) && /\.chatbtn\{display:inline-flex\}/.test(c15));
+    ck('그 단추가 스위치를 만진다',
+      /closest\('#chatBtn'\)[\s\S]{0,160}?casinoChat\.toggleBar\(\)/.test(app));
+    /* 판 안에서는 상단바가 제 것을 만든다 — 둘이 같이 나오면 같은 일을 하는 단추가
+       한 화면에 두 개다. .profwrap 이 통째로 상단바로 옮겨 가므로 이것도 딸려 간다. */
+    ck('판 안에서는 머리 단추를 접는다', /html\.ingame \.chatbtn\{display:none\}/.test(c15));
     /* 꺼짐을 아이콘에 표시한다 — 흐리게만 하면 "못 누른다"로 읽혀서, 하필 그것이
        다시 켜는 유일한 자리인데 눌러 볼 생각을 안 하게 된다. */
     ck('꺼지면 💬에 사선이 그어진다',

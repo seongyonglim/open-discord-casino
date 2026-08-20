@@ -119,6 +119,10 @@ const PROBE = `(() => {
        높이를 먹으면 판이 줄거나 화면이 밀린다. 아래 셋으로 그것을 본다. */
     scrollH: de.scrollHeight,
     ingame: document.documentElement.classList.contains('ingame'),
+    /* 겉(상단바·채팅)은 일곱 게임이 다 쓰고, 속(본문을 한 화면에 맞춰 다시 짠 격자)은
+       지어 둔 게임만 쓴다. 아래 검사들은 그 둘을 갈라 봐야 한다 — 안 그러면 "줄여
+       넣은 판" 을 전제한 항목이 줄인 적 없는 게임에 걸린다. */
+    grid: document.documentElement.classList.contains('ig-grid'),
     barH: (function(){ var b = document.querySelector('.ig-bar');
       return b ? Math.round(b.getBoundingClientRect().height) : null; })(),
     navShown: !!(nav && nav.height > 0),
@@ -256,8 +260,12 @@ async function main(): Promise<void> {
         /* ── 인게임 풀스크린 ───────────────────────────────────────
            게임 화면은 웹 껍데기를 벗고 판에 화면을 다 내준다.
            스크롤이 생기면 그 자체로 실패다 — 폰에서 판이 밀린다. */
-        ck(`${g} 세로로도 안 밀린다 (스크롤 없음)`, m.scrollH <= m.vh + 1,
+        /* 격자를 지어 둔 게임만 이 약속을 한다. 겉만 맞춘 게임은 제 배치대로
+           스크롤하는 것이 정상이고, 그것까지 실패로 세면 "안 만든 것" 과 "고장난 것" 이
+           같은 색으로 보인다. */
+        if (m.grid) ck(`${g} 세로로도 안 밀린다 (스크롤 없음)`, m.scrollH <= m.vh + 1,
           `scrollH ${m.scrollH} > ${m.vh}`);
+        else if (size.name !== '가로') console.log(`  --   ${g} 스크롤 — 세로 격자를 아직 안 지었다`);
         /* 탭바는 방향마다 다르다. 가로는 높이가 412px 뿐이라 통째로 걷고 [로비] 만
            상단바에 남긴다. 세로는 여유가 있어 탭바를 살려 둔다 — 로비·랭킹·도전과제·
            공지로 바로 건너뛸 수 있는 자리다. 그러니 "없어야 한다" 를 양쪽에 똑같이
@@ -273,12 +281,16 @@ async function main(): Promise<void> {
            현실보다 앞서면 맞추려고 다른 것을 망가뜨리게 된다(조작부를 더 눌렀을 것이다). */
         /* 대회 전에는 판이 아직 없다 — 위와 같은 이유로 이 항목도 건너뛴다 */
         if (m.preTable) console.log(`  --   ${g} 판 비율 — 대회 전이라 잴 수 없음`);
+        else if (!m.grid && size.name !== '가로') console.log(`  --   ${g} 판 비율 — 세로 격자를 아직 안 지었다`);
         else ck(`${g} 판이 화면 높이의 40% 이상`, (m.boardFill ?? 0) >= 40, `${m.boardFill}%`);
         /* 그리고 읽을 수 있어야 한다. 판을 줄여 "들어가게" 만들어 놓고 글자를 4.6px 로
            만들면 들어간 것이 아니다 — 그동안 이 항목이 없어서 전부 통과했다.
-           9px 은 폰에서 겨우 읽히는 하한이다. */
-        ck(`${g} 글자가 읽을 수 있는 크기`, (m.tinyText?.px ?? 99) >= 9,
-          m.tinyText ? `가장 작은 글자 ${m.tinyText.px}px — ${m.tinyText.sample}` : '못 잼');
+           9px 은 폰에서 겨우 읽히는 하한이다.
+           이 항목의 전제도 "줄여 넣었다" 이므로 격자를 지은 것에만 건다. 겉만 맞춘
+           게임의 작은 글자는 이 작업이 만든 것이 아니라 원래 그 페이지의 것이다. */
+        if (m.grid || size.name === '가로')
+          ck(`${g} 글자가 읽을 수 있는 크기`, (m.tinyText?.px ?? 99) >= 9,
+            m.tinyText ? `가장 작은 글자 ${m.tinyText.px}px — ${m.tinyText.sample}` : '못 잼');
       } else {
         ck(`${g} 탭바가 화면 바닥에`, m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2,
           `${m.navBottom} vs ${m.vh}`);

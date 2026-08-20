@@ -38,20 +38,18 @@ window.__IG = (function(){
   var PORT = '(max-width:560px) and (orientation:portrait)';
   /* 세로가 맞는 게임 — 방향 잠금은 여기 적힌 대로 건다 */
   var PORTRAIT_GAMES = ['ladder', 'mines'];
-  /* 그중 세로 배치를 실제로 만들어 둔 게임. 잠금과 나누는 이유가 있다 —
-     지뢰찾기를 여기까지 넣었더니 껍데기는 켜지는데(원래 자리를 display:none 으로
-     감춘다) 대신 그릴 격자가 없어서 화면이 통째로 사라졌다. 검사가 "판 폭 0px" 로
-     잡아 줬다. 한 게임씩 만들고, 만든 것만 여기 더한다. */
-  var PORT_SHELL = ['ladder', 'mines'];
-
   function key(){
     var m = location.pathname.match(/^\/games\/([a-z]+)\/?$/);
     return m ? m[1] : null;
   }
   function land(){ return window.matchMedia(LAND).matches; }
-  function port(){
-    return window.matchMedia(PORT).matches && PORT_SHELL.indexOf(key()) >= 0;
-  }
+  /* 세로에서는 «모든» 게임이 상단바를 받는다.
+     예전에는 여기서 "세로 배치를 지어 둔 게임"(사다리·지뢰) 만 통과시켰다. 그때는
+     상단바와 본문 재배치가 한 조건에 묶여 있어서, 상단바를 주면 본문까지 감춰졌기
+     때문이다 — 그릴 격자가 없는 게임은 화면이 통째로 사라졌다.
+     지금은 본문 재배치가 ig-grid 로 따로 갈라져 있다(CSS 18-ig-portrait.css).
+     그래서 겉은 일곱 게임이 같이 쓰고, 속은 격자를 지어 둔 게임만 바뀐다. */
+  function port(){ return window.matchMedia(PORT).matches && !!key(); }
   /* 껍데기를 쓸 상황인가 — 게임 페이지이고, 그 게임에 맞는 방향/크기인가 */
   function on(){ return !!key() && (land() || port()); }
 

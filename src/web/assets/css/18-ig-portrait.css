@@ -22,24 +22,40 @@
        세로는 가로보다 높이가 여유로우므로 하단 탭바(header nav)는 살려 둔다 —
        로비·랭킹·도전과제·공지로 바로 건너뛸 수 있는 자리다. 대신 그 50px 을
        예산에 넣고 본문을 그만큼 줄인다(안 그러면 문서가 화면보다 커져 스크롤이 생긴다). */
-    html.ig-port.ingame body{overflow:hidden}
+    /* ── 겉(모든 게임) 과 속(격자를 지어 둔 게임) 을 가른다 ────────────
+       판에 들어왔을 때의 «겉» — 상단바 자리를 비우고, 페이지 머리와 게임 전환 줄을
+       걷고, 채팅을 판 위에 띄우는 것 — 은 일곱 게임 모두 같아야 한다. 반면 본문을
+       한 화면에 맞춰 다시 짜는 «속» 은 게임마다 격자를 따로 지어야 한다.
+
+       예전에는 이 둘이 한 조건(ig-port)에 묶여 있어서, 겉을 주려면 속까지 켜졌다.
+       그러면 .game-shell 이 감춰지는데 대신 그릴 격자가 없어 화면이 통째로 사라진다
+       (지뢰찾기에서 실제로 그랬고 검사가 "판 폭 0px" 으로 잡았다). 그래서 다섯 게임은
+       세로에서 상단바조차 못 받고 있었다 — 채팅을 끌 수도 옮길 수도 없었다.
+
+       이제 속에만 ig-grid 를 요구한다. 격자는 ingame.js 가 실제로 지었을 때만 그
+       클래스를 붙이므로, 격자가 없는 게임에서 본문을 감추는 일이 일어나지 않는다. */
     html.ig-port.ingame .game-switch{display:none}
     /* 헤더는 자리를 안 쓰되 그 안의 하단 탭바(position:fixed)는 남긴다 */
     html.ig-port.ingame header{height:0;min-height:0;padding:0;border:0;
       background:none;box-shadow:none;overflow:visible}
     html.ig-port.ingame header > .wrap > *:not(nav){display:none}
     html.ig-port.ingame header nav{display:flex}
-    html.ig-port.ingame .game-shell{display:none}
-    /* 하단 탭바 50px 을 뺀 만큼만 쓴다. body 의 padding-bottom(50px, 15-mobile.css)
-       과 합쳐 정확히 한 화면이 된다 — 남으면 스크롤이 생기고 모자라면 탭바가 덮는다. */
     /* 위 40px 은 상단바 자리다. 상단바가 position:fixed 라 본문이 스스로 비워 줘야
        한다 — 예전에는 출목표 줄의 margin-top 이 대신 비웠는데, 출목표가 없는 게임
        (지뢰찾기)에서는 판의 윗부분이 바 밑으로 들어가 잘렸다. */
-    html.ig-port.ingame main{padding:40px 0 0;box-sizing:border-box;
+    html.ig-port.ingame main{padding:40px 0 0;box-sizing:border-box}
+
+    /* ── 속: 격자를 지어 둔 게임만 ───────────────────────────────────
+       하단 탭바 50px 을 뺀 만큼만 쓴다. body 의 padding-bottom(50px, 15-mobile.css)
+       과 합쳐 정확히 한 화면이 된다 — 남으면 스크롤이 생기고 모자라면 탭바가 덮는다.
+       격자가 없는 게임은 제 배치대로 스크롤한다. */
+    html.ig-port.ig-grid.ingame body{overflow:hidden}
+    html.ig-port.ig-grid.ingame .game-shell{display:none}
+    html.ig-port.ig-grid.ingame main{
       height:calc(100vh - 50px - env(safe-area-inset-bottom,0px));
       display:flex;flex-direction:column;min-height:0;overflow:hidden}
     @supports (height: 100dvh) {
-      html.ig-port.ingame main{
+      html.ig-port.ig-grid.ingame main{
         height:calc(100dvh - 50px - env(safe-area-inset-bottom,0px))}
     }
     /* "재미로 즐기는 서버 내부 포인트 게임…" — 로비에서 한 번 읽으면 되는 고지다.
