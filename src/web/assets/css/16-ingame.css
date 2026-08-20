@@ -12,7 +12,14 @@
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
     /* 화면이 밀리지 않게 못 박는다. 게임 화면에서 세로 스크롤이 생기면 베팅 버튼이
        손가락 아래에서 움직인다 — 눌렀는데 다른 것이 눌리는 종류의 사고가 난다. */
-    html.ingame, html.ingame body{height:100%;overflow:hidden}
+    /* 높이를 «지금 실제로 보이는 만큼» 으로 잡는다.
+       height:100% 는 폰 브라우저에서 주소창이 차지하는 몫을 모른다 — 그래서 화면은
+       360px 인데 문서는 그보다 크게 잡히고, 아래쪽(좌석 줄·조작부)이 화면 밖으로
+       밀려 잘린다. 재 보면 좌석은 펠트 «안» 에 있는데 눈에는 잘려 보이는 이유가 이것이다:
+       잘린 것은 판이 아니라 화면이었다.
+       dvh 는 주소창이 접히고 펴지는 것을 따라간다. 모르는 브라우저는 뒷줄을 버리고
+       앞줄(100%)을 그대로 쓴다 — 지금과 같아진다. */
+    html.ingame, html.ingame body{height:100%;height:100dvh;overflow:hidden}
     html.ingame body{padding-bottom:0}
 
     /* 웹 껍데기를 통째로 감춘다. 하단 탭바는 header nav 라 헤더와 함께 사라진다 */
@@ -23,7 +30,13 @@
        한번 숨겼다가 되돌렸다. 누가 얼마를 걸었는지 옆에서 흐르는 것이 이 서비스의
        재미 중 하나인데, 자리가 없다는 이유로 통째로 없앴다 — 자리를 만들면 될 일이었다.
        화면 오른쪽에 붙박이 레일로 세운다. 세로로 돌리면 원래대로 아래에 쌓인다. */
+    /* bottom:0 이 아니라 «지금 보이는 높이» 로 끝을 잡는다. position:fixed 는 폰
+       브라우저에서 주소창 뒤까지를 화면으로 치기 때문에, bottom:0 은 실제로 보이는
+       바닥보다 아래다 — 레일의 마지막 참가자들이 주소창에 가려 안 보였다.
+       dvh 를 아는 브라우저는 두 번째 줄을 쓰고, 모르는 브라우저는 첫 줄(bottom:0)을
+       그대로 쓴다. */
     html.ingame .game-side{display:block;position:fixed;right:0;top:36px;bottom:0;
+      height:auto;height:calc(100dvh - 36px);
       width:150px;padding:6px 5px 6px 0;overflow-y:auto;overflow-x:hidden;z-index:470;
       background:linear-gradient(90deg,rgba(5,5,6,0),rgba(5,5,6,.55) 12%)}
     /* 오른쪽 자리 비우기는 아래 main 규칙에서 한 번에 적는다. 여기에 padding-right 만
