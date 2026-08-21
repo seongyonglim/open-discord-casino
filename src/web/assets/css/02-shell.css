@@ -30,8 +30,9 @@
      3 + 1 로 갈라졌고, 둘째 줄에 빈칸 두 개가 그대로 남았다 — 창을 조금 좁힌 노트북과
      태블릿 세로에서 화면 위쪽에 구멍이 하나 뚫린 것처럼 보였다.
      네 칸은 4열이거나 2×2 여야 한다. 3열은 어느 쪽도 아니므로 아예 만들지 않는다. */
-  .stat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
-  @media (max-width:700px){ .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  /* 세 칸이다. 넷이었을 때의 넷째("다음 대회")는 아래 토너먼트 배너와 같은 말을
+     하고 있었다 — pages.ts 의 statRow 주석에 자세히 적어 두었다. */
+  .stat-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
   .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .stat .lbl{font-size:12px;color:var(--muted);font-weight:600}
   .stat .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
@@ -49,6 +50,20 @@
   .buff-badge{color:var(--gold);font-weight:700;
     display:inline-flex;align-items:center;gap:4px}
   .buff-badge svg{width:12px;height:12px;flex:none}
+  /* 폰에서는 1 + 2 로 놓는다. 세 칸을 그대로 삼등분하면 한 칸이 100px 남짓이 되어
+     "312명 중 상위 39%" 같은 보조줄이 두 줄로 접힌다. 첫 칸(내 순위)은 이 화면에서
+     제일 먼저 보고 싶은 값이라 한 줄을 통째로 주고, 나머지 둘을 아래에 나란히 둔다. */
+  @media (max-width:700px){
+    .stat-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .stat-row > .stat:first-child{grid-column:1 / -1}
+    /* 칸을 낮춘다. 데스크톱 값(14px 여백 · 22px 숫자)을 그대로 쓰면 세 칸이 두 줄로
+       230px 을 먹는데, 그 아래 토너먼트 배너와 게임 목록이 첫 화면에서 밀린다.
+       숫자는 여전히 이 화면에서 가장 큰 글자다(18px). */
+    .stat{padding:10px 12px;border-radius:11px}
+    .stat .lbl{font-size:11px}
+    .stat .val{font-size:18px;margin-top:2px}
+    .stat .sub{margin-top:2px;font-size:11px}
+  }
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th{text-align:left;color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;
     letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid var(--line)}

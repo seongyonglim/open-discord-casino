@@ -136,3 +136,40 @@
     .ev-right{align-items:flex-start;width:100%}
     .ev-cta{width:100%;text-align:center}
   }
+
+  /* ── 폰 세로 로비 ──────────────────────────────────────────────────
+     카드 여섯 장이 한 줄씩 쌓이면 로비가 세로로 아주 길어진다 — 게임 목록
+     끝까지 화면을 여러 번 밀어야 닿는다. 두 열로 놓으면 한 화면에 네 장이
+     들어와 «무엇이 있는지» 를 훑을 수 있다.
+
+     카드는 그만큼 작아지므로 안에 남길 것을 고른다: 아이콘 · (있으면) 접속자
+     뱃지 · 게임 이름 · 한 줄 설명. 설명은 두 줄에서 자른다 — 좁은 카드에서
+     네 줄짜리 문장은 카드 높이를 제멋대로 만들어 두 열이 어긋난다. */
+  @media (max-width:768px) and (orientation:portrait) {
+    .game-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .game-card{padding:12px;border-radius:12px;gap:6px}
+    .game-card .icon{width:24px;height:24px}
+    .game-card h3{font-size:14px;margin:4px 0 0}
+    .game-card p{font-size:11.5px;line-height:1.45;margin:0;
+      display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .gc-live{font-size:9.5px;padding:2px 6px;gap:4px}
+    .gc-badge{font-size:9.5px}
+    /* 두 열이 되면 손가락이 카드 사이를 스치기 쉽다 — 떠오르는 효과는 끄고
+       누르는 순간만 살짝 눌리게 둔다(마우스가 없는 화면에서 hover 는 뜻이 없다). */
+    .game-card.ready:hover{transform:none;box-shadow:inset 0 1px 0 rgba(212,175,55,.1)}
+    .game-card.ready:active{transform:scale(.98)}
+
+    /* ── 토너먼트 배너 슬림 ──────────────────────────────────────
+       세로로 쌓인 배너에서 남은 시간은 라벨과 값이 위아래로 놓여 두 줄, 그
+       아래 참가 단추가 또 한 줄이었다. 라벨과 값을 한 줄에 붙이고 단추를 그
+       옆에 두면 한 줄로 끝난다 — 배너가 말하는 것은 «언제» 와 «들어갈까» 둘뿐이다. */
+    .ev-banner{padding:13px 14px;gap:10px;margin-bottom:10px;border-radius:14px}
+    .ev-title{margin:7px 0 3px;font-size:17px}
+    .ev-desc{font-size:12px}
+    .ev-right{flex-direction:row;align-items:center;justify-content:space-between;
+      gap:10px;width:100%}
+    .ev-when{flex-direction:row;align-items:baseline;gap:6px;min-width:0}
+    .ev-lbl{font-size:10.5px;white-space:nowrap}
+    .ev-val{font-size:18px}
+    .ev-cta{margin-top:0;width:auto;flex:none;padding:8px 14px;font-size:12.5px}
+  }

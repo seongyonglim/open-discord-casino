@@ -1201,6 +1201,72 @@ async function main(): Promise<void> {
     }
   }
 
+  console.log('[16] 로비와 화면 방향');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const pg = readFileSync('src/web/pages.ts', 'utf8') as string;
+    const shell = readFileSync('src/web/assets/css/02-shell.css', 'utf8') as string;
+    const mob = readFileSync('src/web/assets/css/15-mobile.css', 'utf8') as string;
+    const port = readFileSync('src/web/assets/css/18-ig-portrait.css', 'utf8') as string;
+    const lob2 = readFileSync('src/web/assets/css/20-lobby2.css', 'utf8') as string;
+    const app = readFileSync('src/web/assets/app.js', 'utf8') as string;
+    const hl = readFileSync('src/web/games/holdem-client/loop.ts', 'utf8') as string;
+
+    /* 상단 통계는 세 칸이다. 넷째("다음 대회")는 바로 아래 토너먼트 배너가 같은 것을
+       더 크고 자세히 말하고 있었다 — 같은 사실을 한 화면에서 두 번 말하면 둘 다
+       덜 읽힌다. 화면에서 세어 본다(마크업만 보면 조건부로 늘어난 칸을 놓친다). */
+    const home = (await get('/', cookie)).text;
+    const stats = (home.match(/<div class="stat">/g) || []).length;
+    ck('로비 통계가 세 칸이다', stats === 3, stats + '칸');
+    ck('통계에 대회 칸이 없다', !pg.includes('tournamentStat'));
+    ck('통계 줄이 세 칸 격자다',
+      shell.includes('.stat-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))'));
+    /* 폰에서는 1 + 2 다. 그리고 그 규칙이 «기본 규칙 뒤» 에 있어야 한다 — 미디어
+       질의는 우선순위를 올려 주지 않으므로, 앞에 두면 아래 기본값이 그대로 덮어쓴다
+       (실측: 통계 줄이 폰에서 232px 그대로였다). */
+    ck('폰 통계는 1 + 2 다', shell.includes('.stat-row > .stat:first-child{grid-column:1 / -1}'));
+    ck('폰 통계 규칙이 기본 규칙보다 뒤에 있다',
+      shell.indexOf('.stat{background:var(--panel2)') < shell.indexOf('.stat{padding:10px 12px'));
+
+    /* 배너 설명줄이 카운트다운과 같은 말을 하면 안 된다. 오른쪽은 초까지 세는 값이고
+       설명줄은 서버가 그린 순간 멈춘 글자라, 보고 있는 동안 두 값이 갈라진다. */
+    /* 소스에서 문구를 찾으면 이 검사를 설명하는 «주석» 까지 걸린다(실제로 걸렸다).
+       그려진 화면에서 그 자리만 본다 — 물어야 하는 것은 "배너 설명줄에 남은 시간이
+       적혀 있나" 이고, 그건 렌더 결과에만 있다. */
+    ck('배너가 남은 시간을 두 번 말하지 않는다',
+      !/class="ev-desc">[^<]*남았습니다/.test(home));
+    ck('배너가 시작 시각과 정원을 말한다', pg.includes('시작 · ') && pg.includes('명 정원'));
+
+    /* 게임 목록은 폰에서 두 열이다. 한 줄씩 쌓이면 목록 끝까지 여러 번 밀어야 닿는다. */
+    ck('폰에서 게임 카드가 두 열이다',
+      lob2.includes('.game-grid{grid-template-columns:repeat(2,minmax(0,1fr))'));
+    ck('좁은 카드에서 설명을 두 줄로 자른다', lob2.includes('-webkit-line-clamp:2'));
+
+    /* 게임 화면에서는 하단 탭바가 없어야 한다 — 베팅 단추 바로 아래에 탭이 붙어
+       있으면 엄지가 게임 대신 다른 화면을 누른다. 두 곳이 함께 맞아야 한다:
+       탭바를 감추는 것과, 탭바 자리로 잡아 둔 body 여백을 없애는 것. 한쪽만 하면
+       문서가 화면보다 50px 커져 스크롤이 생긴다(전에 실측으로 잡힌 자리다). */
+    ck('인게임에서 탭바를 감춘다', mob.includes('html.ingame header nav{display:none}'));
+    ck('탭바 자리도 없앤다', mob.includes('html.ingame body{padding-bottom:0}'));
+    ck('세로 인게임이 탭바를 다시 켜지 않는다',
+      port.includes('html.ig-port.ingame header nav{display:none}'));
+    ck('세로 격자가 화면을 다 쓴다',
+      port.includes('height:calc(100dvh - env(safe-area-inset-bottom,0px))}'));
+
+    /* ── 화면 방향 ──────────────────────────────────────────────────
+       테이블 게임 셋만 가로, 나머지는 세로. 홀덤은 한 페이지에서 둘을 오간다.
+       PC 브라우저에서는 잠금이 거부되는데 그건 규칙이라 조용히 넘어가야 한다 —
+       거부를 안 받으면 콘솔에 미처리 거부가 쌓인다. */
+    ck('방향 모듈이 있다', app.includes('window.casinoOrient = (function(){'));
+    ck('테이블 게임 셋만 가로다', app.includes('baccarat|blackjack|poker'));
+    ck('모르는 화면은 세로다', app.includes('? LAND : PORT;'));
+    ck('잠금 거부를 삼킨다', app.includes('if (p && p.catch) p.catch(nope);'));
+    ck('Capacitor 가 있으면 그쪽을 먼저 쓴다',
+      app.includes('C.isNativePlatform()') && app.includes('P.ScreenOrientation'));
+    ck('홀덤은 판이 열리면 가로로 돈다',
+      hl.includes("casinoOrient.want(showTable ? 'landscape' : 'portrait')"));
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

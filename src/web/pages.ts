@@ -189,6 +189,14 @@ function gameCard(
 
    등록 중일 때만 카드를 강조한다(hot). 상시로 크게 띄우면 하루 대부분의 시간에
    거짓 긴박감을 만들고, 그런 배지는 한 번 들키면 나머지도 안 믿게 된다. */
+/* KST 로 "8월 22일" · "22:00" 을 만든다. 로비에서 대회 시각을 적는 자리가 여럿이라
+   한 곳에 둔다 — 화면마다 다른 형식으로 적으면 같은 대회가 다른 일로 보인다. */
+const kstMonthDay = (at: number) => new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul', month: 'long', day: 'numeric',
+}).format(new Date(at * 1000));
+const kstHhmm = (at: number) => new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+}).format(new Date(at * 1000));
 function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; cta?: string; hot?: boolean } {
   const t = st.tournament;
   /* 대회가 하나도 없을 수 있다 — 자동 생성을 없앤 뒤로는 운영자가 열어야 생긴다.
@@ -198,11 +206,15 @@ function freerollOverride(st: HoldemStatus): { badge?: string; desc?: string; ct
        알면서 "예정 없음"이라고 말하지 않는다 — 기다릴 사람이 헛걸음한다. */
     const up = upcomingHint();
     if (up) {
-      const s = Math.max(0, up.regOpenAt - Math.floor(Date.now() / 1000));
-      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      /* 남은 시간은 배너 오른쪽이 «세면서» 보여 준다(data-countdown). 여기서 또
+         "등록까지 13시간 15분 남았습니다" 를 적으면 같은 값이 한 배너 안에 두 번
+         나오고, 이쪽은 서버가 그린 순간 멈춘 글자라 보고 있는 동안 서로 다른 값이
+         된다(실측: 설명줄 "13시간 15분", 오른쪽 "13:15:23").
+         그래서 이 줄은 카운트다운이 말할 수 없는 것만 적는다 — 언제 시작하고
+         몇 명까지 들어가나. 날짜도 2026-08-22 가 아니라 우리말로 적는다. */
       return {
         badge: '예정',
-        desc: `다음 대회 ${up.dateStr} — 등록까지 ${h > 0 ? `${h}시간 ${m}분` : `${m}분`} 남았습니다`,
+        desc: `${kstMonthDay(up.startAt)} ${kstHhmm(up.startAt)} 시작 · ${T.MAX_PLAYERS}명 정원`,
         cta: '둘러보기',
       };
     }
@@ -307,7 +319,11 @@ function newsSection(): string {
 
 /* ── 상단 통계 줄 ──────────────────────────────────────────────────────
    잔액과 연속 출석 둘만 있었다. 둘 다 "지금 내 상태"이고, 로비에 들어와서 알고 싶은
-   나머지 — 오늘 내가 잃었나 벌었나, 다음 대회가 언제인가 — 는 아무 데도 없었다.
+   나머지 — 오늘 내가 잃었나 벌었나 — 는 아무 데도 없었다.
+
+   한때 "다음 대회" 칸이 넷째로 있었다. 그런데 그 아래 토너먼트 배너가 같은 것을
+   더 크게, 더 자세히(등록 인원 · 상금 풀 · 남은 시간 · 참가 단추까지) 말한다.
+   같은 사실을 한 화면에서 두 번 말하면 둘 다 덜 읽힌다 — 칸을 지우고 셋으로 둔다.
 
    "온라인 인원"은 넣지 않는다. 이 커뮤니티에서 대부분의 시간에 0~2명이라
    사실을 말하면 오히려 들어온 사람을 돌려보낸다. 사실이 아닌 값을 넣는 건 더 나쁘고,
@@ -315,7 +331,7 @@ function newsSection(): string {
 
    각 칸의 작은 줄(sub)은 큰 숫자를 읽는 데 필요한 맥락만 적는다 —
    순위 없는 잔액, 판수 없는 손익은 크기를 가늠할 수 없다. */
-function statRow(user: WebUser, ht: HoldemStatus | null): string {
+function statRow(user: WebUser, _ht: HoldemStatus | null): string {
   const now = Date.now();
   const sinceKstMidnight = T.kstTimeToUnix(T.kstDateStr(now), 0, 0);
   const today = getMyToday(user.id, sinceKstMidnight);
@@ -340,7 +356,6 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
     : (today.net > 0 ? '+' : '') + today.net.toLocaleString('ko-KR') + 'P';
   const netSub = today.rounds === 0 ? '아직 플레이 없음' : `${today.rounds}판`;
 
-  const ff = tournamentStat(ht);
   /* 도전과제 버프. 출석 칸 아래에 붙인다 — 출석과 지원금에만 걸리는 버프라 그 자리가
      맞고, 버프가 없는 사람에게는 "디스코드에서 출석" 안내가 그대로 남아야 한다
      (0% 뱃지는 알려주는 것이 없고 자리만 차지한다). */
@@ -358,50 +373,7 @@ function statRow(user: WebUser, ht: HoldemStatus | null): string {
       <div class="sub">${buff.percent > 0
         ? `<span class="buff-badge">${trophyIcon}도전과제 버프 +${buff.percent}%</span>`
         : '디스코드에서 출석'}</div></div>
-    <div class="stat"><div class="lbl">${esc(ff.label)}</div>
-      <div class="val num">${esc(ff.value)}</div>
-      <div class="sub">${esc(ff.sub)}</div></div>
   </div>`;
-}
-
-/* 프리롤 칸. 상태 판정은 advanceHoldem이 이미 해 뒀으므로 문구로만 옮긴다.
-   오늘 대회가 끝났거나 취소됐으면 내일 일정을 계산해서 보여준다 — 그래야
-   하루 중 언제 들어와도 "다음이 언제인가"에 답이 있다. */
-/**
- * 네 번째 스탯 칸.
- *
- * 한동안 이벤트 배너와 같은 함수를 써서, 바로 아래 배너와 똑같은 "시작까지 07:24" 가
- * 100px 떨어진 자리에 두 번 떴다. 같은 값이 한 화면에 두 번 있으면 읽는 쪽은 둘이
- * 다른 값인지 확인하느라 한 번 더 본다.
- *
- * 그래서 둘이 맡는 것을 나눈다 — 남은 시간은 배너가 혼자 세고(그쪽이 누르는 자리다),
- * 이 칸은 "얼마나 모였고 언제 시작하나" 를 맡는다. 인원은 신청이 들어올 때마다
- * 바뀌므로 이 칸도 여전히 대회 상태를 따라간다.
- */
-function tournamentStat(ht: HoldemStatus | null): { label: string; value: string; sub: string } {
-  const now = Math.floor(Date.now() / 1000);
-  const hhmm = (at: number) => new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(at * 1000));
-
-  const t = ht?.tournament ?? null;
-  if (!t || !ht?.schedule) {
-    /* 대회 행이 없어도 반복 일정은 있을 수 있다 — 있으면 그 날짜를 적는다.
-       없으면서 있다고 말하지 않는 것이 이 칸의 유일한 규칙이다. */
-    const up = upcomingHint(now);
-    if (!up) return { label: '홀덤 토너먼트', value: '예정 없음', sub: '열리면 공지합니다' };
-    return { label: '다음 대회', value: up.dateStr, sub: `${hhmm(up.startAt)} 시작` };
-  }
-
-  const state = ht.status === 'REGISTRATION_OPEN' ? '등록 중'
-    : ht.status === 'WAITING_MIN_PLAYERS' ? '인원 대기'
-    : ht.status === 'RUNNING' ? '진행 중'
-    : ht.status === 'FINISHED' ? '종료' : ht.status === 'CANCELLED' ? '취소' : '예정';
-  return {
-    label: t.title?.trim() || '홀덤 토너먼트',
-    value: `${ht.registered} / ${T.MAX_PLAYERS}명`,
-    sub: `${state} · ${hhmm(ht.schedule.scheduledStartAt)} 시작`,
-  };
 }
 
 /* 네 번째 스탯 카드와 이벤트 배너가 같이 쓰는 한 줄 요약.

@@ -23,6 +23,11 @@ export const LOOP = `    function render(){
          30초 동안 테이블을 계속 주는 탓에 팝업만 사라지고 화면은 그대로 멈춰 있다. */
       var left = st.tournament != null && (leftTableTid === st.tournament.id || leftStored(st.tournament));
       var showTable = !left && st.table != null && (st.table.mySeat != null || spectate);
+      /* 이 한 페이지가 대기실과 판을 겸한다 — 방향도 그때그때 다르다.
+         대기실(등록·정보·기록)은 세로가 낫고, 판이 열리면 좌석 아홉과 보드가
+         가로로 늘어서므로 가로가 낫다. 관전도 판이므로 같이 가로다.
+         같은 값을 다시 부르면 아무 일도 안 한다(app.js 의 casinoOrient). */
+      if (window.casinoOrient) casinoOrient.want(showTable ? 'landscape' : 'portrait');
       lobbyEl.hidden = showTable;
       lobbyRecEl.hidden = showTable || recEmpty;
       tableEl.hidden = !showTable;

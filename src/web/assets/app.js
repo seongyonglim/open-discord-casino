@@ -40,6 +40,72 @@ window.__ICON = (function(){
   };
 })();
 
+/* ── 화면 방향 ────────────────────────────────────────────────────────
+   화면마다 맞는 방향이 다르다. 로비·랭킹·도전과제·공지·사다리·지뢰찾기는 세로가
+   낫고, 테이블 게임 셋(바카라·블랙잭·포커 플립)은 판이 넓어야 해서 가로가 낫다.
+   홀덤은 한 페이지에서 둘을 오간다 — 대기실(등록·정보)은 세로, 판이 열리면 가로.
+
+   매니페스트로는 못 한다. orientation 은 앱 전체에 하나만 걸리기 때문이다
+   (pwa.ts 에 같은 이야기가 적혀 있고, 그래서 거기서는 열어 두었다).
+   그래서 화면이 들어올 때 스스로 잠근다.
+
+   ── 어디서 실제로 걸리는가
+   표준 API 는 설치된 앱(standalone·fullscreen)에서만 잠금을 허용한다. 브라우저
+   탭에서는 거부되는데 그건 고장이 아니라 브라우저의 규칙이다 — 그래서 조용히
+   넘어간다. 잠기지 않은 방향에서도 화면은 동작해야 하고, 그 배치는 따로 지어
+   두었다(15-mobile · 16-ingame · 18-ig-portrait).
+
+   ── APK(Capacitor)
+   껍데기가 붙는 날에는 그쪽 플러그인이 먼저다. 지금 이 저장소에는 Capacitor 가
+   없으므로 그 갈래는 한 번도 실행되지 않는다 — 붙는 순간부터 동작한다.
+   (@capacitor/screen-orientation 을 여기서 import 하지 않는 이유: 이 파일은
+    번들러를 안 거치는 정적 스크립트라 import 를 쓸 수 없고, 없는 모듈을 부르면
+    그 자리에서 전체가 멈춘다. 대신 있으면 쓰고 없으면 지나간다.) */
+window.casinoOrient = (function(){
+  var PORT = 'portrait', LAND = 'landscape';
+  /* 목록에 없는 화면은 세로다. 이 앱에서 가로가 필요한 것은 판이 넓어야 하는 게임
+     뿐이라, 새 화면이 붙었을 때 안전한 기본값은 세로다.
+     홀덤은 여기서 세로로 잡고, 판이 열리면 want(LAND) 가 바꾼다. */
+  function ruleFor(path){
+    return /^\/games\/(baccarat|blackjack|poker)(\/|$)/.test(path) ? LAND : PORT;
+  }
+  var wanted = null;
+  function nope(){ /* 브라우저 탭에서는 거부된다 — 규칙대로다 */ }
+  /* Capacitor 가 있고 실제 기기일 때만 그쪽을 쓴다 */
+  function nativePlugin(){
+    var C = window.Capacitor;
+    if (!C || !C.isNativePlatform || !C.isNativePlatform()) return null;
+    var P = C.Plugins || {};
+    var SO = P.ScreenOrientation;
+    return (SO && SO.lock) ? SO : null;
+  }
+  function lock(kind){
+    var n = nativePlugin();
+    if (n) {
+      try { var r = n.lock({ orientation: kind }); if (r && r.catch) r.catch(nope); return true; }
+      catch(e){ return false; }
+    }
+    try {
+      var so = window.screen && screen.orientation;
+      if (!so || !so.lock) return false;
+      var p = so.lock(kind);
+      if (p && p.catch) p.catch(nope);
+      return true;
+    } catch(e){ return false; }
+  }
+  function apply(){ return lock(wanted || ruleFor(location.pathname)); }
+  /* 한 페이지에서 방향이 바뀌는 화면(홀덤)이 쓴다. 같은 값을 다시 불러도 아무 일도
+     하지 않는다 — 폴링마다 render() 가 돌기 때문에 그러지 않으면 매초 잠금을 건다. */
+  function want(kind){
+    var k = kind === LAND ? LAND : (kind === PORT ? PORT : null);
+    if (k === wanted) return;
+    wanted = k;
+    apply();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+  return { want: want, apply: apply, rule: ruleFor };
+})();
 /* 승리 효과음 — 외부 음원 파일 없이 Web Audio로 합성한 짧고 조용한 2음 차임.
    브라우저 자동재생 정책 때문에 첫 사용자 조작 시점에 오디오 컨텍스트를 미리 열어두고(unlock),
    이후 타이머로 공개되는 결과(사다리 등)에서도 소리가 나도록 한다. 실패하면 조용히 무시. */

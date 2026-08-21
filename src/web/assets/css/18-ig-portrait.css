@@ -19,9 +19,12 @@
        인게임에서는 그 탭바를 안 쓰는데 자리만 남아 문서가 965px 이 됐고, 화면(915)
        보다 50px 커서 스크롤이 생겼다(실측).
 
-       세로는 가로보다 높이가 여유로우므로 하단 탭바(header nav)는 살려 둔다 —
-       로비·랭킹·도전과제·공지로 바로 건너뛸 수 있는 자리다. 대신 그 50px 을
-       예산에 넣고 본문을 그만큼 줄인다(안 그러면 문서가 화면보다 커져 스크롤이 생긴다). */
+       한동안 세로에서는 하단 탭바(header nav)를 살려 두었다 — 로비·랭킹·도전과제·
+       공지로 바로 건너뛸 수 있는 자리라서. 그런데 판 아래 베팅 단추 바로 밑에 탭
+       넷이 붙어 있어서, 엄지가 "베팅" 을 누르려다 "랭킹" 으로 나가는 일이 생긴다.
+       게임 화면에서 화면 바닥은 게임의 것이어야 한다.
+       그래서 가로와 마찬가지로 걷는다. 로비로 가는 길은 상단바의 게임 이름을 누르면
+       열리는 목록의 첫 줄이다(ingame.js). 걷은 50px 은 본문이 받는다. */
     /* ── 겉(모든 게임) 과 속(격자를 지어 둔 게임) 을 가른다 ────────────
        판에 들어왔을 때의 «겉» — 상단바 자리를 비우고, 페이지 머리와 게임 전환 줄을
        걷고, 채팅을 판 위에 띄우는 것 — 은 일곱 게임 모두 같아야 한다. 반면 본문을
@@ -46,24 +49,29 @@
        없애야 한다. */
     html.ig-port.ingame header > .wrap{min-height:0;height:0;padding:0;margin:0}
     html.ig-port.ingame header > .wrap > *:not(nav){display:none}
-    html.ig-port.ingame header nav{display:flex}
+    /* 탭바도 함께 걷는다 — 위 주석의 이유. 헤더 자체는 이미 자리를 안 쓴다. */
+    html.ig-port.ingame header nav{display:none}
+    /* 15-mobile.css 가 탭바 자리로 잡아 둔 body 여백도 함께 없앤다 — 안 없애면
+       문서가 화면보다 50px 커져 스크롤이 생긴다(전에 실측으로 잡힌 그 자리다). */
+    html.ig-port.ingame body{padding-bottom:0}
     /* 위 40px 은 상단바 자리다. 상단바가 position:fixed 라 본문이 스스로 비워 줘야
        한다 — 예전에는 출목표 줄의 margin-top 이 대신 비웠는데, 출목표가 없는 게임
        (지뢰찾기)에서는 판의 윗부분이 바 밑으로 들어가 잘렸다. */
     html.ig-port.ingame main{padding:40px 0 0;box-sizing:border-box}
 
     /* ── 속: 격자를 지어 둔 게임만 ───────────────────────────────────
-       하단 탭바 50px 을 뺀 만큼만 쓴다. body 의 padding-bottom(50px, 15-mobile.css)
-       과 합쳐 정확히 한 화면이 된다 — 남으면 스크롤이 생기고 모자라면 탭바가 덮는다.
+       화면을 다 쓴다. 예전에는 하단 탭바 50px 을 빼고 body 의 padding-bottom(50px)
+       과 짝을 맞췄는데, 그 탭바를 걷었으므로 둘 다 0 이다 — 한쪽만 지우면 문서가
+       화면보다 50px 커지거나 판 아래에 50px 이 빈다.
        격자가 없는 게임은 제 배치대로 스크롤한다. */
     html.ig-port.ig-grid.ingame body{overflow:hidden}
     html.ig-port.ig-grid.ingame .game-shell{display:none}
     html.ig-port.ig-grid.ingame main{
-      height:calc(100vh - 50px - env(safe-area-inset-bottom,0px));
+      height:calc(100vh - env(safe-area-inset-bottom,0px));
       display:flex;flex-direction:column;min-height:0;overflow:hidden}
     @supports (height: 100dvh) {
       html.ig-port.ig-grid.ingame main{
-        height:calc(100dvh - 50px - env(safe-area-inset-bottom,0px))}
+        height:calc(100dvh - env(safe-area-inset-bottom,0px))}
     }
     /* "재미로 즐기는 서버 내부 포인트 게임…" — 로비에서 한 번 읽으면 되는 고지다.
        판에 들어와서까지 자리를 먹으면 안 그래도 좁은 화면이 더 좁아진다. */
@@ -82,7 +90,7 @@
        받으므로 그 경계가 화면마다 다르기 때문이다. */
     html.ig-port.ingame .chat-dock{position:fixed;left:0;right:0;width:auto;
       top:var(--ig-chat-top, 56%);
-      bottom:calc(50px + env(safe-area-inset-bottom,0px));height:auto;
+      bottom:calc(8px + env(safe-area-inset-bottom,0px));height:auto;
       transform:none;z-index:70;max-width:none}
     html.ig-port.ingame .chat-dock:not(.on){display:none}
     /* ── 떠 있는 한 줄 채팅 (세로 인게임) ──────────────────────────
@@ -103,7 +111,7 @@
        되어 한글 24자가 17자로 준다. 그 8자를 내주고 얻는 것이 옆으로 옮길 여지
        125px 이다(예전에는 24px 이라 "옮긴다"가 말뿐이었다). */
     html.ig-port.ingame .chat-dock:not(.on){display:flex;top:auto;
-      left:0;right:0;bottom:calc(50px + env(safe-area-inset-bottom,0px));
+      left:0;right:0;bottom:calc(8px + env(safe-area-inset-bottom,0px));
       height:auto;padding:0 12px 6px;box-sizing:border-box;
       /* 도크는 flex-direction:column(14-chat.css) 이다 — 가로 정렬은 align-items 쪽이고
          justify-content 는 세로다. 오른쪽으로 붙이려고 justify 를 건드리면 아무 일도
