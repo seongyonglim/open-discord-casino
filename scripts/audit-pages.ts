@@ -1276,8 +1276,11 @@ async function main(): Promise<void> {
     const mn = readFileSync('src/web/games/mines.ts', 'utf8') as string;
     const port = readFileSync('src/web/assets/css/18-ig-portrait.css', 'utf8') as string;
 
+    /* 띠는 mines.ts 의 마크업에 있고(#mStat) 여기서는 판 밖으로 꺼낸다 — 만들지
+       않는다. 만들면 PC 것과 폰 것이 두 벌이 되고, 값을 채우는 코드도 두 곳이 된다
+       (그래서 한동안 PC 에는 띠가 아예 없었다). 자세한 검사는 [18] 에 있다. */
     ck('통계 띠가 있다', ig.includes('function addStatBar()')
-      && ig.includes("b.className = 'ig-statbar';"));
+      && ig.includes("bar.classList.add('ig-statbar');"));
     ck('통계 띠는 지뢰찾기에만 붙는다',
       ig.includes("if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); addStatBar(); syncStatBar(); }"));
     ck('가로에서는 걷는다', ig.includes('removeLiveBar(); removeRankBar(); removeStatBar();'));
@@ -1285,17 +1288,22 @@ async function main(): Promise<void> {
     /* 값의 출처는 mines.ts 하나다. DOM 글자("배당 1.00x")를 되돌려 읽으면 표시용으로
        반올림된 값을 다시 쓰게 되고, 같은 판을 두 자리가 다르게 말한다. */
     ck('값을 서버 쪽 코드가 내보낸다', mn.includes('window.__MINES_STAT__ = o'));
-    ck('띠는 그 값만 읽는다', ig.includes('var st = window.__MINES_STAT__;'));
+    /* 이름이 «주석에» 남는 것은 괜찮다 — 어디서 오는 값인지 적어 두는 자리다.
+       읽어서 화면에 적는 코드가 두 곳이 되는 것만 막는다. */
+    ck('띠에 적는 곳도 한 곳이다', mn.includes('statNext.textContent = s3')
+      && !ig.includes('var st = window.__MINES_STAT__'));
     /* "다음 성공 시" 는 판이 시작되기 전에도 보여야 한다. 그 배수를 화면에서 다시
        계산하면 공식이 두 벌이 되므로, 서버가 계산한 표를 실어 보낸다. */
     ck('첫 배수 표를 서버가 실어 보낸다', mn.includes('window.__MINES_FIRST__'));
     ck('화면에 배수 공식을 다시 적지 않았다', !ig.includes('TILE_COUNT - i'));
 
     /* 그림과 색은 판의 타일과 같아야 한다 — 띠와 판이 같은 것을 가리키기 때문이다. */
-    ck('판과 같은 그림을 쓴다', ig.includes('var MI = window.__MINES_ICONS__ || {};')
-      && ig.includes('(MI.coin || ') && ig.includes('(MI.bomb || '));
-    ck('판과 같은 색을 쓴다', port.includes('.sb-safe{color:var(--gold-hi)}')
-      && port.includes('.sb-mine{color:var(--lose)}'));
+    /* 그림은 타일이 쓰는 것과 «같은 것» 이어야 한다 — 띠와 판이 같은 것을 가리킨다.
+       그래서 띠도 icons.ts 의 coinIcon · bombIcon 을 그대로 넣는다. */
+    ck('판과 같은 그림을 쓴다', mn.includes('mn-i mn-i-safe">${coinIcon}')
+      && mn.includes('mn-i mn-i-mine">${bombIcon}'));
+    ck('판과 같은 색을 쓴다',
+      readFileSync('src/web/assets/css/04-board.css', 'utf8').includes('.mn-i-safe{color:var(--gold-hi)}'));
 
     /* 띠가 둘 생겼으므로 격자 크기를 정할 때 그 높이를 빼야 한다 — 안 빼면 짧은 폰에서
        격자가 쓸 수 있는 높이보다 크게 잡혀 넘친다. */
@@ -1305,6 +1313,68 @@ async function main(): Promise<void> {
     /* 남는 자리는 네 칸 사이로 고르게 나눈다 — 한 곳에 모이면 빈 화면으로 읽힌다. */
     ck('네 칸을 고르게 편다',
       port.includes('html.ig-port .ig-body.ig-mines{justify-content:space-between;gap:10px}'));
+  }
+
+  console.log('[18] 베팅 상한 · 조작부 슬림화 · 지뢰찾기 세그먼트');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const app = readFileSync('src/web/assets/app.js', 'utf8') as string;
+    const ig = readFileSync('src/web/assets/ingame.js', 'utf8') as string;
+    const mn = readFileSync('src/web/games/mines.ts', 'utf8') as string;
+    const cr2 = readFileSync('src/web/games/crash.ts', 'utf8') as string;
+    const ld = readFileSync('src/web/games/ladder.ts', 'utf8') as string;
+
+    /* ── 잔액 상한 ─────────────────────────────────────────────────
+       가진 것보다 큰 금액은 애초에 적을 수 없어야 한다. 막을 자리가 여럿이라(직접 입력 ·
+       ½ · 2× · MAX) 게임마다 적으면 어느 하나가 빠진다 — 실제로 2× 는 어느 게임에서도
+       안 막고 있었다. 그래서 한 곳에서 정한다. */
+    ck('상한을 한 곳에서 정한다', app.includes('window.casinoBet = (function(){')
+      && app.includes('function clamp(n, min)'));
+    ck('상한은 상단바의 잔액을 본다', app.includes("querySelector('.prof .pbal')"));
+    ck('직접 입력도 막는다', app.includes("['input', 'change', 'blur'].forEach"));
+    ck('MAX 는 마크업에 있고 동작은 한 곳이다', app.includes("closest('[data-max]')")
+      && mn.includes('data-max>MAX') && cr2.includes('data-max>MAX') && ld.includes('data-max>MAX'));
+    ck('폰에서만 MAX 를 만들던 코드를 걷었다', !ig.includes("b.className = 'bet-max'")
+      && !ig.includes("b.textContent = 'MAX'"));
+    /* 베팅 금액 칸만 대상이다. 그래프게임의 자동 캐시아웃은 «배율» 이라 잔액과 관계가
+       없고, 거기에 상한을 걸면 2.00x 가 잔액으로 바뀐다. */
+    for (const [g, src] of [['지뢰찾기', mn], ['그래프', cr2], ['사다리', ld]] as [string, string][]) {
+      ck(g + ' 베팅 칸에 표시가 있다', src.includes('data-bet>'));
+      ck(g + ' setBet 이 상한을 지킨다', src.includes('casinoBet.clamp(n, 1)'));
+    }
+    ck('자동 캐시아웃 칸에는 상한을 안 건다', !cr2.includes("id=\"cAuto\" class=\"game-input\" type=\"number\" min=\"1.01\" step=\"0.01\" placeholder=\"2.00\" disabled data-bet"));
+
+    /* ── 덧셈 단추 줄 ──────────────────────────────────────────────
+       10·100·1000·1만 네 개가 한 줄을 쓰면서 하는 일이 "지금 금액에 더하기" 뿐이었다.
+       ½·2×·MAX 로 다 되는 일이라 줄만 차지했다(폰에서는 이미 감춰 두고 있었다). */
+    for (const [g, src] of [['지뢰찾기', mn], ['그래프', cr2], ['사다리', ld]] as [string, string][]) {
+      ck(g + ' 덧셈 단추가 없다', !src.includes('data-amt'));
+    }
+    /* 자동 캐시아웃의 배율 바로가기(1.50x·2.00x…)는 금액 덧셈이 아니라 남긴다 */
+    ck('자동 캐시아웃 바로가기는 남아 있다', cr2.includes('auto-q'));
+
+    /* ── 지뢰 개수: 드롭다운 → 5분할 ──────────────────────────────
+       고를 것이 다섯뿐인데 «열고 · 고르고 · 닫는» 세 동작을 요구했고, 닫혀 있는 동안
+       지금 무엇이 골라져 있는지도 글자 하나로만 보였다. */
+    ck('드롭다운이 없다', !mn.includes('id="mMineCount"'));
+    ck('5분할 세그먼트다', mn.includes('id="mMineSeg"') && mn.includes('data-mines='));
+    ck('값을 고르는 곳이 한 곳이다', mn.includes('function setMines(n, save)'));
+    ck('판이 도는 동안에는 못 바꾼다', mn.includes('function lockMines(locked)')
+      && mn.includes('lockMines(true);'));
+    const home = (await get('/games/mines', cookie)).text;
+    const segs = (home.match(/class="seg-b/g) || []).length;
+    ck('세그먼트가 다섯이다', segs === 5, segs + '개');
+
+    /* ── 필드 통계 띠는 PC 에도 있다 ────────────────────────────────
+       한동안 ingame.js 가 폰에서만 만들어 붙였다. 그래서 PC 에는 없었다 — 같은 판을
+       보는데 화면 크기에 따라 아는 것이 달랐다. 마크업으로 옮기고, 폰에서는 그것을
+       판 밖으로 «꺼내» 띠로 세운다(두 벌을 만들지 않는다). */
+    ck('띠가 마크업에 있다', mn.includes('class="mn-stat" id="mStat"'));
+    ck('PC 화면에도 띠가 나온다', home.includes('id="mStat"') && home.includes('id="mStatNext"'));
+    ck('값은 판을 아는 쪽이 적는다', mn.includes("statNext.textContent = s3"));
+    ck('폰에서는 만들지 않고 옮긴다', ig.includes("var bar = document.getElementById('mStat');")
+      && ig.includes('body.insertBefore(bar, board);'));
+    ck('돌아갈 자리를 기억한다', ig.includes('statHome = [bar.parentNode, bar.nextSibling];'));
   }
 
   console.log(`\n${'─'.repeat(50)}`);

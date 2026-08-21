@@ -212,6 +212,36 @@
   .field-grid .bet-row{display:flex;gap:6px}
   .field-grid .bet-row input{flex:1;min-width:0}
   .quick-row{display:flex;gap:6px;margin-top:6px}
+
+  /* ── 지뢰찾기 필드 통계 띠 ─────────────────────────────────────────
+     판 위에 한 줄. 안전 칸 · 지뢰 수 · 한 칸 더 열었을 때의 배수.
+     "지금 배당" 은 아래 조작부가 이미 말한다 — 여기 있는 것은 «다음» 이다.
+     그림과 색은 타일과 같다(아래 .mines-tile.safe · .mine) — 띠와 판이 같은 것을
+     가리키므로 색까지 같아야 한다. */
+  .mn-stat{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    margin-bottom:12px;padding:0 4px;font-size:12.5px;color:var(--muted)}
+  .mn-stat .mn-s{display:inline-flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
+  .mn-stat .mn-i{flex:none;display:inline-flex}
+  .mn-stat .mn-i svg{width:14px;height:14px;display:block}
+  .mn-stat .mn-i-safe{color:var(--gold-hi)}
+  .mn-stat .mn-i-mine{color:var(--lose)}
+  .mn-stat b{color:var(--txt);font-weight:700;font-family:var(--mono);
+    font-variant-numeric:tabular-nums}
+  .mn-stat.live #mStatNext{color:var(--gold)}
+
+  /* ── 세그먼트 (지뢰 개수) ─────────────────────────────────────────
+     드롭다운을 걷어냈다. 고를 것이 다섯뿐인데 «열고 · 고르고 · 닫는» 세 동작을
+     요구했고, 지금 무엇이 골라져 있는지도 닫혀 있는 동안에는 글자 하나로만 보였다.
+     다섯을 한 줄에 펴 두면 한 번에 보이고 한 번에 바뀐다. */
+  .seg{display:flex;gap:6px}
+  .seg-b{flex:1 1 0;min-width:0;height:38px;border-radius:9px;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    font-family:var(--mono);font-size:13.5px;font-weight:700;
+    transition:border-color .12s,color .12s,background .12s}
+  .seg-b:hover:not(:disabled){border-color:var(--gold-dim);color:var(--txt)}
+  .seg-b.on{background:rgba(212,175,55,.14);border-color:var(--gold);color:var(--gold);
+    box-shadow:0 0 0 1px rgba(212,175,55,.25)}
+  .seg-b:disabled{opacity:.45;cursor:default}
   .chip-btn.wide{flex:1;padding:0}
   .btn-primary{background:var(--win);border-color:var(--win);color:#06240f;font-size:15px;padding:14px 0}
   .btn-primary:hover{background:#42d886;border-color:#42d886;color:#06240f}

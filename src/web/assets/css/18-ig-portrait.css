@@ -467,6 +467,9 @@
     html.ig-port .ig-statbar .sb-safe{color:var(--gold-hi)}
     html.ig-port .ig-statbar .sb-mine{color:var(--lose)}
     html.ig-port .ig-statbar .ig-sb-ic svg{width:13px;height:13px;display:block}
+    /* 판 상자 안에 있을 때의 아래 여백(12px)은 띠로 세워지면 필요 없다 —
+       칸 사이 간격은 격자(gap)가 정한다. */
+    html.ig-port .ig-statbar{margin-bottom:0;padding:0 12px}
     html.ig-port .ig-statbar b{color:var(--txt);font-weight:700;
       font-family:var(--mono);font-variant-numeric:tabular-nums}
     /* 판이 도는 동안에는 "다음 성공" 이 눌러야 할 이유다 — 그 값만 금색으로 살린다 */
@@ -531,10 +534,10 @@
     html.ig-port .ig-bet .bet-row .game-input{flex:1 1 0;width:0;min-width:0;
       height:46px;font-size:15px;padding:0 12px;box-sizing:border-box}
     html.ig-port .ig-bet .bet-row .chip-btn,
-    html.ig-port .ig-bet .bet-row .ig-max{flex:none;height:46px;min-width:46px;
+    html.ig-port .ig-bet .bet-row .bet-max{flex:none;height:46px;min-width:46px;
       padding:0 10px;font-size:13px;display:inline-flex;align-items:center;
       justify-content:center;box-sizing:border-box;line-height:1}
-    html.ig-port .ig-bet .bet-row .ig-max{background:var(--panel2);
+    html.ig-port .ig-bet .bet-row .bet-max{background:var(--panel2);
       border:1px solid var(--gold-dim);border-radius:8px;color:var(--gold);
       font-weight:700;cursor:pointer;font-family:inherit}
   }

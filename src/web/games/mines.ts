@@ -292,6 +292,14 @@ export function minesPage(user: WebUser): string {
     <div class="game-shell mines-shell">
       <div class="game-main">
         <div class="card">
+          <!-- 판을 읽는 데 필요한 세 값. 판 위에 둔다 — 상단바와 타일 사이가 비어
+               있었고(폰 실측 114px), 그 자리가 "지금 이 판이 어떤 판인가" 를 말할
+               자리다. 폰에서는 ingame.js 가 이 상자를 판 밖으로 꺼내 띠로 세운다. -->
+          <div class="mn-stat" id="mStat">
+            <span class="mn-s"><span class="mn-i mn-i-safe">${coinIcon}</span>안전 <b id="mStatSafe">-</b></span>
+            <span class="mn-s"><span class="mn-i mn-i-mine">${bombIcon}</span>지뢰 <b id="mStatMine">-</b></span>
+            <span class="mn-s">다음 성공 <b id="mStatNext">-</b></span>
+          </div>
           <div class="board-stage">
             <div id="mGrid" class="mines-grid"></div>
           </div>
@@ -301,26 +309,22 @@ export function minesPage(user: WebUser): string {
             <div class="field">
               <label>베팅 금액 (P)</label>
               <div class="bet-row">
-                <input id="mBet" class="game-input" type="number" min="1" step="1" value="10">
+                <input id="mBet" class="game-input" type="number" min="1" step="1" value="10" data-bet>
                 <button type="button" class="chip-btn" id="mHalf">½</button>
                 <button type="button" class="chip-btn" id="mDouble">2×</button>
-              </div>
-              <div class="quick-row">
-                <button type="button" class="chip-btn wide" data-amt="10">10</button>
-                <button type="button" class="chip-btn wide" data-amt="100">100</button>
-                <button type="button" class="chip-btn wide" data-amt="1000">1000</button>
-                <button type="button" class="chip-btn wide" data-amt="10000">1만</button>
+                <button type="button" class="chip-btn bet-max" data-max>MAX</button>
               </div>
             </div>
             <div class="field">
-              <label>지뢰 개수</label>
-              <select id="mMineCount" class="game-input" style="width:100%">
-                <option value="1">1개</option>
-                <option value="3">3개</option>
-                <option value="5" selected>5개</option>
-                <option value="10">10개</option>
-                <option value="24">24개</option>
-              </select>
+              <label>지뢰 개수 (개)</label>
+              <!-- 5분할 세그먼트. 드롭다운은 «열고 · 고르고 · 닫는» 세 동작인데 고를 것이
+                   다섯뿐이라 한 번에 보여 주고 한 번에 고르게 한다. 값은 버튼의 data-mines
+                   에 있고, 지금 고른 것은 .on 이 가리킨다(mines.ts 의 setMines). -->
+              <div class="seg" id="mMineSeg" role="group" aria-label="지뢰 개수">
+                ${ALLOWED_MINE_COUNTS.map(m => 
+                  `<button type="button" class="seg-b${m === 5 ? ' on' : ''}" data-mines="${m}"
+                    aria-pressed="${m === 5 ? 'true' : 'false'}">${m}</button>`).join('')}
+              </div>
               <div class="payout-line" style="margin-top:6px">
                 <span>배당 <b id="mMulti" class="gold">1.00x</b></span>
                 <span>획득 <b id="mPotential" class="hi">-</b></span>
@@ -350,7 +354,30 @@ export function minesPage(user: WebUser): string {
     <script>
     (function(){
       var ICONS = window.__MINES_ICONS__;
-      var betInput=document.getElementById('mBet'), mineSelect=document.getElementById('mMineCount');
+      var betInput=document.getElementById('mBet'), mineSeg=document.getElementById('mMineSeg');
+      /* 고른 지뢰 개수. 예전에는 <select> 의 value 가 그 값이었다. 세그먼트로 바꾸면서
+         "지금 고른 것" 을 들고 있을 자리가 필요해졌다 — DOM 에서 매번 .on 을 찾지 않고
+         여기 하나로 둔다(찾는 쪽과 쓰는 쪽이 갈리면 언젠가 어긋난다). */
+      var mineCount = 5;
+      function segBtns(){ return mineSeg ? mineSeg.querySelectorAll('.seg-b') : []; }
+      function setMines(n, save){
+        var v = Number(n);
+        var ok = false;
+        [].forEach.call(segBtns(), function(b){
+          var m = Number(b.getAttribute('data-mines'));
+          var on = m === v;
+          if (on) ok = true;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        if (!ok) return;                 // 모르는 값은 무시한다(옛 저장값 등)
+        mineCount = v;
+        if (save !== false) savePrefs();
+        publishIdle();
+      }
+      function lockMines(locked){
+        [].forEach.call(segBtns(), function(b){ b.disabled = !!locked; });
+      }
       var startBtn=document.getElementById('mStart'), cashoutBtn=document.getElementById('mCashout');
       var halfBtn=document.getElementById('mHalf'), doubleBtn=document.getElementById('mDouble');
       var grid=document.getElementById('mGrid'), msg=document.getElementById('mMsg');
@@ -366,29 +393,31 @@ export function minesPage(user: WebUser): string {
       function currentBalance(){ if(!pbal) return 0; return parseInt(pbal.textContent.replace(/[^0-9]/g,''),10) || 0; }
 
       // 베팅 금액/지뢰 개수는 다음 방문에도 그대로 쓰도록 기억해둔다 (매 라운드 재입력 방지)
-      function savePrefs(){ try{ localStorage.setItem('mines_bet', betInput.value); localStorage.setItem('mines_mineCount', mineSelect.value); }catch(e){} }
+      function savePrefs(){ try{ localStorage.setItem('mines_bet', betInput.value); localStorage.setItem('mines_mineCount', String(mineCount)); }catch(e){} }
       function loadPrefs(){
         try{
           var b=localStorage.getItem('mines_bet'); if(b) betInput.value=b;
-          var m=localStorage.getItem('mines_mineCount'); if(m) mineSelect.value=m;
+          var m=localStorage.getItem('mines_mineCount'); if(m) setMines(m, false);
         }catch(e){}
       }
-      function setBet(n){ if (betInput.disabled) return; betInput.value=Math.max(1, Math.floor(n)); savePrefs(); }
+      /* 상한은 app.js 의 casinoBet 이 정한다 — 잔액을 읽는 규칙을 게임마다 적으면
+         어느 한 곳이 빠진다(2× 를 연타하는 길은 어느 게임에서도 안 막고 있었다).
+         그것이 없으면(옛 페이지가 캐시에 남은 경우) 최소값만 지킨다. */
+      function setBet(n){
+        if (betInput.disabled) return;
+        betInput.value = window.casinoBet ? casinoBet.clamp(n, 1) : Math.max(1, Math.floor(n));
+        savePrefs(); }
       loadPrefs();
       publishIdle();
       betInput.addEventListener('change', savePrefs);
-      mineSelect.addEventListener('change', savePrefs);
-      /* 고른 개수가 바뀌면 안전 칸 수와 첫 배수가 함께 바뀐다 — 판을 시작하기 전에도
-         띠가 지금 고른 조건을 말해야 한다. */
-      mineSelect.addEventListener('change', publishIdle);
+      /* 한 번 누르면 바로 바뀐다 — 저장과 띠 갱신은 setMines 안에서 함께 한다. */
+      if (mineSeg) mineSeg.addEventListener('click', function(e){
+        var b = e.target && e.target.closest ? e.target.closest('.seg-b') : null;
+        if (!b || b.disabled) return;
+        setMines(b.getAttribute('data-mines'));
+      });
       halfBtn.addEventListener('click', function(){ setBet(Number(betInput.value)/2); });
       doubleBtn.addEventListener('click', function(){ setBet(Number(betInput.value)*2); });
-      // 빠른 금액 버튼은 칩을 쌓듯 현재 금액에 더한다 (다른 게임과 동일한 조작감)
-      document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){
-        b.addEventListener('click', function(){
-          setBet((Number(betInput.value) || 0) + Number(b.getAttribute('data-amt')));
-        });
-      });
 
       // 베팅 중엔 조건을 못 바꾸게 잠그고, 끝나면 바로 다음 베팅을 받을 수 있게 연다 (재입력 없이 이어서 플레이)
       /* 라운드가 끝났으면 남은 칸을 더 못 누르게 한다.
@@ -401,15 +430,13 @@ export function minesPage(user: WebUser): string {
       function setIdle(){
         lockBoard();
         publishIdle();
-        betInput.disabled=false; mineSelect.disabled=false;
+        betInput.disabled=false; lockMines(false);
         halfBtn.disabled=doubleBtn.disabled=false;
-        document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){ b.disabled=false; });
         startBtn.style.display='inline-flex'; cashoutBtn.style.display='none';
       }
       function setActive(){
-        betInput.disabled=true; mineSelect.disabled=true;
+        betInput.disabled=true; lockMines(true);
         halfBtn.disabled=doubleBtn.disabled=true;
-        document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){ b.disabled=true; });
         startBtn.style.display='none'; cashoutBtn.style.display='inline-flex';
       }
 
@@ -533,10 +560,26 @@ export function minesPage(user: WebUser): string {
       /* 상단 통계 띠(세로 전용)가 읽는 자리. 띠를 만드는 것은 ingame.js 이고,
          값의 출처는 여기 하나다 — DOM 글자를 긁어 가면 "배당 1.00x" 같은 표시용
          반올림 값을 다시 파싱하게 되고, 그러면 화면 두 곳이 조금씩 다른 말을 한다. */
-      function publishStat(o){ try { window.__MINES_STAT__ = o; } catch(e){} }
+      var statSafe=document.getElementById('mStatSafe'), statMine=document.getElementById('mStatMine'),
+          statNext=document.getElementById('mStatNext');
+      /* 값을 두는 것과 적는 것을 함께 한다. 두기만 하면 PC 에서는 아무도 안 읽어
+         띠가 빈칸으로 남는다(폰에서는 ingame.js 가 읽었다). */
+      function publishStat(o){
+        try { window.__MINES_STAT__ = o; } catch(e){}
+        if (!statSafe) return;
+        var s1 = o.safe + ' / ' + o.total;
+        var s2 = o.mines + '개';
+        var s3 = o.next != null ? Number(o.next).toFixed(2) + 'x' : '-';
+        if (statSafe.textContent !== s1) statSafe.textContent = s1;
+        if (statMine.textContent !== s2) statMine.textContent = s2;
+        if (statNext.textContent !== s3) statNext.textContent = s3;
+        /* 판이 도는 동안에는 "다음 성공" 이 눌러야 할 이유다 — 그때만 금색으로 살린다 */
+        var box = document.getElementById('mStat');
+        if (box) box.classList.toggle('live', !!o.active);
+      }
       /* 판을 시작하기 전 상태. 고른 지뢰 개수만으로 정해진다. */
       function publishIdle(){
-        var m = Number(mineSelect.value) || 0;
+        var m = mineCount;
         var first = (window.__MINES_FIRST__ || {})[m];
         publishStat({ safe: ${TILE_COUNT} - m, total: ${TILE_COUNT} - m, mines: m,
           next: first != null ? first : null, active: false });
@@ -566,7 +609,7 @@ export function minesPage(user: WebUser): string {
       async function start(){
         msg.innerHTML='';
         savePrefs();
-        var bet = Number(betInput.value), mineCount = Number(mineSelect.value);
+        var bet = Number(betInput.value);
         var res = await post('/api/games/mines/start', { betAmount: bet, mineCount: mineCount });
         if (!res.ok) { msg.textContent = res.data.error || '오류가 발생했습니다'; return; }
         setBalance(res.data.balance);
@@ -662,7 +705,7 @@ export function minesPage(user: WebUser): string {
 
       if (window.__MINES_ACTIVE__) {
         var a = window.__MINES_ACTIVE__;
-        betInput.value = a.betAmount; mineSelect.value = a.mineCount;
+        betInput.value = a.betAmount; setMines(a.mineCount, false);
         setActive();
         buildGrid(a.revealed);
         updateStats(a);

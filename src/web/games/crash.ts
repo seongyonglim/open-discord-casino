@@ -309,15 +309,10 @@ export function crashPage(user: WebUser): string {
             <div class="field">
               <label>베팅 수량 (P)</label>
               <div class="bet-row">
-                <input id="cBet" class="game-input" type="number" min="1" step="1" value="10">
+                <input id="cBet" class="game-input" type="number" min="1" step="1" value="10" data-bet>
                 <button type="button" class="chip-btn" id="cHalf">½</button>
                 <button type="button" class="chip-btn" id="cDouble">2×</button>
-              </div>
-              <div class="quick-row">
-                <button type="button" class="chip-btn wide" data-amt="10">10</button>
-                <button type="button" class="chip-btn wide" data-amt="100">100</button>
-                <button type="button" class="chip-btn wide" data-amt="1000">1000</button>
-                <button type="button" class="chip-btn wide" data-amt="10000">1만</button>
+                <button type="button" class="chip-btn bet-max" data-max>MAX</button>
               </div>
             </div>
             <div class="field" id="cAutoField">
@@ -416,7 +411,13 @@ export function crashPage(user: WebUser): string {
           if (localStorage.getItem('crash_mode')==='auto') setMode(true);
         }catch(e){}
       }
-      function setBet(n){ if(betInput.disabled) return; betInput.value=Math.max(1, Math.floor(n)); savePrefs(); }
+      /* 상한은 app.js 의 casinoBet 이 정한다 — 잔액을 읽는 규칙을 게임마다 적으면
+         어느 한 곳이 빠진다(2× 를 연타하는 길은 어느 게임에서도 안 막고 있었다).
+         그것이 없으면(옛 페이지가 캐시에 남은 경우) 최소값만 지킨다. */
+      function setBet(n){
+        if (betInput.disabled) return;
+        betInput.value = window.casinoBet ? casinoBet.clamp(n, 1) : Math.max(1, Math.floor(n));
+        savePrefs(); }
 
       function setMode(auto){
         autoMode = auto;
@@ -431,14 +432,9 @@ export function crashPage(user: WebUser): string {
       halfBtn.addEventListener('click', function(){ setBet(Number(betInput.value)/2); });
       doubleBtn.addEventListener('click', function(){ setBet(Number(betInput.value)*2); });
       // 빠른 금액 버튼은 칩을 쌓듯 현재 금액에 "더한다" (교체하지 않음)
-      document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){
-        b.addEventListener('click', function(){
-          setBet((Number(betInput.value) || 0) + Number(b.getAttribute('data-amt')));
-        });
       });
       document.querySelectorAll('.auto-q').forEach(function(b){
         b.addEventListener('click', function(){ autoInput.value = Number(b.getAttribute('data-mult')).toFixed(2); savePrefs(); });
-      });
       betInput.addEventListener('change', savePrefs);
       autoInput.addEventListener('change', savePrefs);
       loadPrefs();
@@ -446,7 +442,6 @@ export function crashPage(user: WebUser): string {
       function lockBetControls(locked){
         betInput.disabled = locked;
         halfBtn.disabled = doubleBtn.disabled = locked;
-        document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){ b.disabled = locked; });
         modeManual.disabled = modeAuto.disabled = locked;
         autoInput.disabled = locked || !autoMode;
         document.querySelectorAll('.auto-q').forEach(function(b){ b.disabled = locked || !autoMode; });

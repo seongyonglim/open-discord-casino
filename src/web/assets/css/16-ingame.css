@@ -967,13 +967,13 @@
     /* 인풋 옆 버튼들은 손가락이 닿게 44px 을 지킨다 */
     html.ingame .bet-row{gap:6px;align-items:stretch}
     html.ingame .bet-row .chip-btn,
-    html.ingame .ig-max{height:44px;min-width:48px;padding:0 12px;font-size:12px;
+    html.ingame .bet-max{height:44px;min-width:48px;padding:0 12px;font-size:12px;
       display:inline-flex;align-items:center;justify-content:center}
     html.ingame .bet-row .game-input{height:44px;font-size:14px}
     /* MAX — ingame.js 가 만들어 붙인다(서버 HTML 은 그대로 둔다) */
-    html.ingame .ig-max{background:var(--panel2);border:1px solid var(--gold-dim);
+    html.ingame .bet-max{background:var(--panel2);border:1px solid var(--gold-dim);
       border-radius:8px;color:var(--gold);font-weight:700;cursor:pointer;font-family:inherit}
-    html.ingame .ig-max:hover{border-color:var(--gold)}
+    html.ingame .bet-max:hover{border-color:var(--gold)}
 
     /* ── 카드가 화면 바닥까지 꽉 찬다 ───────────────────────────
        아래에 검은 여백이 남던 것을 없앤다. 카드 안쪽도 위아래로 벌려 붕 뜨지 않게 한다. */
@@ -1012,7 +1012,7 @@
     html.ingame .bet-row{flex-wrap:nowrap}
     html.ingame .bet-row .game-input{flex:1 1 auto;min-width:96px;width:auto}
     html.ingame .bet-row .chip-btn,
-    html.ingame .ig-max{flex:0 0 auto}
+    html.ingame .bet-max{flex:0 0 auto}
 
     /* 사다리 판이 카드 위쪽에 작게 몰리고 아래가 비었다. 카드 높이를 다 쓰게 한다. */
     html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .board-stage{
@@ -1030,7 +1030,7 @@
        예측 칸과 같은 폭을 받아 자리가 모자랐던 것이다. 금액 칸을 넓게 준다. */
     html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .field-grid{
       grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:start}
-    html.ingame .ig-max{min-width:44px;padding:0 8px;font-size:11px}
+    html.ingame .bet-max{min-width:44px;padding:0 8px;font-size:11px}
     html.ingame .bet-row .chip-btn{min-width:40px;padding:0 8px}
     /* 예측 칸(출발/도착)은 라벨과 버튼이 한 줄에 서야 한다 — 겹침의 반대편 원인이다 */
     html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .predict-row{
@@ -1051,7 +1051,7 @@
     html.ingame .bet-row{gap:5px;overflow:hidden}
     html.ingame .bet-row .game-input{min-width:76px;padding:0 8px}
     html.ingame .bet-row .chip-btn{min-width:34px;padding:0 6px;font-size:11px}
-    html.ingame .ig-max{min-width:40px;padding:0 6px;font-size:10.5px}
+    html.ingame .bet-max{min-width:40px;padding:0 6px;font-size:10.5px}
   }
 
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {

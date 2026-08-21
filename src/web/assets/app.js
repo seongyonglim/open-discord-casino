@@ -40,6 +40,84 @@ window.__ICON = (function(){
   };
 })();
 
+/* ── 베팅 금액 상한 ───────────────────────────────────────────────────
+   가진 것보다 큰 금액은 애초에 적을 수 없어야 한다. 예전에는 그냥 적히고, 누르면
+   서버가 "잔액이 부족합니다" 로 돌려보냈다 — 알려 주는 시점이 너무 늦다. 게임마다
+   ½·2×·MAX 와 직접 입력이 따로 있어서 막을 자리가 여럿인데, 그 판단을 게임마다
+   적으면 어느 한 곳이 빠진다(실제로 2× 는 어느 게임에서도 안 막고 있었다).
+
+   그래서 상한을 한 곳에서 정한다. 대상은 «베팅 금액» 칸뿐이다(data-bet) —
+   그래프게임의 자동 캐시아웃 칸은 배율이라 잔액과 아무 관계가 없고, 거기에 상한을
+   걸면 2.00x 가 잔액으로 바뀐다.
+
+   잔액은 상단바가 들고 있는 값을 읽는다(data-balance). 화면에 이미 있는 값을
+   쓰는 것이 두 벌을 만들지 않는 길이고, 정산이 끝나면 그 칸이 먼저 갱신된다. */
+window.casinoBet = (function(){
+  function balance(){
+    var el = document.querySelector('.prof .pbal');
+    if (!el) return null;
+    var v = Number(el.getAttribute('data-balance'));
+    if (isFinite(v) && v >= 0) return v;
+    /* 옛 페이지가 캐시에 남아 있으면 그 속성이 없다. 그때만 글자를 읽는다 —
+       이 한 칸 안에는 잔액 말고 다른 숫자가 없다. */
+    var m = (el.textContent || '').replace(/,/g, '').match(/(\d+)/);
+    return m ? Number(m[1]) : null;
+  }
+  /* 값을 [min, 잔액] 안으로 넣는다. 잔액을 모르면(칸이 없거나 옛 페이지) 상한만
+     포기하고 최소값은 지킨다 — 모르는 값을 0 으로 치면 베팅을 통째로 막게 된다. */
+  function clamp(n, min){
+    var lo = (min == null ? 1 : min);
+    var v = Math.floor(Number(n));
+    if (!isFinite(v)) v = lo;
+    var bal = balance();
+    if (bal != null && v > bal) v = bal;
+    if (v < lo) v = lo;
+    return v;
+  }
+  /* 직접 타이핑도 막는다. 커밋(change·blur)뿐 아니라 치는 동안(input)에도 줄인다 —
+     "누르기 전에 알려 준다" 가 이 규칙의 목적이고, 못 걸 금액이 칸에 남아 있으면
+     그 목적이 사라진다. 빈 칸은 건드리지 않는다(지우는 중일 수 있다). */
+  function guard(){
+    ['input', 'change', 'blur'].forEach(function(ev){
+      document.addEventListener(ev, function(e){
+        var t = e.target;
+        if (!t || !t.getAttribute || t.getAttribute('data-bet') == null) return;
+        if (t.value === '') return;
+        var lo = Number(t.getAttribute('min')) || 1;
+        var v = clamp(t.value, ev === 'input' ? null : lo);
+        if (String(v) !== String(t.value)) {
+          t.value = String(v);
+          /* 배당·예상 획득이 이 칸을 지켜본다 — 우리가 고친 것도 알려야 한다.
+             input 이벤트로 다시 들어와도 값이 이미 상한이라 한 번 더 안 바뀐다. */
+          if (ev !== 'input') t.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }, true);
+    });
+  }
+  /* MAX — 가진 것을 다 건다. 예전에는 ingame.js 가 폰에서만 단추를 만들어 붙였다.
+     이제 단추는 마크업에 있고(data-max) 동작만 여기서 맡는다 — 게임 셋이 같은 일을
+     세 번 적을 이유가 없고, 잔액을 읽는 규칙도 이미 여기 있다. */
+  function wireMax(){
+    document.addEventListener('click', function(e){
+      var b = e.target && e.target.closest ? e.target.closest('[data-max]') : null;
+      if (!b || b.disabled) return;
+      var row = b.closest('.bet-row') || document;
+      var input = row.querySelector('input[data-bet]');
+      if (!input || input.disabled) return;
+      var bal = balance();
+      if (bal == null) return;
+      input.value = String(clamp(bal, Number(input.getAttribute('min')) || 1));
+      /* 배당·예상 획득이 이 칸을 지켜본다 */
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+  function boot(){ guard(); wireMax(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  return { balance: balance, clamp: clamp };
+})();
+
 /* ── 화면 방향 ────────────────────────────────────────────────────────
    화면마다 맞는 방향이 다르다. 로비·랭킹·도전과제·공지·사다리·지뢰찾기는 세로가
    낫고, 테이블 게임 셋(바카라·블랙잭·포커 플립)은 판이 넓어야 해서 가로가 낫다.

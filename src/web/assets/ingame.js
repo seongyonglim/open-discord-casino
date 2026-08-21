@@ -379,72 +379,9 @@ window.__IG = (function(){
   else start();
 })();
 
-/* ── MAX 단추 ─────────────────────────────────────────────────────────
-   빠른 금액 칩 줄(10·100·1000·1만)을 폰 가로에서 걷어냈다. 그 줄이 판이 쓸 높이를
-   통째로 차지하기 때문이다. 대신 인풋 옆에 MAX 를 붙인다 — 가진 만큼 거는 것은
-   자주 하는 동작인데, 칩을 여러 번 눌러 맞추던 것을 한 번으로 줄인다.
-
-   서버 HTML 은 여전히 안 바꾼다. 여기서 만들어 붙이고, 세로로 돌리면 걷는다.
-   잔액은 헤더에 이미 적혀 있으므로 그 글자에서 숫자만 뽑는다 — 값을 두 곳에서
-   따로 계산하면 언젠가 어긋난다. */
-(function(){
-  var IG = window.__IG;
-
-  /* 잔액 한 칸만 본다.
-
-     예전에는 .profwrap 전체의 글자에서 "숫자 + P" 를 정규식으로 처음 하나 집었다.
-     그 안에는 알림 목록도 들어 있어서, 종에 "대회 우승 72,800P" 가 떠 있으면 MAX 가
-     잔액 대신 그 금액을 넣었다. 잔액보다 크면 그대로 베팅해서 "잔액 부족"으로
-     거절당한다 — 누른 사람은 왜 거절인지 알 길이 없다.
-
-     이제 서버가 그 칸에 data-balance 로 숫자를 실어 준다. 글자를 파싱하지 않으므로
-     천 단위 구분자나 문구가 바뀌어도 안 깨지고, 옆의 다른 숫자를 집을 수도 없다. */
-  function balance(){
-    var el = document.querySelector('.prof .pbal');
-    if (!el) return null;
-    var v = Number(el.getAttribute('data-balance'));
-    if (isFinite(v) && v >= 0) return v;
-    /* 옛 페이지가 캐시에 남아 있으면 그 속성이 없다. 그때만 글자를 읽는다 —
-       이 한 칸 안에는 잔액 말고 다른 숫자가 없다. */
-    var m = (el.textContent || '').replace(/,/g, '').match(/(\d+)/);
-    return m ? Number(m[1]) : null;
-  }
-
-  function apply(){
-    var on = IG.on();
-    var row = document.querySelector('.game-controls .bet-row');
-    var old = document.querySelector('.ig-max');
-    if (!on || !row) { if (old) old.remove(); return; }
-    if (old) return;
-
-    var input = row.querySelector('input');
-    if (!input) return;
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'ig-max';
-    b.textContent = 'MAX';
-    b.addEventListener('click', function(){
-      var v = balance();
-      if (v == null) return;
-      input.value = String(v);
-      /* 화면 쪽 계산(배당·예상 획득)이 input 을 지켜보므로 바뀐 것을 알린다 */
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    row.appendChild(b);
-  }
-
-  function start(){
-    apply();
-    IG.subscribe(apply);
-    /* 조작부는 상태가 바뀌면 다시 그려진다 — 그때 단추가 사라지므로 주기적으로 확인한다.
-       폴링이 1초라 그보다 촘촘할 이유가 없다. */
-    setInterval(apply, 1000);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-  else start();
-})();
-
+/* MAX 단추는 여기 있었다. 지금은 마크업(data-max)과 app.js 의 casinoBet 이 맡는다 —
+   여기서 폰에서만 만들어 붙이던 탓에 PC 에는 없었고, 같은 조작부가 화면 크기에 따라
+   다른 단추를 갖고 있었다. 잔액을 읽는 규칙도 그쪽에 하나로 모았다. */
 /* ── 인게임 전용 격자 ─────────────────────────────────────────────────
    여기까지는 데스크톱 레이아웃 위에 규칙을 덮어써 왔다. 16-ingame.css 가 809줄 ·
    341개 규칙이 됐고, 하나를 고치면 다른 하나가 어긋나는 일이 반복됐다 —
@@ -906,42 +843,32 @@ window.__IG = (function(){
      "다음 성공" 은 지금 배당이 아니라 «한 칸 더 열면» 되는 배당이다. 지금 배당은
      아래 조작부가 이미 말하고 있고(캐시아웃 옆), 이 게임에서 손이 멈추는 이유는
      "한 번 더 열면 얼마가 되나" 이므로 그 값을 위에 둔다. */
+  /* 띠는 mines.ts 가 판 상자 안에 그려 두었다(#mStat). 여기서는 그것을 판 «밖» 으로
+     꺼내 격자의 첫 줄로 세운다 — 세로에서는 상단바 바로 아래가 그 자리다.
+     새로 만들지 않는다: 만들면 PC 것과 폰 것이 두 벌이 되고, 값을 채우는 코드도
+     두 곳이 된다(그래서 한동안 PC 에는 띠가 아예 없었다).
+     돌아갈 자리는 기억해 둔다 — 가로로 돌리거나 판을 벗을 때 되돌린다. */
+  var statHome = null;
   function addStatBar(){
     var body = movedGrid(), board = document.querySelector('.ig-cell.ig-board');
-    if (!body || !board || body.querySelector('.ig-statbar')) return;
-    var b = document.createElement('div');
-    b.className = 'ig-statbar';
-    /* 그림은 판의 타일이 쓰는 것을 그대로 쓴다(mines.ts 가 실어 보낸 __MINES_ICONS__).
-       띠에만 새로 그린 그림을 두면 같은 것을 가리키는 두 그림이 생기고, 색까지
-       다르면 띠와 판이 다른 이야기를 하는 것처럼 보인다. 색도 타일과 같게 맞춘다
-       (안전 = 금색 --gold-hi, 지뢰 = 붉은색 --lose · 04-board.css). */
-    var MI = window.__MINES_ICONS__ || {};
-    b.innerHTML = '<span class="ig-sb-s"><span class="ig-sb-ic sb-safe">' + (MI.coin || '')
-      + '</span>안전 <b class="ig-sb-safe">-</b></span>'
-      + '<span class="ig-sb-s"><span class="ig-sb-ic sb-mine">' + (MI.bomb || '')
-      + '</span>지뢰 <b class="ig-sb-mine">-</b></span>'
-      + '<span class="ig-sb-s">다음 성공 <b class="ig-sb-next">-</b></span>';
-    body.insertBefore(b, board);
-    syncStatBar();
+    var bar = document.getElementById('mStat');
+    if (!body || !board || !bar || bar.parentNode === body) return;
+    statHome = [bar.parentNode, bar.nextSibling];
+    bar.classList.add('ig-statbar');
+    body.insertBefore(bar, board);
   }
-  function syncStatBar(){
-    var b = document.querySelector('.ig-statbar');
-    if (!b) return;
-    var st = window.__MINES_STAT__;
-    var safe = b.querySelector('.ig-sb-safe'), mine = b.querySelector('.ig-sb-mine'),
-        next = b.querySelector('.ig-sb-next');
-    /* 값이 아직 없으면 자리만 잡아 둔다 — 0 을 적으면 "안전한 칸이 없다" 는 거짓말이 된다 */
-    var s1 = st ? (st.safe + ' / ' + st.total) : '-';
-    var s2 = st ? (st.mines + '개') : '-';
-    var s3 = (st && st.next != null) ? (Number(st.next).toFixed(2) + 'x') : '-';
-    if (safe.textContent !== s1) safe.textContent = s1;
-    if (mine.textContent !== s2) mine.textContent = s2;
-    if (next.textContent !== s3) next.textContent = s3;
-    /* 판이 도는 동안에는 "다음 성공" 이 눌러야 할 이유라 금색으로 살린다 */
-    b.classList.toggle('live', !!(st && st.active));
-  }
+  /* 값은 mines.ts 가 적는다 — 여기서 또 적으면 같은 칸을 두 곳이 쓴다 */
+  function syncStatBar(){ /* 값은 mines.ts 가 적는다 */ }
   function removeStatBar(){
-    var b = document.querySelector('.ig-statbar'); if (b) b.remove();
+    var bar = document.getElementById('mStat');
+    if (!bar || !statHome) return;
+    bar.classList.remove('ig-statbar');
+    var parent = statHome[0], next = statHome[1];
+    statHome = null;
+    /* 기억해 둔 부모가 문서에서 떨어져 나갔으면 되돌리지 않는다 — 거기에 넣으면
+       화면에서 사라진다(위 restoreSettings 와 같은 이유). */
+    if (!parent || !parent.isConnected) return;
+    parent.insertBefore(bar, (next && next.parentNode === parent) ? next : null);
   }
 
   /* ── 시즌 랭킹 띠 (지뢰찾기 세로) ─────────────────────────────────

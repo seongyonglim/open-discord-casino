@@ -235,15 +235,10 @@ export function ladderPage(user: WebUser): string {
             <div class="field">
               <label>베팅 금액 (P)</label>
               <div class="bet-row">
-                <input id="lBet" class="game-input" type="number" min="1" step="1" value="10">
+                <input id="lBet" class="game-input" type="number" min="1" step="1" value="10" data-bet>
                 <button type="button" class="chip-btn" id="lHalf">½</button>
                 <button type="button" class="chip-btn" id="lDouble">2×</button>
-              </div>
-              <div class="quick-row">
-                <button type="button" class="chip-btn wide" data-amt="10">10</button>
-                <button type="button" class="chip-btn wide" data-amt="100">100</button>
-                <button type="button" class="chip-btn wide" data-amt="1000">1000</button>
-                <button type="button" class="chip-btn wide" data-amt="10000">1만</button>
+                <button type="button" class="chip-btn bet-max" data-max>MAX</button>
               </div>
             </div>
             <div class="field">
@@ -328,18 +323,18 @@ export function ladderPage(user: WebUser): string {
 
       function savePrefs(){ try{ localStorage.setItem('ladder_bet', betInput.value); }catch(e){} }
       function loadPrefs(){ try{ var b=localStorage.getItem('ladder_bet'); if(b) betInput.value=b; }catch(e){} }
-      function setBet(n){ if(betInput.disabled) return; betInput.value=Math.max(1, Math.floor(n)); savePrefs(); updatePreview(); }
+      /* 상한은 app.js 의 casinoBet 이 정한다 — 잔액을 읽는 규칙을 게임마다 적으면
+         어느 한 곳이 빠진다(2× 를 연타하는 길은 어느 게임에서도 안 막고 있었다).
+         그것이 없으면(옛 페이지가 캐시에 남은 경우) 최소값만 지킨다. */
+      function setBet(n){
+        if (betInput.disabled) return;
+        betInput.value = window.casinoBet ? casinoBet.clamp(n, 1) : Math.max(1, Math.floor(n));
+        savePrefs(); updatePreview(); }
       loadPrefs();
       betInput.addEventListener('change', savePrefs);
       betInput.addEventListener('input', updatePreview);
       halfBtn.addEventListener('click', function(){ setBet(Number(betInput.value)/2); });
       doubleBtn.addEventListener('click', function(){ setBet(Number(betInput.value)*2); });
-      // 빠른 금액 버튼은 칩을 쌓듯 현재 금액에 더한다 (크래시와 동일한 조작감)
-      document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){
-        b.addEventListener('click', function(){
-          setBet((Number(betInput.value) || 0) + Number(b.getAttribute('data-amt')));
-        });
-      });
 
       // 출발/도착 각각 좌·우 토글 그룹 — 이미 선택된 걸 다시 누르면 선택 해제(둘 다 선택 안 함도 가능)
       function bindGroup(group){
@@ -370,7 +365,6 @@ export function ladderPage(user: WebUser): string {
       function setControlsLocked(locked){
         betInput.disabled = locked;
         halfBtn.disabled = doubleBtn.disabled = locked;
-        document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){ b.disabled = locked; });
         document.querySelectorAll('.toggle-btn').forEach(function(b){ b.disabled = locked; });
       }
 

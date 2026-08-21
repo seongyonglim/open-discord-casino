@@ -93,10 +93,10 @@
     .ig-ladder .ig-bet .bet-row .game-input{flex:1 1 auto;min-width:0;height:44px;
       font-size:14px;padding:0 10px;box-sizing:border-box}
     .ig-ladder .ig-bet .bet-row .chip-btn,
-    .ig-ladder .ig-bet .bet-row .ig-max{flex:none;height:44px;min-width:42px;padding:0 8px;
+    .ig-ladder .ig-bet .bet-row .bet-max{flex:none;height:44px;min-width:42px;padding:0 8px;
       font-size:11.5px;display:inline-flex;align-items:center;justify-content:center;
       box-sizing:border-box}
-    .ig-ladder .ig-bet .bet-row .ig-max{background:var(--panel2);
+    .ig-ladder .ig-bet .bet-row .bet-max{background:var(--panel2);
       border:1px solid var(--gold-dim);border-radius:8px;color:var(--gold);
       font-weight:700;cursor:pointer;font-family:inherit}
 
