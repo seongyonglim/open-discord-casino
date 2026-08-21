@@ -488,7 +488,6 @@
     /* 바카라 — 카드 상자를 더 줄인다 */
     html.ingame .game-shell:has(.bacc-table) .bacc-seats{padding:4px 0}
     html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:28px;height:39px}
-    html.ingame .game-shell:has(.bacc-table) .bacc-status{font-size:10.5px;padding:2px 0}
 
   }
 
@@ -555,6 +554,9 @@
     /* 마지막 50 · 17 · 26px. 바카라는 테이블 자체가 아직 크다 — 그 안의 vs 표시와
        여백을 줄인다. 나머지는 카드와 칸을 한 단계 더. */
     html.ingame .game-shell:has(.bacc-table) .bacc-seats{gap:6px}
+    /* 써드 카드까지 석 장이 서는 자리다. 자리 폭은 남으므로(실측 323px 에 석 장 116px)
+       간격은 그대로 두되, 카드가 테두리에 닿지 않게 안쪽 여백만 지킨다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-hand{gap:6px;padding:0 2px}
     html.ingame .game-shell:has(.bacc-table) .bacc-seat{padding:4px 6px}
     html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:11.5px;padding:2px 7px}
     html.ingame .game-shell:has(.bj-table) .bj-seat{height:44px}
@@ -690,14 +692,15 @@
        에서 불편한 쪽으로 넘어갔다. 이름이 보이는 높이를 돌려준다. */
     html.ingame .game-shell .market{height:auto;min-height:46px}
     html.ingame .game-shell .m-name{font-size:11px;padding:2px 4px 4px;display:block}
-    html.ingame .game-shell:has(.bacc-table) .market{height:auto;min-height:46px}
+    /* 베팅 구역이 남는 자리를 먹는 규칙은 이 파일 «끝» 에 있다 — 뒤에 오는 더 긴
+       선택자(.game-shell .game-main .market-grid)에 밀려서, 같은 자리에 두면 안 먹혔다. */
   }
 
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
     /* 마켓 이름을 살리니 높이가 필요해졌다. 그 자리는 마켓이 아니라 테이블에서 낸다 —
        PLAYER/BANKER 상자가 카드 두 장에 290px 을 쓰고 아래가 비어 있었다.
        베팅에 필요한 것(무엇에 · 얼마에 거는가)이 우선이고, 카드는 보이기만 하면 된다. */
-    html.ingame .game-shell:has(.bacc-table) .bacc-table{max-height:188px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-table{max-height:150px}
     html.ingame .game-shell:has(.bacc-table) .bacc-seat{padding:4px 6px 6px}
     html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:12px;padding:2px 8px}
     /* 포커 플립도 같은 이유로 보드를 조금 줄인다 */
@@ -1229,4 +1232,31 @@
        카드가 이 게임들에서 가장 오래 보는 것이고, 25px 짜리 숫자는 흘깃 봐서 안 읽힌다. */
     html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:34px;height:47px}
     html.ingame .poker-shell .poker-table .pcard{width:34px;height:47px}
+  }
+
+  /* ── 가로 바카라: 남는 세로를 베팅 구역이 먹는다 ─────────────────────
+     안내 한 줄(35px)과 자리 여백(8px)을 걷고 나면 칩 줄과 베팅 구역 사이에 58px 이
+     빈다(실측). 칩 줄은 화면 바닥에 붙어 있어야 하므로(엄지가 닿는 자리) 남는 것은
+     베팅 구역이 받는다 — 손가락으로 누르는 자리는 넓을수록 낫다.
+
+     이 블록이 파일 끝에 있는 이유: 앞쪽에 두었더니 뒤에 오는 «.game-shell .game-main
+     .market-grid{flex:0 0 auto}» 와 «.market{height:52px}» 에 밀렸다(같은 무게면 뒤가
+     이긴다). 선택자도 한 단계 더 길게 잡는다.
+     상한을 두는 것은, 베팅 상자가 카드 존보다 커지면 판이 아래로 쏠려 보이기 때문이다. */
+  @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
+    /* 베팅 구역은 «제 높이» 를 쓰고(늘어나지 않는다), 남는 세로는 셋 사이로 고르게
+       나눈다. 늘려서 먹게 해 봤더니 베팅 상자가 카드 존보다 커져 판이 아래로 쏠렸고,
+       상한을 걸자 이번에는 상자 아래에 165px 이 통째로 비었다(실측) — 한 곳에 모인
+       여백은 «빈 화면» 으로 보이고, 셋으로 나뉘면 칸 사이 여백으로 보인다. */
+    /* 안내 알약이 판 오른쪽 위에 떠 있으므로 그만큼 위를 비운다 — 좁은 가로(812x375)
+       에서 알약이 "BANKER" 글자를 덮었다(실측). 넓은 가로에서는 안 겹치지만, 화면 폭에
+       따라 겹치고 안 겹치고 하는 것은 자리를 안 잡아 준 것이다. */
+    html.ingame .game-shell:has(.bacc-table) .bacc-table{padding-top:28px}
+    html.ingame .game-shell:has(.bacc-table) .game-main{justify-content:space-between}
+    html.ingame .game-shell:has(.bacc-table) .game-main .market-grid{flex:0 0 auto}
+    html.ingame .game-shell:has(.bacc-table) .game-main .market{height:auto;min-height:72px}
+    /* 자리가 남으므로 카드를 키운다 — 이 게임에서 가장 오래 보는 것이고, 34x47 은
+       흘깃 봐서 숫자가 안 읽힌다. 석 장이 서도 자리 폭(323px)에는 여유가 있다
+       (44x62 석 장 + 간격 = 144px). */
+    html.ingame .game-shell:has(.bacc-table) .bacc-seats .pcard{width:44px;height:62px}
   }

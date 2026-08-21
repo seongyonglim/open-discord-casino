@@ -1907,11 +1907,28 @@ window.__foldOut = function(el, done){
     var was = open;
     open = want === undefined ? !open : !!want;
     var panel = dock.querySelector('.chat-panel');
+    var bar = dock.querySelector('.chat-bar');
     if (open) panel.hidden = false;
     /* 접을 때는 되감기가 끝난 뒤에 감춘다. 접히는 도중에 다시 열렸으면 감추지 않는다 —
-       빠르게 두 번 누르면 방금 연 창이 뒤늦은 타이머에 닫히는 일이 생긴다. */
-    else if (was) window.__foldOut(panel, function(){ if (!open) panel.hidden = true; });
+       빠르게 두 번 누르면 방금 연 창이 뒤늦은 타이머에 닫히는 일이 생긴다.
+
+       되감는 «동안» 에는 접힌 한 줄(.chat-bar)을 숨긴다. 아래 dock 의 on 은 즉시 벗는데,
+       그 줄은 :not(.on) 에서 보이도록 되어 있어서 창이 아직 되감기는 중에 함께 나타난다 —
+       도크가 세로 배치라 그 줄이 창 «위» 에 얹혀, 0.2초 동안 잔상처럼 스쳤다(제보).
+       CSS 로 막지 않고 인라인으로 감추는 이유: 이 줄을 보이게 하는 규칙이 화면마다
+       따로 있고(14-chat · 16-ingame · 18-ig-portrait), 그보다 뒤에 오는 한 곳을 고르면
+       나머지 화면에서 조용히 안 먹힌다. 인라인은 어느 쪽이든 이긴다. */
+    else if (was) {
+      if (bar) bar.style.display = 'none';
+      window.__foldOut(panel, function(){
+        if (bar) bar.style.display = '';
+        if (!open) panel.hidden = true;
+      });
+    }
     else panel.hidden = true;
+    /* 되감기 도중에 다시 열렸으면 숨김을 바로 푼다 — 콜백이 뒤늦게 풀어 주기를
+       기다리면 그 사이에 접기를 또 누를 수 있고, 그때는 줄이 영영 숨은 채로 남는다. */
+    if (open && bar) bar.style.display = '';
     dock.classList.toggle('on', open);
     store('od_chat_open', open ? '1' : '0');
     /* 열렸다는 것을 밖에 알린다. 판 위의 참가자 서랍이 이 소리를 듣고 접힌다 —

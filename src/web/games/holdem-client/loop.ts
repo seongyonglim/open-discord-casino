@@ -147,27 +147,44 @@ export const LOOP = `    function render(){
        그래서 비행 중이면 표식만 남기고, 그 요청이 끝나는 즉시 한 번 더 간다. */
     function pollNow(){ if (polling) pollAgain = true; else poll(); }
 
-    /* ── 안 보고 있으면 묻지 않는다 ────────────────────────────────
-       이 화면은 1초마다 서버에 상태를 물었다. 조건이 하나도 없어서, 탭을 다른 데로
-       옮겨 두거나 폰을 주머니에 넣어도 그대로 계속 물었다 — 하루 종일 열어 둔 탭 하나가
-       8만 6천 번을 부른다. 다른 게임(사다리·그래프·바카라·블랙잭·포커)은 진작에
-       document.hidden 에서 멈추고 있었는데 홀덤만 빠져 있었다.
+    /* ── 안 보고 있으면 «느리게» 묻는다 ────────────────────────────
+       한동안 가려지면 아예 멈췄다. 그게 두 가지를 깨뜨렸다(제보):
+         · 돌아오면 그 사이 쌓인 차이를 화면이 «사건» 으로 읽어 밀린 연출을 몰아서 냈다
+         · 미리 액션이 안 나갔다 — 예약을 실행하는 방아쇠가 폴링 응답 하나뿐이라,
+           가려진 동안 내 차례가 열리면 아무도 당기지 않는다(서버가 자동 체크·폴드하고
+           «자리 비움» 까지 만든다)
+       멈춘 근거도 틀렸다: 요금 때문이라고 적었는데 fly.toml 은 상시 가동이다
+       (auto_stop_machines = "off" · min_machines_running = 1, 2026-08-06 b6fd111).
+       요청 한 번이 요금을 만들지 않는다.
+
+       그래서 멈추지 않고 «느리게» 묻는다. 공유 CPU 한 개짜리 머신이라 아무도 안 보는
+       탭이 초당 한 번 묻는 것은 여전히 값이 없지만, 아예 끊으면 위 둘이 깨진다.
+       (브라우저도 가려진 탭의 타이머를 조인다 — 처음엔 1초, 5분쯤 뒤부터 분당 1회.
+        그러니 이 값은 상한이지 보장이 아니다. 미리 액션을 확실히 하려면 예약을 서버가
+        들고 있어야 한다.)
 
        유휴 타이머(몇 분 안 만지면 정지)는 여기에 두지 않는다. 포커 테이블에서는
        아무것도 안 누르고 남의 차례를 보고 있는 것이 정상 상태다 — 그때 멈추면
-       판이 굴러가는 것을 못 본다. 탭이 가려졌다는 것은 그와 달리 애매하지 않다.
-
-       가려진 동안 서버가 멈추는 것은 아니다. 내 차례가 지나면 서버가 대신 처리하고,
-       돌아오면 그 결과를 한 번에 받는다 — 폴링은 보여 주기 위한 것이지 참여의 조건이
-       아니다. */
-    var loopTimer = null;
+       판이 굴러가는 것을 못 본다. */
+    var VISIBLE_MS = 1000, HIDDEN_MS = 5000;
+    var loopTimer = null, loopEvery = 0;
     function startLoop(){
-      if (loopTimer || document.hidden) return;
+      var every = document.hidden ? HIDDEN_MS : VISIBLE_MS;
+      if (loopTimer && loopEvery === every) return;
+      stopLoop();
+      loopEvery = every;
       poll();
-      loopTimer = setInterval(poll, 1000);
+      loopTimer = setInterval(poll, every);
     }
-    function stopLoop(){ if (loopTimer) { clearInterval(loopTimer); loopTimer = null; } }
+    function stopLoop(){ if (loopTimer) { clearInterval(loopTimer); loopTimer = null; loopEvery = 0; } }
     document.addEventListener('visibilitychange', function(){
-      if (document.hidden) stopLoop(); else startLoop();
+      /* 돌아오면 «지금 상태» 를 조용히 그린다. 느리게 물었더라도 그 사이 여러 액션이
+         한 번에 들어올 수 있고, 그 차이를 사건으로 읽으면 밀린 연출이 몰아서 나온다.
+         처음 들어올 때 쓰는 깃발을 다시 켠다 — deal · board · chips · table · controls 가
+         모두 이것을 보고 연출을 건너뛴다. 한 번 그리면 스스로 꺼진다.
+         내 차례 알림은 이 한 번만 미뤄지고 다음 폴링에서 울린다(myTurnRung 을 그 갈래
+         안에서 표시하기 때문에 건너뛴 것이 사라지지 않는다). */
+      if (!document.hidden) firstTablePaint = true;
+      startLoop();
     });
     startLoop();`;

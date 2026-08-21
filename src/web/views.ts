@@ -217,8 +217,16 @@ export function rankJs(prefix: string, seg: string): string {
         }
         /* 탭이 열려 있을 때만, 창이 보일 때만, 그리고 최근에 조작이 있었을 때만 갱신한다.
            랭킹은 초 단위로 바뀌는 값이 아니라 30초로 충분하다.
-           무조작 3분이면 멈추는 것은 이 프로젝트의 다른 폴링과 같은 규약이다 —
-           서버에 타이머를 두지 않고 fly.io 머신이 유휴 시 잠들게 하는 설계 때문이다. */
+           무조작 3분이면 멈추는 것은 이 프로젝트의 다른 폴링과 같은 규약이다.
+
+           ── 이유를 고쳐 적는다
+           한동안 여기에 "fly.io 머신이 유휴 시 잠들게 하는 설계 때문" 이라고 적혀 있었다.
+           사실이 아니다: fly.toml 은 auto_stop_machines = "off" · min_machines_running = 1
+           로 «상시 가동» 이다(2026-08-06, b6fd111 — 홀덤은 요청이 올 때 판이 전진하는
+           구조라 자다 깨면 그 사이 진행이 한 요청에 몰려 풀린다).
+           그러니 폴링을 아끼는 이유는 요금이 아니라 머신 몫(공유 CPU 1개 · 512MB)과
+           쓸모다 — 아무도 안 보는 화면의 30초 갱신은 어느 쪽에도 값을 만들지 않는다.
+           틀린 근거를 남겨 두면 다음 사람이 그것을 근거로 또 결정한다. */
         var IDLE_MS = 3 * 60 * 1000, lastAct = Date.now();
         function markAct(){ lastAct = Date.now(); }
         ['click', 'keydown', 'touchstart'].forEach(function(ev){

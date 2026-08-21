@@ -20,18 +20,33 @@
   .bacc-bead.b{background:#33201a;border-color:#6b3d2c;color:#ffa287}
   .bacc-bead.t{background:#14291f;border-color:#2c5a41;color:#6fce9d}
 
-  .bacc-table{background:radial-gradient(120% 100% at 50% 0%, #143024 0%, #0c1a14 70%);
+  /* 안내 알약이 이 상자를 기준으로 떠 있다(아래 .bacc-status) */
+  .bacc-table{position:relative;
+    background:radial-gradient(120% 100% at 50% 0%, #143024 0%, #0c1a14 70%);
     border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:10px}
-  /* 배지로 그려진다(19-timer.css 의 .st-badge). 여기서는 «자리» 만 정한다 —
-     판 위 가운데. 알약이라 글자처럼 text-align 으로는 안 되고, 줄을 flex 로 두고
-     가운데로 모은다. 색과 글꼴은 배지가 갖고 있다. */
-  .bacc-status{display:flex;justify-content:center;margin-bottom:14px;min-height:26px}
+  /* ── 안내 알약은 판 위 가운데에 «떠 있다» ──────────────────────────
+     한때 흐름 속 한 줄이었다. 그 줄은 35px 을 쓰면서 하는 일이 "몇 초" 하나인데,
+     가로 화면(높이 360~412px)에서는 그 35px 이 카드와 베팅 구역이 나눠 쓸 자리다.
+     그래서 자리를 차지하지 않게 띄운다 — 흐름에서 빠지므로 카드 존이 위로 붙는다.
+
+     자리는 가운데다. 오른쪽 위에 두었다가 가운데로 옮겼다(요청).
+     블랙잭은 오른쪽 위인데 여기는 가운데인 이유: 블랙잭 판의 위 가운데에는 DEALER 와
+     딜러 카드가 있고, 바카라는 그 자리가 비어 있다(자리 둘이 좌우로 갈리고 가운데는 VS
+     뿐이다). 판마다 비어 있는 자리가 다르므로 같은 위치를 강요하지 않는다.
+
+     모양은 19-timer.css(.st-badge)가 갖고 있다 — 여기서는 자리만 정한다.
+     pointer-events 를 끊는다: 판 위에 떠 있는 안내라 눌릴 이유가 없고, 그 아래 카드나
+     펠트를 누르는 것을 막으면 안 된다. */
+  .bacc-status{position:absolute;top:8px;left:0;right:0;z-index:10;
+    display:flex;justify-content:center;margin:0;min-height:0;pointer-events:none}
   .bacc-seats{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:start}
   .bacc-vs{align-self:center;font-family:var(--mono);font-size:12px;color:#7d9a8b;font-weight:700}
   /* 두 자리는 좌우 대칭이다. 이긴 쪽만 테두리가 살아나고 진 쪽은 흐려진다 */
   /* 이름 · 끗수 알약은 한 줄, 카드는 그 아래 줄. 마크업 순서(이름 · 손 · 끗수)는
      그대로 두고 자리만 격자로 바꾼다 — 서버 HTML 은 건드리지 않는다. */
-  .bacc-seat{text-align:center;padding:12px 10px;border-radius:12px;
+  /* 세로 여백은 카드와 알약을 감싸는 만큼만 — 12px 이면 위아래로 24px 을 쓰는데,
+     가로 화면에서는 그 24px 이 베팅 구역이 나눠 쓸 자리다. */
+  .bacc-seat{text-align:center;padding:8px 10px;border-radius:12px;
     border:1px solid transparent;transition:border-color .2s,opacity .2s,background .2s;
     display:grid;grid-template-columns:auto auto;justify-content:center;
     align-items:center;column-gap:8px;row-gap:8px}
