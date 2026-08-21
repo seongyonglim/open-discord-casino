@@ -1,5 +1,5 @@
 // 포커 플립: 텍사스 홀덤 규칙으로 Master/Shark의 홀카드 2장씩을 먼저 공개하고,
-// 보드 5장을 뒤집기 전에 여러 시장에 베팅한다. 이후 플롭 3장 → 턴 → 리버 순서로 공개된다.
+// 보드 5장을 뒤집기 전에 여러 시장에 베팅한다. 이후 플랍 3장 → 턴 → 리버 순서로 공개된다.
 //
 // 시장 (동시에 여러 개 베팅 가능, 칩을 쌓는 방식)
 //   · master / shark : 누가 이기는지. 무승부면 원금 환불 (무승부 자체에 거는 시장은 없다)
@@ -127,7 +127,7 @@ export function advance(): PokerRoundRow {
   return advancePokerRound(makeRound, resolveRound, BUCKET_NAMES.length);
 }
 
-// 공개 범위: 플롭 3장 → 턴 4장 → 리버 5장. 공개 전 카드는 절대 클라이언트로 내려보내지 않는다.
+// 공개 범위: 플랍 3장 → 턴 4장 → 리버 5장. 공개 전 카드는 절대 클라이언트로 내려보내지 않는다.
 function visibleBoardCount(phase: string): number {
   switch (phase) {
     case 'betting': return 0;
@@ -292,7 +292,7 @@ const RULES_HTML = `
 
   <h4>진행</h4>
   <ul>
-    <li>베팅 <b>15초</b> → 플롭 3장 → 턴 → 리버 → 정산</li>
+    <li>베팅 <b>15초</b> → 플랍 3장 → 턴 → 리버 → 정산</li>
     <li>베팅은 <b>처음 15초에만</b> 받습니다. 카드가 열리기 시작하면 더 걸 수 없습니다</li>
   </ul>
 

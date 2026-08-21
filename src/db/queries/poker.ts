@@ -13,10 +13,10 @@ export const POKER_BETTING_SEC = 15;
 // 모두 베팅 마감(betting_ends_at) 기준 경과 초. 서버 페이즈 판정과 클라이언트 카운트다운이
 // 이 값만 보고 움직이므로 여기만 바꾸면 공개 간격이 함께 조정된다.
 //
-// 플롭 3장은 베팅 마감과 동시에(경과 0초) 열린다. 예전에는 POKER_FLOP_SEC=3이 따로 있었지만
+// 플랍 3장은 베팅 마감과 동시에(경과 0초) 열린다. 예전에는 POKER_FLOP_SEC=3이 따로 있었지만
 // 아래 판정의 마지막 분기가 e>=0을 이미 'flop'으로 잡고 있어서 실제로는 쓰이지 않는 상수였고,
-// 그 탓에 "플롭 → 4번째 카드" 간격이 POKER_TURN_SEC 전체가 되어 유독 길게 느껌졌다.
-export const POKER_TURN_SEC = 2;   // 턴(4번째) — 플롭에서 2초 후
+// 그 탓에 "플랍 → 4번째 카드" 간격이 POKER_TURN_SEC 전체가 되어 유독 길게 느껌졌다.
+export const POKER_TURN_SEC = 2;   // 턴(4번째) — 플랍에서 2초 후
 export const POKER_RIVER_SEC = 4;  // 리버(5번째) — 턴에서 2초 후
 export const POKER_SETTLE_SEC = 7; // 정산 — 완성된 보드를 보는 시간 3초
 export const POKER_REVEAL_SEC = 3; // 결과 확정 후 다음 라운드까지
@@ -122,7 +122,7 @@ export function advancePokerRound(
       if (e >= POKER_SETTLE_SEC) phase = 'done';
       else if (e >= POKER_RIVER_SEC) phase = 'river';
       else if (e >= POKER_TURN_SEC) phase = 'turn';
-      else if (e >= 0) phase = 'flop'; // 베팅이 닫히는 순간 플롭 3장 공개
+      else if (e >= 0) phase = 'flop'; // 베팅이 닫히는 순간 플랍 3장 공개
 
       /* 정산 여부의 근거는 phase 가 아니라 result_json 이다.
 

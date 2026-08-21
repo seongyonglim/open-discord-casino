@@ -13,7 +13,7 @@ export const PK_CARDS_JS = `      function cardHtml(cstr){
 
       // 카드 슬롯 동기화 — 내용이 바뀐 칸만 교체한다.
       // (매 폴링마다 innerHTML을 통째로 갈아끼우면 tilePop 애니메이션이 초당 한 번씩 재시작돼
-      //  카드가 계속 튀고, 플롭→턴→리버 순차 공개 연출도 사라진다)
+      //  카드가 계속 튀고, 플랍→턴→리버 순차 공개 연출도 사라진다)
       var slotCache={};
       function syncCards(el, key, values){
         var cache = slotCache[key];
@@ -34,7 +34,7 @@ export const PK_CARDS_JS = `      function cardHtml(cstr){
         }
         return revealed;
       }
-      // 플롭처럼 여러 장이 한 번에 열릴 땐 소리를 살짝 어긋나게 겹쳐 카드 넘기는 느낌을 준다
+      // 플랍처럼 여러 장이 한 번에 열릴 땐 소리를 살짝 어긋나게 겹쳐 카드 넘기는 느낌을 준다
       function playReveal(n){
         if (!n || !window.casinoSfx || !window.casinoSfx.card) return;
         for (var i=0;i<Math.min(n,3);i++) setTimeout(function(){ window.casinoSfx.card(); }, i*110);

@@ -76,8 +76,13 @@ export const BC_REVEAL_JS = `         실제 푼토 방코의 공개 순서를 �
         syncCards(pCardsEl, 'p', slots(r.player, shown.p));
         syncCards(bCardsEl, 'b', slots(r.banker, shown.b));
         // 한 장만 깐 상태의 끗수는 의미가 없으므로 두 장부터 보여준다
-        pTotalEl.textContent = shown.p >= 2 ? totalOf(r.player.slice(0, shown.p)) : '–';
-        bTotalEl.textContent = shown.b >= 2 ? totalOf(r.banker.slice(0, shown.b)) : '–';
+        /* 끗수는 이름 오른쪽 알약이다(07-bacc.css). 아직 안 열렸을 때는 색을 빼야
+           하는데 CSS 는 «글자가 – 인가» 를 볼 수 없으므로 여기서 표시를 붙인다. */
+        var pOpen = shown.p >= 2, bOpen = shown.b >= 2;
+        pTotalEl.textContent = pOpen ? totalOf(r.player.slice(0, shown.p)) : '–';
+        bTotalEl.textContent = bOpen ? totalOf(r.banker.slice(0, shown.b)) : '–';
+        pTotalEl.classList.toggle('wait', !pOpen);
+        bTotalEl.classList.toggle('wait', !bOpen);
       }
 
       /* ── 최근 결과 (구슬판) ─────────────────────────────────────────

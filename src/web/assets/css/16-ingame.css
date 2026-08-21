@@ -556,7 +556,7 @@
        여백을 줄인다. 나머지는 카드와 칸을 한 단계 더. */
     html.ingame .game-shell:has(.bacc-table) .bacc-seats{gap:6px}
     html.ingame .game-shell:has(.bacc-table) .bacc-seat{padding:4px 6px}
-    html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:15px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:11.5px;padding:2px 7px}
     html.ingame .game-shell:has(.bj-table) .bj-seat{height:44px}
     html.ingame .game-shell:not(.ht-shell):not(.mines-shell):not(.poker-shell):not(:has(.bacc-table)):not(:has(.bj-table)):not(:has(.crash-graph)) .board-stage{max-height:172px}
   }
@@ -699,7 +699,7 @@
        베팅에 필요한 것(무엇에 · 얼마에 거는가)이 우선이고, 카드는 보이기만 하면 된다. */
     html.ingame .game-shell:has(.bacc-table) .bacc-table{max-height:188px}
     html.ingame .game-shell:has(.bacc-table) .bacc-seat{padding:4px 6px 6px}
-    html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:16px;margin-top:2px}
+    html.ingame .game-shell:has(.bacc-table) .bacc-total{font-size:12px;padding:2px 8px}
     /* 포커 플립도 같은 이유로 보드를 조금 줄인다 */
     html.ingame .poker-shell .poker-table{max-height:150px}
   }

@@ -125,7 +125,7 @@ function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_crash_bets_round ON crash_bets(round_id);
 
-    -- 포커 플립: 홀카드 2장씩 공개 후 승자/등급 시장에 베팅, 플롭→턴→리버 순차 공개.
+    -- 포커 플립: 홀카드 2장씩 공개 후 승자/등급 시장에 베팅, 플랍→턴→리버 순차 공개.
     -- 보드 5장은 라운드 생성 시 미리 정해두고 시간에 따라 공개 범위만 넓힌다(공개 전엔 절대 내려보내지 않음).
     CREATE TABLE IF NOT EXISTS poker_rounds (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

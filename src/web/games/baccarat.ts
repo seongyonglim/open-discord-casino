@@ -277,13 +277,13 @@ export function baccaratPage(user: WebUser): string {
               <div class="bacc-seat side-player" id="bPlayerSeat">
                 <div class="bacc-name">PLAYER</div>
                 <div id="bPlayerCards" class="bacc-hand"></div>
-                <div id="bPlayerTotal" class="bacc-total">–</div>
+                <div id="bPlayerTotal" class="bacc-total wait">–</div>
               </div>
               <div class="bacc-vs">VS</div>
               <div class="bacc-seat side-banker" id="bBankerSeat">
                 <div class="bacc-name">BANKER</div>
                 <div id="bBankerCards" class="bacc-hand"></div>
-                <div id="bBankerTotal" class="bacc-total">–</div>
+                <div id="bBankerTotal" class="bacc-total wait">–</div>
               </div>
             </div>
           </div>

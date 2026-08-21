@@ -27,7 +27,7 @@ export function pkLoop(p0: string | number): string {
         firstState = false;
 
         var phaseLabel = r.phase==='betting' ? ('베팅 마감까지 '+r.secondsLeft+'초')
-          : r.phase==='flop' ? '플롭'
+          : r.phase==='flop' ? '플랍'
           : r.phase==='turn' ? '턴'
           : r.phase==='river' ? '리버'
           : ('다음 라운드까지 '+r.secondsLeft+'초');

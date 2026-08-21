@@ -160,9 +160,9 @@ async function main(): Promise<void> {
 
     const flop = await waitPhase('/api/games/poker/state', c, p => p === 'flop' || p === 'turn' || p === 'river' || p === 'done');
     if (flop?.round?.phase === 'flop') {
-      ck('플롭에서 정확히 3장만 공개', flop.round.board.length === 3, String(flop.round.board.length));
+      ck('플랍에서 정확히 3장만 공개', flop.round.board.length === 3, String(flop.round.board.length));
     } else {
-      ck('플롭 단계를 지나침(빠른 진행) — 공개 장수는 단계와 일치', [3, 4, 5].includes(flop.round.board.length),
+      ck('플랍 단계를 지나침(빠른 진행) — 공개 장수는 단계와 일치', [3, 4, 5].includes(flop.round.board.length),
         `${flop.round.phase}/${flop.round.board.length}`);
     }
     const turn = await waitPhase('/api/games/poker/state', c, p => p === 'turn' || p === 'river' || p === 'done');

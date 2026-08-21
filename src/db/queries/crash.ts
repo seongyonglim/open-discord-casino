@@ -235,5 +235,5 @@ export function getRecentCrashResults(limit = 15): number[] {
   ).map(r => r.crash_point);
 }
 
-// ----- 포커 플립: 실시간 공용 라운드 (홀카드 공개 → 베팅 → 플롭·턴·리버 순차 공개) -----
+// ----- 포커 플립: 실시간 공용 라운드 (홀카드 공개 → 베팅 → 플랍·턴·리버 순차 공개) -----
 

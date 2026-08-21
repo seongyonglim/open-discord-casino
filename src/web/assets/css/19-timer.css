@@ -58,9 +58,13 @@
     max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .st-badge .st-ico{flex:none;display:inline-flex;color:#9aa0aa}
   .st-badge .st-ico svg{width:13px;height:13px;display:block}
-  /* 초를 안 세는 문구(플롭·턴·리버 등)에는 시계를 안 붙인다. display:none 이라야
+  /* 초를 안 세는 문구(플랍·턴·리버 등)에는 시계를 안 붙인다. display:none 이라야
      gap 도 함께 사라진다 — 빈 칸만 감추면 왼쪽에 7px 이 남아 글이 밀린다. */
   .st-badge.st-noico .st-ico{display:none}
+  /* 숫자 칸이 비어 있으면 함께 감춘다 — 남겨 두면 그 칸의 gap(7px)이 오른쪽에만
+     붙어서 글이 왼쪽으로 치우친다. :empty 라 클래스를 따로 붙일 필요가 없다. */
+  .st-badge .st-num:empty{display:none}
+  .st-badge .st-txt:empty{display:none}
   .st-badge .st-num{font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
     font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
     font-weight:700;color:#fbbf24;letter-spacing:.02em}
