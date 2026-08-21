@@ -356,7 +356,7 @@ export function blackjackPage(user: WebUser): string {
 
         <div class="card game-controls poker-controls">
           <div class="coin-row" id="bjCoins"></div>
-          <button id="bjClear" class="btn" type="button">Clear Screen</button>
+          <button id="bjClear" class="btn" type="button">초기화</button>
         </div>
       </div>
 

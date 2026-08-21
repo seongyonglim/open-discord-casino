@@ -38,6 +38,7 @@
     "audit:pwa": "node --experimental-sqlite --require tsx/cjs scripts/audit-pwa.ts",
     "check:installable": "node --require tsx/cjs scripts/check-installable.ts",
     "check:mobile": "node --require tsx/cjs scripts/check-mobile.ts",
+    "check:chips": "node --experimental-sqlite --require tsx/cjs scripts/check-chips.ts",
     "audit:rollover": "node --experimental-sqlite --require tsx/cjs scripts/audit-rollover.ts",
     "audit:unregister": "node --experimental-sqlite --require tsx/cjs scripts/audit-unregister.ts",
     "audit:payout": "node --experimental-sqlite --require tsx/cjs scripts/audit-payout.ts"

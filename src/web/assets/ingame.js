@@ -611,13 +611,30 @@ window.__IG = (function(){
   }
 
   function drawer(){ return document.querySelector('.ig-side'); }
+  /* 가림막은 «서랍과 같은 부모» 에 둔다. body 에 붙이면 서랍보다 위에 그려진다.
+
+     왜 그런가: main 에 view-transition-name(od-main)이 걸려 있다. 이름이 붙은
+     요소는 쌓임 맥락이 되므로, main 안에 있는 서랍의 z-index 는 main «안에서만»
+     겨룬다. main 은 position:static 이라 흐름 순서대로 일찍 그려지고, body 에 붙은
+     가림막(z:55)은 main 의 자손 전부보다 뒤에 그려진다 — 서랍을 9999 로 올려도
+     그대로였다(실측).
+
+     그래서 두 가지가 함께 깨졌다: 시트가 가림막에 덮여 어두워 보였고, 시트 안을
+     누르면 «탭이 아니라 가림막» 이 눌려 시트가 닫혔다(실측: 랭킹 탭 탭 → 열림 false,
+     활성 탭 그대로). 같은 부모에 두면 z-index 가 제대로 겨뤄 55 < 60 이 된다.
+
+     서랍이 아직 없으면 body 에 둔다 — 그 상태에서는 덮을 것도 없다. */
   function scrim(){
     var s = document.querySelector('.ig-scrim');
     if (!s) {
       s = document.createElement('div');
       s.className = 'ig-scrim';
       s.addEventListener('click', closeDrawer);
-      document.body.appendChild(s);
+    }
+    var d = drawer();
+    var host = (d && d.parentNode) || document.body;
+    if (s.parentNode !== host) {
+      if (d && d.parentNode === host) host.insertBefore(s, d); else host.appendChild(s);
     }
     return s;
   }
@@ -630,6 +647,9 @@ window.__IG = (function(){
     if (window.casinoChat && window.casinoChat.close) window.casinoChat.close();
     d.classList.add('ig-open');
     scrim().classList.add('on');
+    /* 랭킹은 탭이 열려 있을 때만 30초마다 받는다 — 열자마자 한 번 더 받아,
+       닫아 둔 사이에 밀린 값을 보여 주지 않는다(창구는 views.ts 의 rankJs 가 낸다) */
+    try { if (window.__spRankOpen) window.__spRankOpen(); } catch(e){}
     var b = document.querySelector('.ig-people');
     if (b) b.setAttribute('aria-expanded', 'true');
   }
@@ -862,6 +882,45 @@ window.__IG = (function(){
     if (l.textContent !== lt) l.textContent = lt;
     if (r.textContent !== rt) r.textContent = rt;
   }
+  /* ── 시즌 랭킹 띠 (지뢰찾기 세로) ─────────────────────────────────
+     지뢰찾기는 혼자 하는 판이라 참가자 띠가 없다. 그런데 세로에서 판과 조작부를
+     가운데로 모으면 아래쪽에 120px 남짓이 그냥 빈다(실측 412x915: 조작부 아래끝
+     753, 탭바 위끝 875). 그 자리에 시즌 랭킹으로 들어가는 문을 둔다 — 사다리의
+     라이브 띠와 같은 모양이라 새 문법을 배울 것이 없고, 여는 것도 같은 시트다.
+
+     오른쪽에는 내 순위를 적는다. 목록에서 내 줄(.sp-rw.me)의 번호를 읽어 오는데,
+     그 목록은 지뢰찾기에서 처음부터 열려 있어(sidePanel 이 탭 없이 랭킹만 둔다)
+     페이지에 들어오면 곧 채워진다. 아직 모를 때는 "랭킹 보기" 로 둔다 — 없는 값을
+     0위로 적으면 거짓말이 된다. */
+  function addRankBar(){
+    var body = movedGrid(), bet = document.querySelector('.ig-cell.ig-bet');
+    if (!body || !bet || body.querySelector('.ig-rankbar')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ig-rankbar';
+    b.setAttribute('aria-label', '시즌 랭킹 보기');
+    b.innerHTML = '<span class="ig-lb-ico">' + (IG.ICON.trophy || '') + '</span>'
+      + '<span class="ig-lb-l">시즌 랭킹</span>'
+      + '<span class="ig-lb-r"></span>'
+      + '<span class="ig-lb-x">' + (IG.ICON.chev || '') + '</span>';
+    b.addEventListener('click', function(){
+      var d = drawer();
+      if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
+    });
+    body.insertBefore(b, bet);
+    syncRankBar();
+  }
+  function syncRankBar(){
+    var b = document.querySelector('.ig-rankbar');
+    if (!b) return;
+    var no = document.querySelector('.sp-rank .sp-rw.me .sp-no');
+    var r = b.querySelector('.ig-lb-r');
+    var t = no ? ('내 순위 ' + no.textContent.trim() + '위') : '랭킹 보기';
+    if (r.textContent !== t) r.textContent = t;
+  }
+  function removeRankBar(){
+    var b = document.querySelector('.ig-rankbar'); if (b) b.remove();
+  }
   function removeLiveBar(){
     var b = document.querySelector('.ig-livebar'); if (b) b.remove();
     document.documentElement.style.removeProperty('--ig-chat-top');
@@ -1000,7 +1059,7 @@ window.__IG = (function(){
   function apply(){
     if (!movedGrid() || !IG.on()) {
       restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
-      removePeopleBtn(); removeScrim(); removeLiveBar(); removeSheetClose();
+      removePeopleBtn(); removeScrim(); removeLiveBar(); removeRankBar(); removeSheetClose();
       clearMinesGrid();
       return;
     }
@@ -1013,7 +1072,7 @@ window.__IG = (function(){
 
          자리는 게임 이름을 눌러 바꾸게 하면서 벌었다. 가로에 있던 [← 로비] 단추가
          목록의 첫 줄로 들어가 사라졌기 때문이다. */
-      removeLiveBar();
+      removeLiveBar(); removeRankBar();
       moveClock(); addPeopleBtn(); restoreSettings(); addSheetClose();
       clearMinesGrid();
     } else {
@@ -1026,6 +1085,9 @@ window.__IG = (function(){
          없으면서 한 줄을 먹는다. 그런 게임에서는 아예 안 붙인다. */
       if (IG.kind() === 'ladder') { addLiveBar(); syncLiveBar(); syncChatTop(); }
       else removeLiveBar();
+      /* 지뢰찾기는 참가자 대신 시즌 랭킹으로 들어가는 문을 같은 자리에 둔다 */
+      if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); }
+      else removeRankBar();
       /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
       removeSheetClose(); addSwipeClose();
       restoreSettings();
@@ -1041,7 +1103,7 @@ window.__IG = (function(){
     /* 타이머와 참가 현황은 더 자주 맞춘다. 1초마다 맞추면 원본이 바뀐 뒤 최대 1초를
        늦게 따라가서, 남은 시간이 한 박자씩 밀려 보인다. */
     setInterval(function(){
-      if (movedGrid() && IG.port()) { syncLiveBar(); syncChatTop(); }
+      if (movedGrid() && IG.port()) { syncLiveBar(); syncRankBar(); syncChatTop(); }
     }, 250);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

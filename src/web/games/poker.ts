@@ -335,7 +335,7 @@ export function pokerPage(user: WebUser): string {
              (승패·회수 결과는 사운드·잔액 애니메이션·참가자 패널 금액으로 전달된다) -->
         <div class="card game-controls poker-controls">
           <div class="coin-row" id="pCoins"></div>
-          <button id="pClear" class="btn" type="button">Clear Screen</button>
+          <button id="pClear" class="btn" type="button">초기화</button>
         </div>
       </div>
       ${sidePanel('p', `

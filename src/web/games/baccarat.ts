@@ -295,7 +295,7 @@ export function baccaratPage(user: WebUser): string {
 
         <div class="card game-controls poker-controls">
           <div class="coin-row" id="bCoins"></div>
-          <button id="bClear" class="btn" type="button">Clear Screen</button>
+          <button id="bClear" class="btn" type="button">초기화</button>
         </div>
       </div>
 

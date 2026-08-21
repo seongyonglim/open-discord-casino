@@ -1149,6 +1149,58 @@ async function main(): Promise<void> {
       !/data-pane="tour">\s*<h2>채팅<\/h2>/.test(ad));
   }
 
+  console.log('[15] 폰 화면 — 시트 · 랭킹 · 지뢰찾기 랭킹 띠');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const ig = readFileSync('src/web/assets/ingame.js', 'utf8') as string;
+    const rank = readFileSync('src/web/assets/css/12-rank.css', 'utf8') as string;
+    const port = readFileSync('src/web/assets/css/18-ig-portrait.css', 'utf8') as string;
+    const shell = readFileSync('src/web/assets/css/02-shell.css', 'utf8') as string;
+
+    /* 가림막은 서랍과 «같은 부모» 에 붙어야 한다. body 에 붙이면 서랍보다 위에 그려진다 —
+       main 에 view-transition-name 이 걸려 쌓임 맥락이 되기 때문이다. 그러면 두 가지가
+       함께 깨진다: 시트가 가림막에 덮여 어두워 보이고, 시트 안을 누르면 «탭이 아니라
+       가림막» 이 눌려 시트가 닫힌다. 실측으로 재현했다 — 랭킹 탭을 눌렀더니 열림 false,
+       활성 탭은 그대로였다. 서랍의 z-index 를 9999 로 올려도 그대로였다. */
+    ck('가림막을 서랍 옆에 붙인다',
+      ig.includes('var host = (d && d.parentNode) || document.body;')
+      && ig.includes('if (s.parentNode !== host)'));
+    /* 위 검사가 필요한 «이유» 가 사라지면(main 의 이름이 없어지면) 그 규칙도 다시
+       생각해야 한다 — 그때 이 줄이 빨개져서 같이 보게 만든다. */
+    ck('main 이 쌓임 맥락인 것을 알고 있다', shell.includes('main{view-transition-name:od-main}'));
+
+    /* 지뢰찾기 랭킹 띠 — 사다리의 라이브 띠와 «다른 클래스» 여야 한다. 같은 클래스를
+       달았더니 사다리용 syncLiveBar 가 글자를 덮어썼고(실측: 왼쪽에 "실시간 참가자 0명"
+       이 찍혔다), removeLiveBar 가 1초마다 지웠다 다시 만들었다. */
+    ck('지뢰찾기 랭킹 띠가 있다', ig.includes('function addRankBar()')
+      && ig.includes("b.className = 'ig-rankbar';"));
+    ck('랭킹 띠는 지뢰찾기에만 붙는다',
+      ig.includes("if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); }"));
+    ck('랭킹 띠가 라이브 띠와 클래스를 안 섞는다', !ig.includes("'ig-livebar ig-rankbar'"));
+    ck('랭킹 띠 모양이 라이브 띠와 같다',
+      port.includes('html.ig-port .ig-livebar,html.ig-port .ig-rankbar{'));
+    /* 닫아 둔 사이에는 랭킹 폴링이 쉰다 — 열자마자 한 번 받아야 밀린 값을 안 보여 준다 */
+    ck('시트를 열 때 랭킹을 새로 받는다', ig.includes('window.__spRankOpen()'));
+
+    /* 랭킹 화면 — 폰에서 표가 첫 화면에 들어와야 한다. 세로는 위쪽(제목줄·배너·포디움)을
+       눌러 담고, 가로는 두 칸으로 나눈다. 실측으로 세로 7줄 → 12줄, 가로 0줄 → 6줄.
+       여기서는 «그 규칙이 있는가» 만 본다 — 픽셀은 화면마다 다르고 check-mobile 이 잰다. */
+    ck('랭킹 세로 규칙이 있다',
+      rank.includes('@media (max-width:768px) and (orientation:portrait)'));
+    ck('랭킹 가로는 두 칸이다', rank.includes('grid-template-columns:minmax(210px,268px) 1fr'));
+    ck('랭킹 가로에서 표만 스크롤한다',
+      rank.includes('.lb-listwrap{grid-column:2;grid-row:2 / span 2;overflow-y:auto;'));
+    ck('랭킹 가로에서 머리글이 붙어 있다', rank.includes('.lb-tbl th{position:sticky;top:0;'));
+
+    /* 회수 단추 이름 — 온통 한국말인 화면에 영문 한 줄이 남아 있었고, 뜻도 "화면 지우기"
+       가 아니라 "이번 판에 올린 내 칩 회수" 라 맞지도 않았다. */
+    for (const g of ['blackjack', 'baccarat', 'poker']) {
+      const src = readFileSync('src/web/games/' + g + '.ts', 'utf8') as string;
+      ck(g + ' 회수 단추가 한국말이다',
+        src.includes('>초기화<') && !src.includes('>Clear Screen<'));
+    }
+  }
+
   console.log(`\n${'─'.repeat(50)}`);
   console.log(`통과 ${pass} · 실패 ${fail}`);
   if (fail) process.exitCode = 1;

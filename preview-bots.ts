@@ -6,6 +6,7 @@
 //   BOT_GAME=ladder npm run bots       # 사다리게임
 //   BOT_GAME=crash  npm run bots       # 그래프게임
 //   BOT_GAME=mines  npm run bots       # 지뢰찾기
+//   BOT_GAME=baccarat npm run bots     # 바카라
 //   BOT_MINUTES=60 BOT_GAME=poker npm run bots
 //
 // 새 게임을 붙일 때는 아래 GAMES에 { wait, act } 한 벌만 추가하면 된다.
@@ -76,6 +77,7 @@ interface GameBot {
 
 const POKER_MARKETS = ['master', 'shark', 'b0', 'b1', 'b2', 'b3', 'b4'] as const;
 const POKER_COINS = [100, 1000, 5000, 10000] as const;
+const BACC_MARKETS = ['player', 'banker', 'tie', 'ppair', 'bpair'] as const;
 
 const GAMES: Record<string, GameBot> = {
   poker: {
@@ -102,6 +104,33 @@ const GAMES: Record<string, GameBot> = {
     },
   },
 
+  /* 바카라. 포커 플립과 같은 «마켓에 칩을 얹는» 게임이라 거는 방식도 같다.
+     이걸 붙인 이유: 남이 걸 때 칩이 날아오는 연출을 로컬에서 확인할 방법이 없었다.
+     바카라 화면을 열어 두고 아무리 기다려도 참가자가 나 혼자라 애니메이션이 돌 일이
+     없었고, 그래서 "확인 못 했다" 를 두 번 보고했다. 볼 수 없는 것은 고칠 수도 없다. */
+  baccarat: {
+    label: '바카라',
+    async wait() {
+      const s = await get('/api/games/baccarat/state', BOTS[0].cookie);
+      return (s?.round?.phase === 'betting' && s.round.secondsLeft >= 3)
+        ? { id: s.round.id, seconds: s.round.secondsLeft } : null;
+    },
+    async act(bot, seconds) {
+      const picks = bot.style === 'whale'
+        ? Array.from({ length: 1 + rand(2) }, () => pick(BACC_MARKETS))
+        : Array.from({ length: 2 + rand(3) }, () => pick(BACC_MARKETS));
+      const window = Math.max(1500, (seconds - 2) * 1000);
+      for (const market of picks) {
+        const amount = bot.style === 'whale' ? pick([5000, 10000]) : pick(POKER_COINS);
+        for (let i = 0, n = 1 + rand(bot.style === 'whale' ? 3 : 2); i < n; i++) {
+          const r = await post('/api/games/baccarat/bet', bot.cookie, { market, amount });
+          if (!r?.ok) return;                       // 마감되면 조용히 종료
+          await sleep(120 + Math.random() * 260);   // 칩을 하나씩 얹는 느낌
+        }
+        await sleep(Math.random() * (window / picks.length));
+      }
+    },
+  },
   ladder: {
     label: '사다리게임',
     async wait() {
