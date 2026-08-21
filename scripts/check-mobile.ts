@@ -147,6 +147,23 @@ const PROBE = `(() => {
        있었다). 그려진 높이를 재는 것만이 그 실패를 잡는다.
        이름이 굶는 것도 같이 본다 — 손익 열의 min-width 가 이름 자리를 먹으면
        이름이 두 글자에서 잘린다(실측: 55px 필요한데 28px 을 받았다). */
+    /* ── 타이머가 초를 «읽었는가» ─────────────────────────────────
+       인게임 타이머(.ig-timer)는 게임이 쓴 글자에서 숫자를 정규식으로 뽑아 쓴다.
+       그래서 게임 쪽 문구를 조금 고치면 조용히 못 읽게 된다 — 실제로 사다리 문구를
+       "베팅 마감까지 N초" 에서 "베팅 마감 N초" 로 줄였을 때 그 일이 났다. 겉보기에는
+       글자가 그대로 떠 있어서 아무 문제가 없어 보이는데, 두 자리 고정이 풀리고
+       3초 이하 경고(ig-t-hot)가 영영 안 켜진다.
+       그러니 «원본에 N초가 있으면 타이머도 숫자를 갖고 있어야 한다» 를 본다. */
+    timerNum: (() => {
+      const t = document.querySelector('.ig-timer');
+      if (!t || getComputedStyle(t).display === 'none') return null;
+      const num = t.querySelector('.ig-t-num');
+      // 원본은 게임이 쓰는 노드다 — 지금 화면에 있는 카운트다운 글자를 찾는다
+      const src = document.querySelector('.stage-status, .bacc-status, .bj-status, .poker-status');
+      const raw = src ? String(src.textContent || '').trim() : '';
+      const wants = /\d+초/.test(raw);
+      return { raw, wants, got: num ? String(num.textContent || '').trim() : '' };
+    })(),
     rankRow: (() => {
       const rw = document.querySelector('.sp-rank .sp-rw');
       if (!rw) return null;
@@ -400,6 +417,12 @@ async function main(): Promise<void> {
         if (m.grid || size.name === '가로')
           ck(`${g} 글자가 읽을 수 있는 크기`, (m.tinyText?.px ?? 99) >= 9,
             m.tinyText ? `가장 작은 글자 ${m.tinyText.px}px — ${m.tinyText.sample}` : '못 잼');
+        /* 타이머가 게임 문구에서 초를 읽어 냈는가. 원본에 초가 없는 구간(정산 중 등)은
+           잴 것이 없으므로 넘어간다. */
+        if (m.timerNum && m.timerNum.wants) {
+          ck(`${g} 타이머가 초를 읽었다`, /\d/.test(m.timerNum.got),
+            `원본 "${m.timerNum.raw}" → 타이머 숫자 "${m.timerNum.got}" (문구가 바뀌어 정규식이 못 읽는다)`);
+        }
         /* 랭킹 줄 — 양식이 한 벌로 유지되는가. 열려 있는 탭이 참가인원이면 목록이
            비어 있어 잴 수 없다(그때 rankRow 가 null 이다) — 없는 것은 넘어간다. */
         if (m.rankRow) {

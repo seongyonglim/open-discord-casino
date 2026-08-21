@@ -107,7 +107,10 @@ export async function handleState(_req: IncomingMessage, res: ServerResponse, us
     },
     bets: getLadderBets(round.id),
     myBet: myBet ?? null,
-    history: getRecentLadderResults(20),
+    /* 26개를 내려보낸다. 화면이 쓰는 것은 25개인데(HIST_MAX), 결과 공개 전에는
+       맨 앞 하나를 가려 두기 때문이다(spoiler → history.slice(1)) — 20개를 보내면
+       그 구간에 19개만 그려져 개수가 오르내린다. */
+    history: getRecentLadderResults(26),
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
@@ -391,7 +394,18 @@ export function ladderPage(user: WebUser): string {
       var NS='http://www.w3.org/2000/svg';
       function svgEl(tag, attrs){ var el=document.createElementNS(NS, tag); for (var k in attrs) el.setAttribute(k, attrs[k]); return el; }
 
-      var ROW_H=18, TOP_PAD=34, BOTTOM_PAD=34, W=190;
+            /* 노드 반지름. 16 이었다 — 지름 32 로, 사다리 폭(90)의 3분의 1 이 넘었다.
+         둥근 것이 크면 화면이 «원 넷» 으로 읽히고 그 사이를 잇는 선은 곁가지가 된다.
+         이 판에서 보는 것은 선을 타고 내려오는 궤적이므로 그 비율을 뒤집는다.
+         viewBox 는 그대로 두므로(높이가 안 변한다) 줄어든 만큼 선이 길어 보인다. */
+      var NODE_R = 12;
+      /* ROW_H 를 18 에서 22 로 올린다. 노드를 줄이는 것만으로는 «선이 길어진» 것이
+         아니라 «원이 작아진» 것뿐이었다 — SVG 는 폭(360px)에 묶여 있고 높이는 viewBox
+         비율이 정하므로, 비율을 안 바꾸면 선의 실제 길이는 그대로다(실측 273px).
+         한 칸을 22 로 넓히면 판이 190x244 가 되어 같은 폭에서 선이 333px 이 된다.
+         가로줄 개수(TOTAL_ROWS)는 그대로다 — 한 칸 떨어지는 거리만 길어지므로
+         공이 내려오는 궤적이 그만큼 길고 빠르게 읽힌다. */
+      var ROW_H=22, TOP_PAD=34, BOTTOM_PAD=34, W=190;
       var xs=[50,140];
       var height = TOP_PAD + BOTTOM_PAD + ROW_H*${TOTAL_ROWS};
 
@@ -407,22 +421,22 @@ export function ladderPage(user: WebUser): string {
         });
         xs.forEach(function(x){ svg.appendChild(svgEl('line', { x1:x, y1:TOP_PAD, x2:x, y2:height-BOTTOM_PAD, class:'ladder-line' })); });
 
-        var cap1 = svgEl('text', { x:W/2, y:TOP_PAD-26, class:'ladder-cap', 'text-anchor':'middle' });
+        var cap1 = svgEl('text', { x:W/2, y:TOP_PAD-22, class:'ladder-cap', 'text-anchor':'middle' });
         cap1.textContent='출발'; svg.appendChild(cap1);
-        var cap2 = svgEl('text', { x:W/2, y:height-BOTTOM_PAD+32, class:'ladder-cap', 'text-anchor':'middle' });
+        var cap2 = svgEl('text', { x:W/2, y:height-BOTTOM_PAD+28, class:'ladder-cap', 'text-anchor':'middle' });
         cap2.textContent='도착'; svg.appendChild(cap2);
 
         // 출발 노드는 좌/우(파랑·빨강), 도착 노드는 홀/짝(골드·보라)으로 표기해 두 베팅 축을 구분한다
         ['L','R'].forEach(function(s, i){
           var topCls = s==='L' ? 'side-l' : 'side-r';
           var botCls = s==='L' ? 'parity-odd' : 'parity-even';
-          var top = svgEl('circle', { cx:xs[i], cy:TOP_PAD, r:16, class:'ladder-node '+topCls, 'data-node':'start-'+s });
+          var top = svgEl('circle', { cx:xs[i], cy:TOP_PAD, r:NODE_R, class:'ladder-node '+topCls, 'data-node':'start-'+s });
           svg.appendChild(top);
-          var t1=svgEl('text', { x:xs[i], y:TOP_PAD+5, class:'ladder-label '+topCls, 'text-anchor':'middle' });
+          var t1=svgEl('text', { x:xs[i], y:TOP_PAD+4, class:'ladder-label '+topCls, 'text-anchor':'middle' });
           t1.textContent = s==='L' ? '좌' : '우'; svg.appendChild(t1);
-          var bot = svgEl('circle', { cx:xs[i], cy:height-BOTTOM_PAD, r:16, class:'ladder-node '+botCls, 'data-node':'end-'+s });
+          var bot = svgEl('circle', { cx:xs[i], cy:height-BOTTOM_PAD, r:NODE_R, class:'ladder-node '+botCls, 'data-node':'end-'+s });
           svg.appendChild(bot);
-          var t2=svgEl('text', { x:xs[i], y:height-BOTTOM_PAD+5, class:'ladder-label '+botCls, 'text-anchor':'middle' });
+          var t2=svgEl('text', { x:xs[i], y:height-BOTTOM_PAD+4, class:'ladder-label '+botCls, 'text-anchor':'middle' });
           t2.textContent = s==='L' ? '홀' : '짝'; svg.appendChild(t2);
         });
 
@@ -461,7 +475,7 @@ export function ladderPage(user: WebUser): string {
         markNode(svg, 'start', round.startSide); // 출발 지점 먼저 강조
         await wait(${ANIM_INIT_MS});
 
-        var token = svgEl('circle', { cx:xs[startCol], cy:TOP_PAD, r:9, class:'ladder-token' });
+        var token = svgEl('circle', { cx:xs[startCol], cy:TOP_PAD, r:7, class:'ladder-token' });
         svg.appendChild(token);
         function trail(x1,y1,x2,y2){
           svg.insertBefore(svgEl('line', { x1:x1, y1:y1, x2:x2, y2:y2, class:'ladder-trail' }), token);
@@ -556,10 +570,24 @@ export function ladderPage(user: WebUser): string {
          처음 보는 사람에게 두 줄은 그냥 색이 다른 두 줄이고, 좌/우 와 홀/짝 이 각각
          출발과 도착이라는 것은 판을 한참 본 뒤에야 이어진다. 라벨이 그 연결을 공짜로
          해 준다. 개수를 줄여 생긴 자리를 여기에 쓴다. */
-      var HIST_MAX = 12;
+      /* 25개까지 보여 준다(12개였다). 화면에 다 들어가지는 않는다 — 넘치는 만큼
+         손가락으로 밀어 과거를 본다(.bead 의 overflow-x). 출발과 도착이 «한» 상자
+         안의 두 줄이므로 둘은 구조적으로 함께 움직인다: 하나만 밀리는 일이 없다.
+
+         ── 같은 기록이면 다시 그리지 않는다
+         이 함수는 폴링마다(초당 한 번) 불린다. innerHTML 을 바꾸면 그 상자의
+         scrollLeft 가 0 으로 돌아가므로, 과거를 보려고 밀어 놓아도 1초 뒤에 맨 앞으로
+         튕겨 나온다 — 그래프게임에서 같은 것을 밟았다. 내용이 바뀔 때만 그린다.
+         새 결과가 맨 앞에 붙었으면 왼쪽 끝으로 부드럽게 돌아간다. */
+      var HIST_MAX = 25;
+      var beadSig = null;
       function renderHistory(history){
-        if (!history.length) { historyEl.innerHTML = ''; return; }
+        if (!history.length) { historyEl.innerHTML = ''; beadSig = null; return; }
         var rows = history.slice(0, HIST_MAX);
+        var sig = rows.map(function(r){ return r.startSide + parityOf(r); }).join(',');
+        if (sig === beadSig) return;
+        var prevFirst = beadSig == null ? null : beadSig.split(',')[0];
+        beadSig = sig;
         var startCells = rows.map(function(r){
           return '<span class="bead-cell '+(r.startSide==='L'?'l':'r')+'">'+(r.startSide==='L'?'좌':'우')+'</span>';
         }).join('');
@@ -570,6 +598,10 @@ export function ladderPage(user: WebUser): string {
         historyEl.innerHTML =
           '<div class="bead-row"><span class="bead-lbl">출발</span>'+startCells+'</div>' +
           '<div class="bead-row"><span class="bead-lbl">도착</span>'+parityCells+'</div>';
+        if (prevFirst != null && sig.split(',')[0] !== prevFirst) {
+          try { historyEl.scrollTo({ left: 0, behavior: 'smooth' }); }
+          catch (e) { historyEl.scrollLeft = 0; }
+        }
       }
 
       async function play(){

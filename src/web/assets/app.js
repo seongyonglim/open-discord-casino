@@ -2473,7 +2473,10 @@ window.__foldOut = function(el, done){
    그리고, 인게임 껍데기는 노드를 다른 자리로 옮긴다 — 그때 리스너가 사라진다.
    그래서 요소마다 붙이지 않고 document 한 곳에서 받는다(위임). */
 (function(){
-  var ROW = '.hist-row';
+  /* 옆으로 미는 줄 둘 — 그래프·포커·바카라·블랙잭의 최근 결과 띠(.hist-row)와
+     사다리의 출목표(.bead). 사다리는 상자 하나에 두 줄(출발·도착)이 들어 있어서
+     여기서 상자를 밀면 두 줄이 함께 움직인다. */
+  var ROW = '.hist-row, .bead';
   var drag = null;
 
   function rowOf(t){ return t && t.closest ? t.closest(ROW) : null; }

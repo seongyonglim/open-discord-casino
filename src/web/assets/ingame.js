@@ -156,9 +156,14 @@ window.__IG = (function(){
     var v = s ? String(s.textContent).trim() : '';
     var ico = t.querySelector('.ig-t-ico'), txt = t.querySelector('.ig-t-txt'),
         num = t.querySelector('.ig-t-num');
+    /* «까지» 는 있어도 없어도 받는다. 게임마다 문구가 조금씩 다르고(그래프·포커·바카라는
+       "베팅 마감까지 N초", 사다리는 "베팅 마감 N초"), 여기서 한쪽만 알아보면 다른 쪽은
+       초를 못 읽는다 — 그러면 두 자리 고정도 안 되고 3초 이하 경고(ig-t-hot)도 안 켜진다.
+       실제로 사다리 문구를 짧게 줄였을 때 그 일이 났다(1초 남았는데 색이 그대로였다).
+       숫자를 읽는 일이 문구의 «글자» 에 매달려 있는 것이 애초에 약한 고리다. */
     var m, sec = null, label = v;
-    if ((m = v.match(/^베팅 마감까지 (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
-    else if ((m = v.match(/^다음 라운드까지 (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
+    if ((m = v.match(/^베팅 마감(?:까지)? (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
+    else if ((m = v.match(/^다음 라운드(?:까지)? (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
     else if (/결과 공개/.test(v)) { label = '사다리 진행 중…'; }
     else if (/일시정지/.test(v)) { label = '일시정지 — 화면을 누르면 재개'; }
     else if (!v) { label = ''; }

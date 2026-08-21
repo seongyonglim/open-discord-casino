@@ -55,7 +55,11 @@
   .ladder-node.side-r.hit{fill:rgba(229,72,77,.9);stroke-width:3;animation:nodePulse .5s ease-out}
   .ladder-node.parity-odd.hit{fill:rgba(212,175,55,.9);stroke-width:3;animation:nodePulse .5s ease-out}
   .ladder-node.parity-even.hit{fill:rgba(199,125,255,.85);stroke-width:3;animation:nodePulse .5s ease-out}
-  .ladder-label{font-size:12px;font-weight:700;pointer-events:none;user-select:none}
+  /* 노드가 지름 32 → 24 로 줄었으니(ladder.ts 의 NODE_R) 글자도 함께 줄인다.
+     12 → 10. 굵기는 올린다 — 작아진 글자가 원 안에서 흐려지지 않아야 한다.
+     SVG 안의 font-size 는 user unit 이라 viewBox 와 함께 배율이 따라간다:
+     화면에서 몇 px 인지는 판의 폭이 정하고, 여기서 정하는 것은 «원 대비 비율» 이다. */
+  .ladder-label{font-size:10px;font-weight:800;pointer-events:none;user-select:none}
   .ladder-label.side-l{fill:var(--side-l)}
   .ladder-label.side-r{fill:var(--side-r)}
   .ladder-label.parity-odd{fill:var(--gold)}
@@ -96,11 +100,24 @@
   /* 오래된 쪽(오른쪽)으로 갈수록 옅어진다. 칸마다 opacity 를 매기려면 개수를 아는
      규칙이 필요한데, 상자 전체에 마스크를 씌우면 개수가 몇이든 같은 뜻이 된다.
      "왼쪽이 지금, 오른쪽이 지난 일" 이 색의 세기로 읽힌다. */
+  /* ── 밀어서 과거를 본다 ────────────────────────────────────────────
+     25회분을 그리므로(ladder.ts 의 HIST_MAX) 화면에 다 들어가지 않는다. 넘치는 만큼
+     손가락으로 민다 — 그리고 출발·도착 두 줄이 «한» 상자 안에 있으므로 둘은 늘 같이
+     움직인다(하나만 밀리는 구조가 애초에 없다).
+     cursor:grab 은 마우스로도 끌 수 있다는 표시다(app.js 의 위임 드래그).
+
+     ── 오른쪽 흐림을 옅게 줄였다
+     원래는 폭의 40%를 걸쳐 흐려 «오른쪽이 지난 일» 을 색으로 말했다. 12개가 한 화면에
+     고정으로 들어가던 시절에는 그것이 뜻이었지만, 이제는 그 자리가 «밀어서 볼 곳» 이다 —
+     밀어서 데려온 칸이 계속 흐리면 읽으려고 민 것을 못 읽는다. 끝 8%만 남겨
+     "더 있다" 는 신호로만 쓴다. */
   .bead{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;
-    overflow-x:auto;scrollbar-width:none;
-    -webkit-mask-image:linear-gradient(90deg,#000 0%,#000 60%,rgba(0,0,0,.3) 100%);
-    mask-image:linear-gradient(90deg,#000 0%,#000 60%,rgba(0,0,0,.3) 100%)}
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;cursor:grab;
+    -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+    -webkit-mask-image:linear-gradient(90deg,#000 0%,#000 92%,rgba(0,0,0,.35) 100%);
+    mask-image:linear-gradient(90deg,#000 0%,#000 92%,rgba(0,0,0,.35) 100%)}
   .bead::-webkit-scrollbar{display:none}
+  .bead.hist-drag{cursor:grabbing;user-select:none}
   /* width:max-content 가 있어야 줄이 제 내용만큼 넓어지고, 그래야 바깥 상자가
      넘친 것을 알아채 스크롤이 생긴다. 안 주면 줄이 상자 폭에 갇혀 칸만 잘린다. */
   .bead-row{display:flex;align-items:center;gap:5px;width:max-content;min-width:100%}
