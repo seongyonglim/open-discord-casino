@@ -91,15 +91,22 @@ export const BJ_CARDS_JS = `      var SUIT_SYM={s:'\\u2660',h:'\\u2665',d:'\\u26
         return total;
       }
 
+      /* ── 안내는 «내가 할 일이 있을 때» 만 뜬다 ────────────────────────
+         바카라와 같은 규칙이다(baccarat-client/roster.ts 의 phaseText 를 보라).
+         "카드를 나눠주는 중…" · "딜러 차례…" · "딜러 17 · 다음 라운드까지 4초" 는
+         전부 화면이 이미 보여 주는 일이다 — 카드가 놓이고, 딜러 패가 열리고,
+         이긴 자리에 표시가 붙는다. 글로 한 번 더 말할 값이 없다.
+
+         남기는 것은 셋. 셋 다 «내가 무언가를 해야 하는» 구간이다.
+           앉기 전   앉으라고 알려 준다(시간이 흐르지 않는 구간이라 숫자가 없다)
+           베팅      언제까지 칩을 올릴 수 있는가
+           내 차례   몇 초 안에 힛/스탠드를 골라야 하는가 */
       function statusText(r){
         // 아무도 앉지 않았으면 시간이 흐르지 않는다 — 카운트다운을 띄우면 안 된다
-        if (r.phase === 'waiting') return '빈 자리를 눌러 앉으면 시작합니다';
-        if (r.phase === 'betting') return '자리를 고르고 칩을 올리세요 · ' + r.secondsLeft + '초';
-        if (r.phase === 'deal') return '카드를 나눠주는 중…';
-        if (r.phase === 'action') return '힛 / 스탠드 · ' + r.secondsLeft + '초';
-        if (r.phase === 'dealer') return '딜러 차례…';
-        var d = r.dealer;
-        return '딜러 ' + (d.total != null ? d.total : '?') + ' · 다음 라운드까지 ' + r.secondsLeft + '초';
+        if (r.phase === 'waiting') return '빈자리를 눌러 앉으면 시작합니다';
+        if (r.phase === 'betting') return '게임 시작까지 ' + r.secondsLeft + '초';
+        if (r.phase === 'action') return '플레이어 턴 ' + r.secondsLeft + '초';
+        return '';
       }
 
       function statusLabel(s){

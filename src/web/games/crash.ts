@@ -115,7 +115,11 @@ function statePayload(round: CrashRoundRow, userId: string) {
     },
     bets: getCrashBets(round.id),
     myBet: myBet ?? null,
-    history: getRecentCrashResults(15),
+    /* 15 → 40. 띠는 넘치는 만큼 옆으로 밀어 볼 수 있는데(overflow-x:auto), 15 개는
+       가로 화면에서 거의 다 보여서 밀어 볼 것이 116px 밖에 없었다 — «스와이프해서 지난
+       기록을 더 보고 싶다» 는 요청이 그것이다. 40 개면 폰 가로에서 두 화면 반쯤 된다.
+       내려보내는 것은 배율 숫자 하나씩이라 40 개가 250바이트도 안 된다. */
+    history: getRecentCrashResults(40),
     balance: getWebUser(userId)?.balance ?? 0,
     /* 채팅은 폴링을 새로 만들지 않는다 — 이 숫자 하나(마지막 메시지 id)만 얹고,
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
@@ -370,6 +374,8 @@ export function crashPage(user: WebUser): string {
       var st = null;         // 최근 서버 상태
       var clockOffset = 0;   // 서버시간 - 로컬시간 (로컬 시계가 틀려도 배율이 어긋나지 않게 보정)
       var rafId = null, lastRoundId = null, notedRoundId = null, startedRoundId = null;
+      /* 캐시아웃 단추의 금액 조각. 한 번 만들고 계속 고쳐 쓴다(tick 을 보라) */
+      var cashVal = null;
       var autoMode = false;
 
       function fmt(n){ return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P'; }
@@ -449,11 +455,36 @@ export function crashPage(user: WebUser): string {
       }
 
       function historyClass(m){ return m < 2 ? 'low' : (m < 10 ? 'mid' : 'high'); }
-      // 목록은 최신순(왼쪽이 가장 최근). 폭이 부족하면 오른쪽(오래된 결과)부터 잘리므로 스크롤을 옮기지 않는다.
+      /* 목록은 최신순 — 맨 왼쪽이 가장 최근이고, 오른쪽으로 갈수록 과거다.
+         넘치는 만큼 손가락으로 밀어 과거를 본다(CSS 의 .hist-row overflow-x).
+
+         ── 같은 목록이면 손대지 않는다
+         이 함수는 폴링마다(초당 한 번) 불린다. 예전에는 그때마다 innerHTML 을 통째로
+         갈아엎었는데, innerHTML 을 바꾸면 그 상자의 scrollLeft 가 0 으로 돌아간다 —
+         과거를 보려고 밀어 놓아도 1 초 뒤에 맨 앞으로 튕겨 나왔다. 40 개를 내려보내도
+         "밀어서 볼 수 있다" 가 성립하지 않는 이유가 이것이었다.
+         그래서 내용이 실제로 바뀌었을 때만 다시 그린다.
+
+         ── 새 결과가 붙었으면 맨 앞으로 되돌린다
+         내용이 바뀌는 경우는 둘이다: 새 라운드가 끝나 맨 앞에 하나 붙는 것, 그리고
+         (드물게) 목록이 통째로 달라지는 것. 앞의 값이 바뀌었으면 새 결과가 온 것이므로
+         왼쪽 끝으로 부드럽게 돌아간다 — 방금 나온 배율이 이 화면에서 가장 중요하다.
+         과거를 보고 있었더라도 그 자리를 지켜 주지 않는다: 새 판이 시작되는 순간에는
+         지난 기록보다 "방금 몇 배에서 터졌나" 를 보고 있어야 한다. */
+      var histSig = null;
       function renderHistory(list){
-        historyEl.innerHTML = (list||[]).map(function(m){
+        var l = list || [];
+        var sig = l.join(',');
+        if (sig === histSig) return;
+        var prevFirst = histSig == null ? null : histSig.split(',')[0];
+        histSig = sig;
+        historyEl.innerHTML = l.map(function(m){
           return '<span class="ch-chip '+historyClass(m)+'">'+m.toFixed(2)+'x</span>';
         }).join('');
+        if (prevFirst != null && String(l[0]) !== prevFirst) {
+          try { historyEl.scrollTo({ left: 0, behavior: 'smooth' }); }
+          catch (e) { historyEl.scrollLeft = 0; }   // scrollTo 옵션을 모르는 브라우저
+        }
       }
 
       // 우측 실시간 목록: 캐시아웃한 사람은 초록 배율, 터진 사람은 흐리게 표시
@@ -563,7 +594,19 @@ export function crashPage(user: WebUser): string {
         var my = st.myBet;
         if (my && my.cashout_multiplier == null && my.payout == null) {
           // 버튼의 예상 획득액은 실제 정산 기준(2자리 내림)으로 계산해 표시와 지급이 어긋나지 않게 한다
-          cashoutBtn.textContent = '캐시아웃 ' + fmt(my.amount * multAt(elapsed));
+          /* 라벨과 금액을 두 조각으로 나눠 둔다. 한 덩어리로 적으면 매 프레임 글자
+             전체를 갈아치우게 되고, 폰 가로에서는 그 둘을 두 줄로 세우는 자리라
+             (17-ig-grid.css 의 .co-l · .co-v) 조각이 있어야 각자 다르게 그릴 수 있다.
+             조각은 한 번만 만들고, 그다음부터는 금액만 고쳐 쓴다. */
+          if (!cashVal) {
+            cashoutBtn.textContent = '';
+            var l = document.createElement('span'); l.className = 'co-l';
+            l.textContent = '캐시아웃';
+            cashVal = document.createElement('span'); cashVal.className = 'co-v';
+            cashoutBtn.appendChild(l); cashoutBtn.appendChild(cashVal);
+          }
+          var want = '+ ' + fmt(my.amount * multAt(elapsed));
+          if (cashVal.textContent !== want) cashVal.textContent = want;
         }
         rafId = requestAnimationFrame(tick);
       }

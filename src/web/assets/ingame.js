@@ -64,6 +64,18 @@ window.__IG = (function(){
   function kind(){
     var s = document.querySelector('.game-shell');
     if (!s) return null;
+    /* 격자가 이미 지어져 있으면 그때 적어 둔 이름을 그대로 쓴다.
+       아래의 판단은 «판이 .game-shell 안에 있다» 를 전제로 하는데, 격자는 그 판을
+       바깥으로 옮긴다 — 옮긴 뒤에는 querySelector 가 못 찾고 맨 아래 기본값으로
+       떨어진다. 사다리는 기본값이 'ladder' 라 우연히 맞았고, 그래프는 조용히
+       'ladder' 가 됐다(그 탓에 가로에서 참가인원 서랍 단추가 안 걷혔다).
+       .ig-body 의 ig-* 클래스는 build() 가 옮기기 «전» 에 이 함수로 적은 값이다. */
+    var g = document.querySelector('.ig-body');
+    if (g) {
+      var m = /(?:^|\s)ig-(holdem|mines|poker|baccarat|blackjack|graph|ladder)(?:\s|$)/
+        .exec(g.className);
+      if (m) return m[1];
+    }
     if (s.classList.contains('ht-shell')) return 'holdem';
     if (s.classList.contains('mines-shell')) return 'mines';
     if (s.classList.contains('poker-shell')) return 'poker';
@@ -144,9 +156,14 @@ window.__IG = (function(){
     var v = s ? String(s.textContent).trim() : '';
     var ico = t.querySelector('.ig-t-ico'), txt = t.querySelector('.ig-t-txt'),
         num = t.querySelector('.ig-t-num');
+    /* «까지» 는 있어도 없어도 받는다. 게임마다 문구가 조금씩 다르고(그래프·포커·바카라는
+       "베팅 마감까지 N초", 사다리는 "베팅 마감 N초"), 여기서 한쪽만 알아보면 다른 쪽은
+       초를 못 읽는다 — 그러면 두 자리 고정도 안 되고 3초 이하 경고(ig-t-hot)도 안 켜진다.
+       실제로 사다리 문구를 짧게 줄였을 때 그 일이 났다(1초 남았는데 색이 그대로였다).
+       숫자를 읽는 일이 문구의 «글자» 에 매달려 있는 것이 애초에 약한 고리다. */
     var m, sec = null, label = v;
-    if ((m = v.match(/^베팅 마감까지 (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
-    else if ((m = v.match(/^다음 라운드까지 (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
+    if ((m = v.match(/^베팅 마감(?:까지)? (\d+)초$/))) { label = '베팅 마감'; sec = +m[1]; }
+    else if ((m = v.match(/^다음 라운드(?:까지)? (\d+)초$/))) { label = '다음 라운드'; sec = +m[1]; }
     else if (/결과 공개/.test(v)) { label = '사다리 진행 중…'; }
     else if (/일시정지/.test(v)) { label = '일시정지 — 화면을 누르면 재개'; }
     else if (!v) { label = ''; }
@@ -463,7 +480,11 @@ window.__IG = (function(){
      지어 두었고, 가로에서 격자를 켜면 세 칸이 폭을 균등하게 나눠 판이 68px 로
      찌그러졌다(점검이 잡았다). 가로 지뢰찾기는 어차피 방향 잠금 대상이라 예전
      배치로 두는 것이 맞다. */
-  var MOVED = { ladder: 'both', mines: 'port' };
+  /* 그래프는 가로만 격자를 쓴다. 이 판에서 읽어야 하는 것은 «곡선이 어디까지 올랐나»
+     하나뿐이라, 판을 화면 전체로 깔고 조작부를 그 위에 띄운다(17-ig-grid.css 의
+     .ig-body.ig-graph). 세로 배치는 짓지 않았으므로 세로에서는 옛 배치를 그대로 쓴다 —
+     방향 잠금이 가로이므로 세로는 폴백이다. */
+  var MOVED = { ladder: 'both', mines: 'port', graph: 'land' };
 
   function apply(){
     var want = MOVED[shellKind()];
@@ -1076,7 +1097,18 @@ window.__IG = (function(){
          자리는 게임 이름을 눌러 바꾸게 하면서 벌었다. 가로에 있던 [← 로비] 단추가
          목록의 첫 줄로 들어가 사라졌기 때문이다. */
       removeLiveBar(); removeRankBar(); removeStatBar();
-      moveClock(); addPeopleBtn(); restoreSettings(); addSheetClose();
+      moveClock();
+      /* 참가인원을 서랍으로 뺄 것인가, 오른쪽에 그대로 세울 것인가.
+         사다리는 판이 세로로 길어서 폭을 줄 자리가 없다 — 서랍으로 뺀다.
+         그래프는 곡선이 넓을수록 좋지만, 바카라·블랙잭처럼 «지금 누가 얼마를 걸었나»
+         를 곁눈으로 보면서 타는 판이라 오른쪽에 세워 둔다(제보). 그 두 게임은
+         격자를 안 쓰고도 그렇게 하고 있으므로, 여기서 그것과 같은 모양을 만든다.
+         곡선은 그만큼 좁아진다 — 800px 에서 600px 로 줄어드는 것이 이 선택의 값이다. */
+      /* 서랍이 아니면 여는 단추도, 닫는 X 도 없다 — 판이 그 자리에 그냥 서 있다.
+         둘 중 하나만 걷으면 누를 수 없는 X 가 판 위에 남는다(실측: 778,48). */
+      if (IG.kind() === 'graph') { removePeopleBtn(); closeDrawer(); removeSheetClose(); }
+      else { addPeopleBtn(); addSheetClose(); }
+      restoreSettings();
       clearMinesGrid();
     } else {
       /* 세로 — 타이머는 판 위에 우리 것으로 다시 그리고, 참가 현황은 판 아래 띠로.

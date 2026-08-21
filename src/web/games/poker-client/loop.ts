@@ -26,11 +26,11 @@ export function pkLoop(p0: string | number): string {
         else playReveal(firstState ? 0 : opened);
         firstState = false;
 
-        var phaseLabel = r.phase==='betting' ? ('베팅 마감까지 '+r.secondsLeft+'초')
-          : r.phase==='flop' ? '플랍'
-          : r.phase==='turn' ? '턴'
-          : r.phase==='river' ? '리버'
-          : ('다음 라운드까지 '+r.secondsLeft+'초');
+        /* 안내는 «내가 할 일이 있을 때» 만 띄운다 — 바카라·블랙잭과 같은 규칙이다.
+           플랍·턴·리버는 보드에 카드가 한 장씩 놓이는 것으로 이미 말해진다.
+           («플랍» 이라고 적어 두어도 그 카드 셋이 지금 뒤집힌 것을 보고 있다.)
+           내가 손을 움직여야 하는 구간은 베팅뿐이므로 그때만 남긴다. */
+        var phaseLabel = r.phase==='betting' ? ('베팅 마감까지 '+r.secondsLeft+'초') : '';
         /* 사다리와 같은 배지 모양(19-timer.css · app.js 의 casinoBadge) */
         if (window.casinoBadge) casinoBadge.set(statusEl, phaseLabel);
         else statusEl.textContent = phaseLabel;

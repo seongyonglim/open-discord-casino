@@ -166,24 +166,25 @@ export function rankJs(prefix: string, seg: string): string {
           return (n > 0 ? '+' : n < 0 ? '-' : '') + s + 'P';
         }
         function row(r){
-          /* 승률을 모르는 줄(랭킹 도입 전 판을 원장에서 복원한 경우)도 '—'를 찍어
-             열 모양을 맞춘다. 비워 두면 줄마다 폭이 달라 눈으로 훑기 어렵다. */
-          /* 한 줄에는 "판수 · 승률"만 둔다. 승·패·무까지 붙이면 290px 패널에서
-             두 줄로 접혀 목록이 지저분해진다(실측). 상세한 전적은 마우스를 올리면
-             나오는 설명(title)으로 옮겨, 훑을 때는 깔끔하고 궁금하면 볼 수 있게 한다.
-             승률을 아직 모르는 줄은 '—'로 열 모양을 맞춘다. */
+          /* 한 줄에 세 값만 둔다 — 순위 · 이름 · 손익.
+             한동안 이름 밑에 "3,755판 · 41%" 를 함께 적었다. 그게 줄을 두 겹으로
+             만들어서, 290px 패널에서 이름과 숫자가 서로 밀고 목록이 지저분해졌다.
+             무엇보다 이 목록을 보는 이유가 «누가 얼마를 벌었나» 하나인데, 판수와
+             승률은 그 답을 돕지 않으면서 줄 높이를 두 배로 쓴다.
+
+             전적을 아예 버리지는 않는다 — 마우스를 올리면 나오는 설명(title)에
+             남긴다. 훑을 때는 깔끔하고, 궁금하면 볼 수 있다. */
           var nf = new Intl.NumberFormat('ko-KR');
-          var sub = nf.format(r.rounds) + '판 · ' +
-            (r.winPct == null ? '—' : r.winPct + '%');
           var tip = (r.wins == null) ? ''
-            : nf.format(r.wins) + '승 ' + nf.format(r.losses) + '패'
+            : nf.format(r.rounds) + '판 · '
+              + (r.winPct == null ? '승률 —' : '승률 ' + r.winPct + '%') + ' · '
+              + nf.format(r.wins) + '승 ' + nf.format(r.losses) + '패'
               + (r.pushes ? ' ' + nf.format(r.pushes) + '무 (무 = 본전)' : '');
           var cls = r.profit > 0 ? ' pos' : (r.profit < 0 ? ' neg' : '');
           return '<div class="sp-rw' + (r.me ? ' me' : '') + '"' +
             (tip ? ' title="' + escHtml(tip) + '"' : '') + '>' +
             '<span class="sp-no' + (r.rank === 1 ? ' top1' : '') + '">' + r.rank + '</span>' +
-            '<span class="sp-mid"><span class="sp-nm">' + escHtml(r.username) + '</span>' +
-            '<span class="sp-sub num">' + sub + '</span></span>' +
+            '<span class="sp-nm">' + escHtml(r.username) + '</span>' +
             '<span class="sp-p delta num' + cls + '">' + fmtSigned(r.profit) + '</span></div>';
         }
         function escHtml(s){

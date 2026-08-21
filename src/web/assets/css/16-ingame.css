@@ -586,22 +586,30 @@
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
     /* ── 오른쪽 레일을 제대로 짠다 ──────────────────────────────
        앞서 넣은 규칙은 클래스 이름을 추측해서 적은 것이라 하나도 안 맞았다.
-       실제 구조는 .sp-tabs > .sp-tab · .sp-pane > .sp-rank > .sp-rw > (.sp-no·.sp-mid·.sp-p) 다.
+       실제 구조는 .sp-tabs > .sp-tab · .sp-pane > .sp-rank > .sp-rw > (.sp-no·.sp-nm·.sp-p) 다.
 
-       진짜 원인: .sp-mid 의 폭이 0 이었다. 150px 안에서 번호(22)와 손익(84)이 자리를
+       진짜 원인: 이름 열(당시 .sp-mid)의 폭이 0 이었다. 150px 안에서 번호(22)와 손익(84)이 자리를
        먼저 가져가 이름 칸에 남는 폭이 없었고, 글자가 한 자씩 세로로 쪼개져 한 줄이
        98px 이 됐다. 이름 칸에 남는 폭을 주고 넘치면 자른다. */
     html.ingame .game-side{width:170px}
     html.ingame main{padding-right:176px}
     html.ingame .sp-tabs .sp-tab{font-size:10.5px;padding:5px 4px}
-    html.ingame .sp-rank{gap:1px;padding:4px 5px 6px}
-    html.ingame .sp-rank .sp-rw{display:flex;align-items:center;gap:5px;
-      height:auto;min-height:0;padding:4px 5px}
-    html.ingame .sp-rank .sp-no{flex:none;width:13px;font-size:10px;text-align:center}
-    html.ingame .sp-rank .sp-mid{flex:1 1 auto;min-width:0;width:auto;height:auto;
+    /* ── 랭킹 목록: 폰에서도 같은 양식 ─────────────────────────────
+       순위 · 이름 · 손익 세 값, 줄 높이 27px. 그래프게임 가로에서 이 값으로 맞춰
+       보고 «이 양식으로 통일하자» 는 결정이 나왔다(제보). 여기가 그 나머지다 —
+       바카라 · 블랙잭 · 포커 플립 · 지뢰찾기의 가로 화면이 이 규칙을 쓴다.
+       한동안 10px 글자에 줄 높이 19px 이었다. 다 보이기는 했지만 «표» 가 아니라
+       «덩어리» 로 읽혔다.
+       --spNumMin:0 은 손익 열의 최소 폭(기본 84px)을 푸는 것이다 — 좁은 패널에서
+       그 값이 이름 자리를 먹는다(04-board.css 의 .sp-p 를 보라). */
+    html.ingame .sp-rank{gap:2px;padding:4px 5px 6px;--spNumMin:0}
+    html.ingame .sp-rank .sp-rw{display:flex;align-items:center;gap:6px;
+      flex:none;height:auto;min-height:0;padding:5px 6px;border-radius:6px}
+    html.ingame .sp-rank .sp-no{flex:none;width:14px;font-size:10px;text-align:center}
+    html.ingame .sp-rank .sp-nm{flex:1 1 auto;min-width:0;width:auto;height:auto;
       display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-      font-size:10.5px;line-height:1.3}
-    html.ingame .sp-rank .sp-p{flex:none;width:auto;font-size:10px;white-space:nowrap}
+      font-size:11.5px;line-height:1.3}
+    html.ingame .sp-rank .sp-p{flex:none;width:auto;font-size:10.5px;white-space:nowrap}
     html.ingame .side-head{font-size:10.5px;padding:4px 5px}
     html.ingame .roster .empty{font-size:10px;padding:8px 5px;line-height:1.4}
 
@@ -825,8 +833,9 @@
        레일에 준다 — 누가 얼마를 걸었는지 읽히는 것이 이 서비스의 재미다. */
     html.ingame .game-side{width:192px}
     html.ingame main{padding-right:198px}
-    html.ingame .sp-rank .sp-mid{font-size:11px}
-    html.ingame .sp-rank .sp-p{font-size:10.5px}
+    /* 글자 크기는 위 «랭킹 목록» 절에서 한 번만 정한다. 예전에는 여기서 11px 로
+       다시 눌러 두어서, 위쪽 값을 고쳐도 이 줄이 이겨서 안 먹었다 — 레일이 192px 로
+       넓어진 지금은 위의 11.5px 가 그대로 들어간다. */
 
     /* ── 4. 아래 칩 줄을 작고 낮게 ───────────────────────────────
        칩은 누르는 자리라 너무 줄이면 안 되지만, 46px 은 필요 이상이다.
