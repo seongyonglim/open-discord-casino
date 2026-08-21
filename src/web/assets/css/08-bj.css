@@ -44,10 +44,22 @@
     0%,100%{box-shadow:inset 0 0 0 0 rgba(255,70,70,0)}
     28%{box-shadow:inset 0 0 70px 10px rgba(255,70,70,.32)}
   }
-  /* 배지로 그려진다(19-timer.css 의 .st-badge). 여기서는 자리만 — 판 위 가운데.
-     알약이라 text-align 으로는 안 되고 줄을 flex 로 두고 가운데로 모은다. */
-  .bj-status{position:relative;display:flex;justify-content:center;
-    margin:0 0 10px;min-height:26px}
+  /* ── 안내 알약은 판 오른쪽 위에 «떠 있다» ──────────────────────────
+     한때 딜러 카드와 좌석 사이에 한 줄로 있었다. 그 줄은 26px + 아래 여백 10px 을
+     쓰는데, 하는 일은 "몇 초" 를 말하는 것 하나다. 그리고 그 자리가 하필 판의
+     가운데라, 아래에서 액션 단추(히트·스탠드…)가 떠오르면 좌석의 칩과 닉네임이
+     그 줄과 함께 밀려 가려졌다.
+
+     오른쪽 위 구석은 이 판에서 실제로 비어 있는 자리다(딜러 카드 옆). 사다리게임의
+     남은 시간 배지가 서는 자리와 같고, 가로 화면에서는 이미 그렇게 두고 있었다 —
+     화면 크기에 따라 다를 이유가 없으므로 PC·세로까지 같게 맞춘다.
+
+     알약의 «모양» 은 19-timer.css 가 갖고 있다(.st-badge). 여기서는 자리만 정한다.
+     pointer-events 를 끊는다 — 판 위에 떠 있는 안내라 눌릴 이유가 없고, 그 아래
+     펠트나 카드를 누르는 것을 막으면 안 된다. */
+  .bj-status{position:absolute;top:10px;right:10px;z-index:10;
+    display:flex;justify-content:flex-end;margin:0;min-height:0;
+    max-width:calc(100% - 20px);pointer-events:none}
 
   /* 다섯 자리를 한 줄에 두고 아래로 곡선을 준다 (가운데가 가장 깊다) */
   /* margin-bottom은 곡선 때문에 아래로 내려간 만큼 테이블 바닥에 주는 여유다 */

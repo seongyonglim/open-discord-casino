@@ -1123,7 +1123,6 @@
     html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand .pcard{width:26px;height:36px}
     html.ingame .game-shell:has(.bj-table) .bj-dealer .bj-hand{min-height:38px}
     html.ingame .game-shell:has(.bj-table) .bj-dealer-head{font-size:12px;margin-bottom:2px}
-    html.ingame .game-shell:has(.bj-table) .bj-status{margin:2px 0;padding:0;min-height:0}
   }
 
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
@@ -1220,15 +1219,10 @@
        모양은 사다리(.stage-status)를 그대로 쓴다. 이 앱에서 "지금 몇 초" 를 말하는
        뱃지는 이미 그 모양이고, 게임마다 다른 알약을 만들 이유가 없다. */
     html.ingame .game-shell:has(.bj-table) .bj-table{position:relative}
-    html.ingame .game-shell:has(.bj-table) .bj-status{
-      position:absolute;top:10px;right:10px;z-index:20;
-      margin:0;padding:5px 10px;min-height:0;width:auto;max-width:52%;
-      font-family:var(--mono);font-size:12px;color:var(--muted);
-      background:rgba(20,20,24,.85);border:1px solid var(--line);border-radius:8px;
-      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
-    /* 지금 눌러야 하는 순간에는 사다리와 같게 금색으로 살아난다 */
-    html.ingame .game-shell:has(.bj-table) .bj-status.live{
-      color:var(--gold);border-color:var(--gold-dim)}
+    /* 자리와 모양은 이제 공통이다 — 자리는 08-bj.css(오른쪽 위), 모양은
+       19-timer.css(.st-badge). 여기서 알약을 한 번 더 그리면 알약 안에 알약이
+       생긴다. 가로에서만 남기는 것은 폭 제한뿐이다(카드 위로 넘치지 않게). */
+    html.ingame .game-shell:has(.bj-table) .bj-status{max-width:52%}
 
     /* ── 확보한 자리를 카드에 준다 (바카라 · 포커) ──────────────────
        블랙잭은 앞 블록에서 36x50 으로 키웠다. 나머지 둘도 같은 이유로 키운다 —
