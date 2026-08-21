@@ -210,16 +210,29 @@ async function main(): Promise<void> {
   let id = 0;
   const waiting = new Map<number, (m: any) => void>();
   let loaded = false;
+  /* ── 화면에서 터진 예외 ──────────────────────────────────────────
+     구문이 맞아도 실행이 죽을 수 있다. 실제로 그런 일이 있었다: 조각을 자르다
+     닫는 줄 하나가 고아로 남아 바깥 IIFE 를 일찍 닫았고, 그 뒤의 코드가 전역에서
+     돌면서 "betInput is not defined" 로 터졌다 — 구문 검사는 통과했고, 그래프게임
+     화면이 통째로 멈춘 채로 배포됐다.
+     그래서 «열었을 때 조용한가» 를 함께 본다. 이 검사가 있으면 그때 잡혔다. */
+  let thrown: string[] = [];
   ws.onmessage = (e: MessageEvent) => {
     const m = JSON.parse(String(e.data));
     if (m.id && waiting.has(m.id)) { waiting.get(m.id)!(m); waiting.delete(m.id); }
     else if (m.method === 'Page.loadEventFired') loaded = true;
+    else if (m.method === 'Runtime.exceptionThrown') {
+      const d = m.params?.exceptionDetails;
+      const t = d?.exception?.description || d?.text || '알 수 없는 예외';
+      thrown.push(String(t).split('\n')[0].slice(0, 120));
+    }
   };
   const send = (method: string, params: object = {}): Promise<any> => new Promise(res => {
     const n = ++id; waiting.set(n, res); ws.send(JSON.stringify({ id: n, method, params }));
   });
 
   await send('Page.enable');
+  await send('Runtime.enable');      // 화면에서 터진 예외를 받아 보려면 켜야 한다
   await send('Emulation.setUserAgentOverride', {
     userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36'
       + ' (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36',
@@ -227,6 +240,7 @@ async function main(): Promise<void> {
 
   const go = async (url: string): Promise<void> => {
     loaded = false;
+    thrown = [];
     await send('Page.navigate', { url });
     for (let i = 0; i < 40 && !loaded; i++) await sleep(200);
     await sleep(1800);   // 폴링이 첫 상태를 받아 판을 그릴 때까지
@@ -272,6 +286,9 @@ async function main(): Promise<void> {
       await go(`${BASE}/games/${g}`);
       const m = await probe();
       if (!m) { ck(`${g} — 측정 실패`, false); continue; }
+      /* 열었을 때 조용한가. 구문이 맞아도 실행이 죽으면 화면은 멈춘 채로 남는다 —
+         그래프게임이 실제로 그렇게 배포됐다(위 ws.onmessage 주석). */
+      ck(`${g} 화면에서 터진 예외가 없다`, thrown.length === 0, thrown.join(' · '));
       ck(`${g} 가로로 안 넘친다`, m.scrollW <= m.vw + 1 && m.over.length === 0,
         `scrollW ${m.scrollW} > ${m.vw}` + (m.over.length ? ' · ' + m.over.join(' / ') : ''));
 
@@ -350,6 +367,7 @@ async function main(): Promise<void> {
       await go(BASE + p);
       const m = await probe();
       if (!m) { ck(`${p} — 측정 실패`, false); continue; }
+      ck(`${p} 화면에서 터진 예외가 없다`, thrown.length === 0, thrown.join(' · '));
       ck(`${p} 가로로 안 넘친다`, m.scrollW <= m.vw + 1 && m.over.length === 0,
         `scrollW ${m.scrollW} > ${m.vw}` + (m.over.length ? ' · ' + m.over.join(' / ') : ''));
     }

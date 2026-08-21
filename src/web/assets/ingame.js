@@ -506,6 +506,16 @@ window.__IG = (function(){
      문서에 살아 있으므로 — 그리드 IIFE 가 우리보다 먼저 제자리로 돌려놓는다 —
      그 자리에 다시 꽂으면 된다. */
   var clockHome = null, clockEl = null;
+  /* parent 의 직접 자식 중 sel 을 «담고 있는» 것을 돌려준다.
+     상단바는 게임 이름 드롭다운이나 오른쪽 묶음처럼 한 겹 더 감싸는 상자를 갖고 있어서,
+     querySelector 로 찾은 요소가 상단바의 직접 자식이 아닌 경우가 흔하다. 그 요소를
+     그대로 insertBefore 의 기준으로 쓰면 NotFoundError 가 나고, 그 예외가 apply() 를
+     끊어 뒤 줄들이 실행되지 않는다(가로에서 참가인원 단추가 그렇게 사라져 있었다). */
+  function childHolding(parent, sel){
+    var el = parent.querySelector(sel);
+    while (el && el.parentNode !== parent) el = el.parentNode;
+    return el;
+  }
   function moveClock(){
     var bar = document.querySelector('.ig-bar');
     var st = document.querySelector('.ig-timer');
@@ -514,7 +524,7 @@ window.__IG = (function(){
     clockHome = { parent: st.parentNode, next: st.nextSibling };
     clockEl = st;
     st.classList.add('ig-clock');
-    var name = bar.querySelector('.ig-name');
+    var name = childHolding(bar, '.ig-name');
     bar.insertBefore(st, name ? name.nextSibling : bar.firstChild);
   }
   function restoreClock(){
@@ -612,8 +622,11 @@ window.__IG = (function(){
       var d = drawer();
       if (d && d.classList.contains('ig-open')) closeDrawer(); else openDrawer();
     });
-    /* 💬 왼쪽에 둔다 — 사람 · 말 순서가 읽기 좋다 */
-    bar.insertBefore(b, bar.querySelector('.ig-chat'));
+    /* 💬 왼쪽에 둔다 — 사람 · 말 순서가 읽기 좋다.
+       💬 도 상단바의 직접 자식이 아닐 수 있다(오른쪽 묶음 안에 있다) — 담고 있는
+       자식을 기준으로 삼는다. 못 찾으면 맨 뒤에 붙인다(없는 것보다 낫다). */
+    var chatChild = childHolding(bar, '.ig-chat');
+    if (chatChild) bar.insertBefore(b, chatChild); else bar.appendChild(b);
   }
   /* 사람 아이콘만 걷는다. 가림막은 여기서 지우면 안 된다 — 세로에서는 이 함수가
      1초마다 돌기 때문에, 시트를 열고 1초가 지나면 뒤가 도로 밝아졌다(실측: 0.4초에

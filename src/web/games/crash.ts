@@ -431,10 +431,11 @@ export function crashPage(user: WebUser): string {
       modeAuto.addEventListener('click', function(){ setMode(true); });
       halfBtn.addEventListener('click', function(){ setBet(Number(betInput.value)/2); });
       doubleBtn.addEventListener('click', function(){ setBet(Number(betInput.value)*2); });
-      // 빠른 금액 버튼은 칩을 쌓듯 현재 금액에 "더한다" (교체하지 않음)
-      });
+      /* 자동 캐시아웃 배율 바로가기(1.50x·2.00x…). 금액 덧셈 단추와 달리 이건 남긴다 —
+         배율은 타이핑하기 번거로운 값이고, 자주 쓰는 값이 넷뿐이다. */
       document.querySelectorAll('.auto-q').forEach(function(b){
         b.addEventListener('click', function(){ autoInput.value = Number(b.getAttribute('data-mult')).toFixed(2); savePrefs(); });
+      });
       betInput.addEventListener('change', savePrefs);
       autoInput.addEventListener('change', savePrefs);
       loadPrefs();
