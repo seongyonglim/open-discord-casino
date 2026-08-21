@@ -74,10 +74,12 @@
        판에서 규칙 한 줄("blackjack pays 3 to 2…")을 걷어 자리가 났다. 그 자리는
        카드가 받는다 — 이 게임에서 가장 오래 보는 것이 카드다.
        딜러 쪽을 더 키운다: 자리 다섯이 나눠 쓰는 아래쪽과 달리 위는 한 손뿐이라
-       여유가 있고, 딜러의 첫 장은 판 전체의 근거라 가장 크게 볼 값이다. */
-    .bj-dealer .bj-hand .pcard{width:66px;height:99px}
-    .bj-seat .bj-hand .pcard{width:52px;height:78px}
-    .bj-seat{min-height:172px}
+       여유가 있고, 딜러의 첫 장은 판 전체의 근거라 가장 크게 볼 값이다.
+       크기는 한 번 물렸다: 66x99 · 52x78 은 너무 컸다(제보). 8할로 줄인다 —
+       카드 비율(2:3)은 지키고, 자리 최소 높이도 그만큼 내린다. */
+    .bj-dealer .bj-hand .pcard{width:54px;height:81px}
+    .bj-seat .bj-hand .pcard{width:42px;height:63px}
+    .bj-seat{min-height:156px}
 
     /* ── 6. 포커 플립 베팅판을 세로로 넉넉하게 ────────────────────────
        상자가 466x154 · 181x141 이었다 — 위 두 칸은 가로로만 길어서(3:1) «칩을 쌓는
