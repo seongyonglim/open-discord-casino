@@ -1174,8 +1174,10 @@ async function main(): Promise<void> {
        이 찍혔다), removeLiveBar 가 1초마다 지웠다 다시 만들었다. */
     ck('지뢰찾기 랭킹 띠가 있다', ig.includes('function addRankBar()')
       && ig.includes("b.className = 'ig-rankbar';"));
+    /* 그 갈래에 다른 것이 더 붙을 수 있으므로(필드 통계 띠가 그렇다) 줄 전체를 못 박지
+       않고 «지뢰찾기 갈래에서 부른다» 만 본다. */
     ck('랭킹 띠는 지뢰찾기에만 붙는다',
-      ig.includes("if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); }"));
+      ig.includes("if (IG.kind() === 'mines') { addRankBar(); syncRankBar();"));
     ck('랭킹 띠가 라이브 띠와 클래스를 안 섞는다', !ig.includes("'ig-livebar ig-rankbar'"));
     ck('랭킹 띠 모양이 라이브 띠와 같다',
       port.includes('html.ig-port .ig-livebar,html.ig-port .ig-rankbar{'));
@@ -1265,6 +1267,44 @@ async function main(): Promise<void> {
       app.includes('C.isNativePlatform()') && app.includes('P.ScreenOrientation'));
     ck('홀덤은 판이 열리면 가로로 돈다',
       hl.includes("casinoOrient.want(showTable ? 'landscape' : 'portrait')"));
+  }
+
+  console.log('[17] 지뢰찾기 세로 — 판 위 필드 통계 띠');
+  {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const ig = readFileSync('src/web/assets/ingame.js', 'utf8') as string;
+    const mn = readFileSync('src/web/games/mines.ts', 'utf8') as string;
+    const port = readFileSync('src/web/assets/css/18-ig-portrait.css', 'utf8') as string;
+
+    ck('통계 띠가 있다', ig.includes('function addStatBar()')
+      && ig.includes("b.className = 'ig-statbar';"));
+    ck('통계 띠는 지뢰찾기에만 붙는다',
+      ig.includes("if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); addStatBar(); syncStatBar(); }"));
+    ck('가로에서는 걷는다', ig.includes('removeLiveBar(); removeRankBar(); removeStatBar();'));
+
+    /* 값의 출처는 mines.ts 하나다. DOM 글자("배당 1.00x")를 되돌려 읽으면 표시용으로
+       반올림된 값을 다시 쓰게 되고, 같은 판을 두 자리가 다르게 말한다. */
+    ck('값을 서버 쪽 코드가 내보낸다', mn.includes('window.__MINES_STAT__ = o'));
+    ck('띠는 그 값만 읽는다', ig.includes('var st = window.__MINES_STAT__;'));
+    /* "다음 성공 시" 는 판이 시작되기 전에도 보여야 한다. 그 배수를 화면에서 다시
+       계산하면 공식이 두 벌이 되므로, 서버가 계산한 표를 실어 보낸다. */
+    ck('첫 배수 표를 서버가 실어 보낸다', mn.includes('window.__MINES_FIRST__'));
+    ck('화면에 배수 공식을 다시 적지 않았다', !ig.includes('TILE_COUNT - i'));
+
+    /* 그림과 색은 판의 타일과 같아야 한다 — 띠와 판이 같은 것을 가리키기 때문이다. */
+    ck('판과 같은 그림을 쓴다', ig.includes('var MI = window.__MINES_ICONS__ || {};')
+      && ig.includes('(MI.coin || ') && ig.includes('(MI.bomb || '));
+    ck('판과 같은 색을 쓴다', port.includes('.sb-safe{color:var(--gold-hi)}')
+      && port.includes('.sb-mine{color:var(--lose)}'));
+
+    /* 띠가 둘 생겼으므로 격자 크기를 정할 때 그 높이를 빼야 한다 — 안 빼면 짧은 폰에서
+       격자가 쓸 수 있는 높이보다 크게 잡혀 넘친다. */
+    ck('격자 예산에서 띠 높이를 뺀다', ig.includes(".ig-statbar, .ig-rankbar"));
+    /* 상한을 올려 판을 키웠다(340 → 380). 안 올리면 격자 위아래로 100px 씩 빈다. */
+    ck('격자 상한이 380 이다', ig.includes('if (side > 380) side = 380;'));
+    /* 남는 자리는 네 칸 사이로 고르게 나눈다 — 한 곳에 모이면 빈 화면으로 읽힌다. */
+    ck('네 칸을 고르게 편다',
+      port.includes('html.ig-port .ig-body.ig-mines{justify-content:space-between;gap:10px}'));
   }
 
   console.log(`\n${'─'.repeat(50)}`);

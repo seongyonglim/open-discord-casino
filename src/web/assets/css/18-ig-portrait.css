@@ -451,6 +451,47 @@
     html.ig-port .ig-rankbar .ig-lb-x svg{width:13px;height:13px;display:block}
     html.ig-port .ig-rankbar:active{background:#1b1f2b}
 
+    /* ── 필드 통계 띠 (지뢰찾기 · 판 위) ───────────────────────────
+       세 값을 같은 무게로 늘어놓는다 — 무엇이 주인공이라기보다 판을 읽는 데 셋이
+       다 필요하다. 숫자만 밝게 두고 이름은 흐리게 둬서, 훑을 때 숫자가 먼저 잡힌다. */
+    html.ig-port .ig-statbar{flex:none;height:34px;display:flex;align-items:center;
+      justify-content:space-between;gap:8px;padding:0 12px;box-sizing:border-box;
+      background:#12141a;border:1px solid rgba(255,255,255,.06);border-radius:10px;
+      font-size:11.5px;color:var(--muted)}
+    html.ig-port .ig-statbar .ig-sb-s{display:inline-flex;align-items:center;gap:5px;
+      min-width:0;white-space:nowrap}
+    html.ig-port .ig-statbar .ig-sb-ic{flex:none;display:inline-flex}
+    /* 판의 타일과 같은 색이다 — 안전은 금색, 지뢰는 붉은색(04-board.css 의
+       .mines-tile.safe · .mines-tile.mine). 띠와 판이 같은 것을 가리키므로 색도
+       같아야 한다. 색만 다르면 "이건 다른 이야기인가" 하고 한 번 더 보게 된다. */
+    html.ig-port .ig-statbar .sb-safe{color:var(--gold-hi)}
+    html.ig-port .ig-statbar .sb-mine{color:var(--lose)}
+    html.ig-port .ig-statbar .ig-sb-ic svg{width:13px;height:13px;display:block}
+    html.ig-port .ig-statbar b{color:var(--txt);font-weight:700;
+      font-family:var(--mono);font-variant-numeric:tabular-nums}
+    /* 판이 도는 동안에는 "다음 성공" 이 눌러야 할 이유다 — 그 값만 금색으로 살린다 */
+    html.ig-port .ig-statbar.live .ig-sb-next{color:var(--gold)}
+
+    /* ── 지뢰찾기 세로 배치 ────────────────────────────────────────
+       띠 · 판 · 랭킹 띠 · 조작부 넷을 화면에 고르게 편다. 예전에는 가운데로 모아
+       두었는데(justify-content:center), 격자가 340px 에서 멈추므로 위아래로 각각
+       115px 이 남아 "위쪽이 통째로 빈" 화면이 됐다(제보).
+       남는 자리를 판 칸이 받게 해 봤는데(칸을 늘리고 격자를 그 안에 가운데로), 격자는
+       폭에 묶여 더 못 커지므로 격자 위아래에 100px 씩 «빈 자리» 가 그대로 남았다 —
+       테두리를 걷어도 그 빈 자리는 사라지지 않고 검은 화면으로 보인다(실측).
+
+       그래서 두 가지를 함께 한다.
+       하나. 격자 상한을 340 → 380px 로 올린다. 칸 여백을 걷고 나면 폭으로 372px 까지
+            쓸 수 있는데 상한이 340 에서 막고 있었다(타일 62 → 68px).
+       둘. 남는 자리는 네 칸 «사이» 로 고르게 나눈다(space-between). 한 곳에 100px 이
+            모이면 빈 화면으로 읽히지만, 셋으로 나뉘면 칸 사이 여백으로 읽힌다.
+       gap 은 최소값이다 — space-between 이 그보다 넓게 벌린다. */
+    html.ig-port .ig-body.ig-mines{justify-content:space-between;gap:10px}
+    /* 격자를 조금이라도 넓게 쓰려고 칸 여백을 걷는다 — 무대(board-stage)의 12px 은
+       그대로 둔다(타일이 테두리에 닿으면 답답하다). */
+    html.ig-port .ig-body.ig-mines .ig-cell.ig-board{padding:0}
+    html.ig-port .ig-body.ig-mines .ig-cell.ig-board .board-stage{flex:1 1 auto;min-height:0}
+
     /* ── 조작부: 배당 → 예측 → 금액 → 실행 ─────────────────
        가로와 같은 순서다. 엄지는 화면 아래에 있으므로 자주 누르는 것일수록 아래다.
        DOM 순서는 금액이 먼저라 .field-grid 를 display:contents 로 풀어 형제로

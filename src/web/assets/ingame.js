@@ -812,14 +812,24 @@ window.__IG = (function(){
        높이를 우리가 정하기 때문에, 그 값이 다시 입력으로 돌아와 매 초 조금씩 줄어든다.
        본문 높이와 조작부 높이는 우리가 안 건드리므로 기준으로 삼을 수 있다. */
     var gap = parseFloat(window.getComputedStyle(body).rowGap || window.getComputedStyle(body).gap) || 0;
+    /* 판 위아래에 붙은 띠(필드 통계 · 시즌 랭킹)도 높이를 쓴다. 예전에는 조작부만
+       뺐는데, 띠가 둘 생기고 나서는 그만큼 격자가 크게 잡혀 짧은 폰에서 넘친다. */
+    var bars = 0;
+    [].forEach.call(body.querySelectorAll('.ig-statbar, .ig-rankbar'), function(el){
+      bars += el.offsetHeight + gap;
+    });
     var h = body.clientHeight - px(body, 'paddingTop', 'paddingBottom')
-          - (bet ? bet.offsetHeight : 0) - (bet ? gap : 0)
+          - (bet ? bet.offsetHeight : 0) - (bet ? gap : 0) - bars
           - px(cell, 'paddingTop', 'paddingBottom') - px(stage, 'paddingTop', 'paddingBottom');
 
     var side = Math.floor(Math.min(w, h));
     if (!(side > 0)) return;
-    /* 너무 커지면 다섯 칸이 한 손에 안 들어와 엄지가 화면을 가로지른다 */
-    if (side > 340) side = 340;
+    /* 상한. 예전에는 340px 이었다 — "너무 커지면 다섯 칸이 한 손에 안 들어와 엄지가
+       화면을 가로지른다". 그런데 412px 폰에서 그 값이면 격자 위아래로 100px 씩이
+       비어 화면이 휑해진다(제보). 380 으로 올린다: 폭으로 쓸 수 있는 것이 372px
+       이므로 실제로는 폭이 상한이 되고, 타일이 62 → 68px 가 된다. 더 큰 폰에서는
+       380 에서 멈춰 엄지가 가로지르지 않는다. */
+    if (side > 380) side = 380;
 
     var want = side + 'px';
     if (grid.style.width !== want) { grid.style.width = want; grid.style.height = want; }
@@ -831,8 +841,8 @@ window.__IG = (function(){
        카드가 격자를 감싸면 어느 쪽이 기준이 되든 테두리가 격자에서 같은 거리에 있다.
 
        남는 자리는 칸 밖으로 나가고 본문이 가운데로 모은다(CSS 의 justify-content). */
-    var padH = px(cell, 'paddingTop', 'paddingBottom') + px(stage, 'paddingTop', 'paddingBottom');
     var padW = px(cell, 'paddingLeft', 'paddingRight') + px(stage, 'paddingLeft', 'paddingRight');
+    var padH = px(cell, 'paddingTop', 'paddingBottom') + px(stage, 'paddingTop', 'paddingBottom');
     var wantH = (side + padH) + 'px';
     var wantW = (side + padW) + 'px';
     if (cell.style.height !== wantH) { cell.style.height = wantH; cell.style.flex = '0 0 auto'; }
@@ -882,6 +892,58 @@ window.__IG = (function(){
     if (l.textContent !== lt) l.textContent = lt;
     if (r.textContent !== rt) r.textContent = rt;
   }
+  /* ── 필드 통계 띠 (지뢰찾기 세로 · 판 위) ──────────────────────────
+     상단바와 5x5 판 사이가 비어 있었다(실측 412x915: 상단바 아래끝 40, 판 위끝 154
+     — 114px). 격자는 340px 에서 크기를 멈추므로(fitMinesGrid, 다섯 칸이 한 손에
+     들어와야 한다) 그 자리는 격자를 키워서는 안 채워진다.
+
+     그 자리에 이 판을 읽는 데 필요한 값을 둔다. 사다리의 출목표 띠와 같은 자리다.
+       안전 20 / 20   지뢰 5개   다음 성공 1.28x
+     세 값의 출처는 mines.ts 하나다(window.__MINES_STAT__). DOM 글자를 긁으면
+     "배당 1.00x" 같은 표시용 반올림 값을 되돌려 읽게 되고, 그러면 같은 판을 두
+     자리가 조금씩 다르게 말한다.
+
+     "다음 성공" 은 지금 배당이 아니라 «한 칸 더 열면» 되는 배당이다. 지금 배당은
+     아래 조작부가 이미 말하고 있고(캐시아웃 옆), 이 게임에서 손이 멈추는 이유는
+     "한 번 더 열면 얼마가 되나" 이므로 그 값을 위에 둔다. */
+  function addStatBar(){
+    var body = movedGrid(), board = document.querySelector('.ig-cell.ig-board');
+    if (!body || !board || body.querySelector('.ig-statbar')) return;
+    var b = document.createElement('div');
+    b.className = 'ig-statbar';
+    /* 그림은 판의 타일이 쓰는 것을 그대로 쓴다(mines.ts 가 실어 보낸 __MINES_ICONS__).
+       띠에만 새로 그린 그림을 두면 같은 것을 가리키는 두 그림이 생기고, 색까지
+       다르면 띠와 판이 다른 이야기를 하는 것처럼 보인다. 색도 타일과 같게 맞춘다
+       (안전 = 금색 --gold-hi, 지뢰 = 붉은색 --lose · 04-board.css). */
+    var MI = window.__MINES_ICONS__ || {};
+    b.innerHTML = '<span class="ig-sb-s"><span class="ig-sb-ic sb-safe">' + (MI.coin || '')
+      + '</span>안전 <b class="ig-sb-safe">-</b></span>'
+      + '<span class="ig-sb-s"><span class="ig-sb-ic sb-mine">' + (MI.bomb || '')
+      + '</span>지뢰 <b class="ig-sb-mine">-</b></span>'
+      + '<span class="ig-sb-s">다음 성공 <b class="ig-sb-next">-</b></span>';
+    body.insertBefore(b, board);
+    syncStatBar();
+  }
+  function syncStatBar(){
+    var b = document.querySelector('.ig-statbar');
+    if (!b) return;
+    var st = window.__MINES_STAT__;
+    var safe = b.querySelector('.ig-sb-safe'), mine = b.querySelector('.ig-sb-mine'),
+        next = b.querySelector('.ig-sb-next');
+    /* 값이 아직 없으면 자리만 잡아 둔다 — 0 을 적으면 "안전한 칸이 없다" 는 거짓말이 된다 */
+    var s1 = st ? (st.safe + ' / ' + st.total) : '-';
+    var s2 = st ? (st.mines + '개') : '-';
+    var s3 = (st && st.next != null) ? (Number(st.next).toFixed(2) + 'x') : '-';
+    if (safe.textContent !== s1) safe.textContent = s1;
+    if (mine.textContent !== s2) mine.textContent = s2;
+    if (next.textContent !== s3) next.textContent = s3;
+    /* 판이 도는 동안에는 "다음 성공" 이 눌러야 할 이유라 금색으로 살린다 */
+    b.classList.toggle('live', !!(st && st.active));
+  }
+  function removeStatBar(){
+    var b = document.querySelector('.ig-statbar'); if (b) b.remove();
+  }
+
   /* ── 시즌 랭킹 띠 (지뢰찾기 세로) ─────────────────────────────────
      지뢰찾기는 혼자 하는 판이라 참가자 띠가 없다. 그런데 세로에서 판과 조작부를
      가운데로 모으면 아래쪽에 120px 남짓이 그냥 빈다(실측 412x915: 조작부 아래끝
@@ -1059,7 +1121,8 @@ window.__IG = (function(){
   function apply(){
     if (!movedGrid() || !IG.on()) {
       restoreClock(); closeDrawer(); closeSettings(); restoreSettings();
-      removePeopleBtn(); removeScrim(); removeLiveBar(); removeRankBar(); removeSheetClose();
+      removePeopleBtn(); removeScrim(); removeLiveBar(); removeRankBar(); removeStatBar();
+      removeSheetClose();
       clearMinesGrid();
       return;
     }
@@ -1072,7 +1135,7 @@ window.__IG = (function(){
 
          자리는 게임 이름을 눌러 바꾸게 하면서 벌었다. 가로에 있던 [← 로비] 단추가
          목록의 첫 줄로 들어가 사라졌기 때문이다. */
-      removeLiveBar(); removeRankBar();
+      removeLiveBar(); removeRankBar(); removeStatBar();
       moveClock(); addPeopleBtn(); restoreSettings(); addSheetClose();
       clearMinesGrid();
     } else {
@@ -1086,8 +1149,8 @@ window.__IG = (function(){
       if (IG.kind() === 'ladder') { addLiveBar(); syncLiveBar(); syncChatTop(); }
       else removeLiveBar();
       /* 지뢰찾기는 참가자 대신 시즌 랭킹으로 들어가는 문을 같은 자리에 둔다 */
-      if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); }
-      else removeRankBar();
+      if (IG.kind() === 'mines') { addRankBar(); syncRankBar(); addStatBar(); syncStatBar(); }
+      else { removeRankBar(); removeStatBar(); }
       /* 세로는 닫기 단추 대신 쓸어내려 닫는다 */
       removeSheetClose(); addSwipeClose();
       restoreSettings();
@@ -1103,7 +1166,7 @@ window.__IG = (function(){
     /* 타이머와 참가 현황은 더 자주 맞춘다. 1초마다 맞추면 원본이 바뀐 뒤 최대 1초를
        늦게 따라가서, 남은 시간이 한 박자씩 밀려 보인다. */
     setInterval(function(){
-      if (movedGrid() && IG.port()) { syncLiveBar(); syncRankBar(); syncChatTop(); }
+      if (movedGrid() && IG.port()) { syncLiveBar(); syncRankBar(); syncStatBar(); syncChatTop(); }
     }, 250);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

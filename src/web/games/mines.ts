@@ -341,7 +341,12 @@ export function minesPage(user: WebUser): string {
          그래서 채팅은 도크가 열려 있는 동안만 스스로 5초 폴을 돈다 — 이 값은 말한 자리를
          적는 데만 쓴다. */
       window.__CHAT_WHERE__ = 'mines';
-      window.__MINES_ICONS__ = ${JSON.stringify({ bomb: bombIcon, coin: coinIcon, mark: mysteryMark })};</script>
+      window.__MINES_ICONS__ = ${JSON.stringify({ bomb: bombIcon, coin: coinIcon, mark: mysteryMark })};
+      /* 첫 칸을 열었을 때의 배수. 판을 시작하기 전에는 서버가 라운드를 안 주는데
+         상단 통계 띠는 그때도 "다음 성공 시 얼마" 를 말해야 한다. 공식을 화면에
+         또 적으면 두 벌이 되어 언젠가 어긋나므로 서버가 계산해 실어 보낸다. */
+      window.__MINES_FIRST__ = ${JSON.stringify(Object.fromEntries(
+        ALLOWED_MINE_COUNTS.map(m => [m, Number(calcMultiplier(m, 1).toFixed(4))])))};</script>
     <script>
     (function(){
       var ICONS = window.__MINES_ICONS__;
@@ -370,8 +375,12 @@ export function minesPage(user: WebUser): string {
       }
       function setBet(n){ if (betInput.disabled) return; betInput.value=Math.max(1, Math.floor(n)); savePrefs(); }
       loadPrefs();
+      publishIdle();
       betInput.addEventListener('change', savePrefs);
       mineSelect.addEventListener('change', savePrefs);
+      /* 고른 개수가 바뀌면 안전 칸 수와 첫 배수가 함께 바뀐다 — 판을 시작하기 전에도
+         띠가 지금 고른 조건을 말해야 한다. */
+      mineSelect.addEventListener('change', publishIdle);
       halfBtn.addEventListener('click', function(){ setBet(Number(betInput.value)/2); });
       doubleBtn.addEventListener('click', function(){ setBet(Number(betInput.value)*2); });
       // 빠른 금액 버튼은 칩을 쌓듯 현재 금액에 더한다 (다른 게임과 동일한 조작감)
@@ -391,6 +400,7 @@ export function minesPage(user: WebUser): string {
       }
       function setIdle(){
         lockBoard();
+        publishIdle();
         betInput.disabled=false; mineSelect.disabled=false;
         halfBtn.disabled=doubleBtn.disabled=false;
         document.querySelectorAll('.chip-btn[data-amt]').forEach(function(b){ b.disabled=false; });
@@ -520,8 +530,24 @@ export function minesPage(user: WebUser): string {
         void b.offsetWidth; b.classList.add(kind);
       }
 
+      /* 상단 통계 띠(세로 전용)가 읽는 자리. 띠를 만드는 것은 ingame.js 이고,
+         값의 출처는 여기 하나다 — DOM 글자를 긁어 가면 "배당 1.00x" 같은 표시용
+         반올림 값을 다시 파싱하게 되고, 그러면 화면 두 곳이 조금씩 다른 말을 한다. */
+      function publishStat(o){ try { window.__MINES_STAT__ = o; } catch(e){} }
+      /* 판을 시작하기 전 상태. 고른 지뢰 개수만으로 정해진다. */
+      function publishIdle(){
+        var m = Number(mineSelect.value) || 0;
+        var first = (window.__MINES_FIRST__ || {})[m];
+        publishStat({ safe: ${TILE_COUNT} - m, total: ${TILE_COUNT} - m, mines: m,
+          next: first != null ? first : null, active: false });
+      }
       function updateStats(round){
         multiEl.textContent = round.multiplier.toFixed(2) + 'x';
+        publishStat({
+          safe: ${TILE_COUNT} - round.mineCount - round.revealed.length,
+          total: ${TILE_COUNT} - round.mineCount,
+          mines: round.mineCount, next: round.nextMultiplier, active: true,
+        });
         /* 서버가 보낸 실제 지급액을 그대로 적는다. 예전에는 여기서 베팅액 × 배수를
            다시 곱했는데, 그 배수는 네 자리로 자른 표시용이라 실제로 나가는 금액과
            달랐다 — 화면이 적어 둔 금액과 통장이 어긋나면 그건 화면의 잘못이다. */
