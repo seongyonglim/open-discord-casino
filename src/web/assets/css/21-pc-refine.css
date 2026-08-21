@@ -24,7 +24,13 @@
        회색). 색이 넷이면 그 넷이 먼저 눈에 들어와 «무엇에 얼마가 걸렸나» 보다 «상자가
        넷이다» 가 먼저 읽힌다. 테두리는 아주 옅게 한 겹만 남기고, 구역을 가르는 일은
        배경 색이 맡는다(그쪽은 이미 다르다). */
-    .market{border-color:rgba(255,255,255,.07)}
+    /* 구역마다 색이 다른 테두리가 따로 적혀 있다(.m-player 파랑 · .m-banker 주황 ·
+       .m-tie 초록 · .m-pair 회색 · 포커 플립의 .m-master/.m-shark). 그쪽이 더 구체적이라
+       .market 하나만 옅게 해도 이기지 못한다 — 실측으로 확인했다(여전히 rgb(34,64,107)).
+       그래서 이름을 다 적는다. 배경 색은 그대로 두어 구역은 «면» 으로 갈린다. */
+    .market,
+    .market.m-player,.market.m-banker,.market.m-tie,.market.m-pair,
+    .market.m-master,.market.m-shark{border-color:rgba(255,255,255,.07)}
     /* 누를 수 있다는 것은 여전히 알려야 한다 — 다만 선을 굵게 하지 않고 금색 한 겹으로 */
     .market:hover:not(.disabled){border-color:var(--gold-dim);
       box-shadow:0 0 0 1px rgba(212,175,55,.28)}
@@ -37,14 +43,21 @@
        고른 것이 무엇인지는 채도 차이(saturate .35)로만 말하고 있었다.
        평평하게 눕히고, 고른 하나만 금색 링으로 살린다 — 화려함을 «선택» 에만 쓴다.
        펠트에 올라간 칩(.pchip)은 그대로 금색이다. 그쪽은 돈이고, 이쪽은 단추다. */
-    .coin .face{filter:none;color:var(--muted);text-shadow:none;
+    /* 종류마다(.kind-coin · .kind-bar) 금색 그라데이션이 따로 적혀 있어서 .coin .face
+       하나만 눕혀도 이기지 못한다 — 실측으로 확인했다(트레이가 그대로 금색이었다).
+       그래서 종류를 다 적는다. 모양(원·둥근 사각)은 그대로 둔다: 동전과 골드바를
+       가르는 것은 색이 아니라 모양이어야 한다. */
+    .coin.kind-coin .face,.coin.kind-bar .face{
+      filter:none;color:var(--muted);text-shadow:none;
       background:#232328;border:1px solid rgba(255,255,255,.10);
       box-shadow:none;transition:border-color .12s,color .12s,background .12s,box-shadow .12s}
     .coin.kind-coin .face{border-radius:50%}
     .coin.kind-bar .face{border-radius:9px}
     .coin:hover .face{border-color:var(--gold-dim);color:var(--txt);background:#2a2a30}
-    /* 고른 칩. 채우지 않고 두른다 — 채우면 그 안의 숫자가 안 읽힌다. */
-    .coin.active .face{color:var(--gold);border-color:var(--gold);background:#2a2519;
+    /* 고른 칩. 채우지 않고 두른다 — 채우면 그 안의 숫자가 안 읽힌다.
+       위 종류 규칙과 같은 무게라(클래스 셋) 이 줄이 뒤에 와야 이긴다. */
+    .coin.active.kind-coin .face,.coin.active.kind-bar .face{
+      color:var(--gold);border-color:var(--gold);background:#2a2519;
       box-shadow:0 0 0 3px rgba(212,175,55,.16),0 0 16px rgba(212,175,55,.22)}
     /* 눌렀을 때 뜨는 느낌은 남긴다 — 그건 질감이 아니라 반응이다 */
     .coin:hover{transform:translateY(-2px)}
