@@ -13,7 +13,10 @@
   .seat-cat.win{color:var(--win);font-weight:700}
   .hand,.board{display:flex;gap:7px;justify-content:center}
   .board-wrap{text-align:center}
-  .poker-status{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-bottom:11px}
+  /* 상태 문구는 알약으로 그려진다(19-timer.css 의 .st-badge · app.js 의 casinoBadge).
+     여기서는 «자리» 만 정한다 — 판 위 가운데. 알약이 내용만큼만 넓으므로 줄을 flex 로
+     두고 가운데로 모은다(text-align 은 inline-flex 자식에 안 듣는다). */
+  .poker-status{display:flex;justify-content:center;margin-bottom:11px;min-height:26px}
   /* 카드 그림은 미리 만들어 둔 SVG(public/cards)를 그대로 쓴다 — 크기와 상관없이 선명하다 */
   .pcard{display:block;width:48px;height:72px;border-radius:6px;flex:none;
     box-shadow:0 3px 8px rgba(0,0,0,.5);animation:cardFlip .32s cubic-bezier(.3,.8,.35,1)}

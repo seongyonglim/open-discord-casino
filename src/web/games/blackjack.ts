@@ -328,7 +328,6 @@ export function blackjackPage(user: WebUser): string {
               <div id="bjDealerCards" class="bj-hand"></div>
               <!-- 딜러가 21을 넘긴 순간 카드 위에 찍히는 도장. 서 있던 모든 자리가 이기는 순간이다 -->
               <span id="bjDealerBust" class="bj-bust" hidden>DEALER BUST</span>
-              <p class="bj-rule">blackjack pays 3 to 2 · dealer stands on all 17</p>
             </div>
             <div id="bjStatus" class="bj-status">테이블을 준비하는 중…</div>
             <div id="bjSeats" class="bj-seats"></div>

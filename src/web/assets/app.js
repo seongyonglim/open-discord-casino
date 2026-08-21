@@ -40,6 +40,58 @@ window.__ICON = (function(){
   };
 })();
 
+/* ── 상태 문구 배지 ───────────────────────────────────────────────────
+   사다리게임의 남은 시간 배지(.ig-timer, 19-timer.css)가 이 앱에서 «지금 몇 초» 를
+   말하는 모양이다. 테이블 게임 셋(바카라 · 블랙잭 · 포커 플립)은 같은 것을 맨 글자로
+   적고 있었다 — 같은 뜻을 화면마다 다른 모양으로 말할 이유가 없다(요청).
+
+   여기서 하는 일은 «글자를 배지로 바꿔 그리는 것» 뿐이다. 문구를 만드는 일은 각
+   게임이 계속 맡는다(그쪽이 라운드 상태를 안다). 그래서 이 함수는 완성된 한 줄을
+   받아 세 조각으로 나눈다:
+     [시계 아이콘]  베팅 마감까지  [03초]
+   끝에 붙은 "N초" 만 숫자 조각으로 떼어 낸다. 숫자를 고정폭·금색으로 두면 초가
+   흐를 때 눈이 그 자리만 본다 — 사다리에서 그렇게 하고 있다.
+
+   3초 이하에서는 붉게 바뀐다(.st-hot). 마감이 코앞이라는 뜻을 금색으로 말하면
+   이 사이트에서 "좋은 것" 의 색과 겹친다. */
+window.casinoBadge = (function(){
+  /* 시계. 아이콘 묶음(__ICON)에 이미 있는 것을 쓴다 — 같은 그림을 두 벌 두지 않는다. */
+  function clock(){ return (window.__ICON && window.__ICON.clock) || ''; }
+  /* 끝에 붙은 "12초" 를 떼어 낸다. 앞쪽은 그대로 글로 남는다. */
+  function split(text){
+    var t = String(text == null ? '' : text);
+    var m = t.match(/^(.*?)(\d+)초\s*$/);
+    if (!m) return { txt: t.trim(), num: '', sec: null };
+    return { txt: m[1].trim(), num: m[2] + '초', sec: Number(m[2]) };
+  }
+  /* el 의 내용을 배지로 다시 그린다. 같은 글이면 손대지 않는다 — 폴링마다 불리므로
+     매번 DOM 을 갈아엎으면 그 안의 애니메이션과 선택이 끊긴다. */
+  /* el 안에 알약 하나를 만들어 그 안을 채운다. 알약을 «자식» 으로 두는 이유는 둘이다.
+       하나. 바깥(el)은 게임이 자기 클래스를 통째로 덮어쓰는 자리다. 알약 클래스를
+             거기 붙이면 폴링마다 날아간다.
+       둘. 알약은 내용만큼만 넓어야 하고(inline-flex), 가운데로 모으는 일은 바깥 줄이
+           맡아야 한다. 한 요소가 둘을 겸하면 display 가 서로를 이긴다(실측: 알약이
+           판 왼쪽에 붙었다). */
+  function set(el, text){
+    if (!el) return;
+    var p = split(text);
+    var b = el.firstElementChild;
+    if (!b || b.className.indexOf('st-badge') < 0) {
+      el.innerHTML = '<span class="st-badge"><span class="st-ico"></span>'
+        + '<span class="st-txt"></span><span class="st-num"></span></span>';
+      b = el.firstElementChild;
+    }
+    var ico = b.firstChild, txt = ico.nextSibling, num = txt.nextSibling;
+    if (!ico.firstChild) ico.innerHTML = clock();
+    if (txt.textContent !== p.txt) txt.textContent = p.txt;
+    if (num.textContent !== p.num) num.textContent = p.num;
+    /* 글이 통째로 비면 알약도 안 보여야 한다 — 빈 알약이 판 위에 떠 있으면 고장처럼 보인다 */
+    b.classList.toggle('st-empty', !p.txt && !p.num);
+    b.classList.toggle('st-hot', p.sec != null && p.sec <= 3);
+  }
+  return { set: set };
+})();
+
 /* ── 베팅 금액 상한 ───────────────────────────────────────────────────
    가진 것보다 큰 금액은 애초에 적을 수 없어야 한다. 예전에는 그냥 적히고, 누르면
    서버가 "잔액이 부족합니다" 로 돌려보냈다 — 알려 주는 시점이 너무 늦다. 게임마다

@@ -314,7 +314,6 @@
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
     /* 원본이 이미 작은 글자들. 배율을 걷어냈어도 6~7px 이라 폰에서는 안 읽힌다.
        이 화면에서만 키운다 — 데스크톱은 그대로다. */
-    html.ingame .bj-rule{font-size:9.5px}
     html.ingame .seat-name{font-size:10px}
     html.ingame .m-sub{font-size:9px}
     /* 지뢰 격자가 화면의 33% 밖에 안 썼다. 칸을 키워 판이 화면을 차지하게 한다. */
@@ -387,7 +386,6 @@
     html.ingame .ht-pot-k{font-size:10px}
     html.ingame .game-shell .m-sub{font-size:10px}
     html.ingame .game-shell .m-name{font-size:11px}
-    html.ingame .game-shell .bj-rule{font-size:10px}
     html.ingame .game-shell .seat-name{font-size:10.5px}
     /* 그래프 축 글자는 SVG 안에 있다 — 클래스가 아니라 요소로 잡는다 */
     html.ingame .crash-graph text{font-size:10px}
@@ -572,7 +570,6 @@
        그래서 딜러를 줄이고 그만큼을 자리로 돌린다 — 카드가 상자 안에 들어간다. */
     html.ingame .game-shell:has(.bj-table) .bj-dealer{padding-bottom:0}
     html.ingame .game-shell:has(.bj-table) .bj-dealer-head{margin-bottom:2px}
-    html.ingame .game-shell:has(.bj-table) .bj-rule{margin:2px 0}
     html.ingame .game-shell:has(.bj-table) .bj-seat{height:64px}
     html.ingame .game-shell:has(.bj-table) .pcard{width:30px;height:42px}
     html.ingame .game-shell:has(.bj-table) .bj-table{padding:4px 8px 4px}
@@ -801,7 +798,6 @@
   @media (max-width:1024px) and (max-height:560px) and (orientation:landscape) {
     /* 블랙잭 11px. 액션 자리를 96px 로 예약하면서 그만큼 넘쳤다 — 딜러 쪽 여백에서 낸다. */
     html.ingame .game-shell:has(.bj-table) .bj-dealer{padding-top:0;padding-bottom:0}
-    html.ingame .game-shell:has(.bj-table) .bj-rule{margin:0}
     html.ingame .game-shell:has(.bj-table) .bj-table{padding:2px 8px 4px}
   }
 
@@ -1195,7 +1191,6 @@
        "BLACKJACK PAYS 3 TO 2 · DEALER STANDS ON ALL 17" 은 한 번 읽으면 되는 규칙이고
        물음표 안에 그대로 있다. 360px 높이에서 그 한 줄이 16px 을 쓰는데, 그 16px 은
        카드가 커지는 데 쓰는 편이 낫다. */
-    html.ingame .game-shell:has(.bj-table) .bj-rule{display:none}
 
     /* ── 카드를 키운다 (26x36 → 36x50, 1.4배) ──────────────────────
        펠트가 224 → 316px 이 되면서 생긴 자리를 카드에 준다. 카드가 이 게임에서

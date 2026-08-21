@@ -37,31 +37,17 @@
     /* 블랙잭 자리도 같은 이유로 옅게 */
     .bj-seat{border-color:rgba(255,255,255,.06)}
 
-    /* ── 3. 칩 트레이 — 평평한 어두운 칩 ──────────────────────────────
-       금색 그라데이션과 안쪽 하이라이트로 «실물 칩» 을 그려 두었는데, 다섯 개가 나란히
-       서면 트레이가 화면에서 가장 화려한 자리가 된다. 정작 골라야 하는 것은 하나이고,
-       고른 것이 무엇인지는 채도 차이(saturate .35)로만 말하고 있었다.
-       평평하게 눕히고, 고른 하나만 금색 링으로 살린다 — 화려함을 «선택» 에만 쓴다.
-       펠트에 올라간 칩(.pchip)은 그대로 금색이다. 그쪽은 돈이고, 이쪽은 단추다. */
-    /* 종류마다(.kind-coin · .kind-bar) 금색 그라데이션이 따로 적혀 있어서 .coin .face
-       하나만 눕혀도 이기지 못한다 — 실측으로 확인했다(트레이가 그대로 금색이었다).
-       그래서 종류를 다 적는다. 모양(원·둥근 사각)은 그대로 둔다: 동전과 골드바를
-       가르는 것은 색이 아니라 모양이어야 한다. */
-    .coin.kind-coin .face,.coin.kind-bar .face{
-      filter:none;color:var(--muted);text-shadow:none;
-      background:#232328;border:1px solid rgba(255,255,255,.10);
-      box-shadow:none;transition:border-color .12s,color .12s,background .12s,box-shadow .12s}
-    .coin.kind-coin .face{border-radius:50%}
-    .coin.kind-bar .face{border-radius:9px}
-    .coin:hover .face{border-color:var(--gold-dim);color:var(--txt);background:#2a2a30}
-    /* 고른 칩. 채우지 않고 두른다 — 채우면 그 안의 숫자가 안 읽힌다.
-       위 종류 규칙과 같은 무게라(클래스 셋) 이 줄이 뒤에 와야 이긴다. */
-    .coin.active.kind-coin .face,.coin.active.kind-bar .face{
-      color:var(--gold);border-color:var(--gold);background:#2a2519;
-      box-shadow:0 0 0 3px rgba(212,175,55,.16),0 0 16px rgba(212,175,55,.22)}
-    /* 눌렀을 때 뜨는 느낌은 남긴다 — 그건 질감이 아니라 반응이다 */
-    .coin:hover{transform:translateY(-2px)}
+    /* ── 칩 트레이는 «금색 그대로» 둔다 ──────────────────────────────
+       한때 여기서 평평한 어두운 칩으로 눕혀 보았다. 다섯 개가 나란히 서면 트레이가
+       화면에서 가장 화려한 자리가 되고, 정작 골라야 하는 것은 하나라는 이유였다.
 
+       실제로 보고 물렸다: 색이 빠지니 «베팅하는 맛» 이 사라졌다(제보). 이 화면에서
+       칩은 단추이기 전에 돈이고, 금색은 그 돈을 집어 올린다는 신호다 — 트레이가
+       화려한 것은 낭비가 아니라 이 게임이 파는 것이었다.
+       고른 칩을 가리는 일은 원래대로 채도 차이와 금색 링이 맡는다(05-poker.css).
+
+       그래서 트레이에는 아무 규칙도 두지 않는다. 초기화 단추만 아래에서 다룬다 —
+       그건 되돌리기라서 금색이 아니어야 한다. */
     /* 초기화 — 칩과 같은 톤의 평평한 뱃지. 이 단추는 «되돌리기» 이므로 금색이 아니다.
        금색은 이 화면에서 "지금 눌러야 하는 것" 의 색이다(베팅·참가). */
     #bjClear,#bClear,#pClear{background:#232328;border:1px solid rgba(255,255,255,.10);
@@ -83,4 +69,20 @@
        vh 를 섞는 이유: 노트북(900px)과 큰 모니터(1440px)에서 같은 값을 쓰면 한쪽은
        잘리고 한쪽은 작다. */
     .ladder-svg{width:auto;height:min(46vh,440px);max-width:100%}
+
+    /* ── 5. 블랙잭 카드를 키운다 ──────────────────────────────────────
+       판에서 규칙 한 줄("blackjack pays 3 to 2…")을 걷어 자리가 났다. 그 자리는
+       카드가 받는다 — 이 게임에서 가장 오래 보는 것이 카드다.
+       딜러 쪽을 더 키운다: 자리 다섯이 나눠 쓰는 아래쪽과 달리 위는 한 손뿐이라
+       여유가 있고, 딜러의 첫 장은 판 전체의 근거라 가장 크게 볼 값이다. */
+    .bj-dealer .bj-hand .pcard{width:66px;height:99px}
+    .bj-seat .bj-hand .pcard{width:52px;height:78px}
+    .bj-seat{min-height:172px}
+
+    /* ── 6. 포커 플립 베팅판을 세로로 넉넉하게 ────────────────────────
+       상자가 466x154 · 181x141 이었다 — 위 두 칸은 가로로만 길어서(3:1) «칩을 쌓는
+       자리» 로 안 보인다(제보). 늘어나는 자리는 칩 더미 쪽에 준다: 글자 줄은 그대로
+       두고 더미 높이만 올린다. 그러면 칩이 더 많이 쌓여도 안 넘친다. */
+    .m-pile{height:112px}
+    .market-row.bucket-row .m-pile{height:98px}
   }

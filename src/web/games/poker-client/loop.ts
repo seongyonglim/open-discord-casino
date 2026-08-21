@@ -31,7 +31,9 @@ export function pkLoop(p0: string | number): string {
           : r.phase==='turn' ? '턴'
           : r.phase==='river' ? '리버'
           : ('다음 라운드까지 '+r.secondsLeft+'초');
-        statusEl.textContent = phaseLabel;
+        /* 사다리와 같은 배지 모양(19-timer.css · app.js 의 casinoBadge) */
+        if (window.casinoBadge) casinoBadge.set(statusEl, phaseLabel);
+        else statusEl.textContent = phaseLabel;
 
         // 결과는 정산 후에만 공개
         if (r.phase==='done' && revealedRoundId !== r.id) revealedRoundId = r.id;

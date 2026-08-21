@@ -9,8 +9,11 @@ export const BJ_RENDER_JS = `      function render(){
         var r = st.round;
         setBalance(st.balance);
         renderCoins();
-        statusEl.textContent = statusText(r);
+        /* 사다리와 같은 배지 모양(19-timer.css · app.js 의 casinoBadge).
+           알약은 이 요소의 «자식» 이라 className 을 덮어써도 살아남는다. */
         statusEl.className = 'bj-status' + (r.phase === 'action' ? ' live' : '');
+        if (window.casinoBadge) casinoBadge.set(statusEl, statusText(r));
+        else statusEl.textContent = statusText(r);
 
         if (r.id !== lastRoundId) {
           lastRoundId = r.id;

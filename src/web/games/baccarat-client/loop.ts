@@ -11,8 +11,12 @@ export function bcLoop(p0: string | number): string {
         setBalance(st.balance);
         renderCoins();
         renderHistory(st.history);
-        statusEl.textContent = phaseText(r);
+        /* 사다리와 같은 배지 모양으로 그린다 — 모양은 19-timer.css, 그리는 일은
+           app.js 의 casinoBadge. 문구를 만드는 일은 여기 그대로다.
+           알약은 이 요소의 «자식» 이라, 아래에서 className 을 덮어써도 살아남는다. */
         statusEl.className = 'bacc-status' + (r.phase === 'betting' ? ' live' : '');
+        if (window.casinoBadge) casinoBadge.set(statusEl, phaseText(r));
+        else statusEl.textContent = phaseText(r);
 
         if (r.id !== lastRoundId) {
           lastRoundId = r.id;

@@ -43,3 +43,31 @@
   @media (prefers-reduced-motion: reduce){
     .ig-timer.ig-t-hot{animation:none}
   }
+
+  /* ── 같은 모양을 테이블 게임 상태 문구에도 ──────────────────────────
+     바카라 · 블랙잭 · 포커 플립은 "다음 라운드까지 2초" 를 맨 글자로 적고 있었다.
+     같은 뜻을 말하는 자리라 같은 모양을 쓴다(요청). 다른 점은 «자리» 뿐이다 —
+     사다리 배지는 판 오른쪽 위에 못 박혀 있고, 이쪽은 판 위 가운데 흐름 속에 있다.
+     그래서 위치 규칙(absolute·top·right)은 물려받지 않고 모양만 가져온다.
+     조각 이름은 각 게임의 클라이언트가 붙인다(app.js 의 casinoBadge). */
+  .st-badge{display:inline-flex;align-items:center;gap:7px;
+    padding:5px 12px;border-radius:8px;
+    background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.10);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    font-size:12px;color:#cfd0d6;white-space:nowrap;
+    max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .st-badge .st-ico{flex:none;display:inline-flex;color:#9aa0aa}
+  .st-badge .st-ico svg{width:13px;height:13px;display:block}
+  .st-badge .st-num{font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
+    font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
+    font-weight:700;color:#fbbf24;letter-spacing:.02em}
+  /* 글이 없을 때는 알약 자체를 감춘다 — 빈 알약은 고장처럼 보인다.
+     자리는 남겨 둔다(visibility): 사라지면 그 아래가 위로 튄다. */
+  .st-badge.st-empty{visibility:hidden}
+  .st-badge.st-hot{border-color:rgba(244,63,94,.55);background:rgba(70,8,20,.5);
+    animation:ig-t-pulse 1s ease-in-out infinite}
+  .st-badge.st-hot .st-num,.st-badge.st-hot .st-txt{color:#fb7185}
+  .st-badge.st-hot .st-ico{color:#fb7185}
+  @media (prefers-reduced-motion: reduce){
+    .st-badge.st-hot{animation:none}
+  }
