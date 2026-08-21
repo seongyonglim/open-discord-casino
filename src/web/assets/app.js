@@ -82,7 +82,10 @@ window.casinoBadge = (function(){
       b = el.firstElementChild;
     }
     var ico = b.firstChild, txt = ico.nextSibling, num = txt.nextSibling;
-    if (!ico.firstChild) ico.innerHTML = clock();
+    /* 시계는 «초를 셀 때» 만 뜻이 있다. 플롭·턴·리버처럼 숫자가 없는 문구에는
+       붙이지 않는다 — 시계가 있는데 셀 것이 없으면 읽는 사람이 숫자를 찾는다. */
+    if (p.num && !ico.firstChild) ico.innerHTML = clock();
+    b.classList.toggle('st-noico', !p.num);
     if (txt.textContent !== p.txt) txt.textContent = p.txt;
     if (num.textContent !== p.num) num.textContent = p.num;
     /* 글이 통째로 비면 알약도 안 보여야 한다 — 빈 알약이 판 위에 떠 있으면 고장처럼 보인다 */
