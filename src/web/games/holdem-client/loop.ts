@@ -167,7 +167,23 @@ export const LOOP = `    function render(){
       loopTimer = setInterval(poll, 1000);
     }
     function stopLoop(){ if (loopTimer) { clearInterval(loopTimer); loopTimer = null; } }
+    /* ── 돌아왔을 때는 «지금 상태» 를 조용히 그린다 ────────────────
+       가려진 동안 폴링이 멈추므로, 돌아오면 그 사이 쌓인 것이 한 번에 들어온다.
+       그러면 화면이 그 차이를 «사건» 으로 읽고 밀린 연출을 몰아서 재생했다 —
+       카드 딜링 · 칩 던지기 · 액션 음성이 줄줄이 터진다(제보: "밀린 액션들이 몰아서
+       보여지는 느낌"). 가려지기 전에는 폴링이 계속 돌아 차이가 없었으므로, 이건
+       탭이 가려지면 멈추게 만든 뒤에 생긴 일이다.
+
+       처음 들어올 때 쓰는 장치가 이미 있다: firstTablePaint 가 켜져 있는 동안은
+       "들어온 순간의 과거 행동" 을 연출 없이 그린다(deal · board · chips · table ·
+       controls 가 모두 이 깃발을 본다). 돌아온 순간도 사정이 똑같으니 그것을 다시
+       켠다 — 한 번 그리고 나면 스스로 꺼지고, 그다음부터는 평소처럼 연출이 돈다.
+
+       내 차례 알림은 이 한 번만 안 울리고 다음 폴링(1초)에서 울린다 —
+       myTurnRung 을 그 갈래 «안에서» 표시하기 때문에 건너뛴 것은 미룬 것이 된다. */
     document.addEventListener('visibilitychange', function(){
-      if (document.hidden) stopLoop(); else startLoop();
+      if (document.hidden) { stopLoop(); return; }
+      firstTablePaint = true;
+      startLoop();
     });
     startLoop();`;
