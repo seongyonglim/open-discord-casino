@@ -1,0 +1,73 @@
+  /* ── 넓은 화면 다듬기 ────────────────────────────────────────────────
+     이 파일은 PC 에서만 걸린다(min-width:1025px). 폰 쪽 배치는 15·16·17·18 이 이미
+     촘촘히 정해 두었고, 같은 선택자를 두 쪽에서 만지면 어느 쪽이 이겼는지 알기
+     어려워진다 — 그래서 화면을 나눠 두고 여기서는 넓은 쪽만 말한다.
+
+     여기서 하는 일은 셋이다.
+       1. 펠트와 베팅 구역을 두르던 «선» 을 걷고, 깊이는 면과 그림자로 만든다.
+       2. 칩 트레이와 초기화 단추의 입체 질감을 걷어 평평한 어두운 칩으로 바꾼다.
+       3. 넓은 화면에서 작게 남아 있던 판(지뢰찾기 격자 · 사다리 그림)을 키운다. */
+  @media (min-width:1025px) {
+
+    /* ── 1. 펠트 테두리 다이어트 ──────────────────────────────────────
+       판은 이미 «색» 이 다르다(초록 펠트). 그 위에 회색 선을 한 겹 더 두르면 판이
+       카드 안에 들어앉은 상자처럼 보인다. 선을 걷고 그림자로 띄운다 — 깊이를 만드는
+       것은 선이 아니라 «떠 있다는 느낌» 이다.
+       안쪽 위 한 줄(inset)만 남긴다: 그것이 펠트의 윗면을 만든다. */
+    .bj-table,.bacc-table,.poker-table{
+      border-color:transparent;
+      box-shadow:0 22px 50px rgba(0,0,0,.5),0 2px 0 rgba(0,0,0,.35),
+        inset 0 1px 0 rgba(255,255,255,.05)}
+
+    /* ── 2. 베팅 구역 — 면으로 나눈다 ─────────────────────────────────
+       플레이어·뱅커·타이·페어는 저마다 다른 색 테두리를 두르고 있었다(파랑·주황·초록·
+       회색). 색이 넷이면 그 넷이 먼저 눈에 들어와 «무엇에 얼마가 걸렸나» 보다 «상자가
+       넷이다» 가 먼저 읽힌다. 테두리는 아주 옅게 한 겹만 남기고, 구역을 가르는 일은
+       배경 색이 맡는다(그쪽은 이미 다르다). */
+    .market{border-color:rgba(255,255,255,.07)}
+    /* 누를 수 있다는 것은 여전히 알려야 한다 — 다만 선을 굵게 하지 않고 금색 한 겹으로 */
+    .market:hover:not(.disabled){border-color:var(--gold-dim);
+      box-shadow:0 0 0 1px rgba(212,175,55,.28)}
+    /* 블랙잭 자리도 같은 이유로 옅게 */
+    .bj-seat{border-color:rgba(255,255,255,.06)}
+
+    /* ── 3. 칩 트레이 — 평평한 어두운 칩 ──────────────────────────────
+       금색 그라데이션과 안쪽 하이라이트로 «실물 칩» 을 그려 두었는데, 다섯 개가 나란히
+       서면 트레이가 화면에서 가장 화려한 자리가 된다. 정작 골라야 하는 것은 하나이고,
+       고른 것이 무엇인지는 채도 차이(saturate .35)로만 말하고 있었다.
+       평평하게 눕히고, 고른 하나만 금색 링으로 살린다 — 화려함을 «선택» 에만 쓴다.
+       펠트에 올라간 칩(.pchip)은 그대로 금색이다. 그쪽은 돈이고, 이쪽은 단추다. */
+    .coin .face{filter:none;color:var(--muted);text-shadow:none;
+      background:#232328;border:1px solid rgba(255,255,255,.10);
+      box-shadow:none;transition:border-color .12s,color .12s,background .12s,box-shadow .12s}
+    .coin.kind-coin .face{border-radius:50%}
+    .coin.kind-bar .face{border-radius:9px}
+    .coin:hover .face{border-color:var(--gold-dim);color:var(--txt);background:#2a2a30}
+    /* 고른 칩. 채우지 않고 두른다 — 채우면 그 안의 숫자가 안 읽힌다. */
+    .coin.active .face{color:var(--gold);border-color:var(--gold);background:#2a2519;
+      box-shadow:0 0 0 3px rgba(212,175,55,.16),0 0 16px rgba(212,175,55,.22)}
+    /* 눌렀을 때 뜨는 느낌은 남긴다 — 그건 질감이 아니라 반응이다 */
+    .coin:hover{transform:translateY(-2px)}
+
+    /* 초기화 — 칩과 같은 톤의 평평한 뱃지. 이 단추는 «되돌리기» 이므로 금색이 아니다.
+       금색은 이 화면에서 "지금 눌러야 하는 것" 의 색이다(베팅·참가). */
+    #bjClear,#bClear,#pClear{background:#232328;border:1px solid rgba(255,255,255,.10);
+      color:var(--muted);border-radius:999px;font-weight:700;box-shadow:none;
+      transition:border-color .12s,color .12s,background .12s}
+    #bjClear:hover:not(:disabled),#bClear:hover:not(:disabled),#pClear:hover:not(:disabled){
+      border-color:var(--gold-dim);color:var(--txt);background:#2a2a30}
+    #bjClear:disabled,#bClear:disabled,#pClear:disabled{opacity:.45}
+
+    /* ── 4. 넓은 화면에서 판을 키운다 ─────────────────────────────────
+       지뢰찾기 격자는 290px 에 못 박혀 있었다(타일 52px). 그 값은 옆에 참가자 패널이
+       붙던 시절의 몫이고, 지금 판 칸은 578px 이다 — 절반을 비워 두고 있었다.
+       420px 이면 타일이 76px 가 되어 폰(68px)보다 크고, 판 칸 안에 여유도 남는다. */
+    .mines-grid{max-width:420px;gap:9px}
+
+    /* 사다리 그림은 더 심했다. viewBox 가 190 폭인데 칸은 938px 이고 높이가 232px 로
+       못 박혀 있어서, 그림이 190x232 로 그려지고 좌우로 374px 씩 비어 있었다(실측).
+       높이를 넉넉히 주면 폭은 비율대로 따라온다 — 그림이 두 배가 되고 가운데에 선다.
+       vh 를 섞는 이유: 노트북(900px)과 큰 모니터(1440px)에서 같은 값을 쓰면 한쪽은
+       잘리고 한쪽은 작다. */
+    .ladder-svg{width:auto;height:min(46vh,440px);max-width:100%}
+  }
