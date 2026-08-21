@@ -70,7 +70,11 @@
     font-weight:700;color:#fbbf24;letter-spacing:.02em}
   /* 글이 없을 때는 알약 자체를 감춘다 — 빈 알약은 고장처럼 보인다.
      자리는 남겨 둔다(visibility): 사라지면 그 아래가 위로 튄다. */
-  .st-badge.st-empty{visibility:hidden}
+  /* 글이 없으면 알약을 아예 걷는다. 한동안 visibility:hidden 이었는데, 그러면
+     보이지 않는 자리를 계속 차지한다 — 펠트 위에 26px 짜리 빈 줄이 남는다.
+     지금은 안내가 «할 일이 있는 구간» 에만 뜨므로(각 게임의 phaseText·statusText)
+     비어 있는 시간이 판의 절반이 넘는다. 그 절반을 판에 돌려준다. */
+  .st-badge.st-empty{display:none}
   .st-badge.st-hot{border-color:rgba(244,63,94,.55);background:rgba(70,8,20,.5);
     animation:ig-t-pulse 1s ease-in-out infinite}
   .st-badge.st-hot .st-num,.st-badge.st-hot .st-txt{color:#fb7185}

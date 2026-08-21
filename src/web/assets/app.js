@@ -199,8 +199,12 @@ window.casinoOrient = (function(){
   /* 목록에 없는 화면은 세로다. 이 앱에서 가로가 필요한 것은 판이 넓어야 하는 게임
      뿐이라, 새 화면이 붙었을 때 안전한 기본값은 세로다.
      홀덤은 여기서 세로로 잡고, 판이 열리면 want(LAND) 가 바꾼다. */
+  /* 그래프(/games/graph)는 가로다. 한동안 이 목록에 빠져 있었는데, 그게 실수였다 —
+     ingame.js 의 PORTRAIT_GAMES 는 처음부터 그래프를 가로로 잠그고 있었으므로
+     두 곳이 서로 다른 방향을 말하고 있었다(잠금은 둘 중 나중에 부른 쪽이 이긴다).
+     곡선이 가로로 길어야 읽히는 판이라 가로가 맞다. */
   function ruleFor(path){
-    return /^\/games\/(baccarat|blackjack|poker)(\/|$)/.test(path) ? LAND : PORT;
+    return /^\/games\/(baccarat|blackjack|poker|graph)(\/|$)/.test(path) ? LAND : PORT;
   }
   var wanted = null;
   function nope(){ /* 브라우저 탭에서는 거부된다 — 규칙대로다 */ }

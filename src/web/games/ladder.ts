@@ -637,10 +637,14 @@ export function ladderPage(user: WebUser): string {
         renderFeed(spoiler ? d.bets.map(maskResult) : d.bets);
 
         var betting = round.phase === 'betting';
-        // 하강 중에는 카운트다운을 띄우지 않는다 — 공이 다 내려온 뒤부터 "다음 라운드까지"를 센다
+        /* 안내는 «내가 할 일이 있을 때» 만 띄운다 — 바카라·블랙잭·포커 플립과 같은 규칙이다.
+           "결과 공개 중…" 은 공이 사다리를 내려가는 것을 보면서 읽는 글이었고,
+           "다음 라운드까지 4초" 는 곧 다시 열릴 것을 아는 사람에게 사다리 위 한 줄을
+           계속 쓰게 했다. 칩을 올릴 수 있는 구간만 남기고 나머지는 비운다
+           (빈 줄은 CSS 가 접는다 — .stage-status:empty). */
         countdownEl.textContent = betting
-          ? ('베팅 마감까지 ' + round.secondsLeft + '초')
-          : (round.descentLeft > 0 ? '결과 공개 중…' : ('다음 라운드까지 ' + round.secondsLeft + '초'));
+          ? ('베팅 마감 ' + round.secondsLeft + '초')
+          : '';
         updatePlayBtn(betting);
 
         // 하강 연출은 "보고 있는 동안 결과가 나올 때"만 돌린다.

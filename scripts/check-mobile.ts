@@ -115,6 +115,60 @@ const PROBE = `(() => {
     boardH: bb ? Math.round(bb.height) : null,
     ctlW: cb ? Math.round(cb.width) : null,
     ctlNeed: ctl ? Math.round(ctl.scrollWidth) : null,
+    /* ── 조작부가 «판» 이 아닌 화면 ────────────────────────────────
+       그래프게임 가로는 상승 구간에 조작부를 접고 단추 하나만 띄운다. 그 순간
+       할 수 있는 일이 «지금 빼는가» 하나뿐이라, 280px 짜리 판을 두면 곡선만 가린다.
+       그래서 아래 "조작부가 눌리지 않았다" 는 이 화면에서 잴 것을 바꾼다 —
+       판의 폭이 아니라 그 단추가 엄지에 닿는 크기인가를 본다.
+
+       점검을 느슨하게 하는 것이 아니다. 재는 대상을 화면 구조에 맞게 고르는 것이고,
+       고르지 않으면 «설계대로 접힌 것» 을 고장으로 읽는다(실제로 그렇게 읽었다). */
+    floatAction: (() => {
+      const b = ctl ? ctl.querySelector('.game-action') : null;
+      if (!b) return null;
+      const cs = getComputedStyle(b);
+      if (cs.position !== 'absolute' && cs.position !== 'fixed') return null;
+      if (cs.display === 'none' || cs.visibility === 'hidden') return null;
+      const r = b.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height),
+               right: Math.round(innerWidth - r.right), bottom: Math.round(innerHeight - r.bottom) };
+    })(),
+    /* 조작부가 접혀 있고 지금 누를 것도 없는 구간인가.
+       그래프게임 가로의 상승 구간이 그렇다 — 베팅은 마감됐고, 걸어 둔 것이 없으면
+       캐시아웃도 없다. 그때 칸은 0×0 으로 접힌다(일부러 그렇게 만들었다: 20×14 짜리
+       빈 상자가 곡선 위에 남는 것을 없애려고).
+       "판이 280px 은 되어야 한다" 를 그 순간에 물으면 설계를 고장으로 읽는다.
+       홀덤의 대회 전(preTable)과 같은 성질이다 — 고장이 아니라 «잴 것이 없는» 상태다. */
+    /* ── 랭킹 줄 ──────────────────────────────────────────────────
+       양식을 하나로 맞췄다: 순위 · 이름 · 손익 세 값이 한 줄에, 줄 높이는 여유 있게.
+       그 «여유» 가 실제로 그려지는지를 본다 — .sp-rank 가 세로 flex 라, 줄이 flex:none
+       이 아니면 줄 수가 많을 때 전부 균등하게 눌린다. 폰 가로에서 25px 이 12.6px 로
+       짜부라진 적이 있고, CSS 의 padding 만 읽으면 그것을 못 본다(계산에는 반영되어
+       있었다). 그려진 높이를 재는 것만이 그 실패를 잡는다.
+       이름이 굶는 것도 같이 본다 — 손익 열의 min-width 가 이름 자리를 먹으면
+       이름이 두 글자에서 잘린다(실측: 55px 필요한데 28px 을 받았다). */
+    rankRow: (() => {
+      const rw = document.querySelector('.sp-rank .sp-rw');
+      if (!rw) return null;
+      const r = rw.getBoundingClientRect();
+      if (r.height === 0) return null;
+      const kids = [...rw.children].map(c => String(c.className).split(' ')[0]);
+      const nm = rw.querySelector('.sp-nm');
+      const nr = nm ? nm.getBoundingClientRect() : null;
+      return {
+        h: Math.round(r.height * 10) / 10,
+        kids,
+        nameW: nr ? Math.round(nr.width) : 0,
+        nameNeed: nm ? nm.scrollWidth : 0,
+      };
+    })(),
+    ctlCollapsed: (() => {
+      if (!ctl || !cb) return false;
+      if (getComputedStyle(ctl).position !== 'absolute') return false;
+      if (cb.width >= 8 || cb.height >= 8) return false;
+      const acts = [...ctl.querySelectorAll('.game-action')];
+      return acts.every(b => getComputedStyle(b).display === 'none');
+    })(),
     over,
     /* ── 인게임 풀스크린 ─────────────────────────────────────────
        가로에서 게임 화면은 스크롤이 없어야 한다. 웹 껍데기(헤더·탭바·게임 전환)가
@@ -246,6 +300,17 @@ async function main(): Promise<void> {
     await sleep(1800);   // 폴링이 첫 상태를 받아 판을 그릴 때까지
   };
   const probe = async (): Promise<any> => {
+    /* 랭킹 목록을 재려면 그 탭이 열려 있어야 한다. 기본으로 열려 있는 것은 참가인원이라
+       그냥 재면 목록의 높이가 0 이고, 랭킹 항목이 조용히 «잴 수 없음» 으로 넘어간다 —
+       검사가 아무것도 안 보면서 통과한다. 그래서 재기 전에 한 번 눌러 준다.
+       누를 것이 없는 화면(로비 등)에서는 아무 일도 하지 않는다. */
+    await send('Runtime.evaluate', {
+      expression: `(() => { var t = [].slice.call(document.querySelectorAll('.sp-tab'))
+        .filter(function(x){ return /랭킹/.test(x.textContent); })[0];
+        if (t) t.click(); return !!t; })()`,
+      returnByValue: true,
+    });
+    await sleep(700);   // 목록을 받아 그릴 시간
     const r = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
     /* 화면 안에서 던진 예외는 조용히 undefined 로 돌아온다 — 그러면 "로그인이 없다"로
        잘못 읽힌다(실제로 그렇게 헤맸다). 던졌으면 그 자리에서 말한다. */
@@ -335,6 +400,19 @@ async function main(): Promise<void> {
         if (m.grid || size.name === '가로')
           ck(`${g} 글자가 읽을 수 있는 크기`, (m.tinyText?.px ?? 99) >= 9,
             m.tinyText ? `가장 작은 글자 ${m.tinyText.px}px — ${m.tinyText.sample}` : '못 잼');
+        /* 랭킹 줄 — 양식이 한 벌로 유지되는가. 열려 있는 탭이 참가인원이면 목록이
+           비어 있어 잴 수 없다(그때 rankRow 가 null 이다) — 없는 것은 넘어간다. */
+        if (m.rankRow) {
+          const r = m.rankRow;
+          ck(`${g} 랭킹 줄이 눌리지 않았다`, r.h >= 20, `줄 높이 ${r.h}px (20px 이상이어야 한다)`);
+          ck(`${g} 랭킹 줄이 세 값이다`, r.kids.length === 3
+            && r.kids[0] === 'sp-no' && r.kids[1] === 'sp-nm' && r.kids[2] === 'sp-p',
+            `자식 ${r.kids.join('·')} (순위·이름·손익 셋이어야 한다)`);
+          /* 이름이 필요 폭의 절반도 못 받으면 두 글자에서 잘린다 — 손익 열이
+             자리를 먹고 있다는 뜻이다. 긴 이름이 말줄임되는 것 자체는 정상이다. */
+          ck(`${g} 랭킹 이름 자리가 굶지 않았다`, r.nameNeed === 0 || r.nameW >= r.nameNeed * 0.5,
+            `이름 폭 ${r.nameW}px · 필요 ${r.nameNeed}px`);
+        }
       } else {
         ck(`${g} 탭바가 화면 바닥에`, m.navBottom !== null && Math.abs(m.navBottom - m.vh) <= 2,
           `${m.navBottom} vs ${m.vh}`);
@@ -355,8 +433,19 @@ async function main(): Promise<void> {
       ck(`${g} 판이 찌그러지지 않았다`, m.boardW !== null && m.boardW >= 최소폭,
         `판 폭 ${m.boardW}px < ${최소폭}px`);
       /* 조작부도 같이 본다. 눌린 칸은 안의 내용이 들어갈 자리를 못 얻어 겹친다 —
-         scrollWidth 가 실제 폭보다 크면 그 상태다. */
-      if (m.ctlW !== null) {
+         scrollWidth 가 실제 폭보다 크면 그 상태다.
+
+         단, 조작부가 «떠 있는 단추 하나» 로 접힌 화면은 다르게 잰다(위 floatAction).
+         그때는 판이 없는 것이 설계이므로 폭 280 을 요구하면 설계를 고장으로 읽는다.
+         대신 그 단추가 엄지에 닿는지를 본다 — 44px 은 손가락 하나의 크기다. */
+      if (m.floatAction) {
+        const f = m.floatAction;
+        ck(`${g} 떠 있는 조작 단추가 엄지에 닿는다`,
+          f.w >= 88 && f.h >= 44 && f.right >= 4 && f.bottom >= 4,
+          `${f.w}x${f.h} · 오른쪽 ${f.right} · 아래 ${f.bottom}`);
+      } else if (m.ctlCollapsed) {
+        console.log(`  --   ${g} 조작부 — 지금 누를 것이 없는 구간이라 잴 수 없음`);
+      } else if (m.ctlW !== null) {
         ck(`${g} 조작부가 눌리지 않았다`, m.ctlW >= 280 && m.ctlNeed <= m.ctlW + 2,
           `폭 ${m.ctlW}px · 필요 ${m.ctlNeed}px`);
       }

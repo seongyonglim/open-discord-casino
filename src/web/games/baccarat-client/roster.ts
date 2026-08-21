@@ -97,18 +97,19 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
         clearBtn.disabled = st.round.phase!=='betting' || staked<=0;
       }
 
+      /* ── 안내는 «내가 할 일이 있을 때» 만 뜬다 ────────────────────────
+         한동안 판의 모든 구간을 글로 중계했다 — "카드 공개 · 3초", "세 번째 카드 · 2초",
+         "뱅커 승 · 다음 라운드까지 5초". 그런데 그 셋은 화면이 이미 말하고 있다.
+         카드가 뒤집히는 것이 보이고, 세 번째 장이 놓이는 것이 보이고, 이긴 쪽에
+         테두리가 켜진다. 글은 그것을 한 번 더 말하면서 펠트 위 한 줄을 계속 차지했다.
+
+         그래서 남기는 것은 하나다 — 베팅 마감까지 몇 초인가. 이것만은 화면이
+         말해 줄 수 없고(칩을 언제까지 올릴 수 있는지는 시계에만 있다), 내가 손을
+         움직여야 하는 유일한 구간이다. 나머지 구간에서는 빈 문자열을 돌려 뱃지를
+         걷는다(app.js 의 casinoBadge 가 st-empty 로 접는다). */
       function phaseText(r){
         if (r.phase === 'betting') return '베팅 마감까지 ' + r.secondsLeft + '초';
-        if (r.phase === 'deal') return '카드 공개 · ' + r.secondsLeft + '초';
-        if (r.phase === 'third') {
-          // 세 번째 카드가 아예 안 오는 판이 절반쯤 된다(내추럴이거나 양쪽 다 스탠드).
-          // 그때도 "세 번째 카드"라고 띄우면 오지 않는 카드를 기다리게 된다.
-          var drew = r.player.length > 2 || r.banker.length > 2;
-          return (drew ? '세 번째 카드' : '추가 카드 없음') + ' · ' + r.secondsLeft + '초';
-        }
-        var w = r.result && r.result.winner;
-        var name = w==='player' ? '플레이어' : w==='banker' ? '뱅커' : '타이';
-        return name + ' 승 · 다음 라운드까지 ' + r.secondsLeft + '초';
+        return '';
       }
 
 `;
