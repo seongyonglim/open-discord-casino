@@ -2459,3 +2459,63 @@ window.__foldOut = function(el, done){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
+
+/* ── 가로로 미는 줄을 마우스로도 밀 수 있게 ───────────────────────────
+   최근 결과 띠(.hist-row)는 넘치는 만큼 옆으로 스크롤된다. 폰에서는 손가락으로
+   밀면 그대로 밀리지만, 마우스로는 «안 밀린다» — 브라우저가 스크롤 컨테이너를
+   드래그로 밀어 주지 않기 때문이다. 휠이나 트랙패드로는 되지만, 그것을 모르면
+   "밀리지 않는다" 로 읽힌다(제보).
+
+   그래서 마우스일 때만 직접 민다. 터치는 손대지 않는다 — 네이티브 스크롤이 이미
+   관성까지 처리하고 있고, 거기에 끼어들면 그 관성을 망친다.
+
+   붙이는 대상은 지금 화면에 있는 것만이 아니다. 게임 화면은 폴링마다 조각을 다시
+   그리고, 인게임 껍데기는 노드를 다른 자리로 옮긴다 — 그때 리스너가 사라진다.
+   그래서 요소마다 붙이지 않고 document 한 곳에서 받는다(위임). */
+(function(){
+  var ROW = '.hist-row';
+  var drag = null;
+
+  function rowOf(t){ return t && t.closest ? t.closest(ROW) : null; }
+
+  document.addEventListener('pointerdown', function(e){
+    if (e.pointerType && e.pointerType !== 'mouse') return;   // 터치·펜은 네이티브에 맡긴다
+    if (e.button !== 0) return;
+    var row = rowOf(e.target);
+    if (!row || row.scrollWidth <= row.clientWidth) return;     // 밀 것이 없으면 아무 일도 없다
+    drag = { row: row, x: e.clientX, from: row.scrollLeft, moved: false };
+    /* 드래그 중에 커서가 띠 밖으로 나가도 계속 받는다. 이것이 없으면 조금만 벗어나도
+       "놓은 것" 이 되어 미는 도중에 끊긴다. */
+    try { row.setPointerCapture(e.pointerId); } catch (err) { /* 지원 안 하면 그냥 진행 */ }
+  });
+
+  document.addEventListener('pointermove', function(e){
+    if (!drag) return;
+    var dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) < 3) return;   // 손떨림은 드래그가 아니다
+    if (!drag.moved) { drag.moved = true; drag.row.classList.add('hist-drag'); }
+    drag.row.scrollLeft = drag.from - dx;
+    /* 드래그 중에는 글자가 선택되지 않게 막는다 — 안 막으면 미는 동안 칩들이
+       파랗게 잡혀서 미는 것이 아니라 «긁는 것» 처럼 보인다. */
+    e.preventDefault();
+  });
+
+  /* 방금 밀었는지는 pointerup 뒤에도 알아야 한다. 그 뒤에 click 이 오기 때문이다 —
+     drag 를 그 자리에서 비우면 click 을 받을 때는 이미 아무 흔적이 없다. */
+  var draggedAt = 0;
+  function end(){
+    if (!drag) return;
+    if (drag.moved) { drag.row.classList.remove('hist-drag'); draggedAt = 1; }
+    drag = null;
+  }
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', end);
+  /* 드래그로 밀었으면 그 끝의 클릭은 삼킨다. 지금 칩은 눌러도 하는 일이 없지만,
+     나중에 무언가를 붙이면 «밀고 손을 뗐는데 눌린» 일이 생긴다. */
+  document.addEventListener('click', function(e){
+    if (!draggedAt) return;
+    draggedAt = 0;
+    if (!rowOf(e.target)) return;
+    e.stopPropagation(); e.preventDefault();
+  }, true);
+})();

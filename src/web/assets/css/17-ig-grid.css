@@ -430,15 +430,30 @@
          숫자 밑동 = 79 + (상자높이 - 85)/2 + 85
        를 패널 위끝(215)보다 25px 위로 두려면 상자를 79~216 으로 잡아야 한다 → 153. */
     .ig-body.ig-graph:not(:has(.crash-multi.running)) .crash-center{bottom:153px}
-    /* 자동 탭은 패널이 한 줄만큼 높다(196px). 숫자를 34px 로 줄이면 덩어리가 52px 이고,
-       위 식에 T=165 · G=52 · 틈 20 을 넣으면 상자 아래끝이 159 → bottom 210 이다. */
+    /* ── 자동 탭에서도 숫자 크기는 그대로다 ─────────────────────
+       한동안 자동 탭에서 숫자를 34px 로 줄였다. 패널이 한 줄만큼 높아져 남는 자리가
+       좁아지니 «글자를 줄여 틈을 벌자» 는 계산이었는데, 그러면 탭을 누를 때마다
+       가운데 숫자가 커지고 작아진다 — 조작부를 만지는 것과 카운트다운의 크기는
+       아무 관계가 없으므로, 그 둘이 연동되는 것 자체가 틀렸다(제보).
+
+       크기는 두지 않고 «자리» 만 옮긴다. 자동 탭에서 숫자 위에 남는 공간은
+       79~175 = 96px 이고 덩어리(라벨 18 + 숫자 67)는 85px 이라, 상자를 79~164 로
+       잡으면 그 안에 꼭 들어가고 패널 위끝과 11px 이 남는다 → bottom 205.
+       수동 탭의 25px 보다 좁다. 그것이 «크기를 고정한다» 의 값이다 — 96px 안에
+       85px 짜리 덩어리를 넣는 이상 더 벌릴 자리가 없다. */
     .ig-body.ig-graph:not(:has(.crash-multi.running)):has(#cModeAuto.active)
-      .crash-center{bottom:210px}
-    .ig-body.ig-graph:not(:has(.crash-multi.running)):has(#cModeAuto.active)
-      .crash-multi{font-size:34px}
+      .crash-center{bottom:205px}
     .ig-body.ig-graph .crash-label,
     .ig-body.ig-graph .crash-betlabel{font-size:11px;letter-spacing:2px}
-    .ig-body.ig-graph .crash-status{font-size:11px}
+    /* 상태 줄("다음 라운드까지 N초")은 가운데 덩어리에서 빼내 판 오른쪽 위에 둔다.
+       가운데에 쌓아 두면 정산 구간의 덩어리가 «CRASHED + 64px 숫자 + 이 줄» 로
+       101px 이 되는데, 자동 탭에서 그 위에 주어지는 자리는 96px 뿐이다 —
+       그러면 덩어리가 위로 넘쳐 CRASHED 가 판 바깥으로 잘렸다(실측: 센터 위끝 73,
+       판 위끝 79). 숫자를 줄여 맞추는 길은 «탭에 따라 크기가 바뀌지 않는다» 와
+       어긋나므로, 줄일 것이 아니라 옮길 것을 옮긴다.
+       오른쪽 위는 어차피 비어 있는 자리다(곡선은 왼쪽 아래에서 올라온다). */
+    .ig-body.ig-graph .crash-status{position:absolute;top:2px;right:6px;
+      font-size:11px;margin:0;z-index:3;text-align:right}
 
     /* ── 조작부: 격자에서 빠져 판 위에 뜬다 ─────────────────────
        position:absolute 라 격자 칸을 차지하지 않는다 — 판이 폭과 높이를 다 받는
