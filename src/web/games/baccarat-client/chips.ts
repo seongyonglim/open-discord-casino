@@ -151,9 +151,6 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         { x:9,  y:0,  z:20, back:0 }, { x:27, y:0,  z:20, back:0 }
       ];
       var CLUSTER_W = 70;                  // 36(마지막 뒷기둥) + 34(칩 지름)
-      function towerLevel(total){
-        return total >= 100000 ? 3 : total >= 10000 ? 2 : 1;
-      }
       // 금액을 큰 액면부터 그리디로 쪼갠다
       function splitAmount(amount){
         var d=(st.coins||[]).slice().sort(function(a,b){return b-a;}), out=[];
@@ -222,11 +219,6 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         if (market === 'banker') return 'left:calc(100% - ' + (23 + (36 - x)) + 'px)';
         return 'left:calc(50% + ' + (x - 18) + 'px)';
       }
-      function baseX(market){
-        if (market === 'player') return 'left:calc(0% + 6px)';
-        if (market === 'banker') return 'left:calc(100% - ' + (CLUSTER_W + 6) + 'px)';
-        return 'left:calc(50% - ' + (CLUSTER_W / 2) + 'px)';
-      }
       function paintTower(el, market, ds, total, mine){
         if (!ds.length) { el.innerHTML = ''; return; }
         var cols = [];
@@ -234,8 +226,11 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         if (cols.length > MAX_COLS) cols = cols.slice(0, MAX_COLS);
         /* 층 간격 4px. 열 장이면 기둥이 34 + 36 = 70px 이고, 뒷줄은 그보다 10px 위라
            80px 이다 — 칸(96px) 안에 선다. 이보다 벌리면 뚫는다. */
-        var html = '<i class="bc-base' + (towerLevel(total) >= 3 ? ' hi' : '') +
-          (mine ? ' mine' : '') + '" style="' + baseX(market) + '"></i>';
+        /* 밑동에 타원 하나를 깔아 «내 베팅» 과 «큰 판» 을 표시했는데, 기둥이 다섯으로
+           퍼지면서 그 타원만 엉뚱한 자리에 홀로 떠 있게 됐다(제보). 걷는다 —
+           입체는 칩 자체가 갖고 있고, 어느 구역에 걸었는지는 상자 아래 «N명» 이
+           말한다. */
+        var html = '';
         for (var c=0;c<cols.length;c++){
           var p = COL_POS[c];
           for (var j=0;j<cols[c].length;j++){

@@ -99,20 +99,10 @@
   .bc-tower.bc-pop{animation:bcPopIn .18s ease-out}
   @keyframes bcPopIn{ 50%{transform:scale(1.02)} }
 
-  /* 클러스터 밑동. 두 가지를 겹쳐 말한다 —
-       mine  내가 이 구역에 걸었다 (사람별 칩이 사라지면서 잃은 표시를 되살린 것)
-       hi    10만 P 이상 (판이 크다)
-     둘 다면 금색이 더 강해진다. 칩 자체에 금테를 두르면(예전 .pchip.mine)
-     방금 준 액면 색이 가려지므로 밑동으로 뺐다.
-
-     칩 위 총액 뱃지는 걷었다 — 같은 숫자가 상자 아래 .m-total 에 이미 크게
-     적혀 있어서, 기둥 꼭대기에 한 번 더 적으니 판마다 숫자가 둘씩 떠 있었다(요청). */
-  .bc-base{position:absolute;bottom:-4px;width:74px;height:13px;border-radius:50%;
-    pointer-events:none;z-index:8;display:none}
-  .bc-base.hi{display:block;border:1px solid rgba(240,180,41,.5);
-    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.28),rgba(240,180,41,0) 72%)}
-  .bc-base.mine{display:block;
-    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.62),rgba(240,180,41,0) 70%)}
+  /* 밑동에 깔던 타원(내 베팅 표시 · 큰 판 표시)과 칩 위 총액 뱃지는 둘 다 걷었다.
+     타원은 기둥이 다섯으로 퍼지면서 혼자 엉뚱한 자리에 떠 있었고, 뱃지는 같은
+     숫자가 상자 아래 .m-total 에 이미 크게 적혀 있었다(둘 다 제보).
+     칩은 이제 제 그림만으로 선다. */
 
   /* ── 정산: 버스트 앤 플라잉 ──────────────────────────────────────
      키프레임은 이 파일 최상위에 둔다. @media 안에 넣으면 중괄호가 두 겹이 되어
@@ -170,6 +160,29 @@
     .chip-fly-layer .bc-fly{opacity:0}
     .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sink{opacity:0}
   }
+
+  /* ── 결과가 나오면 이긴 구역만 «켜진다» ──────────────────────────
+     지금까지는 진 구역을 흐리게 하는 것이 전부였다. 흐려지기만 하면 «무엇이 졌나»
+     는 보여도 «무엇이 이겼나» 는 상대적으로만 읽힌다. 이긴 쪽을 실제로 밝히고
+     테두리에 빛을 준다 — 눈이 먼저 가야 하는 곳은 이긴 쪽이다. */
+  #bMarkets .market.hit{border-color:var(--win);
+    box-shadow:0 0 0 1px var(--win) inset, 0 0 18px rgba(46,204,113,.26);
+    filter:brightness(1.2)}
+  #bMarkets .market{transition:filter .3s,box-shadow .3s,opacity .3s,border-color .3s}
+  #bMarkets .market.miss{opacity:.4}
+
+  /* ── 승리 테두리는 돔에서 끊기지 않는다 ──────────────────────────
+     플레이어가 이기면 그 상자의 테두리가 켜지는데, 가운데 돔이 그 위에 얹혀 있어서
+     테두리가 돔에 닿는 자리에서 뚝 끊겨 보였다. 돔의 «맞닿는 쪽» 테두리도 같은
+     색으로 켜면 둘이 한 줄로 이어져, 이긴 구역이 돔의 곡면을 감싸 안은 하나의
+     윤곽선이 된다.
+     어느 쪽이 이겼는지는 :has() 로 안다 — 돔에 상태를 따로 넘기지 않아도 된다. */
+  .bacc-core:has(.market.m-player.hit) .market.m-tie{border-left-color:var(--win)}
+  .bacc-core:has(.market.m-banker.hit) .market.m-tie{border-right-color:var(--win)}
+  /* 타이가 이기면 돔 둘레 전체가 켜진다 */
+  .bacc-core .market.m-tie.hit{border-color:var(--win);
+    box-shadow:0 -6px 18px rgba(0,0,0,.45),0 0 0 1px var(--win) inset,
+      0 0 24px rgba(46,204,113,.34)}
 
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
@@ -312,11 +325,24 @@
      타이가 셋 중 하나라는 것이 자리로 말해진다(별도 줄이면 페어처럼 곁다리로 읽힌다). */
   #bMarkets{display:grid;grid-template-columns:minmax(96px,.62fr) 3.4fr minmax(96px,.62fr);
     gap:8px;align-items:stretch}
+  /* ── 판은 테이블 «바닥» 에 닿는다 ────────────────────────────────
+     판 아래에 카드 안쪽 여백이 한 겹 더 있었다. 그 자리는 아무것도 하지 않으면서
+     «판이 카드 안에 떠 있는 상자» 로 보이게 만든다 — 실제 테이블에서 베팅 구역의
+     밑변은 매트의 끝이다(요청: 하단 0px 밀착).
+     카드의 아래 여백만 걷는다. 좌우까지 걷었다가 다섯 구역이 한 덩어리 띠가 되어
+     «가운데 셋 + 곁다리 둘» 이 안 읽혔다(제보) — 그래서 좌우는 그대로 둔다.
+     걷은 만큼(20px · 낮은 화면 11px)은 판 높이가 받는다: 216 → 236px. */
+  .card:has(.bacc-table){padding-bottom:0}
   /* 판 높이를 못 박는다. 내용이 정하게 두었더니 164px 이 나왔는데, 그 안에서 돔은
      아래 절반(95px)만 받고 돔 안의 «이름·배당·인원·총액·막대» 는 136px 이 필요했다 —
      43px 이 판 밖으로 흘러나왔다(실측). 돔이 담을 것을 먼저 재고 판을 거기 맞춘다. */
   .bacc-core{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:0;
-    min-width:0;min-height:216px}
+    min-width:0;min-height:236px}
+  /* ── 층위 ────────────────────────────────────────────────────────
+     돔은 «언제나» 두 상자 위다. 이긴 구역이 밝아지면서 앞으로 튀어나오면 안 된다 —
+     돔 뒤로 파고든 안쪽 겹침은 계속 가려져 있어야 한다. */
+  .bacc-core .market.m-player,
+  .bacc-core .market.m-banker{z-index:10}
   /* 맞닿는 쪽 모서리를 펴서 둘이 한 상자처럼 보이게 하고, 가는 선 하나로 가른다 */
   .bacc-core .market.m-player{border-radius:11px 0 0 11px;border-right-width:0}
   .bacc-core .market.m-banker{border-radius:0 11px 11px 0;
@@ -337,7 +363,7 @@
      실측으로 확인한다. */
   .bacc-core .market.m-tie{position:absolute;left:50%;bottom:0;top:auto;height:160px;
     transform:translateX(-50%);
-    width:min(46%,240px);z-index:2;border-radius:30px 30px 11px 11px;
+    width:min(46%,240px);z-index:30;border-radius:30px 30px 11px 11px;
     box-shadow:0 -6px 18px rgba(0,0,0,.45)}
   /* ── 돔은 «불투명» 해야 한다 ──────────────────────────────────────
      빗나간 상자는 .miss 로 흐려진다(opacity:.42). 그런데 돔은 다른 두 상자 «위» 에
