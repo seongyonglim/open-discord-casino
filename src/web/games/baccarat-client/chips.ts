@@ -420,7 +420,11 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
           'A' + D + ',' + D + ' 0 0 1 ' + (TL+D) + ',' + (TY+0.5) +
           'L' + m + ',' + (TY+0.5) + 'Z';
       }
-      var CT_COLOR = { player:'#38bdf8', banker:'#f43f5e', tie:'#fbbf24' };
+      /* 구역마다 제 색이 있다 — 플레이어는 하늘, 뱅커는 붉음, 타이는 에메랄드.
+         타이가 예전에는 금색이었다. 이기는 색과 «지금 누를 수 있다» 는 색이 겹치는데,
+         호버까지 전부 금색이라 세 가지가 한 색으로 뭉쳤다. 구역의 정체는 색이 말하고,
+         상태(호버인가 승리인가)는 굵기와 빛의 세기가 말하게 나눈다. */
+      var CT_COLOR = { player:'#38bdf8', banker:'#f43f5e', tie:'#34d399' };
       /* 마우스를 올린 구역도 같은 «한 줄» 로 그린다. 사각 테두리만 켜면 승리 때와
          똑같은 문제가 그대로 난다 — 가운데 돔에서 선이 끊기고, 상자의 밑변이 돔 뒤로
          이어져 있어 돔 밑바닥으로 빛이 샌다(제보). 길은 이미 있으니 색만 금색으로
@@ -462,6 +466,9 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         /* 결과가 있으면 그것이 우선이다 — 그때는 마우스가 어디 있든 «누가 이겼나» 를
            말해야 한다. 결과가 없을 때만 호버를 그린다. */
         var side = res && CT_COLOR[res.winner] ? res.winner : null;
+        /* 호버도 같은 길을 같은 색으로 그린다. 다른 것은 세기뿐이다(아래 data-side) —
+           승리는 굵고 밝게, 호버는 가늘고 옅게. 색까지 바꾸면 «어느 구역인가» 를
+           두 번 배워야 한다. */
         var gold = false;
         if (!side && hoverZone && CT_COLOR[hoverZone]) { side = hoverZone; gold = true; }
         if (!side) { el.removeAttribute('data-side'); p.setAttribute('d', ''); return; }
@@ -474,8 +481,10 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
                   w: Math.round(tr.width), h: Math.round(tr.height) };
         el.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
         p.setAttribute('d', contourPath(side, W, H, T));
-        p.setAttribute('stroke', gold ? '#fbbf24' : CT_COLOR[side]);
-        el.setAttribute('data-side', gold ? 'hover' : side);
+        p.setAttribute('stroke', CT_COLOR[side]);
+        /* 호버와 승리를 다른 열쇠로 적는다 — 색은 같고 세기만 다르기 때문이다.
+           «hover-player» 처럼 구역까지 실어야 CSS 가 그 구역의 색으로 빛을 낸다. */
+        el.setAttribute('data-side', gold ? 'hover-' + side : side);
       }
 
       /* ══ 정산 — 버스트 앤 플라잉 ═════════════════════════════════════

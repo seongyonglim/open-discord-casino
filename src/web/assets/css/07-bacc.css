@@ -222,9 +222,49 @@
      둘레는 판 위에 얹은 SVG 한 줄(.bc-contour)이 금색으로 그린다.
      여기서는 «안쪽 등» 과 밝기만 준다 — 그 둘은 상자 안에서 끝나므로 안 샌다. */
   #bMarkets .market:not(.disabled){cursor:pointer}
+  /* 안쪽 등도 그 구역의 색이다. 금색 하나로 덮으면 «어디에 손이 가 있나» 는 알아도
+     «그게 어느 구역인가» 는 색이 말해 주지 않는다 — 판이 다섯 칸인데 손이 닿은
+     표시가 전부 같은 색이면, 결국 글자를 읽어야 한다.
+     --bc-hov 는 구역마다 아래에서 정한다. 안 정한 구역은 예전 금색 그대로다. */
   #bMarkets .market:not(.disabled):hover{
-    box-shadow:inset 0 0 20px rgba(251,191,36,.15);
+    box-shadow:inset 0 0 20px var(--bc-hov,rgba(251,191,36,.15));
     filter:brightness(1.1)}
+  #bMarkets .market.m-player,
+  #bMarkets .market.m-ppair{--bc-hov:rgba(56,189,248,.22)}
+  #bMarkets .market.m-banker,
+  #bMarkets .market.m-bpair{--bc-hov:rgba(244,63,94,.22)}
+  #bMarkets .market.m-tie{--bc-hov:rgba(52,211,153,.22)}
+
+  /* ── 페어 상자는 돔에 안 닿는다 ────────────────────────────────
+     그래서 여기서는 테두리와 바깥 빛을 켜도 된다. 가운데 셋(플레이어·뱅커·타이)에서
+     그것을 못 켜는 이유는 돔에 닿는 자리에서 선이 끊기고 돔 밑으로 빛이 새기 때문인데,
+     페어는 판 바깥 양옆에 따로 선 네모라 그 문제가 없다 — 그 셋이 SVG 윤곽선으로
+     받는 «2px 테두리 + 네온» 을 페어는 제 테두리로 그대로 받으면 된다.
+     안 그러면 이긴 순간 가운데 셋만 빛나고 페어만 밋밋하게 남는다. */
+  /* .m-pair 를 함께 적는다. 넓은 화면 다듬기(21-pc-refine.css)가 «구역 테두리를 전부
+     옅게» 하면서 .market.m-pair 를 이름으로 집어 두었고, 그것이 이 상자의 테두리에
+     대한 마지막 말이다 — 실측으로 확인했다(m-ppair 만 적은 규칙은 안 먹고, m-pair 를
+     함께 적으면 먹는다). 페어 상자는 언제나 두 클래스를 함께 달고 있으므로
+     («market m-pair m-ppair») 이름을 하나 더 적는 것으로 족하다. */
+  #bMarkets .market.m-pair.m-ppair:not(.disabled):hover,
+  #bMarkets .market.m-pair.m-bpair:not(.disabled):hover{
+    border-width:2px;border-color:var(--bc-pair);
+    box-shadow:inset 0 0 20px var(--bc-hov),0 0 15px var(--bc-pair-dim)}
+  #bMarkets .market.m-ppair{--bc-pair:rgba(56,189,248,.8);--bc-pair-dim:rgba(56,189,248,.3)}
+  #bMarkets .market.m-bpair{--bc-pair:rgba(244,63,94,.8);--bc-pair-dim:rgba(244,63,94,.3)}
+  #bMarkets .market.m-pair.m-ppair.hit,
+  #bMarkets .market.m-pair.m-bpair.hit{
+    border-width:2px;border-color:var(--bc-win);
+    box-shadow:inset 0 0 35px rgba(251,191,36,.3),0 0 25px var(--bc-pair-lit);
+    animation:bcPairPulse 1.4s ease-in-out infinite}
+  #bMarkets .market.m-ppair.hit{--bc-pair-lit:rgba(56,189,248,.7)}
+  #bMarkets .market.m-bpair.hit{--bc-pair-lit:rgba(244,63,94,.7)}
+  @keyframes bcPairPulse{ 50%{box-shadow:inset 0 0 35px rgba(251,191,36,.3),
+    0 0 34px var(--bc-pair-lit)} }
+  @media (prefers-reduced-motion:reduce){
+    #bMarkets .market.m-ppair.hit,
+    #bMarkets .market.m-bpair.hit{animation:none}
+  }
 
   /* ── 승리 테두리는 돔에서 끊기지 않는다 ──────────────────────────
      플레이어가 이기면 그 상자의 테두리가 켜지는데, 가운데 돔이 그 위에 얹혀 있어서
@@ -240,9 +280,11 @@
      id 를 갖고 있어서, 클래스를 넷을 겹쳐도 그것을 못 이긴다 — 규칙은 썼는데 뱅커의
      왼쪽 선이 여전히 초록으로 켜져 돔을 가로질렀다(실측). */
   /* 돔은 그림자만 유지한다 — 테두리는 SVG 윤곽선이 맡는다 */
+  /* 돔 바깥으로 번지는 빛도 타이의 색(에메랄드)이다. 금색으로 두면 이긴 구역이
+     플레이어·뱅커일 때와 구별되지 않는다 — 돔은 언제나 화면 가운데라 눈이 먼저 닿는다. */
   .bacc-core .market.m-tie.hit{
     box-shadow:0 -6px 18px rgba(0,0,0,.45),inset 0 0 35px rgba(251,191,36,.3),
-      0 0 20px rgba(251,191,36,.4)}
+      0 0 20px rgba(52,211,153,.45)}
 
   /* ── 승리 윤곽선 ─────────────────────────────────────────────────
      판 위에 얹는 투명한 한 겹이다. 길은 JS 가 «재서» 그린다(chips.ts 의 paintContour) —
@@ -254,10 +296,15 @@
   .bc-contour path{transition:stroke .3s}
   .bc-contour[data-side="player"] path{filter:drop-shadow(0 0 5px rgba(56,189,248,.85))}
   .bc-contour[data-side="banker"] path{filter:drop-shadow(0 0 5px rgba(244,63,94,.85))}
-  .bc-contour[data-side="tie"] path{filter:drop-shadow(0 0 5px rgba(251,191,36,.85))}
-  /* 마우스를 올렸을 때 — 금색이다. 이 사이트에서 «지금 할 수 있는 것» 의 색이고,
-     승리색 셋(하늘·붉음·에메랄드)과 겹치지 않아 결과가 나온 뒤와 헷갈리지 않는다. */
-  .bc-contour[data-side="hover"] path{filter:drop-shadow(0 0 6px rgba(251,191,36,.55))}
+  .bc-contour[data-side="tie"] path{filter:drop-shadow(0 0 5px rgba(52,211,153,.85))}
+  /* 마우스를 올렸을 때도 «그 구역의 색» 이다. 예전에는 셋 다 금색이었는데, 그러면
+     판에서 색이 뜻하는 것이 둘이 된다 — 구역의 정체와 «지금 누를 수 있다» 가 같은
+     색을 쓰면 어느 쪽인지 매번 생각해야 한다.
+     색은 구역이 정하고, 상태는 세기가 말한다: 승리는 0.85, 호버는 0.45 다.
+     세기 차이만으로도 «결과» 와 «손이 닿았다» 는 확실히 갈린다. */
+  .bc-contour[data-side="hover-player"] path{filter:drop-shadow(0 0 6px rgba(56,189,248,.45))}
+  .bc-contour[data-side="hover-banker"] path{filter:drop-shadow(0 0 6px rgba(244,63,94,.45))}
+  .bc-contour[data-side="hover-tie"] path{filter:drop-shadow(0 0 6px rgba(52,211,153,.45))}
 
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
