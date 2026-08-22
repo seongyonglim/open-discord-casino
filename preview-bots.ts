@@ -21,9 +21,16 @@ const REFILL_TO = 5_000_000;
 
 interface Bot { id: string; name: string; token: string; cookie: string; style: 'whale' | 'spread' }
 
+/* 다섯이다. 둘일 때는 «한 구역에 여러 사람이 겹쳐 걸었을 때» 가 잘 안 나와서,
+   칩 목록이 사람마다 어떻게 섞이는지·상한을 넘겼을 때 어떻게 되는지가 안 드러났다.
+   whale 은 크게 몰아서 걸고 spread 는 여러 구역에 잘게 뿌린다 — 둘을 섞어야
+   «큰 칩 몇 장» 과 «잔칩 수십 장» 이 한 판에 같이 올라온다. */
 const BOTS: Bot[] = [
   { id: 'preview-bot-2', name: '두번째유저', token: 'previewbottoken2', cookie: '', style: 'whale' },
   { id: 'preview-bot-3', name: '타짜김씨', token: 'previewbottoken3', cookie: '', style: 'spread' },
+  { id: 'preview-bot-4', name: '박올인', token: 'previewbottoken4', cookie: '', style: 'whale' },
+  { id: 'preview-bot-5', name: '이잔챙이', token: 'previewbottoken5', cookie: '', style: 'spread' },
+  { id: 'preview-bot-6', name: '최한방', token: 'previewbottoken6', cookie: '', style: 'spread' },
 ];
 BOTS.forEach(b => { b.cookie = `sid=${b.token}`; });
 
@@ -101,6 +108,34 @@ const GAMES: Record<string, GameBot> = {
         }
         await sleep(Math.random() * (window / picks.length));
       }
+    },
+  },
+
+  /* 블랙잭. 다른 둘과 달리 «자리» 가 있다 — 마켓이 아니라 좌석 번호에 건다.
+     자리를 따로 잡는 API 는 없다. 칩을 얹는 것이 곧 앉는 것이다(blackjack.ts 의
+     handleBet 이 waiting 단계에서도 받는다 — 거기 앉는 것이 라운드 시작이다).
+     봇마다 제 자리를 하나씩 맡는다: 다섯 자리에 다섯 봇이 한 명씩 앉는다. */
+  blackjack: {
+    label: '블랙잭',
+    async wait() {
+      const s = await get('/api/games/blackjack/state', BOTS[0].cookie);
+      const ph = s?.round?.phase;
+      if (ph !== 'betting' && ph !== 'waiting') return null;
+      // waiting 은 아직 아무도 안 앉은 상태다 — 남은 시간이 없으므로 넉넉히 잡아 준다
+      const secs = ph === 'waiting' ? 10 : (s.round.secondsLeft ?? 0);
+      return secs >= 3 ? { id: s.round.id, seconds: secs } : null;
+    },
+    async act(bot, seconds) {
+      const seat = BOTS.indexOf(bot) % 5;
+      const window = Math.max(1500, (seconds - 2) * 1000);
+      const n = bot.style === 'whale' ? 2 + rand(3) : 3 + rand(5);
+      for (let i = 0; i < n; i++) {
+        const amount = bot.style === 'whale' ? pick([5000, 10000]) : pick(POKER_COINS);
+        const r = await post('/api/games/blackjack/bet', bot.cookie, { seat, amount });
+        if (!r?.ok) return;                       // 마감되면 조용히 종료
+        await sleep(120 + Math.random() * 260);   // 칩을 하나씩 얹는 느낌
+      }
+      await sleep(Math.random() * (window / 2));
     },
   },
 

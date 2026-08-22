@@ -45,15 +45,56 @@ export const PK_CHIPS_JS = `      function renderCoins(){
         }
         return out;
       }
-      function pushChips(el, pile, denoms, owner, anim){
-        var added = [];
-        for (var i=0;i<denoms.length;i++){
-          if (pile.list.length >= MAX_CHIPS) { pile.list.shift(); if (el.firstChild) el.removeChild(el.firstChild); }
-          pile.list.push(denoms[i]);
-          el.insertAdjacentHTML('beforeend', chipSprite(denoms[i], owner, pile.n++ % MAX_CHIPS, anim));
-          added.push(el.lastElementChild);
+      /* ── 꽉 차면 «맨 밑에서부터» 큰 칩으로 바꾼다 ────────────────────
+         한동안은 상한을 넘으면 오래된 칩을 하나씩 «버렸다». 그러면 그려진 합이
+         올린 금액보다 작아진다 — 그리고 바로 그 어긋남을 안전망이 «다시 그려라» 로
+         읽어서, 상한을 넘는 순간부터 매 폴링마다 판이 통째로 다시 그려진다.
+         쌓이는 느낌이 사라질 뿐 아니라 총액을 다시 쪼개므로 «올린 그대로» 도 아니다.
+
+         실제 딜러가 하는 일은 다르다. 판이 커지면 바닥의 잔칩을 큰 칩 한 장으로
+         바꿔 준다(color-up). 장수는 줄지만 금액은 한 푼도 안 바뀐다.
+         코인 단위가 모두 위 단위의 약수라 정확히 나누어떨어진다:
+         10×10=100 · 5×100=500 · 2×500=1000 · 5×1000=5000 · 2×5000=10000.
+         바꿀 것이 없으면(전부 최고 액면이면) 그때만 오래된 쪽을 자른다. */
+      function colorUpOnce(list){
+        var d = (st.coins||[]).slice().sort(function(a,b){ return a-b; });
+        for (var i=0;i<d.length-1;i++){
+          var small = d[i], big = d[i+1], need = big / small;
+          if (need !== Math.floor(need) || need < 2) continue;
+          var idx = [];
+          for (var j=0;j<list.length && idx.length<need;j++) if (list[j].d === small) idx.push(j);
+          if (idx.length < need) continue;
+          var owner = list[idx[0]].o;   // 바뀐 칩의 주인은 바닥에 있던 그 사람이다
+          for (var k=idx.length-1;k>=0;k--) list.splice(idx[k], 1);
+          list.unshift({ d: big, o: owner });   // 바뀐 큰 칩은 맨 아래에 깔린다
+          return true;
         }
-        return added;
+        return false;
+      }
+      function compressPile(pile){
+        var guard = 0;
+        while (pile.list.length > MAX_CHIPS && colorUpOnce(pile.list) && ++guard < 400) {}
+        while (pile.list.length > MAX_CHIPS) pile.list.shift();
+      }
+      /* 목록 그대로 다시 그린다. pendFrom 이 있으면 그 뒤의 칩을 제자리에 숨긴 채
+         그리고, 그 요소들을 돌려준다 — 부르는 쪽이 그 자리로 날린 뒤 드러낸다. */
+      function paintPile(el, pile, pendFrom){
+        el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
+        el.innerHTML = '';
+        for (var i=0;i<pile.list.length;i++){
+          var c = pile.list[i];
+          el.insertAdjacentHTML('beforeend',
+            chipSprite(c.d, c.o, i, (pendFrom != null && i >= pendFrom) ? 'pending' : ''));
+        }
+      }
+      function pushChips(el, pile, denoms, owner, anim){
+        if (!denoms.length) return [];
+        for (var i=0;i<denoms.length;i++) pile.list.push({ d: denoms[i], o: owner });
+        compressPile(pile);
+        var from = pile.list.length - denoms.length;
+        if (from < 0) from = 0;
+        paintPile(el, pile, anim === 'pending' ? from : null);
+        return anim === 'pending' ? [].slice.call(el.querySelectorAll('.pchip.pending')) : [];
       }
       // 더미 상태는 "누가 얼마" 단위로 들고 있어야 새로 들어온 칩의 주인을 알 수 있다
       function rebuildPile(el, market, byUser, roundId){

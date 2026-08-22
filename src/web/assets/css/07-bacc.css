@@ -491,7 +491,15 @@
   .market.m-player{background:#0d1b2a;border-color:#22406b}
   .market.m-banker{background:#201010;border-color:#5e3527}
   .market.m-tie{background:#0c1f17;border-color:#1f5e3c}
+  /* 페어는 «곁다리» 지만 어느 편의 곁다리인지는 분명해야 한다. 둘 다 같은 회색이라
+     오른쪽 뱅커 페어가 왼쪽 플레이어 페어와 구별이 안 됐다(제보) — 각자 제 편의
+     바탕색을 그대로 쓴다. 배당은 둘 다 금색이다(그 자리는 «얼마를 받나» 이고,
+     편과 무관하다). */
   .market.m-pair{background:#111827;border-color:#33333f}
+  .market.m-ppair{background:#0d1b2a;border-color:rgba(56,189,248,.2)}
+  .market.m-bpair{background:#201010;border-color:rgba(244,63,94,.2)}
+  #bMarkets .market.m-ppair .m-name{color:#7dd3fc}
+  #bMarkets .market.m-bpair .m-name{color:#fda4af}
   /* 날개는 좁다 — 이름을 두 줄로 접고 글자를 한 단 줄인다.
      word-break:keep-all 이 있어야 «플레이어 페어» 가 «플레이어 / 페어» 로 접힌다.
      기본값은 글자 단위로 끊어서 «플레이어 페 / 어» 가 됐다 — 한글은 단어 안에서

@@ -913,6 +913,48 @@ async function main(): Promise<void> {
        합쳐져서 "올린 그대로"가 아니게 된다. 그 규칙은 그대로 남아 있어야 한다. */
     ck('칸이 비었을 때의 복원은 목록 기준이다',
       /if \(el\.childElementCount !== pile\.list\.length\) paintPile\(el, pile\)/.test(ch));
+
+    /* ── 상한을 넘을 때 «버리지» 않는다 ──────────────────────────────────
+       한동안은 상한(18·21장)을 넘으면 오래된 칩을 하나씩 버렸다. 그러면 그려진 합이
+       올린 금액보다 작아지고, 바로 위의 안전망(pileSum !== bet)이 그 어긋남을
+       "다시 그려라" 로 읽는다 — 상한을 넘는 순간부터 매 폴링마다 판이 통째로 다시
+       그려지고, 그때 총액을 다시 쪼개므로 «올린 그대로» 도 아니게 된다.
+
+       실제 딜러가 하는 일로 바꿨다: 바닥의 잔칩을 그 위 액면 한 장으로 바꾼다.
+       장수는 줄지만 금액은 한 푼도 안 바뀌므로 안전망이 안 걸린다.
+       세 게임이 같은 규칙을 쓰는지 소스로 확인한다 — 한 게임만 옛 방식으로 남으면
+       그 게임에서만 조용히 다시 그려진다. */
+    for (const g of ['blackjack', 'poker']) {
+      const src = readFileSync('src/web/games/' + g + '-client/chips.ts', 'utf8') as string;
+      ck(g + ' — 상한을 넘으면 바닥부터 큰 칩으로 바꾼다',
+        /function colorUpOnce\(list\)/.test(src) && /function compressPile\(pile\)/.test(src));
+      /* 승격은 «위 액면이 아래 액면의 배수» 라야 금액이 보존된다. 그 조건을 확인하지
+         않고 바꾸면 잔돈이 사라진다 — COIN_SIZES 에 값을 하나만 끼워 넣어도 깨진다. */
+      ck(g + ' — 승격은 나누어떨어질 때만 한다',
+        /need !== Math\.floor\(need\)/.test(src));
+      // 옛 «버리기» 가 push 경로에 남아 있으면 안 된다
+      ck(g + ' — 칩을 올리면서 오래된 것을 버리지 않는다',
+        !/pile\.list\.length >= MAX_CHIPS.*pile\.list\.shift\(\)/.test(src));
+    }
+    {
+      const bc = readFileSync('src/web/games/baccarat-client/chips.ts', 'utf8') as string;
+      ck('baccarat — 상한을 넘으면 바닥부터 큰 칩으로 바꾼다',
+        /function colorUpOnce\(list\)/.test(bc) && /function compressRaw\(market\)/.test(bc));
+      ck('baccarat — 승격은 나누어떨어질 때만 한다', /need !== Math\.floor\(need\)/.test(bc));
+    }
+
+    /* ── 새로 올라온 칩은 «제자리에» 숨겼다가 그 자리에서 드러난다 ───────
+       바카라만 다른 방식이었다 — 화면 위 한 점으로 날린 뒤 판을 통째로 다시 그렸다.
+       그러면 날아간 자리와 다시 그린 자리가 달라서 칩이 도착하자마자 한 번 튄다
+       (제보: 일정 점으로 날아갔다가 배치가 바뀌어 어색하다).
+       세 게임 모두 pending 으로 숨기고 tossFrom 으로 그 자리까지 당겨 오는지 본다. */
+    for (const g of ['blackjack', 'poker', 'baccarat']) {
+      const src = readFileSync('src/web/games/' + g + '-client/chips.ts', 'utf8') as string;
+      ck(g + ' — 새 칩은 제자리에 숨겼다가 그 자리에서 드러난다',
+        /function tossFrom\(src, chips\)/.test(src)
+        && src.includes("ch.classList.remove('pending')")
+        && /pendFrom/.test(src));
+    }
   }
 
   console.log('\n[10] 홀덤 사이드 팟 — 층을 묶어도 배지와 상자가 어긋나지 않는다');

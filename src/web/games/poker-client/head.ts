@@ -22,7 +22,7 @@ export function pkHead(p0: string | number): string {
       // 첫 상태인지 여부 — 페이지 진입 직후에는 딜링 연출과 카드 공개음을 건너뛴다
       var firstState = true;
       var DOTS = 9;                 // 등급별로 보여주는 최근 판 수
-      var MAX_CHIPS = 21;           // 상자 하나에 그리는 칩 스프라이트 상한 (넘으면 오래된 것부터 제거)
+      var MAX_CHIPS = 50;           // 넘으면 버리는 게 아니라 바닥부터 큰 칩으로 바꾼다(compressPile)
       var ALL_KEYS = ['master','shark','b0','b1','b2','b3','b4'];
 
       function fmt(n){ return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P'; }

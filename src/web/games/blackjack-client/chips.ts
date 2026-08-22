@@ -11,7 +11,7 @@ export function bjChips(p0: string | number): string {
          (자리가 132px이라 5열짜리 더미가 들어간다 — 좁은 창 기준으로 재고 안 된다고 판단했었다) */
       var piles = {};
       var drewOnce = false;   // 자리를 한 바퀴 다 그려 봤다 (seats.ts 가 세운다)
-      var MAX_CHIPS = 18;
+      var MAX_CHIPS = 50;   // 넘으면 버리는 게 아니라 바닥부터 큰 칩으로 바꾼다(compressPile)
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
       /* 액면은 «크기» 가 아니라 «색» 이 말한다. 한동안 앞 세 단은 동전, 뒤 세 단은
          골드바였다 — 크기 차이가 곧 액면 차이였다. 읽기는 됐지만 판에 올라간 것이
@@ -48,26 +48,60 @@ export function bjChips(p0: string | number): string {
         }
         return out;
       }
-      function pushChips(el, pile, denoms, owner, anim){
-        var added = [];
-        for (var i=0;i<denoms.length;i++){
-          if (pile.list.length >= MAX_CHIPS) { pile.list.shift(); if (el.firstChild) el.removeChild(el.firstChild); }
-          var slot = pile.n++ % MAX_CHIPS;
-          pile.list.push({ d: denoms[i], o: owner, i: slot });
-          el.insertAdjacentHTML('beforeend', chipSprite(denoms[i], owner, slot, anim));
-          added.push(el.lastElementChild);
+      /* ── 꽉 차면 «맨 밑에서부터» 큰 칩으로 바꾼다 ────────────────────
+         한동안은 상한을 넘으면 오래된 칩을 하나씩 «버렸다». 그러면 그려진 합이
+         올린 금액보다 작아진다 — 그리고 바로 그 어긋남을 안전망이 «다시 그려라» 로
+         읽어서, 상한을 넘는 순간부터 매 폴링마다 판이 통째로 다시 그려진다.
+         쌓이는 느낌이 사라질 뿐 아니라 총액을 다시 쪼개므로 «올린 그대로» 도 아니다.
+
+         실제 딜러가 하는 일은 다르다. 판이 커지면 바닥의 잔칩을 큰 칩 한 장으로
+         바꿔 준다(color-up). 장수는 줄지만 금액은 한 푼도 안 바뀐다.
+         코인 단위가 모두 위 단위의 약수라 정확히 나누어떨어진다:
+         10×10=100 · 5×100=500 · 2×500=1000 · 5×1000=5000 · 2×5000=10000.
+         바꿀 것이 없으면(전부 최고 액면이면) 그때만 오래된 쪽을 자른다. */
+      function colorUpOnce(list){
+        var d = (st.coins||[]).slice().sort(function(a,b){ return a-b; });
+        for (var i=0;i<d.length-1;i++){
+          var small = d[i], big = d[i+1], need = big / small;
+          if (need !== Math.floor(need) || need < 2) continue;
+          var idx = [];
+          for (var j=0;j<list.length && idx.length<need;j++) if (list[j].d === small) idx.push(j);
+          if (idx.length < need) continue;
+          var owner = list[idx[0]].o;
+          for (var k=idx.length-1;k>=0;k--) list.splice(idx[k], 1);
+          list.unshift({ d: big, o: owner, i: 0 });   // 바뀐 큰 칩은 맨 아래에 깔린다
+          return true;
         }
-        return added;
+        return false;
+      }
+      function compressPile(pile){
+        var guard = 0;
+        while (pile.list.length > MAX_CHIPS && colorUpOnce(pile.list) && ++guard < 400) {}
+        while (pile.list.length > MAX_CHIPS) pile.list.shift();
+        // 자리 번호를 다시 매긴다 — 목록 순서가 곧 자리다
+        for (var i=0;i<pile.list.length;i++) pile.list[i].i = i;
+      }
+      /* anim 이 'pending' 이면 새로 얹은 칩만 제자리에 «숨긴 채» 그리고 그 요소들을
+         돌려준다 — 부르는 쪽이 그 자리로 칩을 날린 뒤 드러낸다. */
+      function pushChips(el, pile, denoms, owner, anim){
+        if (!denoms.length) return [];
+        for (var i=0;i<denoms.length;i++) pile.list.push({ d: denoms[i], o: owner, i: 0 });
+        compressPile(pile);
+        var from = pile.list.length - denoms.length;
+        if (from < 0) from = 0;
+        paintPile(el, pile, anim === 'pending' ? from : null);
+        return anim === 'pending' ? [].slice.call(el.querySelectorAll('.pchip.pending')) : [];
       }
       /* 기록해 둔 칩 목록 그대로 다시 그린다.
          총액을 다시 쪼개면(decompose) 500 두 개가 1K 한 개로 합쳐져 버린다 —
          올린 그대로 보여야 하므로 복원은 반드시 목록 기준이다. */
-      function paintPile(el, pile){
+      function paintPile(el, pile, pendFrom){
         el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
         el.innerHTML = '';
         for (var i=0;i<pile.list.length;i++){
           var c = pile.list[i];
-          el.insertAdjacentHTML('beforeend', chipSprite(c.d, c.o, c.i, ''));
+          el.insertAdjacentHTML('beforeend',
+            chipSprite(c.d, c.o, c.i, (pendFrom != null && i >= pendFrom) ? 'pending' : ''));
         }
       }
       function rebuildPile(el, seat, bet, owner, roundId){
