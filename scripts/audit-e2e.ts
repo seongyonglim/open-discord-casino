@@ -286,6 +286,23 @@ async function main(): Promise<void> {
       ck(`정산 지급 규칙 일치 (승자 ${r.winner} → ${want})`, m.payout === want, `${m.payout} vs ${want}`);
       ck('잔액 반영 정확', bal('e_bacc') === before - 1000 + m.payout, String(bal('e_bacc')));
     }
+
+    /* ── 들어온 순간에는 연출을 재생하지 않는다 ────────────────────
+       다른 화면에 갔다 돌아오면 카드가 통째로 회수됐다 다시 깔렸다. 베팅 창 한가운데인데
+       처음부터 다시 시작하는 것처럼 보인다 — 연출을 «판마다 한 번» 으로 막는 열쇠가
+       페이지를 새로 열면 비어 있어서, 첫 렌더는 firstState 가 막아도 1초 뒤 두 번째
+       폴링에서 딜링이 그대로 돌았다.
+       고친 방식은 «들어온 순간 그 판의 열쇠를 미리 찍는 것» 이다. 그 두 줄이 사라지면
+       버그가 그대로 돌아오므로 소스에 못 박는다(브라우저 없이 확인할 수 있는 유일한
+       방법이기도 하다 — 이 연출은 화면이 보일 때만 재생된다). */
+    const bcPage = (await req('GET', '/games/baccarat', c)).text;
+    ck('바카라 — 들어온 판의 딜링 열쇠를 미리 찍는다',
+      bcPage.includes('if (firstState) {') && bcPage.includes('dealtRoundId = r.id;'));
+    ck('바카라 — 들어온 판의 정산 열쇠도 미리 찍는다',
+      bcPage.includes('if (r.result) notedRoundId = r.id;'));
+    ck('바카라 — 딜링은 판 열쇠로만 막는다 (firstState 로 막지 않는다)',
+      bcPage.includes('if (betting) dealSequence(r.id);')
+      && !bcPage.includes('if (betting && !firstState) dealSequence'));
   }
 
   /* ── 홀덤 프리롤 ─────────────────────────────────────────────────
@@ -454,8 +471,29 @@ async function main(): Promise<void> {
       const htPage = (await req('GET', '/games/holdem', sessions[0].c)).text;
       ck('화면이 정산 전 스택을 기억해 둔다', htPage.includes('function noteStacks('));
       ck('끝난 판에서는 기억해 둔 값을 쓴다', htPage.includes('function shownStack('));
+      /* «언제 진짜 값으로 바뀌는가» 는 이제 한 곳에서만 정한다 — settleDone 이다.
+         우승 팝업 · 리바이 창 · 칩 순위 셋이 같은 신호를 봐야 한 박자로 움직인다.
+         예전에는 이 줄이 potDoneAt 비교를 통째로 베껴 쓰고 있었는데, 그러면 같은
+         판단이 두 벌이 되어 한쪽만 고쳐지는 날이 온다. */
+      ck('정산 완료 판단이 한 곳에 있다', htPage.includes('function settledNow('));
       ck('팟이 도착해야 진짜 값으로 바뀐다',
-        htPage.includes('if (potDoneHand === tb.handNo && potDoneAt && Date.now() >= potDoneAt) return s.stack;'));
+        htPage.includes('if (settledNow(tb)) return s.stack;'));
+      ck('그 판단의 근거는 팟 도착 시각이다',
+        htPage.includes('potDoneAt + WIN_POPUP_AFTER_MS'));
+      /* 정산 전에는 탈락자 명단도 남은 인원도 굳어 있어야 한다. 팟이 아직 안 갔는데
+         «6 / 7명» 으로 줄면 그 숫자 하나가 누가 죽었는지를 먼저 말한다. */
+      ck('이 판에 죽은 사람은 정산 전까지 명단에 안 선다',
+        htPage.includes('function bustedYet('));
+      ck('남은 인원도 정산 전에는 판 시작 값이다',
+        htPage.includes('stackMemo.remaining : tb.remaining'));
+      /* 순위 기준은 판이 시작될 때의 스택이다 — 올인해서 좌석이 0 이 되어도
+         꼴찌로 떨어지지 않는다. handNo 가 바뀔 때 한 번만 찍는 것이 그 장치다. */
+      ck('순위 기준을 판 시작에 한 번만 찍는다',
+        htPage.includes('if (stackMemo && stackMemo.key === key) return;'));
+      /* 열쇠에 대회 id 가 들어가야 한다. 판 번호는 대회마다 1 부터 다시 세므로,
+         번호만 보면 지난 대회의 1판 값이 새 대회 1판에 그대로 그려진다. */
+      ck('기억의 열쇠가 대회 단위로 갈린다',
+        htPage.includes("(st.tournament ? st.tournament.id : 0) + ':' + tb.handNo"));
       ck('탈락자 줄을 그릴 줄 안다', htPage.includes("'<div class=\"ht-rw out'"));
       ck('탈락자 스타일이 살아 있다',
         (await req('GET', '/app.css', sessions[0].c)).text.includes('.ht-rw.out'));

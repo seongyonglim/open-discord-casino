@@ -21,14 +21,16 @@ export const BADGES = `    var ACT_BADGE_MS = 1700;
         // 새 판 — 지난 판의 배지와 승자 표시를 걷어낸다
         /* :not(.away)로 걸러야 한다 — 자리 비움 태그가 같은 클래스를 쓰는데
            그건 판이 바뀐다고 걷어낼 것이 아니라 복귀할 때까지 남는 상태다. */
-        seatsEl.querySelectorAll('.ht-abadge:not(.away)').forEach(function(el){
+        /* 상태 배지 둘은 건너뛴다 — 자리 비움과 «다음 판부터» 는 행동이 아니라 상태라
+           스스로 사라지지 않는다. 여기서 집어 가면 상태 표시가 1.7초 뒤에 지워진다. */
+        seatsEl.querySelectorAll('.ht-abadge:not(.away):not(.wait)').forEach(function(el){
           clearTimeout(el.__s); clearTimeout(el.__t);
           el.hidden = true; el.style.animation = 'none';
         });
         clearWinBadges();
       }
       list.forEach(function(x){
-        var el = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-abadge:not(.away)');
+        var el = seatsEl.querySelector('.ht-seat[data-seat="' + x.seat + '"] .ht-abadge:not(.away):not(.wait)');
         if (!el) return;
         if (!x.act) {
           // 서버가 표시를 지웠다(스트리트 전환·판 종료) — 열쇠만 비운다.

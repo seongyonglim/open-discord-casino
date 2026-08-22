@@ -92,6 +92,11 @@ export function pkLoop(p0: string | number): string {
         var res = await post('/api/games/poker/clear');
         if (!res.ok) { poll(); return; }
         setBalance(res.d.balance);
+        /* 회수 소리는 «칩이 내게 돌아온다» 다 — 이기고 받을 때와 같은 일이므로
+           같은 소리를 쓴다(casinoSfx.chipWin). 세 게임이 같은 소리를 내야 «초기화» 가
+           어느 판에서나 같은 뜻으로 들린다. 예전에는 바카라·포커 플립이 무음이었고
+           블랙잭만 옛 코인 승리음을 냈다. */
+        if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
         poll();
       }
       clearBtn.addEventListener('click', clearAll);

@@ -48,6 +48,7 @@ import {
 } from './games/blackjack';
 import {
   holdemPage, handleState as htState, handleRegister as htRegister,
+  handleRebuy as htRebuy,
   handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
   handleUnregister as htUnregister, handleRecords as htRecords,
 } from './games/holdem';
@@ -62,7 +63,6 @@ import { touchPresence, activeCounts } from '../services/presence';
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
 const SFX_FILES = new Set([
-  'coin-insert.wav',              // 칩 올리기 (포커 플립)
   'coin-gain.mp3',                // 적중 회수 (포커 플립 · 지뢰찾기)
   'card-shuffle.wav',             // 새 라운드 셔플 (포커 플립)
   'card-deal.mp3',                // 카드 한 장씩 배분 (포커 플립)
@@ -594,6 +594,12 @@ export function startWebServer(): void {
       if (path === '/api/games/holdem/register' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await htRegister(req, res, me.id, me.username);
+      }
+      /* 리바이 — 탈락한 사람이 참가비를 한 번 더 내고 다시 앉는다.
+         등록 바로 옆에 둔다: 하는 일이 «돈을 걷고 자리에 앉힌다» 로 같다. */
+      if (path === '/api/games/holdem/rebuy' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htRebuy(req, res, me.id, me.username);
       }
       if (path === '/api/games/holdem/unregister' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });

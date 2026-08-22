@@ -536,6 +536,11 @@ export const SEATS = `    var seatXY = {};
                  행동 배지와 별도 요소로 두어야 한다 — 같은 span을 쓰면 자리 비운 사람이
                  자동 체크될 때 그 배지가 덮어썼다가 1.7초 뒤 사라지면서 상태까지 지운다. */
               '<span class="ht-abadge away" hidden>자리 비움</span>' +
+              /* 판이 도는 중에 앉은 사람 — 리바이나 늦은 등록이다. 자리와 칩은 있지만
+                 이번 판의 명단에는 없다(카드를 못 받는다). 아무 표시도 없으면 «왜 나만
+                 카드가 없나» 가 되고, 방금 돈을 낸 사람에게는 «리바이가 안 먹었나» 로
+                 읽힌다. 상태를 이름으로 불러 준다. */
+              '<span class="ht-abadge wait" hidden>다음 판부터</span>' +
               /* 방금 한 행동 — 프로필 사진 위에 잠깐 떴다 사라진다.
                  "누가"와 "무엇을"이 한 점에서 읽힌다. */
               '<span class="ht-abadge" hidden></span>' +
@@ -824,6 +829,11 @@ export const SEATS = `    var seatXY = {};
            잠깐 떴다 사라지는 것으로 보인 이유가 이것이다. */
         var awayB = seatEl.querySelector('.ht-abadge.away');
         if (awayB) awayB.hidden = s.presence !== 'SIT_OUT';
+        /* 판이 돌고 있는데(!tb.ended) 이 자리가 그 판에 없으면 다음 판을 기다리는
+           중이다. 자리 비움과 겹치면 자리 비움이 이긴다 — 그쪽이 «돌아와야 한다» 는
+           할 일을 가리키고, 이쪽은 그냥 기다리면 되는 상태다. */
+        var waitB = seatEl.querySelector('.ht-abadge.wait');
+        if (waitB) waitB.hidden = tb.ended || s.inHand || s.presence !== 'ACTIVE';
         syncHole(seatEl.querySelector('.ht-hole'), s);
       });
       syncActBadges(tb, actNow);

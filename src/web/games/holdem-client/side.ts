@@ -40,22 +40,65 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
 
        화면에 도중부터 들어온 사람은 기억이 없다 — 그때는 서버 값을 쓴다. 그 경우
        스포일러가 될 수 있지만, 이미 결과가 나온 판에 들어온 것이라 숨길 것도 없다. */
-    var stackMemo = null;      // { handNo, map }
+    /* ── 총 보유 칩 ──────────────────────────────────────────────────
+       순위의 기준은 «앞에 남은 칩» 이 아니라 «이 사람이 가진 칩» 이다. 둘은 판이 도는
+       동안 다르다: 베팅한 칩은 좌석에서 빠져 앞에 나가 있고(s.bet), 올인하면 좌석이
+       0 이 된다. 그 0 으로 줄을 세우면 판을 지배하고 있는 사람이 꼴찌로 떨어진다 —
+       제일 크게 이기고 있는 순간에 순위표에서 사라지는 셈이다.
+       포커에서 스택을 셀 때는 언제나 이번 판에 넣은 것까지 함께 센다. 그대로 따른다.
+
+       판이 끝나면 베팅은 이미 팟으로 쓸려 가 s.bet 이 비므로 이 덧셈은 저절로 멎고,
+       정산이 끝난 뒤에는 승패가 반영된 s.stack 으로 자연히 넘어간다. */
+    function totalChips(s){ return (s.stack || 0) + (s.bet || 0); }
+    /* ── 판이 도는 동안의 순위는 «판이 시작될 때» 로 고정한다 ──────────
+       매 폴링마다 다시 재면 판 안에서 일어나는 일이 순위표로 새어 나간다:
+         · 올인하면 좌석 스택이 0 이 되어 그 순간 꼴찌로 떨어진다 — 제일 크게
+           걸고 있는 사람이 사라지는 셈이다
+         · 앞 스트리트에 넣은 칩은 stack 에도 bet 에도 없어서 stack+bet 로도 못 메운다
+         · 서버가 정산을 끝낸 순간 숫자가 먼저 움직여, 카드가 열리기 전에 승패가 샌다
+       판이 시작될 때의 스택이 곧 «이 사람이 이 판에 걸 수 있는 전부» 이고, 판이
+       끝나 팟이 실제로 도착할 때까지 그 값은 아직 사실이다. 그 하나만 붙들면
+       위의 셋이 한꺼번에 사라진다.
+       그래서 handNo 가 바뀔 때 한 번만 찍는다(매 폴링 덮어쓰기가 아니다). */
+    var stackMemo = null;      // { handNo, map, remaining, avg, bustedIds }
     function noteStacks(tb){
       if (!tb || tb.handNo == null) return;
-      if (tb.ended) return;                    // 끝난 뒤에는 갱신하지 않는다 — 그게 요점이다
+      /* 열쇠에 테이블 id 를 함께 넣는다. 판 번호는 대회마다 1 부터 다시 세므로,
+         번호만 보면 지난 대회의 «1판» 값이 새 대회의 «1판» 에 그대로 그려진다. */
+      var key = (st.tournament ? st.tournament.id : 0) + ':' + tb.handNo;
+      if (stackMemo && stackMemo.key === key) return;            // 이 판은 이미 찍었다
+      if (tb.ended) return;                    // 끝난 판에 들어왔다 — 찍을 «시작» 이 없다
       var map = {};
-      (tb.seats || []).forEach(function(s){ map[s.seat] = s.stack; });
-      stackMemo = { handNo: tb.handNo, map: map };
+      (tb.seats || []).forEach(function(s){ map[s.seat] = totalChips(s); });
+      var ids = {};
+      (tb.busted || []).forEach(function(b){ ids[b.userId] = 1; });
+      stackMemo = { key: key, handNo: tb.handNo, map: map, remaining: tb.remaining,
+        avg: tb.avgStack, bustedIds: ids };
+    }
+    /* 기억이 «지금 이 판» 의 것인가. 테이블과 판이 둘 다 맞아야 한다. */
+    function memoFits(tb){
+      return stackMemo != null
+        && stackMemo.key === (st.tournament ? st.tournament.id : 0) + ':' + tb.handNo;
+    }
+    /* 정산 연출이 끝났나 — 끝났으면 서버 값이 곧 사실이다.
+       celebrate.ts 의 settleDone 을 그대로 쓴다(조각들은 한 클로저를 공유한다):
+       우승 팝업과 리바이 창이 기다리는 것과 같은 신호여야 셋이 한 박자로 움직인다. */
+    function settledNow(tb){
+      if (!tb.ended) return false;
+      return settleDone(tb);
     }
     function shownStack(tb, s){
-      if (!tb.ended) return s.stack;
-      // 팟이 승자에게 도착했으면 이제 진짜 값을 보여 준다
-      if (potDoneHand === tb.handNo && potDoneAt && Date.now() >= potDoneAt) return s.stack;
-      if (stackMemo && stackMemo.handNo === tb.handNo && stackMemo.map[s.seat] != null) {
-        return stackMemo.map[s.seat];
-      }
-      return s.stack;
+      if (settledNow(tb)) return s.stack;
+      if (memoFits(tb) && stackMemo.map[s.seat] != null) return stackMemo.map[s.seat];
+      return totalChips(s);
+    }
+    /* 이 판에 죽은 사람인가 — 판이 시작될 때는 없던 이름인가로 가른다.
+       탈락자 명단을 통째로 붙들면 «지난 판에 죽은 사람» 까지 매 쇼다운마다
+       살아 있는 줄로 돌아온다. 새로 는 이름만 늦춘다. */
+    function bustedYet(tb, userId){
+      if (settledNow(tb)) return true;
+      if (!memoFits(tb)) return true;
+      return stackMemo.bustedIds[userId] === 1;
     }
 
     /* ── 상금 구조 ────────────────────────────────────────────────────
@@ -130,11 +173,18 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
          결과가 이 표에서 먼저 새어 나간다. 아직 한 번도 안 걸러졌으면(탭을 처음 열었다)
          서버 값을 그대로 쓴다: 그 시점에는 붙들 이전 값이 없다. */
       var board = prizeBoard || t.bountyBoard || [];
+      /* 실제로 일어난 리바이 횟수 = 엔트리 수 − 사람 수. 서버가 둘을 다 내려주므로
+         빼기 하나로 나온다(따로 필드를 늘리지 않는다). */
+      var rbTotal = Math.max(0, (t.totalEntries || 0) - (t.registered || 0));
       prizeTabEl.innerHTML =
         '<div class="ht-pz-head">' +
           '<span>' + (isPko ? '총 상금' : '상금 풀') + ' <b>'
             + num(t.prizePool + (isPko ? btyPool : 0)) + 'P<\\/b><\\/span>' +
+          /* 리바이가 있는 판에서는 «참가 7명» 만으로 풀이 설명되지 않는다 —
+             110,000P 인데 7명이면 1인당 15,714P 라는 이상한 수가 나온다. 실제 근거는
+             엔트리 11(7명 + 리바이 4)이다. 그 4를 적어 두면 곱셈이 맞아떨어진다. */
           '<span>참가 ' + t.registered + '명'
+            + (rbTotal > 0 ? ' · 리바이 ' + rbTotal + '회' : '')
             + (hasRank ? ' · 지급 ' + t.itm + '명' : ' · 순위 상금 없음') + '<\\/span>' +
         '<\\/div>' +
         /* 총액만 적으면 "그게 전부인가"가 되고, 갈래만 적으면 이 대회가 얼마짜리인지
@@ -268,8 +318,13 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
       put('htBlinds', num(tb.level.sb) + ' / ' + num(tb.level.bb)
         + (tb.level.ante ? ' (앤티 ' + num(tb.level.ante) + ')' : ''));
       put('htLevel', 'Level ' + tb.level.level);
-      put('htRemain', tb.remaining + ' / ' + t.registered + '명');
-      put('htAvg', stackText(tb.avgStack));
+      /* 남은 인원과 평균 스택도 정산 전에는 판 시작 값이다 — 팟이 아직 안 갔는데
+         «6 / 7명» 으로 줄면 그 숫자 하나가 «누가 죽었다» 를 먼저 말한다. */
+      var stSet = settledNow(tb);
+      var remN = (!stSet && memoFits(tb)) ? stackMemo.remaining : tb.remaining;
+      var avgN = (!stSet && memoFits(tb)) ? stackMemo.avg : tb.avgStack;
+      put('htRemain', remN + ' / ' + t.registered + '명');
+      put('htAvg', stackText(avgN));
       put('htPool', num(t.prizePool) + 'P');
       put('htItm', t.itm + '명');
       var tip = document.getElementById('htPzTip');
@@ -296,27 +351,40 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
       /* 방금 탈락한 사람은 좌석 목록에도 남아 있다(끝난 판의 쇼다운을 그리려고 서버가
          남겨 둔다). 그대로 두면 같은 사람이 위아래 두 번 나온다 — 아래 탈락자 줄에만
          세운다. */
+      /* 이름 뒤에 리바이 횟수를 괄호로 붙인다 — «미리보기 (1)».
+         칩 순위는 «누가 얼마를 들고 있나» 를 보는 자리인데, 리바이가 열린 판에서는
+         스택만으로 판단이 안 된다: 같은 600칩이라도 처음부터 버틴 600 과 방금 10,000P
+         를 더 넣고 받은 600 은 다른 사실이다. 값을 치른 횟수가 스택 옆에 있어야
+         순위표가 지금까지의 이야기가 된다.
+         0 이면 아무것도 안 붙인다 — 프리즈아웃에서는 줄마다 뜻 없는 (0) 이 붙는다. */
+      var rbBy = {};
+      ((t && t.players) || []).forEach(function(p){ if (p.rebuys > 0) rbBy[p.userId] = p.rebuys; });
+      function nameHtml(s){
+        var n = rbBy[s.userId];
+        return '<span class="ht-rw-nm">' + esc(s.username)
+          + (n ? '<i class="ht-rw-rb">(' + n + ')</i>' : '') + '</span>';
+      }
       var outIds = {};
-      (tb.busted || []).forEach(function(b){ outIds[b.userId] = 1; });
+      (tb.busted || []).forEach(function(b){ if (bustedYet(tb, b.userId)) outIds[b.userId] = 1; });
       var rows = (tb.seats||[]).filter(function(s){ return !outIds[s.userId]; })
         .sort(function(a,b){ return shownStack(tb, b) - shownStack(tb, a); });
       var rankHtml = rows.map(function(s, i){
         return '<div class="ht-rw' + (s.userId === MEID ? ' me' : '') + '">' +
           '<span class="ht-rw-n">' + (i+1) + '</span>' +
           avatarHtml(s.userId, s.avatar, s.username, 'ht-rw-av') +
-          '<span class="ht-rw-nm">' + esc(s.username) + '</span>' +
+          nameHtml(s) +
           '<span class="ht-rw-st">' + stackText(shownStack(tb, s)) + '</span>' +
           '</div>';
       }).join('');
       /* 탈락자는 지우지 않고 아래에 남긴다 — 늦게 나간 사람이 위다(오래 버텼다).
          칩은 0, 이름에 취소선, 줄 전체를 가라앉힌다. 살아 있는 사람과 한눈에 갈려야 하고,
          동시에 "여기 있었다"는 사실은 남아야 한다. */
-      var out = tb.busted || [];
+      var out = (tb.busted || []).filter(function(b){ return bustedYet(tb, b.userId); });
       rankHtml += out.map(function(s, i){
         return '<div class="ht-rw out' + (s.userId === MEID ? ' me' : '') + '">' +
           '<span class="ht-rw-n">' + (rows.length + i + 1) + '</span>' +
           avatarHtml(s.userId, s.avatar, s.username, 'ht-rw-av') +
-          '<span class="ht-rw-nm">' + esc(s.username) + '</span>' +
+          nameHtml(s) +
           '<span class="ht-rw-st">' + stackText(0) + '</span>' +
           '</div>';
       }).join('');

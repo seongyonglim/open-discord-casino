@@ -32,7 +32,7 @@
     "audit:holdem-db": "node --experimental-sqlite --require tsx/cjs scripts/audit-holdem-db.ts",
     "audit:chat": "node --experimental-sqlite --require tsx/cjs scripts/audit-chat.ts",
     "audit:quick": "npm run smoke && npm run audit:pages && npm run audit:economy && npm run audit:security && npm run audit:discord && npm run audit:holdem",
-    "audit": "npm run audit:quick && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:holdem-db && npm run audit:achievements && npm run audit:season && npm run audit:lockdown && npm run audit:pko && npm run audit:preaction && npm run audit:chat && npm run audit:tick && npm run audit:tourney && npm run audit:pwa && npm run audit:rollover && npm run audit:unregister && npm run audit:payout",
+    "audit": "npm run audit:quick && npm run audit:cards && npm run audit:concurrency && npm run audit:e2e && npm run audit:holdem-db && npm run audit:achievements && npm run audit:season && npm run audit:lockdown && npm run audit:pko && npm run audit:preaction && npm run audit:chat && npm run audit:tick && npm run audit:tourney && npm run audit:pwa && npm run audit:rollover && npm run audit:unregister && npm run audit:payout && npm run audit:rebuy && npm run audit:hush",
     "audit:tick": "node --experimental-sqlite --require tsx/cjs scripts/audit-tick.ts",
     "audit:tourney": "node --experimental-sqlite --require tsx/cjs scripts/audit-tourney.ts",
     "audit:pwa": "node --experimental-sqlite --require tsx/cjs scripts/audit-pwa.ts",
@@ -41,7 +41,9 @@
     "check:chips": "node --experimental-sqlite --require tsx/cjs scripts/check-chips.ts",
     "audit:rollover": "node --experimental-sqlite --require tsx/cjs scripts/audit-rollover.ts",
     "audit:unregister": "node --experimental-sqlite --require tsx/cjs scripts/audit-unregister.ts",
-    "audit:payout": "node --experimental-sqlite --require tsx/cjs scripts/audit-payout.ts"
+    "audit:payout": "node --experimental-sqlite --require tsx/cjs scripts/audit-payout.ts",
+    "audit:rebuy": "node --experimental-sqlite --require tsx/cjs scripts/audit-rebuy.ts",
+    "audit:hush": "node --experimental-sqlite --require tsx/cjs scripts/audit-hush.ts"
   },
   "dependencies": {
     "discord.js": "^14.14.1",

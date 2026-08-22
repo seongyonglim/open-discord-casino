@@ -14,6 +14,8 @@ import {
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords, type ShowWhich,
   ACTION_SEC, actOpenAt, tuning, type HoldemStatus, isPko, isMystery, bountyPctOf, prizePoolOf,
+  totalEntriesOf, rebuyStateOf, rebuyCostOf, rebuyHoldem, freeSeatsFor, SEAT_HOLD_SEC,
+  revealWindowOpen,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -92,7 +94,7 @@ function statePayload(st: HoldemStatus, userId: string) {
     const cfg = getConfig();
     return {
       ok: true, me: userId, balance: getWebUser(userId)?.balance ?? 0,
-      serverNow: now, tournament: null, results: [], table: null,
+      serverNow: now, serverNowMs: Date.now(), tournament: null, results: [], table: null,
       recap: recentRecap(),
       /* 다음 대회 카드에 "언제" 만 적었더니, 갈지 말지를 정하는 데 필요한 것들 —
          얼마짜리 판인지 · 몇 명이 모여야 열리는지 · 어떤 방식인지 — 을 알 길이 없었다.
@@ -122,6 +124,10 @@ function statePayload(st: HoldemStatus, userId: string) {
           buy_in: cfg.buyIn,
         }),
         startingStack: cfg.startingStack,
+        /* 리바이 허용 횟수. 예고 카드도 뱃지로 «프리즈아웃인가» 를 적으므로 필요하다.
+           행이 아직 없어 설정에서 읽는데, 그래도 어긋나지 않는다 — 설정을 저장할 때
+           아직 시작 안 한 대회 행에도 같이 반영하기 때문이다(db/settings.ts 의 put). */
+        maxRebuys: cfg.maxRebuys,
         minPlayers: T.MIN_PLAYERS,
         maxPlayers: T.MAX_PLAYERS,
         /* 이월은 다음 판에 걸린다 — 지금 화면이 바로 그 다음 판이다 */
@@ -132,8 +138,12 @@ function statePayload(st: HoldemStatus, userId: string) {
   const table = getTable(t.id);
   const entries = getEntries(t.id);
   const tune = tuning(t);
+  /* 상금의 근거는 «들어온 횟수» 다(db/holdem.ts 의 totalEntriesOf). 지급 함수가
+     그것을 쓰므로 화면도 같은 값을 써야 한다 — 다르면 화면이 약속한 금액과 실제
+     지급액이 달라지고, 그건 운영자가 아니라 유저가 먼저 발견한다. */
+  const totalEntries = totalEntriesOf(entries);
   // PKO 는 참가비의 절반이 바운티로 빠진다 — 상금 팟은 그 나머지로만 센다
-  const pool = prizePoolOf(t, entries.length, tune.prizeFixed);
+  const pool = prizePoolOf(t, totalEntries, tune.prizeFixed);
 
   const base = {
     ok: true,
@@ -143,6 +153,8 @@ function statePayload(st: HoldemStatus, userId: string) {
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
     ...chatTick(),
     serverNow: now,
+    /* 밀리초 시각. 쇼다운 연출이 1.5초 간격이라 초로는 한 장이 어긋난다. */
+    serverNowMs: Date.now(),
     tournament: {
       id: t.id,
       title: t.title,
@@ -155,6 +167,9 @@ function statePayload(st: HoldemStatus, userId: string) {
       finishedAt: t.finished_at,
       multiplier: t.prize_multiplier,
       registered: entries.length,
+      /* 사람 수와 엔트리 수는 다르다 — 리바이가 있으면 엔트리가 더 많다.
+         화면은 «N명 참가 · 총 M엔트리» 로 둘을 함께 보여 준다. */
+      totalEntries,
       minPlayers: T.MIN_PLAYERS,
       maxPlayers: T.MAX_PLAYERS,
       startingStack: tune.startingStack,
@@ -202,8 +217,43 @@ function statePayload(st: HoldemStatus, userId: string) {
           .map(x => ({ name: x.name, won: x.won }))
         : undefined,
       prizePool: pool,
-      prizes: T.prizeAmounts(pool, entries.length),
-      itm: T.itmCount(entries.length),
+      /* 지급 경로(payPrizes)와 «똑같은» cap 을 넘긴다. 안 넘기면 풀은 같은데 줄 수와
+         금액이 갈려서, 화면이 약속한 상금과 실제로 들어오는 상금이 달라진다 —
+         3명이 세 번씩 산 판에서 1등에게 6,000P 를 적게 광고했다.
+         holdem_entries 는 사람당 한 줄이므로 entries.length 가 «실제로 받을 수 있는 줄» 이고,
+         대회가 끝나면 전원에게 등수가 붙으므로 payPrizes 의 ranked.length 와 같아진다. */
+      prizes: T.prizeAmounts(pool, totalEntries, entries.length),
+      /* 지급 인원도 «엔트리 수» 로 센다 — 상금표가 그 숫자로 만들어지기 때문이다.
+         사람 수로 세면 표는 여섯 줄인데 안내는 다섯 명이라고 적힌다. */
+      /* 지급 인원은 «풀이 감당하는 만큼» 이다(T.paidCount). itmCount 의 상위 30% 로
+         적으면 표는 여덟 줄인데 안내는 열다섯 명이라고 적힌다 — 화면이 약속한 것과
+         실제 지급이 갈리는 자리다. */
+      itm: T.paidCount(pool, totalEntries, entries.length),
+      /* ── 리바이 ──────────────────────────────────────────────────
+         화면이 «모달을 띄울지» 를 스스로 판단하지 않게 한다. 조건이 여섯이고
+         (허용 여부 · 남은 횟수 · 시작했나 · 늦참 창 · 탈락했나 · 자리)
+         그중 셋은 서버만 아는 값이다. 서버가 판단해서 결과만 내려 준다 —
+         화면이 같은 판단을 두 번 하면 언젠가 두 판단이 갈린다. */
+      rebuy: (() => {
+        const meE = entries.find(e => e.user_id === userId);
+        /* 서버가 실제로 쓰는 것과 «같은» 계산이어야 한다(freeSeatsFor).
+           예전에는 여기만 «산 사람 수» 로 세어서, 대기 중인 리바이와 60초 우선권 자리를
+           빼먹고 can=true 를 내려보냈다 — 눌러야만 거절당하는 단추가 떴다. */
+        const taken = table ? T.MAX_PLAYERS - freeSeatsFor(t, now, userId) : 0;
+        const r = rebuyStateOf(t, meE, now, taken, revealWindowOpen(t, now, meE));
+        return {
+          max: Math.max(0, Math.floor(t.max_rebuys ?? 0)),
+          used: Math.max(0, Math.floor(meE?.rebuy_count ?? 0)),
+          left: r.left,
+          cost: rebuyCostOf(t),
+          can: r.can,
+          reason: r.can ? undefined : r.reason,
+        };
+      })(),
+      /* 지금 내가 앉을 수 있는 자리 수. 로비 카드가 «빈자리 없음 (대기)» 를 그릴 때
+         쓴다 — 산 사람 · 자리를 기다리는 사람 · 남이 60초 우선권으로 붙든 자리를 뺀 값이다. */
+      freeSeats: freeSeatsFor(t, now, userId),
+      seatHoldSec: SEAT_HOLD_SEC,
       lateRegLeft: T.lateRegLeft(now, {
         startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at,
       }, tune.lateRegSec),
@@ -215,8 +265,50 @@ function statePayload(st: HoldemStatus, userId: string) {
          뒤바뀌지 않으려면 순서가 고정돼야 한다. */
       players: (() => {
         const av = getEntryAvatars(t.id);
+        /* 좌석 스택을 쓴다(핸드 안 스택이 아니라). 좌석 행은 판이 끝날 때만 갱신되므로
+           이 값은 언제나 «마지막으로 끝난 판까지» 다 — 로비 카드는 판이 도는 중에도
+           열려 있을 수 있어서, 여기서 진행 중인 스택을 적으면 그 숫자가 승패를 먼저
+           말한다. 지나간 값이 그래서 옳다. */
+        const tb = getTable(t.id);
+        const stackOf = new Map(tb ? getSeats(tb.id)
+          .filter(s => s.presence !== 'OUT').map(s => [s.user_id, s.stack]) : []);
+        /* 이 판이 «시작될 때» 각자 들고 있던 칩. 핸드 안 스택 + 이 판에 넣은 총액이다.
+           방금 죽은 사람을 아직 살아 있는 것으로 보여주는 동안(hushOne) 이 값을 쓴다 —
+           좌석 스택은 이미 0 이라 그대로 쓰면 «초록 카드인데 칩이 없는» 유령이 된다.
+           인게임 칩 순위가 같은 이유로 같은 값을 쓴다(side.ts 의 stackMemo). */
+        const curHand = tb ? getCurrentHand(tb.id) : null;
+        const preStack = new Map<string, number>(
+          (curHand ? getHandSeats(curHand.id) : []).map(h => [h.user_id, h.stack + h.committed]));
+        const maxRb = Math.max(0, Math.floor(t.max_rebuys ?? 0));
+        /* ── 결과가 화면에 다 나오기 전에는 «아직 살아 있다» 로 답한다 ──────
+           서버는 핸드가 끝나는 순간 정산을 마치고 탈락을 DB 에 박는다. 그것이 옳다 —
+           그 자리에서 안 박으면 종료 판단 · 등수 · KO · 바운티가 전부 근거를 잃고,
+           그 사이에 서버가 죽으면 판 하나가 통째로 사라진다.
+           바꿀 것은 «언제 쓰나» 가 아니라 «언제 말하나» 다. 화면은 그때부터 몇 초 동안
+           보드를 마저 깔고 패를 열고 팟을 미는 중이고, 그 사이에 이 응답이 «저 사람
+           죽었다» 를 실어 보내면 로비 카드가 카드보다 먼저 결과를 말한다.
+           그 창(next_hand_at 이전)에는 탈락을 감춘다 — 창이 닫히면 저절로 사실이 된다. */
+        /* 감추는 것은 «이 판에서 죽은 사람» 하나뿐이다. 세 판 전에 죽은 사람까지
+           감추면 로비 순위표에서 탈락자가 통째로 사라졌다 되살아나기를 반복한다 —
+           가릴 결과가 없는 사람을 가리는 셈이다. 사람마다 따로 판단한다. */
+        const hushOne = (e: { eliminated_at: number | null }) => revealWindowOpen(t, now, e);
         return entries.map(e => ({
           userId: e.user_id, username: e.username, avatar: av.get(e.user_id) ?? null,
+          /* 칩 순위가 이름 뒤에 «(2)» 로 적는다. 좌석 행에는 이 값이 없어서
+             (좌석은 판의 것이고 리바이는 대회의 것이다) 여기서 같이 내려보낸다. */
+          rebuys: Math.max(0, Math.floor(e.rebuy_count ?? 0)),
+          /* 로비 카드가 생존·탈락·빈자리로 갈라 그린다. 아홉 칸이 다 찬 것처럼 보이는데
+             둘이 죽어 두 자리가 비어 있다는 사실이 안 보이던 것이 시작이었다. */
+          out: hushOne(e) ? false : e.elim_seq != null,
+          stack: hushOne(e)
+            ? (preStack.get(e.user_id) ?? stackOf.get(e.user_id) ?? null)
+            : (stackOf.get(e.user_id) ?? null),
+          rebuyLeft: Math.max(0, maxRb - Math.max(0, Math.floor(e.rebuy_count ?? 0))),
+          /* 자리를 기다리는 중(돈은 냈고 다음 판에 앉는다) */
+          waiting: e.rebuy_pending === 1,
+          /* 탈락한 시각. 로비 순위표가 탈락자를 «늦게 죽은 사람이 위» 로 세우는 데 쓴다.
+             감추는 사람의 것은 안 보낸다 — 시각 하나만으로도 방금 죽은 것이 드러난다. */
+          outAt: hushOne(e) ? null : e.eliminated_at,
         }));
       })(),
     },
@@ -275,6 +367,15 @@ function statePayload(st: HoldemStatus, userId: string) {
   const boardCards = hand ? JSON.parse(hand.board_json) as number[] : [];
   const handSeats = hand ? getHandSeats(hand.id) : [];
   const bySeat = new Map(handSeats.map(h => [h.seat, h]));
+  /* 자리 번호만으로 «이 판에서의 그 사람» 을 찾으면 안 된다.
+     리바이가 생기면서 한 판이 끝난 뒤에도 자리 주인이 바뀔 수 있게 됐다 — 3번에서
+     죽은 사람 대신 다른 사람이 3번에 앉으면, 그 판의 3번 핸드 행(홀 카드까지)이
+     새 주인의 것으로 내려간다. 남의 패가 «내 카드» 로 보이는 것이다.
+     사람까지 맞아야 그 사람의 핸드다. */
+  const handOf = (s: { seat: number; user_id: string }): typeof handSeats[number] | undefined => {
+    const h = bySeat.get(s.seat);
+    return h && h.user_id === s.user_id ? h : undefined;
+  };
   /* 탈락한 사람도 "자기가 죽은 그 판"의 쇼다운은 봐야 한다.
      endHand는 결과를 쓴 뒤 같은 트랜잭션에서 presence를 OUT으로 바꾸므로,
      living만 보면 ended=true와 mySeat=null이 같은 응답에 실려 온다 —
@@ -285,7 +386,7 @@ function statePayload(st: HoldemStatus, userId: string) {
     endedNow && bySeat.get(s.seat)?.user_id === s.user_id;
   const shownSeats = seats.filter(s => s.presence !== 'OUT' || inEndedHand(s));
   const mySeat = shownSeats.find(s => s.user_id === userId);
-  const myHand = mySeat ? bySeat.get(mySeat.seat) : undefined;
+  const myHand = mySeat ? handOf(mySeat) : undefined;
   const ended = hand?.ended_at != null;
   const result = ended && hand?.result_json ? JSON.parse(hand.result_json) : null;
   // 쇼다운에 공개된 홀 카드만 남의 것으로 내려보낸다
@@ -330,6 +431,11 @@ function statePayload(st: HoldemStatus, userId: string) {
     ...base,
     table: {
       handNo: hand?.hand_no ?? 0,
+      /* 쇼다운이 시작된 시각(밀리초)과 지금 서버 시각. 둘을 함께 보내는 이유는
+         시계 차이 때문이다 — 화면이 제 Date.now() 에서 빼면 사람마다 몇 초씩 어긋난다.
+         (serverNowMs − showdownAt) 이 곧 «연출이 얼마나 흘렀나» 이고, 판 도중에
+         들어온 화면은 그 값으로 «지금 몇 장까지 열려 있어야 하나» 를 잰다. */
+      showdownAt: hand?.ended_ms ?? null,
       /* 이 판에 열린 봉투들 — 개봉 연출이 봉투마다 "누구 것이 얼마였고 누가 가져갔나"를
          보여준다. 미스터리에서만 내려보낸다: 프로그레시브는 금액이 머리 위에 이미 적혀
          있어서 개봉이라는 사건이 없다.
@@ -404,7 +510,7 @@ function statePayload(st: HoldemStatus, userId: string) {
           }));
       })(),
       seats: shownSeats.map(s => {
-        const h = bySeat.get(s.seat);
+        const h = handOf(s);
         return {
           seat: s.seat,
           userId: s.user_id,
@@ -445,7 +551,11 @@ function statePayload(st: HoldemStatus, userId: string) {
             ? G.cardsToStrings(JSON.parse(h.hole_json) as number[])
             : ended && h?.shown === 1
               ? maskCards(G.cardsToStrings(JSON.parse(h.hole_json) as number[]), h.shown_mask)
-              : revealed.get(s.seat) ?? [],
+              /* 자리 번호로만 찾으면 안 된다. 리바이로 그 자리의 주인이 바뀌었으면
+                 앞 주인이 쇼다운에서 깐 카드가 새 주인의 패로 내려간다.
+                 h 는 handOf 가 «자리 + 사람» 을 둘 다 맞춰 준 값이므로, h 가 있을 때만
+                 그 판의 공개 카드가 이 사람의 것이다. */
+              : h ? revealed.get(s.seat) ?? [] : [],
           // 자발적으로 깐 패는 쇼다운 공개와 구분해서 표시한다
           shown: ended && h?.shown === 1 && !revealed.has(s.seat),
           /* 어느 장을 깠는지 장별로 준다. 좌석 하나에 참·거짓 하나만 주면 한 장만 깠어도
@@ -496,6 +606,30 @@ export async function handleState(
   if (table) touchHoldemPresence(userId, table.id);
   return sendJson(res, 200, statePayload(st, userId));
 }
+
+/* 리바이 — 탈락한 사람이 참가비를 한 번 더 내고 다시 앉는다.
+   등록과 같은 자리에 두는 이유: 하는 일이 «돈을 걷고 자리에 앉힌다» 로 같고,
+   실패 문구도 같은 표를 쓴다. */
+export async function handleRebuy(
+  _req: IncomingMessage, res: ServerResponse, userId: string, username: string
+): Promise<void> {
+  const r = rebuyHoldem(userId, username);
+  if (!r.ok) return sendJson(res, 400, { error: REBUY_TEXT[r.error] ?? '리바이할 수 없습니다.' });
+  return sendJson(res, 200, { ok: true, left: r.left, cost: r.cost });
+}
+const REBUY_TEXT: Record<string, string> = {
+  closed: '이미 끝난 대회입니다.',
+  not_running: '아직 시작하지 않은 대회입니다.',
+  not_allowed: '이 대회는 리바이가 없습니다.',
+  not_registered: '이 대회에 참가하지 않았습니다.',
+  not_eliminated: '아직 탈락하지 않았습니다.',
+  exhausted: '리바이 횟수를 모두 사용했습니다.',
+  late_reg_closed: '늦은 등록이 마감되어 리바이할 수 없습니다.',
+  table_full: '자리가 가득 찼습니다.',
+  revealing: '이번 판 결과가 나온 뒤에 다시 시도해 주세요.',
+  rebuy_pending: '이미 리바이했습니다 — 다음 판부터 참여합니다.',
+  no_funds: '포인트가 부족합니다.',
+};
 
 export async function handleRegister(
   _req: IncomingMessage, res: ServerResponse, userId: string, username: string
@@ -683,6 +817,24 @@ export function holdemPage(user: WebUser): string {
     ${gameSwitcher('holdem', 'htHelp')}
 
     <div id="htLobby" class="ht-lobby" hidden></div>
+
+    <!-- 진행 중인 대회의 아래쪽 두 탭. 카드(#htLobby) «밖» 에 정적으로 둔다.
+         카드는 renderLobby 가 문자열을 통째로 만들어 innerHTML 로 갈아 끼우는데,
+         탭을 그 문자열 안에 넣으면 둘 중 하나가 반드시 깨진다:
+         선택 상태를 문자열에 담으면 탭을 누를 때마다 카드 전체가 다시 만들어져
+         누르던 단추가 손가락 밑에서 죽고, 담지 않으면 인원이 바뀌어 카드가 다시
+         그려지는 순간 선택이 풀린다.
+         인게임 오른쪽 패널이 이미 같은 문제를 «껍데기는 정적으로, 속만 갈아 끼우기»
+         로 풀어 두었다(.ht-tabs). 같은 방식을 그대로 쓴다 — 모양도 같아서
+         두 화면이 같은 물건으로 읽힌다. -->
+    <div class="ht-ltabs" id="htLobbyTabs" hidden>
+      <div class="ht-tabs">
+        <button type="button" class="ht-tab active" data-ltab="rank">칩 순위</button>
+        <button type="button" class="ht-tab" data-ltab="prize">상금 구조</button>
+      </div>
+      <div class="ht-lpane" id="htLRank"></div>
+      <div class="ht-lpane" id="htLPrize" hidden></div>
+    </div>
 
     <!-- 로비(대회 전·후)에서도 역대 전적을 보여준다. 테이블 오른쪽 패널에만 두면
          자리에 앉은 사람만 볼 수 있는데, 정작 "누가 상금을 제일 많이 먹었나"가
@@ -875,6 +1027,47 @@ export function holdemPage(user: WebUser): string {
         <div class="ht-win-prize" id="htWinPrize"></div>
         <div class="ht-win-rest" id="htWinRest"></div>
         <button type="button" class="btn btn-gold ht-win-close" id="htWinClose">확인</button>
+      </div>
+    </div>
+
+    <!-- ── 리바이 ────────────────────────────────────────────────────────
+         탈락한 순간에 뜬다. 우승 팝업과 같은 «화면 전체를 덮는 div» 형태다 —
+         Esc 로 닫히면 안 되는 창이기 때문이다. 늦은 등록 창은 계속 줄고 있고,
+         실수로 닫으면 다시 열 방법이 마땅치 않다. 나가는 길은 아래 [관전하기]
+         하나뿐이고, 그 선택은 이 판에서 한 번만 묻는다.
+
+         한 화면에 답해야 하는 것은 넷이다 — 얼마가 드는가 · 몇 번 남았나 ·
+         언제까지 가능한가 · 내가 낼 수 있는가. 그 넷을 카드 하나에 모은다. -->
+    <div class="ht-rb" id="htRb" hidden>
+      <div class="ht-rb-box">
+        <div class="ht-rb-kicker">TOURNAMENT BUSTOUT</div>
+        <div class="ht-rb-title">다시 도전하시겠습니까?</div>
+        <div class="ht-rb-grid">
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">늦은 등록 마감까지</span>
+            <span class="ht-rb-v ht-rb-clock" id="htRbLeft">–</span>
+          </div>
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">남은 리바이</span>
+            <span class="ht-rb-v" id="htRbLeftN">–</span>
+          </div>
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">지급 스택</span>
+            <span class="ht-rb-v ht-rb-stack" id="htRbStack">–</span>
+          </div>
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">필요 비용</span>
+            <span class="ht-rb-v ht-rb-cost" id="htRbCost">–</span>
+            <span class="ht-rb-sub" id="htRbBal"></span>
+          </div>
+        </div>
+        <button type="button" class="ht-rb-go" id="htRbGo">리바이하고 복귀하기</button>
+        <div class="ht-rb-warn" id="htRbWarn" hidden>포인트가 부족합니다</div>
+        <div class="ht-rb-outs">
+          <button type="button" class="ht-rb-skip" id="htRbSkip">관전하기</button>
+          <span class="ht-rb-sep">·</span>
+          <button type="button" class="ht-rb-skip" id="htRbLobby">로비로 나가기</button>
+        </div>
       </div>
     </div>
 

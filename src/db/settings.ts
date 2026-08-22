@@ -19,6 +19,11 @@ export interface TournamentConfig {
   regOpenMin: number;       // 등록이 열리는 시각 (KST)
   startMin: number;         // 시작 예정 시각 (KST)
   graceMin: number;         // 최소 인원을 기다리는 시간 (분). 시작 시각 이후로 잰다
+  /* 한 사람이 리바이할 수 있는 최대 횟수. 0 이면 프리즈아웃(재입장 없음) —
+     지금까지의 대회가 전부 그것이라 기본값이 0 이다.
+     자동 개최 템플릿에도 두는 이유: 매일 열리는 판의 규칙이라 매번 손으로 넣게 하면
+     빠뜨린다. 손으로 여는 판은 화면이 늘 값을 채워 보내므로 템플릿을 타지 않는다. */
+  maxRebuys: number;
   lateRegMin: number;       // 실제 시작 후 늦은 등록을 받는 시간 (분)
   startingStack: number;    // 시작 칩
   levelMin: number;         // 블라인드 상승 주기 (분)
@@ -81,6 +86,7 @@ export function defaultConfig(): TournamentConfig {
     regOpenMin: T.REG_OPEN_HOUR * 60,
     startMin: T.START_HOUR * 60,
     graceMin: Math.round(T.GRACE_SEC / 60),
+    maxRebuys: 0,   // 프리즈아웃 — 지금까지의 동작
     lateRegMin: Math.round(T.LATE_REG_SEC / 60),
     startingStack: T.STARTING_STACK,
     levelMin: Math.round(T.LEVEL_DURATION_SEC / 60),
@@ -117,6 +123,7 @@ export function getConfig(): TournamentConfig {
     regOpenMin: numOf('regOpenMin', numOf('regOpenHour', d.regOpenMin / 60) * 60),
     startMin: numOf('startMin', numOf('startHour', d.startMin / 60) * 60),
     graceMin: numOf('graceMin', d.graceMin),
+    maxRebuys: numOf('maxRebuys', d.maxRebuys),
     lateRegMin: numOf('lateRegMin', d.lateRegMin),
     startingStack: numOf('startingStack', d.startingStack),
     levelMin: numOf('levelMin', d.levelMin),
@@ -163,6 +170,11 @@ export function validateConfig(c: TournamentConfig): string[] {
     bad.push('등록 시작 시각은 대회 시작 시각보다 앞서야 합니다');
   }
   if (!int(c.graceMin) || c.graceMin <= 0) bad.push('대기 시간은 1분 이상이어야 합니다');
+  /* 0 이 정상값이다 — 프리즈아웃이라는 뜻이고, 그것이 지금까지의 대회다.
+     상한을 두는 이유는 «무한 리바이» 가 토너먼트가 아니라 캐시 게임이 되기 때문이다. */
+  if (!int(c.maxRebuys) || c.maxRebuys < 0 || c.maxRebuys > 10) {
+    bad.push('리바이 횟수는 0에서 10 사이여야 합니다');
+  }
   if (clock(c.startMin) && int(c.graceMin) && c.startMin + c.graceMin > 24 * 60) {
     bad.push('대기 마감이 자정을 넘습니다 — 하루에 대회 하나라는 구조가 어긋납니다');
   }
@@ -218,6 +230,7 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
     put('regOpenMin', String(c.regOpenMin));
     put('startMin', String(c.startMin));
     put('graceMin', String(c.graceMin));
+    put('maxRebuys', String(c.maxRebuys));
     put('lateRegMin', String(c.lateRegMin));
     put('startingStack', String(c.startingStack));
     put('levelMin', String(c.levelMin));
@@ -235,7 +248,7 @@ export function saveConfig(c: TournamentConfig): { ok: true } | { ok: false; err
 
 /** 이 표에 함께 사는 열쇠들. 되돌리기가 건드릴 것과 아닌 것을 여기서 가른다. */
 const CONFIG_KEYS = [
-  'regOpenMin', 'startMin', 'graceMin', 'lateRegMin', 'startingStack', 'levelMin',
+  'regOpenMin', 'startMin', 'graceMin', 'lateRegMin', 'startingStack', 'levelMin', 'maxRebuys',
   'weekdayMultiplier', 'weekendMultiplier', 'prizeFixed', 'buyIn',
   'tmplMode', 'tmplBountyPct', 'tmplWeekdayTitle', 'tmplWeekendTitle',
   // 예전 표기(시 단위). 남아 있으면 되돌린 뒤에도 그 값이 읽히므로 함께 지운다

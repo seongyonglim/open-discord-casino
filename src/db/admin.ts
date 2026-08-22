@@ -49,7 +49,13 @@ export function listTournaments(limit = 30): AdminTournamentRow[] {
                갈래를 봐야 목록의 버튼과 서버의 판단이 어긋나지 않는다.
                갈래별로 나눠 두었다가 합쳤다 — 목록이 총액만 쓰고, 안 쓰는 값을 내려보내면
                다음에 읽는 사람이 "이건 어디에 쓰나"를 쫓게 된다. */
+            /* 리바이로 «걷은» 돈도 여기 센다. 이 값의 쓰임은 목록이 [지우기] 를
+               내줄지 정하는 것이고, 삭제 문지기는 리바이 값이 남아 있으면 거절한다 —
+               둘이 같은 것을 세지 않으면 목록이 눌리지 않을 단추를 그린다.
+               나간 돈과 걷은 돈을 한 칸에 합치는 셈이지만, 이 칸의 뜻은 «금액» 이
+               아니라 «원장이 움직였나» 다. */
             (SELECT COALESCE(SUM(e.prize), 0) + COALESCE(SUM(e.bounty_paid), 0)
+                  + COALESCE(SUM(e.rebuy_paid), 0)
                FROM holdem_entries e WHERE e.tournament_id = t.id) AS paid
        FROM holdem_tournaments t
       ORDER BY t.id DESC LIMIT ?`, limit);
@@ -84,11 +90,16 @@ export function purgeTournament(id: number): { ok: true; removed: number } | { o
        여기서는 걸리지 않는다 — 지울 수 있다.) */
     /* 바운티도 함께 본다. 프리롤 바운티 판은 상금 팟이 0 이고 참가비도 걷지 않으므로
        위의 두 값만 보면 "흔적 없는 판"으로 읽히는데, 마감에서 펀드가 실제로 나갔다. */
-    const money = one<{ prize: number; fees: number; bounty: number }>(
+    /* 리바이로 걷은 돈도 본다. 프리롤은 참가비가 0 이라 위의 fees 로는 안 잡히는데,
+       리바이는 프리롤에서도 5,000P 를 실제로 걷는다(REBUY_FREEROLL_COST) — 그 상태로
+       지우면 엔트리 행이 사라져 나중에 환불할 근거조차 없어진다.
+       환불이 지나간 판은 rebuy_paid 가 0 으로 내려가므로 «취소 뒤 삭제» 는 그대로 통과한다. */
+    const money = one<{ prize: number; fees: number; bounty: number; rebuys: number }>(
       `SELECT COALESCE(SUM(prize), 0) AS prize, COALESCE(SUM(paid_in), 0) AS fees,
-              COALESCE(SUM(bounty_paid), 0) AS bounty
+              COALESCE(SUM(bounty_paid), 0) AS bounty,
+              COALESCE(SUM(rebuy_paid), 0) AS rebuys
          FROM holdem_entries WHERE tournament_id = ?`, id)!;
-    if (money.prize > 0 || money.fees > 0 || money.bounty > 0) {
+    if (money.prize > 0 || money.fees > 0 || money.bounty > 0 || money.rebuys > 0) {
       return { ok: false as const, error: 'paid' as const };
     }
 
@@ -218,6 +229,10 @@ export function createTournament(o: {
   levelMin?: number;
   lateRegMin?: number;
   graceMin?: number;
+  /* 한 사람이 리바이할 수 있는 최대 횟수. 0(기본)이면 프리즈아웃 — 재입장이 없는
+     지금까지의 대회다. 선택 항목으로 두는 이유: 이 함수를 부르는 감사 스크립트가
+     열 곳이 넘는데, 필수로 만들면 그쪽이 전부 깨진다. */
+  maxRebuys?: number;
 }):
   { ok: true; id: number }
   | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number }
@@ -304,8 +319,9 @@ export function createTournament(o: {
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
-            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode, bounty_pct)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode, bounty_pct,
+            max_rebuys)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       T.kstDateStr(startAt * 1000), title,
       /* 이월 배수를 여기서 굳혀 넣는다. 못 열린 회차만큼 프리롤이 커지는데(rollover.ts),
          그 곱셈을 화면이나 지급 시점에 하면 대회가 끝나고 이월이 0 이 된 뒤 결과 화면이
@@ -313,7 +329,16 @@ export function createTournament(o: {
          나면 그 대회의 금액은 어디서 읽어도 같다.
          참가비 대회는 곱하지 않는다 — 걷은 돈이 상금이라 서비스가 얹는 배수가 없다. */
       regOpenAt, startAt, startAt + grace.n * 60, rolledMultiplier({ prize_multiplier: mult, buy_in: buyIn }),
-      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode, bountyPct);
+      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode, bountyPct,
+      /* 리바이 횟수도 대회 «행» 에 박는다. 코드 상수를 실시간으로 읽으면 운영자가
+         값을 바꾸는 순간 진행 중인 대회의 규칙이 바뀐다 — 스타팅 칩·블라인드 주기가
+         행으로 내려온 것과 같은 이유다. */
+      /* 안 주면 템플릿의 값을 쓴다 — 시작 칩·블라인드 주기와 같은 규칙이다.
+         0 으로 떨어뜨려 두었더니 자동 개최로 열리는 판은 언제나 프리즈아웃인데
+         예고 카드는 «리바이 3회» 라고 광고했다. 값이 NaN 이면 0 으로 눕힌다:
+         NOT NULL 열이라 NaN 이 그대로 가면 제약 위반으로 대회 생성이 통째로 죽는다. */
+      (function(v){ return Number.isFinite(v) ? Math.max(0, Math.min(10, Math.floor(v))) : 0; })(
+        Number(o.maxRebuys ?? cfg.maxRebuys)));
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
 }
@@ -329,6 +354,10 @@ export function createTournament(o: {
  * 예전에는 오늘 행을 덮어썼다 — 하루 하나라는 유니크 인덱스 때문에 나란히 만들 수가
  * 없었다. 이제 인덱스가 없으니 그냥 새로 만든다. 대신 살아 있는 판이 있으면 거절한다.
  */
+/* 테스트 판은 «경제에 아무 흔적도 남기지 않는 것» 이 존재 이유다. 그래서 참가비를
+   0 으로 못 박는데, 리바이도 같은 이유로 못 박아야 한다 — 템플릿에서 물려받으면
+   프리롤 리바이 비용 5,000P 가 실제로 걷히고, 그 판의 상금 풀은 0 이라 나갈 곳이 없다.
+   걷고 안 돌려주는 판이 되는 셈이고, 그러면 끝난 뒤 통째로 지울 수도 없다. */
 export function openTestTournament() {
   // 만드는 조건은 하나뿐이므로 결과를 그대로 넘긴다 — 여기서 뭉개면 거절 이유를 못 알려 준다
   /* 참가비를 0 으로 못 박는다. 템플릿이 바이인이어도 테스트 판은 프리롤이어야 한다 —
@@ -336,6 +365,7 @@ export function openTestTournament() {
      원장이 움직여서 끝난 뒤 통째로 지울 수 없게 된다. */
   return createTournament({
     title: '테스트 대회 (상금 없음)', prizeMultiplier: 0, regMin: 0, buyIn: 0, prizeFixed: 0,
+    maxRebuys: 0,
   });
 }
 

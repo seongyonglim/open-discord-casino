@@ -170,10 +170,13 @@ export function setChatHidden(id: number, hidden: boolean): void {
 
    왜 채팅에 적나: 재갈은 당사자만 겪으면 고장으로 읽힌다("왜 안 써지지?"). 방 전체가
    같이 보면 그때부터 그건 조치다. 그리고 풀린 것도 같이 보여야 끝이 난다. */
-function postSystem(kind: 'mute' | 'unmute', body: string): number {
+/* who — 이 조치의 «대상» 이름. 발신자가 아니다(발신자는 늘 @system 이다).
+   화면이 문장 안에서 그 이름만 굵게 칠하는 데 쓴다. 문자열을 잘라 찾게 두면
+   이름에 마침표나 공백이 들어간 순간 엉뚱한 자리가 굵어진다 — 이름은 이름으로 준다. */
+function postSystem(kind: 'mute' | 'unmute', body: string, who = ''): number {
   const nowMs = Date.now();
   run(`INSERT INTO chat_messages (user_id, username, body, where_at, created_ms, kind)
-       VALUES ('@system', '', ?, NULL, ?, ?)`, body, nowMs, kind);
+       VALUES ('@system', ?, ?, NULL, ?, ?)`, who, body, nowMs, kind);
   const id = one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id;
   run(`DELETE FROM chat_messages WHERE id <= ?`, id - CHAT_KEEP);
   return id;
@@ -199,11 +202,12 @@ export function setChatMute(userId: string, sec: number): void {
     run(`UPDATE users SET chat_muted_until = ? WHERE id = ?`, until, userId);
     if (until) {
       postSystem('mute',
-        `${u.username} 입에 재갈을 물렸습니다. ${muteDurText(sec)} 동안 채팅을 못합니다.`);
+        `${u.username} 입에 재갈을 물렸습니다. ${muteDurText(sec)} 동안 채팅을 못합니다.`,
+        u.username);
     } else if (had) {
       /* 안 물려 있던 사람을 푸는 것은 아무 일도 아니다 — 그때는 적지 않는다.
          적으면 운영자 화면에서 [재갈] 옆 버튼을 눌러 볼 때마다 방에 줄이 쌓인다. */
-      postSystem('unmute', `${u.username} 입에 물린 재갈이 풀렸습니다.`);
+      postSystem('unmute', `${u.username} 입에 물린 재갈이 풀렸습니다.`, u.username);
     }
   });
 }
@@ -220,7 +224,7 @@ function sweepExpiredMutes(): void {
   if (!done.length) return;
   for (const u of done) {
     run(`UPDATE users SET chat_muted_until = NULL WHERE id = ?`, u.id);
-    postSystem('unmute', `${u.username} 입에 물린 재갈이 풀렸습니다.`);
+    postSystem('unmute', `${u.username} 입에 물린 재갈이 풀렸습니다.`, u.username);
   }
 }
 
