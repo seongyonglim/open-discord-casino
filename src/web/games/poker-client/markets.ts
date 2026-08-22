@@ -105,7 +105,12 @@ export const PK_MARKETS_JS = `      var MARKET_DEFS = [
         });
         html += '</div>';
         marketsEl.innerHTML = html;
-        piles = {};   // 골격을 새로 만들었으니 더미 캐시도 초기화
+        /* 칩 목록은 «비우지 않는다». 골격은 단계가 바뀔 때마다 다시 그려지는데
+           (베팅 → 딜링 → 결과), 그때 목록까지 버리면 다음 폴링의 syncPile 이
+           «기록이 없다» 로 보고 총액을 큰 액면부터 다시 쪼갠다 — 열 장씩 쌓아 둔
+           칩이 갑자기 한두 장으로 쪼그라든다(제보: 게임 시작하면 칩이 줄어든다).
+           목록은 라운드가 바뀔 때만 버린다(syncPile 의 pile.round 비교).
+           DOM 은 방금 지워졌으므로 syncPile 이 목록 기준으로 다시 그린다. */
 
         marketsEl.querySelectorAll('.market').forEach(function(el){
           el.addEventListener('click', function(){

@@ -74,7 +74,9 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
          한 줄에 다섯 장, 14px 씩 겹치며 나아간다(칩 지름 26px 이므로 12px 이 겹친다 —
          얼굴 절반이 남는다). 다섯이 차면 5px 위에 다음 줄이 얹힌다. */
       var FAN_COLS = 5, FAN_PITCH = 14, FAN_RISE = 5;
-      var CHIP_LIMIT = 50;                 // 이보다 많아지면 바닥부터 큰 칩으로 바꾼다
+      /* 한 줄에 다섯 장씩 여덟 줄 = 마흔 장(요청: 기둥당 여덟 장).
+         이보다 많아지면 바닥부터 큰 칩으로 바꾼다 — 버리지 않는다. */
+      var CHIP_LIMIT = 40;
       // 금액을 큰 액면부터 그리디로 쪼갠다
       function splitAmount(amount){
         var d=(st.coins||[]).slice().sort(function(a,b){return b-a;}), out=[];

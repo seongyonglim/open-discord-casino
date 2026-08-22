@@ -111,6 +111,9 @@ export const PK_CHIPS_JS = `      function renderCoins(){
         if (!el) return;
         var pile = piles[market];
         if (!pile || pile.round !== roundId) return rebuildPile(el, market, byUser, roundId);
+        /* 골격이 다시 그려져 칸이 비었으면 «목록 기준» 으로 복원한다.
+           총액을 다시 쪼개면 500 두 개가 1000 한 개로 합쳐져 «올린 그대로» 가 아니다. */
+        if (el.childElementCount !== pile.list.length) paintPile(el, pile);
 
         // 누구든 금액이 줄었으면(회수/Clear Screen) 애니메이션 없이 다시 그린다
         var uids = Object.keys(pile.byUser);

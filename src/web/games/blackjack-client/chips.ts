@@ -11,7 +11,9 @@ export function bjChips(p0: string | number): string {
          (자리가 132px이라 5열짜리 더미가 들어간다 — 좁은 창 기준으로 재고 안 된다고 판단했었다) */
       var piles = {};
       var drewOnce = false;   // 자리를 한 바퀴 다 그려 봤다 (seats.ts 가 세운다)
-      var MAX_CHIPS = 50;   // 넘으면 버리는 게 아니라 바닥부터 큰 칩으로 바꾼다(compressPile)
+      /* 한 줄에 다섯 장씩 여덟 줄 = 마흔 장(요청: 기둥당 여덟 장).
+         넘으면 버리는 게 아니라 바닥부터 큰 칩으로 바꾼다(compressPile). */
+      var MAX_CHIPS = 40;
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
       /* 액면은 «크기» 가 아니라 «색» 이 말한다. 한동안 앞 세 단은 동전, 뒤 세 단은
          골드바였다 — 크기 차이가 곧 액면 차이였다. 읽기는 됐지만 판에 올라간 것이
