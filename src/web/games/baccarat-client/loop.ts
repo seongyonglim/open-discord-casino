@@ -63,6 +63,10 @@ export function bcLoop(p0: string | number): string {
         renderMarkets();
         renderRoster();   // 칩이 아바타에서 출발하므로 더미보다 먼저 그려져 있어야 한다
         updateTotals();
+        /* 윤곽선은 매 렌더마다 다시 잰다. 골격이 새로 그려지면 SVG 도 같이 날아가고,
+           창 크기가 바뀌면 판과 돔의 자리가 달라진다 — 값을 캐시하면 선이 어긋난다.
+           하는 일은 속성 세 개를 쓰는 것뿐이라 매초 돌아도 싸다. */
+        paintContour(res);
         firstState = false;
 
         if (res && notedRoundId !== r.id) {

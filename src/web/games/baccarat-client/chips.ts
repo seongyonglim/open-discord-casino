@@ -282,6 +282,100 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         if (tw) { tw.classList.add('bc-pop'); }
         ghostChip(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), el, denom, st.me);
       }
+      /* ══ 승리 윤곽선은 «한 줄» 이다 ═══════════════════════════════════
+         CSS 테두리로는 끝까지 안 됐다. 이긴 상자의 테두리를 켜면 가운데 돔이 그 위에
+         얹혀 있어서 선이 돔에 닿는 자리에서 끊기고, 돔의 «맞닿는 쪽» 테두리를 같이
+         켜면 이번엔 둥근 모서리가 반만 물든다(모서리에서 두 면의 색이 대각선으로
+         갈리기 때문이다). 마스크로 절반을 잘라 덧그리는 데까지 갔지만, 그것도 «두
+         조각을 이어 붙인 것» 이지 한 줄이 아니다.
+
+         선 하나로 그리려면 선을 «상자» 가 아니라 «길» 로 다뤄야 한다. 판 위에 투명한
+         SVG 를 한 장 얹고, 이긴 구역의 바깥을 도는 폐곡선을 path 하나로 그린다.
+         돔의 곡면도 그 길의 일부다 — 이으려고 애쓸 필요 없이 처음부터 한 줄이다.
+
+         자리는 «재서» 쓴다. 판 크기와 돔 자리가 화면마다 달라지므로 값을 박아 두면
+         선이 어긋난다. viewBox 를 잰 픽셀 크기 그대로 두면 배율이 1 이라 아크도
+         선 두께도 찌그러지지 않는다(preserveAspectRatio 는 그래서 none 이다).
+         non-scaling-stroke 는 그래도 남긴다 — 재기 전 한 프레임의 보험이다. */
+      var CT_R = 11, CT_D = 30;   // 판 모서리 · 돔 위 모서리 반지름 (07-bacc.css 와 같아야 한다)
+      function contourPath(side, W, H, T){
+        var m = Math.round(W / 2), TL = T.x, TR = T.x + T.w, TY = T.y;
+        var R = CT_R, D = CT_D, h = H - 0.5, w = W - 0.5;
+        if (side === 'tie') {
+          return 'M' + (TL+D) + ',' + (TY+0.5) +
+            'L' + (TR-D) + ',' + (TY+0.5) +
+            'A' + D + ',' + D + ' 0 0 1 ' + TR + ',' + (TY+D) +
+            'L' + TR + ',' + (h-R) +
+            'A' + R + ',' + R + ' 0 0 1 ' + (TR-R) + ',' + h +
+            'L' + (TL+R) + ',' + h +
+            'A' + R + ',' + R + ' 0 0 1 ' + TL + ',' + (h-R) +
+            'L' + TL + ',' + (TY+D) +
+            'A' + D + ',' + D + ' 0 0 1 ' + (TL+D) + ',' + (TY+0.5) + 'Z';
+        }
+        if (side === 'banker') {
+          /* 위 가운데에서 출발해 오른쪽을 돌아 바닥을 타고 오다가, 돔의 오른쪽
+             옆면을 타고 올라 돔의 오른쪽 어깨를 넘어 제자리로 돌아온다. */
+          return 'M' + m + ',0.5' +
+            'L' + (w-R) + ',0.5' +
+            'A' + R + ',' + R + ' 0 0 1 ' + w + ',' + (0.5+R) +
+            'L' + w + ',' + (h-R) +
+            'A' + R + ',' + R + ' 0 0 1 ' + (w-R) + ',' + h +
+            'L' + (TR+R) + ',' + h +
+            /* 여기는 «오목한» 모서리다 — 판 바닥이 돔의 옆면으로 파고드는 자리라
+               곡률의 중심이 길 «바깥» 에 있다. 볼록한 모서리와 반대 방향(sweep 1)을
+               써야 한다. 반대로 주면 중심이 반대편에 잡혀 작은 갈고리가 튀어나온다
+               (제보로 온 그 조각이 이것이다). */
+            'A' + R + ',' + R + ' 0 0 1 ' + TR + ',' + (h-R) +
+            'L' + TR + ',' + (TY+D) +
+            'A' + D + ',' + D + ' 0 0 0 ' + (TR-D) + ',' + (TY+0.5) +
+            'L' + m + ',' + (TY+0.5) + 'Z';
+        }
+        return 'M' + m + ',0.5' +
+          'L' + (0.5+R) + ',0.5' +
+          'A' + R + ',' + R + ' 0 0 0 0.5,' + (0.5+R) +
+          'L0.5,' + (h-R) +
+          'A' + R + ',' + R + ' 0 0 0 ' + (0.5+R) + ',' + h +
+          'L' + (TL-R) + ',' + h +
+          // 오목한 모서리 — 위 뱅커 쪽의 짝이다(방향만 좌우로 뒤집힌다)
+          'A' + R + ',' + R + ' 0 0 0 ' + TL + ',' + (h-R) +
+          'L' + TL + ',' + (TY+D) +
+          'A' + D + ',' + D + ' 0 0 1 ' + (TL+D) + ',' + (TY+0.5) +
+          'L' + m + ',' + (TY+0.5) + 'Z';
+      }
+      var CT_COLOR = { player:'#38bdf8', banker:'#f43f5e', tie:'#fbbf24' };
+      function paintContour(res){
+        var core = marketsEl.querySelector('.bacc-core');
+        if (!core) return;
+        var el = core.querySelector('.bc-contour');
+        if (!el) {
+          core.insertAdjacentHTML('beforeend',
+            /* 루트에 fill/stroke 를 none 으로 못 박는다. 색은 path 가 갖고 있어 그림에는
+               영향이 없고, scripts/check-states.ts 의 «아이콘이 배경에 묻혔나» 검사가
+               색을 못 읽는 SVG 를 건너뛴다 — 안 주면 기본 검정으로 읽혀 초록 펠트와의
+               밝기차 5 로 실패한다(실측). */
+            '<svg class="bc-contour" aria-hidden="true" focusable="false"' +
+            ' fill="none" stroke="none" preserveAspectRatio="none">' +
+            '<path fill="none" stroke-width="2"' +
+            ' vector-effect="non-scaling-stroke" stroke-linejoin="round"' +
+            ' stroke-linecap="round"/></svg>');
+          el = core.querySelector('.bc-contour');
+        }
+        var p = el.firstChild;
+        var side = res && CT_COLOR[res.winner] ? res.winner : null;
+        if (!side) { el.removeAttribute('data-side'); p.setAttribute('d', ''); return; }
+        var cr = core.getBoundingClientRect();
+        var tieEl = core.querySelector('.market.m-tie');
+        var tr = tieEl && tieEl.getBoundingClientRect();
+        if (!cr.width || !tr || !tr.width) return;
+        var W = Math.round(cr.width), H = Math.round(cr.height);
+        var T = { x: Math.round(tr.left - cr.left), y: Math.round(tr.top - cr.top),
+                  w: Math.round(tr.width), h: Math.round(tr.height) };
+        el.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+        p.setAttribute('d', contourPath(side, W, H, T));
+        p.setAttribute('stroke', CT_COLOR[side]);
+        el.setAttribute('data-side', side);
+      }
+
       /* ══ 정산 — 버스트 앤 플라잉 ═════════════════════════════════════
          예전에는 «이긴 구역의 칩이 각자 주인에게 직선으로 빨려 간다» 였다. 칩이
          사람별로 쌓여 있었으니 그럴 수 있었다. 이제 구역마다 기둥이 하나뿐이라

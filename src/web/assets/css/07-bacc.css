@@ -199,10 +199,11 @@
   #bMarkets .market.m-banker.hit,
   #bMarkets .market.m-bpair.hit{--bc-win:#f43f5e;--bc-glow:rgba(244,63,94,.5)}
   #bMarkets .market.m-tie.hit{--bc-win:#34d399;--bc-glow:rgba(52,211,153,.5)}
-  #bMarkets .market.hit{border-color:var(--bc-win,#34d399);
-    box-shadow:0 0 0 1px var(--bc-win,#34d399) inset, inset 0 0 35px rgba(251,191,36,.3),
-      0 0 15px var(--bc-glow,rgba(52,211,153,.5));
-    filter:brightness(1.25)}
+  /* 테두리는 여기서 켜지 않는다 — 판 위에 얹은 SVG 한 줄(.bc-contour)이 맡는다.
+     상자마다 테두리를 켜면 돔에 닿는 자리에서 끊기고, 돔 쪽을 같이 켜면 둥근 모서리가
+     반만 물든다. 여기서는 «밝기» 와 «안쪽 등» 만 준다. */
+  #bMarkets .market.hit{filter:brightness(1.25);
+    box-shadow:inset 0 0 35px rgba(251,191,36,.3), 0 0 15px var(--bc-glow,rgba(52,211,153,.4))}
 
   /* ── 승리 테두리는 돔에서 끊기지 않는다 ──────────────────────────
      플레이어가 이기면 그 상자의 테두리가 켜지는데, 가운데 돔이 그 위에 얹혀 있어서
@@ -217,31 +218,22 @@
   /* #bMarkets 를 앞에 붙여야 한다. 바로 위의 «#bMarkets .market.hit{border-color}» 가
      id 를 갖고 있어서, 클래스를 넷을 겹쳐도 그것을 못 이긴다 — 규칙은 썼는데 뱅커의
      왼쪽 선이 여전히 초록으로 켜져 돔을 가로질렀다(실측). */
-  #bMarkets .bacc-core .market.m-player.hit{border-right-color:transparent}
-  #bMarkets .bacc-core .market.m-banker.hit{border-left-color:transparent}
+  /* 돔은 그림자만 유지한다 — 테두리는 SVG 윤곽선이 맡는다 */
+  .bacc-core .market.m-tie.hit{
+    box-shadow:0 -6px 18px rgba(0,0,0,.45),inset 0 0 35px rgba(251,191,36,.3),
+      0 0 20px rgba(251,191,36,.4)}
 
-  /* 돔 쪽 이음선은 «덧그린다». 돔 자신의 테두리 색을 한 면만 바꾸면 위쪽 둥근 모서리가
-     반은 켜지고 반은 어두운 채로 남는다 — 모서리에서 두 면의 색이 대각선으로 갈리기
-     때문이다. 그것이 «곡면이 끊겨 보인다» 의 정체다(제보).
-     그래서 돔 위에 테두리만 있는 겹을 하나 얹고, 이긴 쪽 절반만 남기고 마스크로
-     잘라 낸다. 그러면 세로선 → 둥근 모서리 → 윗변 절반이 한 줄로 이어진다.
-     inset:-1px 은 돔의 테두리 «위» 에 정확히 겹치기 위한 것이다. */
-  .bacc-core:has(.market.m-player.hit) .market.m-tie::after,
-  .bacc-core:has(.market.m-banker.hit) .market.m-tie::after{
-    content:'';position:absolute;inset:-1px;pointer-events:none;z-index:2;
-    border:1px solid transparent;border-radius:31px 31px 12px 12px}
-  .bacc-core:has(.market.m-player.hit) .market.m-tie::after{
-    border-top-color:#38bdf8;border-left-color:#38bdf8;
-    -webkit-mask-image:linear-gradient(to right,#000 0 50%,transparent 50%);
-    mask-image:linear-gradient(to right,#000 0 50%,transparent 50%)}
-  .bacc-core:has(.market.m-banker.hit) .market.m-tie::after{
-    border-top-color:#f43f5e;border-right-color:#f43f5e;
-    -webkit-mask-image:linear-gradient(to left,#000 0 50%,transparent 50%);
-    mask-image:linear-gradient(to left,#000 0 50%,transparent 50%)}
-  /* 타이가 이기면 돔 둘레 전체가 켜진다 — 이때는 마스크가 필요 없다 */
-  .bacc-core .market.m-tie.hit{border-color:#34d399;
-    box-shadow:0 -6px 18px rgba(0,0,0,.45),0 0 0 1px #34d399 inset,
-      inset 0 0 35px rgba(251,191,36,.3),0 0 20px rgba(52,211,153,.5)}
+  /* ── 승리 윤곽선 ─────────────────────────────────────────────────
+     판 위에 얹는 투명한 한 겹이다. 길은 JS 가 «재서» 그린다(chips.ts 의 paintContour) —
+     판과 돔의 자리가 화면마다 다르므로 값을 박아 두면 선이 어긋난다.
+     z 는 돔(30)보다 위다. 돔 위를 지나는 구간이 있어야 한 줄로 이어진다.
+     overflow:visible 이라야 선의 바깥 절반이 안 잘린다. */
+  .bc-contour{position:absolute;left:0;top:0;width:100%;height:100%;z-index:40;
+    pointer-events:none;overflow:visible}
+  .bc-contour path{transition:stroke .3s}
+  .bc-contour[data-side="player"] path{filter:drop-shadow(0 0 5px rgba(56,189,248,.85))}
+  .bc-contour[data-side="banker"] path{filter:drop-shadow(0 0 5px rgba(244,63,94,.85))}
+  .bc-contour[data-side="tie"] path{filter:drop-shadow(0 0 5px rgba(251,191,36,.85))}
 
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
