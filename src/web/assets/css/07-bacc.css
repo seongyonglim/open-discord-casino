@@ -34,8 +34,13 @@
      — 안내 알약이 이것을 기준으로 떠 있으므로 position:relative 는 지킨다.
      :has() 로 고르는 이유: .card 는 모든 게임이 함께 쓰는 클래스라, 바카라 판을 품은
      것만 골라야 다른 게임의 카드가 초록으로 물들지 않는다. */
+  /* 그라데이션은 «한 장의 매트» 처럼 고르게 깐다. 예전 값(120% 100% at 50% 0% ·
+     70% 에서 어두워짐)은 200px 짜리 짧은 펠트에 맞춰 만든 것이라, 펠트가 카드부터
+     베팅판까지 468px 을 덮게 되자 위쪽만 밝은 띠가 되고 그 아래에 경계선처럼 보이는
+     자리가 생겼다(제보: 카드 영역 색이 다르고 선분이 보인다).
+     퍼짐을 키우고 어두워지는 지점을 끝까지 미뤄 «띠» 가 생기지 않게 한다. */
   .card:has(.bacc-table){
-    background:radial-gradient(120% 100% at 50% 0%, #143024 0%, #0c1a14 70%);
+    background:radial-gradient(160% 130% at 50% -15%, #163427 0%, #0e1e16 100%);
     border-color:#1e4534}
   .bacc-table{position:relative;background:none;border:none;border-radius:0;
     padding:0;margin:0 0 10px}
@@ -61,7 +66,10 @@
      그대로 두고 자리만 격자로 바꾼다 — 서버 HTML 은 건드리지 않는다. */
   /* 세로 여백은 카드와 알약을 감싸는 만큼만 — 12px 이면 위아래로 24px 을 쓰는데,
      가로 화면에서는 그 24px 이 베팅 구역이 나눠 쓸 자리다. */
-  .bacc-seat{text-align:center;padding:8px 10px;border-radius:12px;
+  /* justify-self:center 가 있어야 네모가 «내용만큼» 이 된다. 자리는 격자의 1fr 칸이라
+     그냥 두면 열 전체(449px)를 채우고, 이긴 표시 링이 그 큰 상자를 둘러 안이 휑해진다.
+     내용에 맞춰 줄이면 이름 · 끗수 · 카드를 감싼 네모가 된다. */
+  .bacc-seat{text-align:center;padding:10px 14px;border-radius:12px;justify-self:center;
     border:1px solid transparent;transition:border-color .2s,opacity .2s,background .2s;
     display:grid;grid-template-columns:auto auto;justify-content:center;
     align-items:center;column-gap:8px;row-gap:8px}
@@ -75,11 +83,17 @@
      붉은색)이다. 초록으로 통일하지 않는 이유: 이 판의 색 언어가 이미 그 둘이라,
      제3의 색을 켜면 «무슨 일이 났다» 는 알겠는데 «어느 쪽인지» 는 한 박자 늦는다. */
   .bacc-seat.side-player,.bacc-seat.side-banker{background:none}
-  .bacc-seat.win{border-color:transparent}
-  .bacc-seat.win .bacc-hand{border-radius:14px}
-  .bacc-seat.side-player.win .bacc-hand{
+  /* ── 이긴 표시는 «자리 전체» 를 두른다 ────────────────────────────
+     처음에는 카드만 둘렀다(.bacc-hand). 그러면 네모가 카드에 딱 붙어서, 같은 자리에
+     있는 이름과 끗수 알약이 테두리 밖으로 밀려난다 — 이긴 것은 «카드» 가 아니라
+     «그 자리» 인데 표시는 카드만 가리켰다(제보).
+     자리(.bacc-seat)에 두르면 이름 · 끗수 · 카드가 한 네모 안에 들어간다.
+     여백은 이긴 상태에서만 늘리지 않는다 — 늘리면 결과가 나오는 순간 자리가 커지면서
+     카드가 밀린다. 평소에도 같은 여백을 두고 링만 켠다. */
+  .bacc-seat.win{border-radius:14px}
+  .bacc-seat.side-player.win{border-color:transparent;
     box-shadow:0 0 0 2px rgba(95,176,255,.55),0 0 22px 4px rgba(95,176,255,.30)}
-  .bacc-seat.side-banker.win .bacc-hand{
+  .bacc-seat.side-banker.win{border-color:transparent;
     box-shadow:0 0 0 2px rgba(255,143,107,.55),0 0 22px 4px rgba(255,143,107,.30)}
   .bacc-seat.lose{opacity:.45}
   /* ── 이름 줄과 끗수 알약 ────────────────────────────────────────────
@@ -123,9 +137,12 @@
      감추면 이름 줄의 폭이 바뀌어 카드가 좌우로 흔들린다. */
   .bacc-total.wait{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.10);
     color:var(--muted)}
-  /* 이긴 쪽은 알약도 함께 살아난다 — 자리 테두리(.win)만으로는 시선이 카드에 남는다 */
-  .bacc-seat.win .bacc-total{box-shadow:0 0 0 3px rgba(46,204,113,.16),0 0 14px rgba(46,204,113,.35);
-    border-color:var(--win);color:#eafff2}
+  /* 이긴 쪽은 알약도 함께 살아난다. 색은 그 자리의 색이다 — 초록으로 두면 자리를
+     두른 링(파랑/붉은색)과 색이 어긋나서, 한 네모 안에 두 이야기가 생긴다. */
+  .bacc-seat.side-player.win .bacc-total{border-color:#5fb0ff;color:#dbeeff;
+    background:rgba(95,176,255,.24)}
+  .bacc-seat.side-banker.win .bacc-total{border-color:#ff8f6b;color:#ffe6dd;
+    background:rgba(255,143,107,.24)}
 
   /* ══ 베팅 판 — 다섯 구역 한 덩어리 ═══════════════════════════════════
      예전에는 두 줄이었다: 위에 플레이어·타이·뱅커, 아래에 페어 둘. 그러면 다섯 개가
@@ -206,8 +223,8 @@
   /* #bMarkets 를 앞에 붙여야 한다. 위의 #bMarkets .m-pile{left:0;right:0} 이 id 를
      갖고 있어서, 클래스를 아무리 많이 겹쳐도(.bacc-core .market.m-player .m-pile)
      그것을 못 이긴다 — 규칙은 썼는데 칸은 여전히 상자 전체 폭이었다(실측 142~312). */
-  #bMarkets .bacc-core .market.m-player .m-pile{left:6%;right:52%}
-  #bMarkets .bacc-core .market.m-banker .m-pile{left:52%;right:6%}
+  #bMarkets .bacc-core .market.m-player .m-pile{left:5%;right:51%}
+  #bMarkets .bacc-core .market.m-banker .m-pile{left:51%;right:5%}
   .m-foot{display:flex;flex-direction:column;gap:1px;padding:0 12px 10px;text-align:left}
   .m-cnt{font-size:10.5px;color:#9fb0c2}
   .m-foot .m-total{font-family:var(--mono);font-size:15px;font-weight:800;

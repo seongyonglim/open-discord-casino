@@ -13,8 +13,12 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
       // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
       // owner를 심어두면 정산 때 그 칩을 주인 아이콘으로 돌려보낼 수 있다.
       function chipSprite(denom, owner, idx, anim){
+        /* 다섯 열 · 14px 간격이면 더미 폭이 ±42px 이다. 판을 다섯 구역으로 나눈 뒤로
+           플레이어·뱅커의 더미 칸은 상자의 «바깥 절반»(75px 남짓)이라 그 폭이 안 들어가
+           맨 왼쪽 칩이 상자 밖으로 잘렸다(제보). 간격과 흔들림을 줄여 ±34px 로 맞춘다.
+           열 수는 그대로 둔다 — 줄이면 같은 금액이 더 높이 쌓여 위쪽 글자를 가린다. */
         var col = idx % 5, row = Math.floor(idx / 5);
-        var x = (col - 2) * 14 + jit(idx, 9) - 4;
+        var x = (col - 2) * 11 + jit(idx, 5) - 3;
         var y = 3 + row * 5 + jit(idx + 7, 3);
         return '<span class="pchip '+chipKind(denom)+(owner===st.me?' mine':'')+(anim?' '+anim:'')+
           '" data-owner="'+esc(owner)+'"'+
