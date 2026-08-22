@@ -113,8 +113,12 @@
   /* 왼쪽 세 상자의 점무늬와 같은 높이에 세운다 — 다섯 상자의 아래 줄이 한 선에
      맞아야 판이 정돈돼 보인다. 캡슐이나 테두리는 두지 않는다: 이 줄은 «곁들이는
      정보» 라 상자를 하나 더 만들면 그것부터 눈에 들어온다. */
+  /* 왼쪽 세 상자의 점무늬(.m-dots)가 가운데 정렬이므로 이 줄도 가운데에 둔다 —
+     다섯 상자의 아래 줄이 한 선에, 한 축에 맞는다(요청). 높이도 점무늬와 같은 20px.
+     캡슐이나 테두리는 두지 않는다: 곁들이는 정보라 상자를 하나 더 만들면
+     그것부터 눈에 들어온다. */
   .m-drought{font-family:var(--mono);font-size:10px;color:var(--gold-dim);
-    display:flex;align-items:center;gap:4px;height:20px}
+    display:flex;align-items:center;justify-content:center;gap:4px;height:20px}
   .m-drought .dr-n{font-size:12px;font-weight:700;letter-spacing:-.02em;color:#fde047}
   .m-drought .dr-n.big{text-shadow:0 0 6px rgba(253,224,71,.45)}
   .m-drought .dr-l{font-size:11px;font-weight:400;color:#d4d4d8}
