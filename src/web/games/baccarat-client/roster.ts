@@ -127,7 +127,7 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
           if (el) el.textContent = compact(t) + 'P';
           var cn=document.getElementById('cnt-'+k);
           if (cn) cn.textContent = n + '명';
-          syncPile(k, per, st.round.id);
+          syncTower(k, per, st.round.id);
         });
         potEl.textContent = fmt(total);
         var staked = (st.myBets||[]).reduce(function(a,b){return a+b.amount;},0);

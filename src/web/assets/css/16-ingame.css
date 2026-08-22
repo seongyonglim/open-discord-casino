@@ -820,6 +820,24 @@
     html.ingame .game-shell .game-main .m-pile{height:26px;overflow:hidden}
     html.ingame .game-shell .game-main .m-pile .pchip{transform:scale(.72);
       transform-origin:center}
+    /* 바카라의 칩 타워는 «쌓인 것» 이라 칩을 한 장씩 줄이면 안 된다 — 각자 제
+       가운데를 기준으로 줄어들면 층 간격(4px)은 그대로 남아 기둥이 성기게 벌어진다.
+       타워를 통째로 줄이고 per-chip 축소는 끈다. 기준점은 바닥이다 — 칩은 판 위에
+       «놓여» 있으므로 밑동이 제자리에 남아야 한다.
+
+       윗줄의 «칸을 26px 로 줄인다» 는 바카라에는 걸리지 않는다. #bMarkets 의 id
+       무게가 그 규칙을 이겨서 칸은 52px 그대로다(실측). 그래서 42px(8 + 34) 짜리
+       기둥은 원래 크기로도 들어간다 — 여기서 줄이는 것은 잘려서가 아니라 가로에서
+       상자 자체가 낮아 칩이 이름줄에 바짝 붙기 때문이다. .78 이면 33px 이다.
+       처음에 .6 을 줬다가 칩이 20px 이 되어 각인이 안 읽혔다(실측). */
+    html.ingame #bMarkets .bc-tower{transform:scale(.78);transform-origin:center bottom}
+    html.ingame #bMarkets .bc-tower .pchip{transform:none}
+    /* 24px 짜리 칩에서는 6방향 톱니가 뭉쳐 테두리가 그냥 지저분해진다 — 끈다.
+       액면은 색과 각인이 계속 말한다. */
+    html.ingame #bMarkets .bc-tower .bc-ck use{--bc-edge:var(--bc-face)}
+    /* 낮아진 칩 줄(38px)에서는 고른 칩이 7px 솟으면 줄 밖으로 나간다 */
+    html.ingame .coin.bcoin.active .face{transform:translateY(-4px) scale(1.08)}
+    html.ingame .coin.bcoin:not(.active) .face{transform:translateY(1px) scale(.95)}
 
     /* ── 2. 카드 상자를 줄이고 그만큼 마켓에 준다 ────────────────
        위 상자는 카드 두 벌과 보드 다섯 장이면 되는데 높이를 넉넉히 쓰고 있었다.

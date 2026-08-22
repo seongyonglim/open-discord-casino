@@ -74,6 +74,22 @@
   .coin.bcoin.active:hover .face{transform:translateY(-9px) scale(1.12)}
   .coin.bcoin:active .face{transform:translateY(-2px) scale(.98)}
 
+  /* ── 구역마다 칩 타워 하나 ───────────────────────────────────────
+     칸(.m-pile)은 이미 바깥 절반에 갇혀 있어(플레이어 left:5%;right:51% ·
+     뱅커 그 반대) 타이 돔에 닿을 자리가 구조적으로 없다. 타워는 그 칸의 한가운데
+     바닥에 선다 — 칸이 이미 «바깥쪽» 이므로 그것만으로 판 바깥 20% 지점이 된다.
+
+     칸을 벗어나지 않는 것이 중요하다. 폰 가로에서는 칸이 26px 까지 얕아지는데
+     (16-ingame.css) 34px 짜리 칩 세 장이 그대로 서면 위 글자를 뚫는다.
+     그래서 타워는 칸 높이에 맞춰 통째로 줄인다(아래 16-ingame.css). */
+  .bc-tower{position:absolute;left:0;right:0;bottom:0;top:0;pointer-events:none}
+  #bMarkets .bc-tower .pchip.bc3d{width:34px;height:34px;min-width:34px;margin-left:-17px}
+  /* «내가 여기 걸었다» — 사람별 칩이 사라지면서 잃은 표시를 밑동의 금색 광으로
+     되살린다. 칩 자체에 금테를 두르면(예전 .pchip.mine) 액면 색이 가려진다. */
+  .bc-tower.mine::after{content:'';position:absolute;left:50%;bottom:-3px;
+    width:42px;height:10px;margin-left:-21px;border-radius:50%;pointer-events:none;z-index:9;
+    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.7),rgba(240,180,41,0) 70%)}
+
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
      그래서 베팅 상자(.m-player/.m-banker)와 같은 언어로 맞춘다:
@@ -263,7 +279,7 @@
   .bacc-core .market.m-tie .m-foot{justify-items:center;text-align:center;padding:0 10px 14px}
   .bacc-core .market.m-tie .m-foot .m-total{text-align:center}
   .bacc-core .market.m-tie .m-mid{min-height:32px}
-  #bMarkets .market.m-tie .m-pile{height:34px}
+  #bMarkets .market.m-tie .m-pile{height:46px}
   /* 돔이 아래에 얹히므로 그만큼 두 상자의 바닥 정보를 안쪽으로 밀어 겹치지 않게 한다.
      돔이 240px 로 넓어지면서 각 상자의 «안쪽 45%» 를 덮는다(이전 35%). 총액이
      백만 단위로 길어지면 그 밑으로 들어가므로 막는 폭도 같이 넓힌다. 남는 55%(148px)
@@ -311,7 +327,7 @@
     word-break:keep-all;overflow-wrap:normal}
   .market.m-pair .m-pay{font-size:12px}
   .market.m-pair .m-mid{min-height:34px}
-  .market.m-pair .m-pile{height:34px}
+  .market.m-pair .m-pile{height:46px}
   .market.m-pair .m-foot .m-total{font-size:12.5px}
 
   /* 좁아지면 날개를 더 줄이고 글자만 낮춘다 — 다섯 구역 배치는 끝까지 지킨다 */

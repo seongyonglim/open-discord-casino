@@ -71,7 +71,7 @@ export const BC_MARKETS_JS = `      /* ── 베팅 상자 ──────�
           '</span>' +
           marketTile(by.bpair, betting, true);
         marketsEl.innerHTML = html;
-        piles = {};   // 골격을 새로 만들었으니 더미 캐시도 초기화
+        towers = {};   // 골격을 새로 만들었으니 타워 캐시도 초기화
         marketsEl.querySelectorAll('.market').forEach(function(el){
           el.addEventListener('click', function(){
             if (el.classList.contains('disabled')) return;

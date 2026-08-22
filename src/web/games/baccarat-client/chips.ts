@@ -8,7 +8,8 @@
 export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 목록"을 들고 있다가, 늘어난 만큼만 새 스프라이트를
          덧붙인다. 총액에서 매번 새로 그리면 애니메이션이 초당 다시 시작되고
          쌓이는 느낌이 사라진다. (포커 플립과 같은 방식)                            */
-      var piles={};
+      var towers={};
+      var TOWER_CHIP = 34;   // 07-bacc.css 의 .bc-tower .pchip 지름과 같아야 한다
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
 
       /* ══ 클레이 칩 한 장의 그림 ═══════════════════════════════════════
@@ -108,62 +109,110 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
           '" data-owner="'+esc(owner)+'"'+
           ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipArt(denom)+'</span>';
       }
-      // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
-      function decompose(amount){
-        var out=[], d=(st.coins||[]).slice().sort(function(a,b){return b-a;});
-        for (var i=0;i<d.length && out.length<60;i++){
-          while (amount >= d[i] && out.length < 60) { out.push(d[i]); amount -= d[i]; }
+      /* ══ 구역마다 «칩 타워 하나» ══════════════════════════════════════
+         한동안 사람마다 자기 칩이 따로 쌓였다. 스무 명이 걸면 스무 무더기가 한 상자
+         안에서 겹치고, 어느 것이 누구 것인지도 안 보이면서 판만 어지러웠다(제보).
+         실제 테이블에서 베팅 구역에 놓이는 것은 «그 구역에 걸린 돈» 한 무더기다.
+
+         그래서 구역마다 타워 하나만 세운다. 총액을 큰 액면부터 그리디로 쪼개
+         최대 세 장까지 쌓는다.
+
+         세 장으로는 임의의 총액을 «정확히» 표현할 수 없다(12,340P 를 세 장으로
+         나눌 수 없다). 나눌 필요도 없다 — 정확한 숫자는 바로 아래 .m-total 이 매
+         폴링마다 적고 있다. 타워가 말하는 것은 «규모» 다. 역할을 나눠 둔다.
+
+         사람별 칩이 사라지면서 잃는 것이 둘 있는데 둘 다 되살린다.
+           · «내가 여기 걸었다» → 타워 밑동의 금색 광(.bc-tower.mine)
+           · «남이 방금 걸었다» → 그 사람 아이콘에서 유령 칩 한 장이 날아와
+             타워에 흡수된다. 타워에 남지 않고 도착과 함께 사라지므로 타워는 늘
+             세 장 이하다. */
+      function towerDenoms(total){
+        var d=(st.coins||[]).slice().sort(function(a,b){return b-a;}), out=[];
+        for (var i=0;i<d.length && out.length<3;i++){
+          while (total >= d[i] && out.length < 3) { out.push(d[i]); total -= d[i]; }
         }
-        return out;
+        // 가장 작은 칩보다도 적게 걸린 경우에도 «있다» 는 것은 보여야 한다
+        if (!out.length && d.length) out.push(d[d.length-1]);
+        return out;   // [큰 … 작은]
       }
-      function pushChips(el, pile, denoms, owner, anim){
-        var added = [];
-        for (var i=0;i<denoms.length;i++){
-          if (pile.list.length >= MAX_CHIPS) { pile.list.shift(); if (el.firstChild) el.removeChild(el.firstChild); }
-          pile.list.push(denoms[i]);
-          el.insertAdjacentHTML('beforeend', chipSprite(denoms[i], owner, pile.n++ % MAX_CHIPS, anim));
-          added.push(el.lastElementChild);
+      // 금액 하나를 대표하는 칩 한 장 — 유령 칩과 버스트 칩이 쓴다
+      function bestDenom(amount){
+        var d=(st.coins||[]).slice().sort(function(a,b){return b-a;});
+        for (var i=0;i<d.length;i++) if (amount >= d[i]) return d[i];
+        return d[d.length-1];
+      }
+      function paintTower(el, market, total, mine){
+        var ds = total > 0 ? towerDenoms(total) : [];
+        var html = '';
+        /* 아래에서 위로 쌓는다 — 큰 액면이 맨 아래다(실제 딜러가 그렇게 쌓는다).
+           한 단은 4px 이다. 그보다 얕으면 겹친 장수가 안 세어지고, 깊으면 세 장이
+           칸을 넘는다. */
+        for (var i=0;i<ds.length;i++){
+          html += '<span class="pchip bc3d c-coin ' + denomClass(ds[i]) +
+            '" style="left:50%;bottom:' + (i*4) + 'px;z-index:' + (10+i) + '">' +
+            chipArt(ds[i]) + '</span>';
         }
-        return added;
+        el.innerHTML = '<span class="bc-tower' + (mine ? ' mine' : '') + '">' + html + '</span>';
       }
-      function rebuildPile(el, market, byUser, roundId){
-        var pile = piles[market] = { round: roundId, byUser: {}, list: [], n: 0 };
-        el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
-        el.innerHTML = '';
-        Object.keys(byUser).forEach(function(uid){
-          pile.byUser[uid] = byUser[uid];
-          pushChips(el, pile, decompose(byUser[uid]), uid, '');
-        });
-      }
-      function syncPile(market, byUser, roundId){
+      function syncTower(market, byUser, roundId){
         var el = document.getElementById('pile-'+market);
         if (!el) return;
-        var pile = piles[market];
-        if (!pile || pile.round !== roundId) return rebuildPile(el, market, byUser, roundId);
+        ensureChipDefs();
+        var total = 0, uids = Object.keys(byUser);
+        for (var i=0;i<uids.length;i++) total += byUser[uids[i]];
+        var t = towers[market];
+        var fresh = !t || t.round !== roundId;
+        if (fresh) t = towers[market] = { round: roundId, total: -1, mine: null, byUser: {} };
 
-        // 누구든 금액이 줄었으면(회수/Clear Screen) 애니메이션 없이 다시 그린다
-        var uids = Object.keys(pile.byUser);
-        for (var i=0;i<uids.length;i++){
-          if ((byUser[uids[i]]||0) < pile.byUser[uids[i]]) return rebuildPile(el, market, byUser, roundId);
+        // 늘어난 사람마다 유령 칩 한 장이 날아온다 (내 것은 dropMyChip 이 이미 냈다)
+        if (!fresh) {
+          uids.forEach(function(uid){
+            var delta = byUser[uid] - (t.byUser[uid]||0);
+            if (delta <= 0 || uid === st.me) return;
+            ghostChip(rosterAvatar(uid), el, bestDenom(delta), uid);
+            /* 남이 걸 때도 같은 소리를 낸다 — 칩만 날고 조용하면 판이 커지고 있다는
+               것이 눈을 그쪽에 두고 있을 때만 전해진다. 다만 한 번에 여럿이 걸면
+               소리가 겹쳐 지저분하므로 150ms 안에는 한 번만 낸다. */
+            if (Date.now() - lastBetSfx > 150) {
+              lastBetSfx = Date.now();
+              if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+            }
+          });
         }
-        // 늘어난 사람만큼 그 사람 아이콘에서 칩이 날아온다
-        Object.keys(byUser).forEach(function(uid){
-          var delta = byUser[uid] - (pile.byUser[uid]||0);
-          if (delta <= 0) return;
-          pile.byUser[uid] = byUser[uid];
-          // 내 칩은 이미 클릭 즉시(dropMyChip) 올려놨으므로 여기서 또 올리지 않는다
-          if (uid === st.me) return;
-          var added = pushChips(el, pile, decompose(delta), uid, 'pending');
-          tossFrom(rosterAvatar(uid), added);
-          /* 남이 걸 때도 같은 소리를 낸다 — 지금까지는 칩만 날고 조용해서, 옆에서
-             판이 커지고 있다는 것이 눈을 그쪽에 두고 있을 때만 전해졌다.
-             다만 한 번에 여럿이 걸면 소리가 겹쳐 지저분해지므로 150ms 안에는 한 번만
-             낸다. 알리는 것이 목적이지 개수를 세어 주는 것이 아니다. */
-          if (Date.now() - lastBetSfx > 150) {
-            lastBetSfx = Date.now();
-            if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
-          }
-        });
+        t.byUser = {};
+        uids.forEach(function(uid){ t.byUser[uid] = byUser[uid]; });
+
+        // 총액이 그대로면 다시 그리지 않는다 — 매초 새로 그리면 쌓인 느낌이 사라진다
+        var mine = (byUser[st.me]||0) > 0;
+        if (t.total === total && t.mine === mine) return;
+        t.total = total; t.mine = mine;
+        el.style.opacity = '';
+        paintTower(el, market, total, mine);
+      }
+      /* 유령 칩 — 그 사람 아이콘에서 타워로 날아와 도착과 함께 사라진다.
+         타워에 «남지» 않는 것이 핵심이다. 남으면 타워가 다시 사람 수만큼 자란다. */
+      function ghostChip(src, pileEl, denom, owner){
+        var a = src && src.getBoundingClientRect();
+        if (!a || !a.width) {
+          var rb = rosterEl && rosterEl.getBoundingClientRect();
+          if (rb && rb.width) a = rb;
+        }
+        var tw = pileEl.querySelector('.bc-tower') || pileEl;
+        var b = tw.getBoundingClientRect();
+        if (!a || !a.width || !b.width) return;
+        var host = document.createElement('span');
+        host.className = 'pchip bc3d c-coin ' + denomClass(denom) + ' toss';
+        host.setAttribute('data-owner', owner);
+        host.innerHTML = chipArt(denom);
+        var d = TOWER_CHIP;
+        var cx = b.left + b.width/2 - d/2, cy = b.bottom - d;
+        host.style.cssText = 'position:fixed;margin:0;left:' + cx + 'px;top:' + cy + 'px;' +
+          'width:' + d + 'px;height:' + d + 'px;min-width:' + d + 'px;min-height:' + d + 'px;';
+        host.style.setProperty('--fx', Math.round((a.left+a.width/2) - (cx+d/2)) + 'px');
+        host.style.setProperty('--fy', Math.round((a.top+a.height/2) - (cy+d/2)) + 'px');
+        host.style.setProperty('--fs', Math.min(2.6, a.width / d).toFixed(2));
+        getFxLayer().appendChild(host);
+        setTimeout(function(){ if (host.parentNode) host.parentNode.removeChild(host); }, 400);
       }
 
       // 칩이 상자 밖을 지나는 구간은 .market의 overflow:hidden에 잘려 보이지 않으므로,
@@ -222,14 +271,15 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
           }, 380 + i * 70);
         });
       }
-      // 내 클릭은 폴링을 기다리지 않고 즉시 칩을 올린다.
-      // 방금 누른 코인 버튼의 실제 화면 위치에서 출발해 상자 안 제자리로 날아온다.
+      /* 내 클릭은 폴링을 기다리지 않고 즉시 반영한다 — 타워를 그 자리에서 다시
+         세우고, 방금 누른 코인 버튼에서 유령 칩 한 장을 날린다. */
       function dropMyChip(market, denom){
-        var el = document.getElementById('pile-'+market), pile = piles[market];
-        if (!el || !pile) return;
-        var added = pushChips(el, pile, [denom], st.me, 'pending');
-        pile.byUser[st.me] = (pile.byUser[st.me]||0) + denom;
-        tossFrom(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), added);
+        var el = document.getElementById('pile-'+market), t = towers[market];
+        if (!el || !t) return;
+        t.byUser[st.me] = (t.byUser[st.me]||0) + denom;
+        t.total += denom; t.mine = true;
+        paintTower(el, market, t.total, true);
+        ghostChip(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), el, denom, st.me);
       }
       // 돈이 나온 상자의 칩을 각자 주인에게 돌려보낸다.
       // 내 것은 화면 아래 중앙(칩 바)으로 빨려들어오고, 남의 것은 오른쪽 참가자 아이콘으로 간다.
