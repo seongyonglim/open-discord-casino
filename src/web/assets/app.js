@@ -1490,10 +1490,26 @@ window.__foldOut = function(el, done){
     /* 머리 바로 아래에서 시작하게 맞춘다. 고정값으로 두면 헤더에 가려진다 — 헤더는
        sticky 라 스크롤 중에도 화면 위에 있고, 높이도 상황마다 다르다(시즌 마감 배너가
        붙으면 그만큼 높아진다). 토스트를 띄울 때마다 재는 것이 가장 확실하다. */
-    var h = document.querySelector('header');
-    var top = h ? Math.round(h.getBoundingClientRect().bottom) + 12 : 14;
+    /* 인게임 껍데기에서는 header 가 숨고 .ig-bar 가 그 일을 한다. header 만 보면
+       숨은 요소의 bottom(0 근처)을 재서 띠가 상단바 뒤로 들어간다. 있는 것을 본다. */
+    /* «보이는가» 는 높이로 판단한다. offsetParent 로 보면 안 된다 — 상단바는
+       position:fixed 라 offsetParent 가 언제나 null 이고, 그러면 있는데도 없다고
+       읽어 header(숨어 있어 bottom≈0)로 떨어진다. 실제로 띠가 화면 맨 위(10px)에
+       붙어 상단바 뒤로 들어갔다. */
+    var bar = document.querySelector('.ig-bar');
+    var h = (bar && bar.getBoundingClientRect().height > 0) ? bar : document.querySelector('header');
+    var top = h ? Math.round(h.getBoundingClientRect().bottom) + 10 : 14;
     stack.style.setProperty('--toast-top', top + 'px');
     return stack;
+  }
+  /* 폰인가 — 자리(위 가운데)와 수명과 쌓는 개수가 여기서 갈린다.
+     CSS 의 두 미디어 쿼리와 같은 조건을 쓴다. 한쪽만 고치면 «가운데에 뜨는데 다섯 개가
+     쌓이는» 식으로 어긋난다. */
+  function toastPhone(){
+    try {
+      return window.matchMedia('(max-width:560px)').matches
+        || window.matchMedia('(max-width:1024px) and (max-height:560px) and (orientation:landscape)').matches;
+    } catch (e) { return false; }
   }
   /* 종류마다 모양이 다르다. 달성은 금색 트로피에 소리가 나고, 공지는 조용히 뜬다 —
      같은 소리를 내면 "뭔가 해냈다"와 "읽을 것이 있다"가 구분되지 않는다. */
@@ -1523,13 +1539,27 @@ window.__foldOut = function(el, done){
       + '<span class="toast-mid"><span class="toast-t">' + esc(o.title || k.head) + '</span>'
       + '<span class="toast-m">' + esc(o.message || '') + '</span></span>';
     s.appendChild(d);
+    var phone = toastPhone();
+    /* 폰에서는 두 개까지만 세워 둔다. PC 는 오른쪽 위가 비어 있어 넷이 쌓여도 아무것도
+       안 가리지만, 폰에서 위 가운데에 넷이 쌓이면 판의 절반이 사라진다.
+       넘치면 «가장 오래된 것» 부터 내보낸다 — 새로 온 것이 읽을 값이 더 크다. */
+    if (phone) {
+      /* 밀려나는 것은 즉시 뺀다. 사라지는 동작을 보여 주려고 남겨 두면 그동안 개수가
+         안 줄어서 다음 것이 또 밀어내야 하고, 그 사이 화면에는 셋이 서 있다 —
+         "둘까지" 를 지키지 못한다. 새 것이 오는 것이 이미 눈에 띄는 변화라
+         나가는 쪽까지 보여 줄 값이 없다. */
+      while (s.children.length > 2) s.removeChild(s.firstElementChild);
+    }
     // 다음 프레임에 클래스를 붙여야 들어오는 동작이 보인다 (붙인 채로 넣으면 이미 제자리다)
     requestAnimationFrame(function(){ d.classList.add('in'); });
     if (k.sfx && window.casinoSfx && window.casinoSfx.achievement) window.casinoSfx.achievement();
+    /* 폰은 3초. PC 의 5초는 «읽고 나서도 남아 있는» 시간인데, 폰에서는 그 시간이
+       판을 가리는 시간이다. 누를 것이 있으면 그래도 조금 더 세워 둔다. */
+    var life = phone ? (o.link ? 4500 : 3000) : (o.link ? 8000 : 5000);
     setTimeout(function(){
       d.classList.remove('in');
       setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 400);
-    }, o.link ? 8000 : 5000);   // 누를 것이 있으면 조금 더 세워 둔다
+    }, life);
   }
 
   /* 공지 팝업은 이 브라우저에서 한 번만 뜬다.
