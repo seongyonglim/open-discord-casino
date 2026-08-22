@@ -120,6 +120,131 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       closeWin(st && st.tournament ? st.tournament : null);
     });
 
+    /* ── 리바이 ────────────────────────────────────────────────────────
+       탈락한 순간에 «다시 도전하겠는가» 를 묻는다.
+
+       띄울지 말지는 서버가 정한다(st.tournament.rebuy.can). 조건이 여섯이고
+       (대회가 리바이를 허용하나 · 횟수가 남았나 · 시작했나 · 늦은 등록 창 안인가 ·
+       내가 탈락했나 · 자리가 있나) 그중 셋은 서버만 아는 값이다. 화면이 같은 판단을
+       한 벌 더 갖고 있으면 언젠가 두 판단이 갈린다 — 그때 «떠야 하는데 안 뜨는»
+       쪽으로 갈리면 사람은 리바이 기회를 통째로 잃는다.
+
+       이 판에서 «관전하겠다» 를 한 번 고르면 다시 묻지 않는다. 표시는
+       sessionStorage 에 둔다: 새로고침 한 번에 풀리면 안 되고(같은 판이다),
+       다음 판에는 다시 물어야 한다(열쇠에 대회 id 가 들어간다). */
+    var rbEl = document.getElementById('htRb');
+    var rbSkipped = false;
+    function rbKey(t){ return 'od_ht_rbskip_' + t.id; }
+    function rbSkippedFor(t){
+      if (rbSkipped) return true;
+      try { return sessionStorage.getItem(rbKey(t)) === '1'; } catch (e) { return false; }
+    }
+    function rebuyPrompt(){
+      var t = st && st.tournament;
+      var r = t && t.rebuy;
+      if (!r || !r.can || rbSkippedFor(t)) { rbEl.hidden = true; return; }
+
+      /* ── 결과가 다 나온 다음에 묻는다 ────────────────────────────
+         서버는 «칩이 0 이 됐다» 를 endHand 에서 곧바로 쓴다. 그런데 화면은 그때부터
+         보드를 마저 깔고 · 패를 열고 · 팟을 승자에게 보낸다 — 그 연출이 몇 초짜리다.
+         그 사이에 창을 띄우면 카드가 열리기도 전에 «다시 도전하시겠습니까» 가 떠서,
+         내가 졌다는 것을 연출보다 먼저 알려 준다. 결과를 스포한다.
+
+         우승 팝업이 이미 같은 문제를 풀어 놓았다(settleDone). 그 신호를 그대로 쓴다 —
+         판단 기준이 둘로 갈리면 언젠가 한쪽만 고쳐진다.
+           · settleDone   팟이 승자에게 다 들어갔나 (+ 여유 0.5초)
+           · koBurstEndsAt  바운티 처형 총격이 끝났나 — 마지막 총알이 나를 잡은 것이다
+           · mysBoxEndsAt   미스터리 상자 개봉이 끝났나
+         셋 다 우승 팝업이 기다리는 것과 같은 값이고, 셋 다 «나를 죽인 그 장면» 이다.
+         그것을 다 보고 나서 묻는 것이 순서다.
+
+         hidden 은 손대지 않고 그냥 돌아간다. 여기서 감추면 연출 도중에 창이 깜빡였다
+         사라진 것처럼 보인다 — 아직 한 번도 안 떴으므로 그대로 두면 된다. */
+      var tb = st.table;
+      if (tb && !settleDone(tb)) return;
+      if (typeof koBurstEndsAt === 'number' && koBurstEndsAt > 0
+        && Date.now() < koBurstEndsAt + KO_GAIN_HOLD_MS) return;
+      if (typeof mysBoxEndsAt === 'number' && mysBoxEndsAt > 0
+        && Date.now() < mysBoxEndsAt + KO_GAIN_HOLD_MS) return;
+
+      /* 시계·남은 횟수·비용은 매초 바뀔 수 있으므로 «글자만» 갈아 끼운다.
+         상자를 통째로 다시 그리면 누르려던 버튼이 손가락 밑에서 사라진다. */
+      var left = t.lateRegLeft;
+      rbPut('htRbLeft', left != null ? mmss(left) : '–');
+      rbPut('htRbLeftN', r.left + ' / ' + r.max + '회');
+      /* 칩 수만으로는 «많은가» 를 알 수 없다. 600칩이 크게 들리지만 블라인드가
+         50/100 이면 6BB — 두 바퀴면 사라지는 스택이고, 그 사실이 리바이 여부를
+         가른다. 지금 판의 BB 로 나눠 같이 적는다.
+         내림한다: 4.9BB 를 5BB 로 적으면 실제보다 넉넉해 보인다. 판이 아직 안 열려
+         BB 를 모르면 칩 수만 적는다 — 모르는 값을 지어내지 않는다. */
+      var rbBb = st.table && st.table.level ? st.table.level.bb : 0;
+      var rbBbs = rbBb > 0 ? Math.floor(t.startingStack / rbBb) : null;
+      rbPut('htRbStack', num(t.startingStack) + ' 칩' + (rbBbs != null ? ' (' + rbBbs + ' BB)' : ''));
+      rbPut('htRbCost', num(r.cost) + ' P');
+      rbPut('htRbBal', '보유: ' + num(st.balance || 0) + ' P');
+      /* 마감이 코앞이면 시계를 붉게 — 남은 시간이 곧 결정 시간이다 */
+      document.getElementById('htRbLeft').classList.toggle('soon', left != null && left <= 60);
+
+      /* 낼 수 있는지는 서버가 준 잔고로 본다. 상단바의 data-balance 는 페이지를 열 때
+         한 번 서버 렌더된 값이라 홀덤에서는 낡아 있다(아무도 갱신하지 않는다). */
+      var poor = (st.balance || 0) < r.cost;
+      var go = document.getElementById('htRbGo');
+      go.disabled = poor;
+      go.classList.toggle('off', poor);
+      document.getElementById('htRbWarn').hidden = !poor;
+      rbEl.hidden = false;
+    }
+    /* 짧은 글자 하나만 바꾼다. 같은 글이면 DOM 을 안 건드린다 —
+       매초 돌면서 텍스트를 다시 쓰면 그 위의 선택 영역이 매번 풀린다. */
+    function rbPut(id, text){
+      var el = document.getElementById(id);
+      if (el && el.textContent !== text) el.textContent = text;
+    }
+    /* 이 판에서 다시 묻지 않겠다고 표시한다. 둘 다 «리바이 안 함» 이므로 표시는 같고,
+       테이블에 남는지 여부만 다르다. */
+    function rbDismiss(){
+      var t = st && st.tournament;
+      rbSkipped = true;
+      if (t) { try { sessionStorage.setItem(rbKey(t), '1'); } catch (e) { /* 없어도 동작한다 */ } }
+      rbEl.hidden = true;
+      return t;
+    }
+    /* 관전 — 창만 닫는다. 테이블은 그대로 두고 남은 사람들의 승부를 계속 본다
+       (render 가 탈락자를 자동으로 관전으로 넘긴다). */
+    document.getElementById('htRbSkip').addEventListener('click', function(){
+      rbDismiss();
+      render();
+    });
+    /* 로비 — 테이블을 떠난다. 우승 팝업의 [확인] 과 같은 장치를 쓴다: 이 대회의
+       테이블은 더 그리지 않겠다고 표시해 두면 render 가 로비를 그린다. 표시를
+       안 하면 다음 폴링에서 관전으로 다시 끌려 들어간다. */
+    document.getElementById('htRbLobby').addEventListener('click', function(){
+      var t = rbDismiss();
+      if (t) {
+        leftTableTid = t.id;
+        try { sessionStorage.setItem(leftKey(t), '1'); } catch (e) { /* 없어도 동작한다 */ }
+      }
+      render();
+      poll();
+    });
+    document.getElementById('htRbGo').addEventListener('click', async function(){
+      var go = this;
+      if (go.disabled) return;
+      go.disabled = true;
+      var r = await post('/api/games/holdem/rebuy');
+      if (!r.ok) {
+        /* 실패는 대개 «그 사이에 창이 닫혔다» 이다. 문구를 그대로 보여 주고 창을
+           닫는다 — 다시 누를 수 있게 열어 두면 같은 실패를 반복한다. */
+        document.getElementById('htRbWarn').textContent = (r.d && r.d.error) || '리바이할 수 없습니다.';
+        document.getElementById('htRbWarn').hidden = false;
+        go.disabled = false;
+        return;
+      }
+      rbEl.hidden = true;
+      if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+      poll();   // 자리에 앉은 새 상태를 곧바로 당겨온다
+    });
+
     /* ── 역대 전적 탭 ─────────────────────────────────────────────────
        지표를 게임별 랭킹(판수·승률·수익액)과 다르게 잡는다. 프리롤은 참가비가 0이라
        상금만 양수로 들어와서 "수익액"이 실력과 무관하게 참가 횟수만큼 오른다.

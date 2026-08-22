@@ -586,10 +586,44 @@ section('[16] 상금 금액 — 합이 정확히 상금 풀 (최대잉여법)');
     /* 상금 풀이 0이면 나눌 것이 없으니 빈 배열이 맞다 — 실제로는 풀이 최소
        3,000P(3명 × 1,000)라 0이 될 수 없지만, 무작위 표본에는 섞여 들어온다.
        예전엔 길이를 무조건 ITM 인원과 비교해서 이 경우를 실패로 봤다. */
-    if (pool > 0 && amts.length !== T.itmCount(players)) rbad++;
+    /* 견주는 대상은 itmCount 가 아니라 paidCount 다. 둘은 이제 다를 수 있다 —
+       itmCount 는 «상위 30%» 라는 규칙이고, paidCount 는 그 위에 «풀이 감당하는가»
+       를 얹은 실제 지급 인원이다. 뒤쪽 등수가 1인당 금액의 절반에 못 미치면 줄인다.
+       무작위 표본에는 «인원 60명에 풀 1,000P» 같은 극단이 섞여 들어오는데, 그때
+       itmCount 는 18을 주지만 실제로 나눌 수 있는 것은 한 명분도 안 된다. */
+    if (pool > 0 && amts.length !== T.paidCount(pool, players)) rbad++;
+    /* 지급 인원은 «상위 30%» 를 넘지 않는다 — 줄이기만 하지 늘리지 않는다. */
+    if (pool > 0 && amts.length > T.itmCount(players)) rbad++;
+    /* 그리고 최소 한 명은 받는다. 풀이 아무리 작아도 우승자는 있다. */
+    if (pool > 0 && amts.length < 1) rbad++;
     if (amts.some(v => v < 0 || !Number.isInteger(v))) rbad++;
   }
-  ck('무작위 2만 건 — 합 = 상금 풀 · 인원 = ITM · 정수', rbad === 0, `${rbad}건`);
+  ck('무작위 2만 건 — 합 = 상금 풀 · 인원 = 실지급 인원 · 정수', rbad === 0, `${rbad}건`);
+
+  /* ── 최소 상금 하한 ────────────────────────────────────────────────
+     배분은 등비수열이라 지급 인원이 늘수록 뒤쪽이 기하급수적으로 작아진다.
+     좌석이 아홉인 동안에는 지급이 세 명을 넘은 적이 없어 드러나지 않았는데,
+     리바이로 엔트리가 좌석 수를 벗어나면서 그 구간이 열렸다.
+     하한은 «1인당 금액의 절반» 이다 — 절대값으로 잡으면 1인당 1,000P 짜리 프리롤이
+     통째로 부서진다(실측: 2,500P 로 잡았을 때 9명 판의 지급이 셋에서 둘로 줄었다). */
+  {
+    const per = 5000;
+    for (const n of [3, 9, 20, 30, 50, 100]) {
+      const pool = n * per;
+      const amts = T.prizeAmounts(pool, n);
+      const floor = (pool / n) * T.MIN_PRIZE_RATIO;
+      ck(`${n}엔트리 — 꼴찌도 1인당 금액의 절반 이상`,
+        amts.length > 0 && amts[amts.length - 1] >= Math.floor(floor) - 1,
+        `지급 ${amts.length}명 · 꼴찌 ${amts[amts.length - 1]}P · 하한 ${Math.floor(floor)}P`);
+      ck(`${n}엔트리 — 합이 상금 풀과 같다`,
+        amts.reduce((a, b) => a + b, 0) === pool,
+        `${amts.reduce((a, b) => a + b, 0)} vs ${pool}`);
+    }
+    // 작은 판은 한 글자도 안 바뀐다 — 하한이 비율이라 걸리지 않는다
+    ck('9명 9,000P 는 예전 그대로 3명 지급',
+      JSON.stringify(T.prizeAmounts(9000, 9)) === '[4500,2781,1719]',
+      JSON.stringify(T.prizeAmounts(9000, 9)));
+  }
 
   console.log('\n  실제 예상 배분:');
   for (const n of [3, 4, 5, 6, 9]) {

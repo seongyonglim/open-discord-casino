@@ -218,6 +218,10 @@ export function createTournament(o: {
   levelMin?: number;
   lateRegMin?: number;
   graceMin?: number;
+  /* 한 사람이 리바이할 수 있는 최대 횟수. 0(기본)이면 프리즈아웃 — 재입장이 없는
+     지금까지의 대회다. 선택 항목으로 두는 이유: 이 함수를 부르는 감사 스크립트가
+     열 곳이 넘는데, 필수로 만들면 그쪽이 전부 깨진다. */
+  maxRebuys?: number;
 }):
   { ok: true; id: number }
   | { ok: false; error: 'live_exists' } | { ok: false; error: 'too_close'; startsAt: number }
@@ -304,8 +308,9 @@ export function createTournament(o: {
        시작 시각이 속한 날을 적어 두는 이름표로만 쓴다 — 목록에서 언제 열린 판인지 읽는다. */
     run(`INSERT INTO holdem_tournaments
            (date_str, title, reg_open_at, scheduled_start_at, grace_ends_at, prize_multiplier,
-            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode, bounty_pct)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            starting_stack, level_sec, late_reg_sec, prize_fixed, buy_in, mode, bounty_pct,
+            max_rebuys)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       T.kstDateStr(startAt * 1000), title,
       /* 이월 배수를 여기서 굳혀 넣는다. 못 열린 회차만큼 프리롤이 커지는데(rollover.ts),
          그 곱셈을 화면이나 지급 시점에 하면 대회가 끝나고 이월이 0 이 된 뒤 결과 화면이
@@ -313,7 +318,11 @@ export function createTournament(o: {
          나면 그 대회의 금액은 어디서 읽어도 같다.
          참가비 대회는 곱하지 않는다 — 걷은 돈이 상금이라 서비스가 얹는 배수가 없다. */
       regOpenAt, startAt, startAt + grace.n * 60, rolledMultiplier({ prize_multiplier: mult, buy_in: buyIn }),
-      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode, bountyPct);
+      stack.n, level.n * 60, late.n * 60, fixed, buyIn, mode, bountyPct,
+      /* 리바이 횟수도 대회 «행» 에 박는다. 코드 상수를 실시간으로 읽으면 운영자가
+         값을 바꾸는 순간 진행 중인 대회의 규칙이 바뀐다 — 스타팅 칩·블라인드 주기가
+         행으로 내려온 것과 같은 이유다. */
+      Math.max(0, Math.min(10, Math.floor(o.maxRebuys ?? 0))));
     return { ok: true as const, id: one<{ id: number }>(`SELECT last_insert_rowid() AS id`)!.id };
   });
 }

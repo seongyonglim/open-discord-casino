@@ -24,6 +24,21 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
         : (pko ? '<span class="ht-mode bty">바운티<\\/span>'
                : '<span class="ht-mode cls">클래식<\\/span>');
     }
+    /* 리바이 뱃지 — 이 판이 «다시 살 수 있는 판인가» 를 모드 뱃지 옆에 붙인다.
+       모드와 나란히 서야 하는 이유: 둘 다 «참가를 정하기 전에» 알아야 하는 성격이다.
+       프리즈아웃은 한 번 죽으면 그날이 끝나는 판이라 초반에 크게 못 지르고, 리바이가
+       열린 판은 반대다 — 같은 참가비라도 들고 갈 각오가 다르다. 그런데 지금까지는
+       그 사실이 어디에도 안 적혀 있었다(규칙 안내에도 없다).
+
+       0 을 «리바이 0회» 로 적지 않는다. 그렇게 적으면 «리바이라는 게 있는데 내 몫이
+       0» 으로 읽힌다 — 남은 횟수를 말하는 것처럼 보인다. 0 은 규칙 자체에 이름이
+       따로 있는 상태이므로 그 이름으로 적는다: 프리즈아웃. */
+    function rebuyBadge(n){
+      n = Math.max(0, Math.floor(n || 0));
+      return n > 0
+        ? '<span class="ht-mode rb">리바이 ' + n + '회<\/span>'
+        : '<span class="ht-mode fz">프리즈아웃<\/span>';
+    }
     /* 이월 배너 문구.
        "최소 인원 미달로" 대신 "열리지 못한 회차가 얹혀" 를 쓴다 — 미달은 원인의 이름일
        뿐이고, 읽는 사람이 알고 싶은 것은 "지난번에 안 열려서 그만큼 쌓였다" 는 사실이다.
@@ -59,6 +74,7 @@ export const LOBBY_EMPTY = `    /* 다음 대회 카드에도 같은 뱃지와 �
             '<div class="ht-next-top">' +
               '<span class="ht-next-tags">' +
                 '<span class="ht-badge open">다음 대회</span>' + nextModeBadge(up) +
+                rebuyBadge(up.maxRebuys) +
               '<\/span>' +
               '<span class="ht-next-when">' + esc(kstDay(up.startAt)) + ' ' + esc(kstClock(up.startAt)) + '<\/span>' +
             '<\/div>' +
@@ -196,14 +212,40 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
         action = t.iRegistered ? joinedBtn()
           : '<button type="button" class="btn btn-gold" id="htJoin">참가 신청</button>';
       } else if (t.status === 'RUNNING') {
-        if (t.lateRegLeft != null) {
-          badge = '<span class="ht-badge late">LATE REGIST</span>';
-          note = '늦은 등록 마감까지 ' + dur(t.lateRegLeft);
+        /* 진행 중인 판에서 이 카드가 답해야 하는 것은 하나다 — «나는 지금 무엇을 할 수
+           있나». 상태가 셋이고 각자 할 수 있는 일이 다르므로 단추도 셋으로 갈린다.
+             탈락했는데 되살 수 있다  → 리바이(금색) + 관전(조용히)
+             아직 앉아 있다            → 복귀(초록) — 내 판이 지금 돌고 있다
+             그 밖                     → 관전(회색)
+           예전에는 상태와 무관하게 [관전하기] 하나였고, 늦은 등록 창이 열려 있을 때만
+           [Late Reg 참가하기] 가 붙었다. 죽은 사람에게 남은 유일한 길(리바이)이 이
+           화면에는 없어서, 그걸 하려면 테이블로 들어가 팝업이 뜨기를 기다려야 했다. */
+        var lateOpen = t.lateRegLeft != null;
+        badge = lateOpen ? '<span class="ht-badge late">LATE REGIST</span>'
+          : '<span class="ht-badge run">진행 중</span>';
+        note = lateOpen ? '늦은 등록 마감까지 ' + dur(t.lateRegLeft)
+          : '늦은 등록이 마감되었습니다';
+        var rbS = t.rebuy;
+        var seatedNow = st.table && st.table.mySeat != null;
+        if (rbS && rbS.can) {
+          /* 낼 돈이 없으면 누를 수 없게 둔다. 눌러 보고 «포인트가 부족합니다» 를
+             듣는 것보다, 누르기 전에 못 누르는 것이 낫다 — 이미 죽은 마당에
+             한 번 더 거절당할 이유가 없다. 대신 얼마가 있는지를 아래에 적는다:
+             «부족하다» 만 있으면 얼마를 채워야 하는지 알 수 없다. */
+          var poorNow = (st.balance || 0) < rbS.cost;
+          action = '<button type="button" class="btn btn-gold" id="htRbGo2"'
+              + (poorNow ? ' disabled' : '') + '>리바이 (' + num(rbS.cost) + 'P)</button>' +
+            ' <button type="button" class="btn btn-sub" id="htSpectate">테이블 관전하기</button>'
+            + (poorNow
+              ? '<p class="ht-act-warn">보유 포인트가 부족합니다 (보유: '
+                  + num(st.balance || 0) + ' P)</p>'
+              : '');
+        } else if (seatedNow) {
+          action = '<button type="button" class="btn btn-back" id="htSpectate">테이블로 복귀하기</button>';
+        } else if (lateOpen && !t.iRegistered) {
           action = '<button type="button" class="btn btn-gold" id="htJoin">Late Reg 참가하기</button>' +
             ' <button type="button" class="btn" id="htSpectate">관전하기</button>';
         } else {
-          badge = '<span class="ht-badge run">진행 중</span>';
-          note = '늦은 등록이 마감되었습니다';
           action = '<button type="button" class="btn" id="htSpectate">관전하기</button>';
         }
       } else if (t.status === 'FINISHED') {
@@ -371,6 +413,53 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
          그 자리를 표식으로 비운 "뼈대"를 만들어 지난번 것과 견준다. 같으면 DOM 은
          손대지 않고 남은 시간 글자만 갈아 끼운다 — 단추는 계속 같은 노드로 살아 있다.
          상태가 실제로 바뀌었을 때만(신청·취소·인원 변동) 다시 그린다. */
+      /* ── 여섯 칸 ────────────────────────────────────────────────
+         시작 전과 진행 중은 알고 싶은 것이 다르다.
+           시작 전 — 갈까 말까: 몇 명 모였나 · 얼마 걸렸나 · 참가비 · 시작 스택 ·
+                     몇 명이 받나 · 몇 명이면 열리나
+           진행 중 — 지금 어떤가: 몇 명 남았나 · 지금 얼마 · 블라인드가 어디까지 왔나 ·
+                     평균 스택이 시작 스택 대비 어떤가
+         같은 여섯 칸을 그대로 두면 진행 중인 판에서 «최소 인원 3명» 같은, 이미 지나간
+         조건이 자리를 차지한다. 칸 수와 모양은 같게 두고 내용만 바꾼다 — 카드가
+         갑자기 다른 물건이 되지 않아야 상태가 넘어가는 것으로 읽힌다. */
+      var tbNow = st.table;
+      var running = t.status === 'RUNNING' && tbNow != null;
+      var costCell = t.buyIn > 0
+        /* 참가비가 있으면 그 자리에 참가비를 적는다. "1인당 배수"는 프리롤에서
+           서비스가 얹어 주는 금액이라 참가비 대회에서는 뜻이 없다 — 두 값을 나란히
+           두면 어느 쪽이 내 돈인지 헷갈린다. */
+        ? '<div><span class="k">참가비</span><span class="v warn">' + num(t.buyIn) + 'P</span></div>'
+        : '<div><span class="k">1인당</span><span class="v">' + num(t.multiplier) + 'P</span></div>';
+      var poolCell = '<div><span class="k">상금 풀</span><span class="v gold">'
+        + num(poolTotal) + 'P</span>' + poolSub + '</div>';
+      var gridHtml = running
+        ? '<div class="ht-grid">' +
+            /* «남은 인원 / 총 참가자». 총은 사람 수다 — 엔트리 수로 적으면 리바이가
+               있는 판에서 «6 / 11명» 이 되어 다섯이 어디 갔는지 설명할 자리가 없다.
+               리바이 횟수는 아래 상금 풀이 이미 설명한다. */
+            '<div><span class="k">남은 인원</span><span class="v">' + tbNow.remaining
+              + ' / ' + t.registered + '명</span></div>' +
+            poolCell +
+            /* 블라인드는 «레벨» 만으로는 크기를 모르고 «75/150» 만으로는 어디쯤인지를
+               모른다. 큰 글자에 레벨, 아래 작은 줄에 실제 금액 — 둘 다 있어야 읽힌다. */
+            '<div><span class="k">블라인드</span><span class="v">Level ' + tbNow.level.level
+              + '</span><span class="ht-sub">' + num(tbNow.level.sb) + ' / ' + num(tbNow.level.bb)
+              + (tbNow.level.ante > 0 ? ' · 앤티 ' + num(tbNow.level.ante) : '') + '</span></div>' +
+            '<div><span class="k">시작 스택</span><span class="v">' + num(t.startingStack) + '</span></div>' +
+            /* 평균 스택은 시작 스택 옆에 있어야 뜻이 생긴다 — 600 이 큰지 작은지는
+               시작이 얼마였는지를 알아야 정해진다. */
+            '<div><span class="k">평균 스택</span><span class="v">' + num(tbNow.avgStack) + '</span></div>' +
+            '<div><span class="k">지급 인원</span><span class="v">' + t.itm + '명</span></div>' +
+          '</div>'
+        : '<div class="ht-grid">' +
+            '<div><span class="k">참가자</span><span class="v">' + t.registered + ' / ' + t.maxPlayers + '</span></div>' +
+            poolCell +
+            costCell +
+            '<div><span class="k">시작 스택</span><span class="v">' + num(t.startingStack) + '</span></div>' +
+            '<div><span class="k">지급 인원</span><span class="v">' + t.itm + '명</span></div>' +
+            '<div><span class="k">최소 인원</span><span class="v">' + t.minPlayers + '명</span></div>' +
+          '</div>';
+
       var shell =
         '<div class="ht-card">' +
           /* 머리를 세 줄로 나눈다.
@@ -382,7 +471,11 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
                3행  날짜와 시각 */
           '<div class="ht-head">' +
             '<div class="ht-head-meta">' +
-              '<span class="ht-head-badges">' + modeBadge + badge + '</span>' +
+              /* 모드 · 리바이 · 상태 순. 앞의 둘은 «어떤 판인가»(열리기 전에 이미
+                 정해진 것)이고 상태는 «지금 어떤가»(계속 바뀌는 것)라, 안 바뀌는 것부터
+                 세운다. */
+              '<span class="ht-head-badges">' + modeBadge
+                + rebuyBadge(t.rebuy ? t.rebuy.max : 0) + badge + '</span>' +
               /* 시간은 여기 한 곳에만 들어간다. 아래 뼈대 비교가 이 자리를 표식으로
                  비워 두고 견주므로, 다른 곳에 초 단위 값이 새로 생기면 뼈대가 매 초
                  달라져서 단추가 다시 1초마다 무너진다 — 새 값은 반드시 이 note 로. */
@@ -395,20 +488,7 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
           rollBanner +
           /* 여섯 지표를 2×3 미니 카드로 나눈다. 줄 형태(k ····· v)로 쌓았을 때는
              여섯 줄이 같은 무게로 늘어서서 무엇을 봐야 할지 정해지지 않았다. */
-          '<div class="ht-grid">' +
-            '<div><span class="k">참가자</span><span class="v">' + t.registered + ' / ' + t.maxPlayers + '</span></div>' +
-            '<div><span class="k">상금 풀</span><span class="v gold">' + num(poolTotal) + 'P</span>'
-              + poolSub + '</div>' +
-            /* 참가비가 있으면 그 자리에 참가비를 적는다. "1인당 배수"는 프리롤에서
-               서비스가 얹어 주는 금액이라 참가비 대회에서는 뜻이 없다 — 두 값을 나란히
-               두면 어느 쪽이 내 돈인지 헷갈린다. */
-            (t.buyIn > 0
-              ? '<div><span class="k">참가비</span><span class="v warn">' + num(t.buyIn) + 'P</span></div>'
-              : '<div><span class="k">1인당</span><span class="v">' + num(t.multiplier) + 'P</span></div>') +
-            '<div><span class="k">시작 스택</span><span class="v">' + num(t.startingStack) + '</span></div>' +
-            '<div><span class="k">지급 인원</span><span class="v">' + t.itm + '명</span></div>' +
-            '<div><span class="k">최소 인원</span><span class="v">' + t.minPlayers + '명</span></div>' +
-          '</div>' +
+          gridHtml +
           '<div class="ht-actions">' + action + '</div>' +
           roster +
           payTable +
@@ -435,6 +515,28 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
         join.disabled = true;
         post('/api/games/holdem/register', {}).then(function(r){
           if (!r.ok) { alert(r.d && r.d.error ? r.d.error : '등록할 수 없습니다'); join.disabled = false; }
+          /* 늦은 등록이면 이미 판이 돌고 있다 — 그대로 들여보낸다. 시작 전 신청이면
+             테이블 자체가 없으므로 이 표시는 아무 일도 하지 않고, 판이 열릴 때
+             render 가 «방금 열렸다» 를 보고 들여보낸다. */
+          else if (t.status === 'RUNNING') enterTable(t);
+          pollNow();
+        });
+      });
+      /* 카드에서 바로 리바이한다. 팝업(.ht-rb)과 같은 일을 하지만 여기서는 확인 창이
+         한 겹 더 필요하다 — 팝업은 «방금 죽었다» 는 맥락 위에 떠서 금액이 이미 눈앞에
+         있지만, 카드는 아무 때나 들어와서 누를 수 있는 자리다. */
+      var rbGo2 = document.getElementById('htRbGo2');
+      if (rbGo2) rbGo2.addEventListener('click', function(){
+        var cost = t.rebuy ? t.rebuy.cost : 0;
+        if (!confirm('리바이 비용 ' + num(cost) + 'P를 내고 다시 참가합니다.\\n'
+          + '시작 스택 ' + num(t.startingStack) + ' 칩을 받고 테이블로 돌아갑니다.')) return;
+        rbGo2.disabled = true;
+        post('/api/games/holdem/rebuy', {}).then(function(r){
+          if (!r.ok) { alert(r.d && r.d.error ? r.d.error : '리바이할 수 없습니다'); rbGo2.disabled = false; return; }
+          /* 돈을 냈으면 판으로 들어간다 — 여기서 카드에 남겨 두면 방금 산 자리를
+             보러 한 번 더 눌러야 한다. */
+          enterTable(t);
+          if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
           pollNow();
         });
       });
@@ -462,7 +564,12 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
           pollNow();
         });
       });
-      if (spec) spec.addEventListener('click', function(){ spectate = true; render(); });
+      /* [관전하기]·[테이블로 복귀하기] — 하는 일은 같다. 판으로 들어간다.
+         문구만 상태에 따라 다른 이유는, 앉아 있는 사람에게 «관전» 이라고 쓰면
+         제 자리가 사라진 줄 알기 때문이다. */
+      if (spec) spec.addEventListener('click', function(){
+        spectate = true; enterTable(t); render();
+      });
     }
 
     /* ── 좌석 좌표 ──────────────────────────────────────────────────

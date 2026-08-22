@@ -152,6 +152,8 @@ export interface HtRow {
   bounty_pct: number;
   /** 등록 시작 알림을 보낸 시각. 서버 타이머가 없어서 "한 번만"을 이 열로 지킨다 */
   reg_notified_at: number | null;
+  /** 한 사람이 이 대회에서 리바이할 수 있는 최대 횟수. 0 이면 프리즈아웃(재입장 없음) */
+  max_rebuys: number;
 }
 
 /** 미스터리 바운티인가 — 봉투 금액이 제각각이고 잡히기 전까지 감춰진다. */
@@ -281,6 +283,12 @@ export interface HtEntryRow {
   bounty_revealed: number;
   /** 실제로 지급된 바운티. 이중 지급을 막는 자물쇠이자 되돌릴 금액의 유일한 근거다 */
   bounty_paid: number;
+  /** 이 대회에서 리바이한 횟수. 총 엔트리 = 행 수 + 이 값들의 합 */
+  rebuy_count: number;
+  /** 리바이로 낸 돈의 합. 상금 풀의 근거를 되짚을 때 쓴다 */
+  rebuy_paid: number;
+  /** 돈은 냈는데 아직 앉지 않은 리바이. 다음 판을 돌리기 직전에 앉는다 */
+  rebuy_pending: number;
 }
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
@@ -447,6 +455,23 @@ function holdemRecordsIn(
 export function getEntries(tournamentId: number): HtEntryRow[] {
   return all<HtEntryRow>(
     `SELECT * FROM holdem_entries WHERE tournament_id = ? ORDER BY registered_at ASC`, tournamentId);
+}
+
+/**
+ * **총 엔트리 수** — 사람 수가 아니라 «들어온 횟수» 다.
+ *
+ * 상금 풀도 지급 인원(ITM)도 이 숫자를 근거로 삼는다. 리바이는 참가비를 한 번 더
+ * 내고 다시 들어오는 것이므로, 다섯 명이 시작해 한 명이 리바이하면 총 엔트리는
+ * 여섯이다 — 상금도 여섯 명분이 되어야 낸 돈과 나갈 돈이 맞는다.
+ *
+ * 세는 자리를 여기 하나로 모으는 이유: 인원을 세는 곳이 지급·상태 응답·어드민·로비
+ * 네 군데인데(prizePoolOf 주석과 같은 사정이다), 한 곳만 «행 수» 로 남으면 화면이
+ * 약속한 상금과 실제 지급액이 달라진다. 그건 운영자가 아니라 유저가 먼저 발견한다.
+ */
+export function totalEntriesOf(entries: { rebuy_count?: number }[]): number {
+  let n = entries.length;
+  for (const e of entries) n += Math.max(0, Math.floor(e.rebuy_count ?? 0));
+  return n;
 }
 
 export function getCurrentHand(tableId: number): HtHandRow | undefined {
@@ -941,8 +966,11 @@ function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
   for (let step = 0; step < MAX_STEPS; step++) {
     const living = livingSeats(table.id);
 
-    // 한 명만 남았으면 토너먼트 종료
-    if (living.length <= 1) { finishTournament(t, table, now); return; }
+    /* 한 명만 남았으면 토너먼트 종료 — 단, 자리를 기다리는 리바이가 있으면 아니다.
+       그 사람은 이미 돈을 냈다. 여기서 끝내면 산 것을 한 판도 못 쓰고 대회가 닫힌다. */
+    if (living.length <= 1 && pendingRebuys(t.id) === 0) {
+      finishTournament(t, table, now); return;
+    }
 
     let hand = getCurrentHand(table.id);
 
@@ -951,6 +979,9 @@ function advanceTable(t: HtRow, table: HtTableRow, now: number): void {
       const at = table.next_hand_at;
       if (at == null) return;              // 시작 예약이 없다 (이상 상태 — 다음 요청에서 다시 본다)
       if (now < at) return;                // 쇼다운을 보여주는 중
+      /* 카드를 돌리기 직전이 리바이가 앉는 자리다. 앞 판의 연출은 next_hand_at 으로
+         이미 다 지나갔고, 다음 판은 아직 시작 전이다 — 그 틈 하나뿐이다. */
+      applyPendingRebuys(t, table);
       const fresh = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE id = ?`, table.id)!;
       startHand(t, fresh, now);
       table = one<HtTableRow>(`SELECT * FROM holdem_tables WHERE id = ?`, table.id)!;
@@ -1619,8 +1650,12 @@ function announceWinner(t: HtRow): void {
  */
 function payPrizes(t: HtRow, now: number): void {
   const entries = getEntries(t.id);
-  const pool = prizePoolOf(t, entries.length, tuning(t).prizeFixed);
-  const amounts = T.prizeAmounts(pool, entries.length);
+  /* «사람 수» 가 아니라 «들어온 횟수» 다. 리바이는 참가비를 한 번 더 내고 다시
+     들어오는 것이므로, 낸 돈이 늘었으면 나갈 돈도 그만큼 늘어야 한다.
+     지급 인원(ITM)도 이 숫자로 정해진다 — 여섯 엔트리 판은 여섯 명분의 표를 쓴다. */
+  const total = totalEntriesOf(entries);
+  const pool = prizePoolOf(t, total, tuning(t).prizeFixed);
+  const amounts = T.prizeAmounts(pool, total);
   /* 바운티 정산은 상금표와 별개로 돌아야 한다 — 프리롤 PKO 처럼 상금표가 빈 판에서도
      머리에 남은 값과 펀드 잔액은 우승자에게 나가야 하기 때문이다. */
   if (!amounts.length) { payBounties(t, entries); return; }
@@ -1885,6 +1920,214 @@ export function registerHoldem(userId: string, username: string):
     }
     return { ok: true, registered: getEntries(t.id).length };
   });
+}
+
+/* ── 리바이 ────────────────────────────────────────────────────────
+   탈락한 사람이 참가비를 한 번 더 내고 시작 스택을 받아 다시 앉는다.
+
+   이 함수가 registerHoldem 의 사촌인 이유: 늦은 등록과 하는 일이 거의 같다 —
+   창이 열려 있는지 보고, 돈을 걷고, 빈자리에 앉힌다. 다른 것은 셋뿐이다.
+     · 등록 «행» 을 새로 만들지 않는다. 이미 있는 행의 탈락 표시를 지우고
+       rebuy_count 를 올린다(유니크 인덱스를 그대로 두기 위해서다 — 그 인덱스가
+       마지막 자리를 두고 겹치는 요청을 막고 있고, 등수 계산도 한 사람 한 줄을
+       전제로 한다).
+     · 조건이 하나 더 있다: 이 대회가 리바이를 허용하는가(max_rebuys), 그리고
+       내 횟수가 남았는가.
+     · 프리롤이라도 공짜가 아니다. 리바이 비용은 아래 rebuyCostOf 가 정한다.
+
+   «탈락했는가» 의 근거는 좌석이 아니라 엔트리의 elim_seq 다. 좌석 행은 탈락하면
+   presence='OUT' 이 되지만 그 자리는 곧 다른 사람이 쓸 수 있고(위 registerHoldem
+   이 DELETE 후 INSERT 한다), 그러면 «내가 탈락했다» 는 사실이 좌석에서 사라진다. */
+export type RebuyError =
+  | 'closed'          // 대회가 없거나 끝났다
+  | 'not_running'     // 아직 시작 전이다 — 그때는 그냥 등록이다
+  | 'not_allowed'     // 이 대회는 프리즈아웃이다(max_rebuys = 0)
+  | 'not_registered'  // 이 대회에 참가한 적이 없다
+  | 'not_eliminated'  // 아직 살아 있다 — 칩을 들고 있는데 다시 살 수는 없다
+  | 'exhausted'       // 횟수를 다 썼다
+  | 'late_reg_closed' // 늦은 등록 창이 닫혔다
+  | 'table_full'      // 자리가 없다
+  | 'rebuy_pending'   // 이미 사 두고 다음 판을 기다리는 중이다
+  | 'no_funds';       // 잔고가 모자란다
+
+/**
+ * 리바이 비용.
+ *
+ * 유료 대회는 참가비와 같다 — 두 번째 엔트리도 첫 번째와 같은 값을 내야 상금 풀의
+ * 근거(1인당 금액 × 엔트리 수)가 성립한다.
+ *
+ * 프리롤은 참가비가 0 이라 그 규칙을 그대로 쓸 수 없다. 공짜로 무한히 다시 들어오면
+ * 리바이가 «다시 도전» 이 아니라 «죽지 않는 판» 이 된다. 그래서 고정 금액을 받는다.
+ * 주말 2배 이벤트로 상금 배수가 올라가도 이 값은 그대로다 — 이벤트는 «상금이 크다»
+ * 이지 «다시 사는 값이 비싸다» 가 아니다.
+ */
+export const REBUY_FREEROLL_COST = 5000;
+export function rebuyCostOf(t: { buy_in: number }): number {
+  const fee = Math.max(0, Math.floor(t.buy_in));
+  return fee > 0 ? fee : REBUY_FREEROLL_COST;
+}
+
+/** 자리를 기다리는 리바이 수. 자리 계산과 대회 종료 판단이 이 값을 함께 센다. */
+export function pendingRebuys(tournamentId: number): number {
+  return (one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM holdem_entries WHERE tournament_id = ? AND rebuy_pending = 1`,
+    tournamentId)!).n;
+}
+
+/** 이 사람이 지금 리바이할 수 있나 — 화면이 모달을 띄울지 정할 때도 쓴다. */
+export function rebuyStateOf(
+  t: HtRow, e: HtEntryRow | undefined, now: number, seatedCount: number
+): { can: boolean; reason?: RebuyError; left: number; cost: number } {
+  const max = Math.max(0, Math.floor(t.max_rebuys ?? 0));
+  const used = Math.max(0, Math.floor(e?.rebuy_count ?? 0));
+  const left = Math.max(0, max - used);
+  const cost = rebuyCostOf(t);
+  const no = (reason: RebuyError) => ({ can: false, reason, left, cost });
+  if (t.finished_at != null || t.cancelled_at != null) return no('closed');
+  if (t.started_at == null) return no('not_running');
+  if (max <= 0) return no('not_allowed');
+  if (!e) return no('not_registered');
+  /* 이미 돈을 내고 자리를 기다리는 중이면 또 살 수 없다. elim_seq 는 앉을 때까지
+     그대로 남아 있으므로 위의 «탈락했나» 만으로는 이 상태가 안 걸러진다 —
+     그대로 두면 한 판에 세 번을 연달아 사고도 자리는 하나만 받는다. */
+  if (e.rebuy_pending === 1) return no('rebuy_pending');
+  if (e.elim_seq == null) return no('not_eliminated');
+  if (left <= 0) return no('exhausted');
+  if (now >= t.started_at + tuning(t).lateRegSec) return no('late_reg_closed');
+  if (seatedCount >= T.MAX_PLAYERS) return no('table_full');
+  return { can: true, left, cost };
+}
+
+export function rebuyHoldem(userId: string, username: string):
+  { ok: true; left: number; cost: number } | { ok: false; error: RebuyError } {
+  return tx(() => {
+    const st = advanceHoldem();
+    const t = st.tournament;
+    if (!t) return { ok: false, error: 'closed' };
+    const table = getTable(t.id);
+    const seats = table ? getSeats(table.id).filter(s => s.presence !== 'OUT') : [];
+    const mine = one<HtEntryRow>(
+      `SELECT * FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
+    /* 자리를 셀 때 «기다리는 사람» 도 센다. 안 그러면 마지막 한 자리를 둘에게 팔고,
+       뒤에 온 사람은 돈만 내고 앉을 데가 없다. */
+    const chk = rebuyStateOf(t, mine, nowSec(), seats.length + pendingRebuys(t.id));
+    if (!chk.can) return { ok: false, error: chk.reason ?? 'closed' };
+
+    /* 낼 수 있는지 먼저 본다. 걷는 것은 자리가 확정된 뒤다 —
+       순서를 바꾸면 자리가 없어서 거절된 사람의 돈이 빠져나간다. */
+    const cost = chk.cost;
+    if ((getWebUser(userId)?.balance ?? 0) < cost) return { ok: false, error: 'no_funds' };
+    if (!table) return { ok: false, error: 'closed' };
+
+    /* ── 앉는 시점 ────────────────────────────────────────────────
+       판이 도는 중이면 지금 앉히지 않는다. 앉히는 순간 좌석 스택이 0 에서 시작
+       스택으로 튀는데, 쇼다운이 아직 카드를 열고 있는 중이라면 그 숫자가 결과보다
+       먼저 «저 사람은 죽었다» 를 알린다 — 리버가 열리기 전에 승패가 새는 것이다.
+       (봇 시뮬레이션에서 그대로 재현됐다: 올인 쇼다운 중에 스택이 600 으로 채워졌다.)
+       돈은 지금 걷고 표시만 남긴다. 앉는 것은 이 판이 끝나고 다음 판을 돌리기 직전이다
+       (advanceTable 의 applyPendingRebuys). */
+    const curHand = getCurrentHand(table.id);
+    const midHand = curHand != null && curHand.ended_at == null;
+    const got = midHand ? 0 : seatRebuy(t, table, userId, username, seats);
+    if (got < 0) return { ok: false, error: 'table_full' };
+
+    /* 탈락 표시는 «앉을 때» 지운다. 기다리는 동안에도 이 사람은 아직 나간 사람이고,
+       그래야 대회가 남은 인원을 잘못 세지 않는다(대신 아래 pendingRebuys 가
+       «끝내면 안 된다» 를 말한다). */
+    if (!midHand) {
+      run(`UPDATE holdem_entries SET elim_seq = NULL, eliminated_at = NULL
+            WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
+    }
+    run(`UPDATE holdem_entries
+            SET rebuy_count = rebuy_count + 1, rebuy_paid = rebuy_paid + ?,
+                rebuy_pending = ?
+          WHERE tournament_id = ? AND user_id = ?`, cost, midHand ? 1 : 0, t.id, userId);
+    return finishRebuy(t, userId, cost);
+  });
+}
+
+/* 빈 자리를 하나 찾아 앉힌다. 못 앉으면 -1.
+   리바이가 지금 앉을 때와 기다렸다 앉을 때 둘 다 이 길로 온다 — 좌석을 만드는 문장이
+   두 벌이 되면 한쪽만 고쳐지는 날이 온다. */
+function seatRebuy(
+  t: HtRow, table: HtTableRow, userId: string, username: string, seats: HtSeatRow[]
+): number {
+  {
+    const taken = new Set(seats.map(s => s.seat));
+    let got = -1;
+    for (let seat = 0; seat < T.MAX_PLAYERS; seat++) {
+      if (taken.has(seat)) continue;
+      /* 죽은 좌석 행을 둘 다 치우고 앉는다.
+           · 이 자리(seat)에 남아 있는 남의 시체 — 안 치우면 자리가 겹친다
+           · 내 시체가 앉아 있던 «다른» 자리 — 안 치우면 한 사람이 두 자리를 갖는다
+
+         두 번째가 실제로 터졌다. 자리 번호만 지우고 있었는데, 3번에서 죽은 사람이
+         0번으로 돌아오면 3번의 내 행이 그대로 남아
+         UNIQUE(table_id, user_id) 에 걸려 리바이가 예외로 죽었다(시뮬레이션 89초,
+         5판째에서 재현). 화면에서는 «리바이 버튼을 눌렀는데 아무 일도 안 일어남» 이다.
+
+         presence 를 못 박아 산 사람은 절대 지우지 않는다. 위의 taken 이 이미 산
+         좌석을 빼 두었으므로 여기 걸리는 행은 시체뿐이지만, 좌석을 지우는 문장은
+         한 글자만 틀려도 남의 판을 엎으므로 조건을 두 겹으로 둔다. */
+      run(`DELETE FROM holdem_seats
+            WHERE table_id = ? AND presence = 'OUT' AND (seat = ? OR user_id = ?)`,
+        table.id, seat, userId);
+      run(`INSERT INTO holdem_seats (table_id, seat, user_id, username, stack, presence, last_seen_at)
+           VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)`,
+        table.id, seat, userId, username, tuning(t).startingStack, nowSec());
+      got = seat;
+      break;
+    }
+    return got;
+  }
+}
+
+/* 리바이의 뒷정리 — 머리값을 다시 걸고, 돈을 걷고, 남은 횟수를 돌려준다.
+   지금 앉든 기다렸다 앉든 이 뒤는 같다. */
+function finishRebuy(
+  t: HtRow, userId: string, cost: number
+): { ok: true; left: number; cost: number } {
+  {
+    /* PKO 라면 머리값도 다시 걸린다. 새로 들어온 엔트리이므로 처음 등록과 같은 몫을
+       펀드에 넣고 같은 몫을 머리에 얹는다 — 안 그러면 이 사람을 잡아도 상금이 없다. */
+    if (isPko(t)) {
+      const myBounty = T.bountyShare(bountyUnitOf(t), bountyPctOf(t));
+      if (myBounty > 0) {
+        run(`UPDATE holdem_entries SET bounty = bounty + ? WHERE tournament_id = ? AND user_id = ?`,
+          myBounty, t.id, userId);
+        run(`UPDATE holdem_tournaments SET bounty_pool = bounty_pool + ? WHERE id = ?`,
+          myBounty, t.id);
+      }
+    }
+
+    /* 다 정해졌으니 걷는다. 반드시 adjustBalance 를 거친다 — 잔액을 직접 고치면
+       "잔액 = 원장 누적합"이 깨지고, 그 불변식은 감사가 매번 검사한다. */
+    adjustBalance(userId, -cost, 'holdem:rebuy:' + t.id);
+
+    const after = one<HtEntryRow>(
+      `SELECT * FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
+    const used = Math.max(0, Math.floor(after?.rebuy_count ?? 0));
+    return { ok: true, left: Math.max(0, Math.floor(t.max_rebuys) - used), cost };
+  }
+}
+
+/* 기다리던 리바이를 자리에 앉힌다 — 다음 판을 돌리기 직전에 부른다.
+   여기가 «리바이 칩이 테이블에 나타나는» 유일한 순간이다. 앞 판의 쇼다운과 팟 분배는
+   이미 다 끝났으므로, 스택이 0 에서 시작 스택으로 바뀌어도 아무것도 스포하지 않는다.
+   자리가 그새 다 찼으면 앉히지 못한다 — 그때는 표시를 남겨 다음 판에 다시 시도한다
+   (돈은 이미 걷혔고, 늦은 등록 창이 닫히기 전까지는 자리가 도로 난다). */
+function applyPendingRebuys(t: HtRow, table: HtTableRow): void {
+  const waiting = all<HtEntryRow>(
+    `SELECT * FROM holdem_entries WHERE tournament_id = ? AND rebuy_pending = 1
+      ORDER BY id ASC`, t.id);
+  if (!waiting.length) return;
+  for (const e of waiting) {
+    const seats = getSeats(table.id).filter(s => s.presence !== 'OUT');
+    if (seatRebuy(t, table, e.user_id, e.username, seats) < 0) continue;
+    run(`UPDATE holdem_entries
+            SET elim_seq = NULL, eliminated_at = NULL, rebuy_pending = 0
+          WHERE tournament_id = ? AND user_id = ?`, t.id, e.user_id);
+  }
 }
 
 export type ActionError =

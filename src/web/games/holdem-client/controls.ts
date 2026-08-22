@@ -22,10 +22,25 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       var la = st.table.legal; if (!la) return;
       var lo = la.minRaiseTo == null ? la.maxRaiseTo : la.minRaiseTo;
       var v = Math.max(lo, Math.min(la.maxRaiseTo, Math.floor(chips)));
+      /* 하한이 상한과 같으면 위 renderControls 가 min 을 0 으로 눕혀 두었다.
+         그래도 값은 언제나 상한이다 — 고를 것이 하나뿐이기 때문이고,
+         그 값이 곧 게이지 100% 다. */
       rangeEl.value = String(v);
       amountEl.value = String(fromChips(v));
     }
     function currentTarget(){ return Math.floor(Number(rangeEl.value) || 0); }
+    /* 채워진 만큼을 색으로 말한다.
+       accent-color 하나로 맡겨 두었더니 브라우저마다 트랙 색이 제각각이었고, 어두운
+       바탕에서는 채워진 쪽과 빈 쪽이 거의 같은 회색으로 보여 «어디까지 올렸나» 가
+       안 읽혔다. 비율을 직접 재서 CSS 변수로 넘긴다 — 칠하는 일은 CSS 가 한다.
+       분모가 0 이면 100 이다: 고를 것이 없다는 뜻이고, 그때 값은 언제나 상한이다.
+       (그 경우 조절대는 아예 감춰지므로 실제로 그려지지는 않는다.) */
+    function paintRange(la){
+      var lo = Number(rangeEl.min), hi = Number(rangeEl.max), v = currentTarget();
+      var pct = hi > lo ? ((v - lo) / (hi - lo)) * 100 : 100;
+      rangeEl.style.setProperty('--pct', String(Math.max(0, Math.min(100, pct))));
+      void la;
+    }
 
     function renderControls(){
       /* 차례가 아직 열리지 않았으면 버튼을 켜지 않는다.
@@ -92,6 +107,17 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       var lo = la.minRaiseTo == null ? la.maxRaiseTo : la.minRaiseTo;
       rangeEl.min = String(lo);
       rangeEl.max = String(la.maxRaiseTo);
+      /* ── 고를 것이 있을 때만 조절대를 세운다 ────────────────────
+         두 가지 경우에 «고를 것» 이 없다.
+           · 레이즈 자체가 안 된다(minRaiseTo == null) — 콜하면 그대로 올인인 숏스택이다
+           · 최소 레이즈가 곧 전 재산이다(lo >= maxRaiseTo) — 올인 하나뿐이다
+         둘 다 조절대가 있어 봐야 잡아끌 데가 없다. 게다가 하한과 상한이 같으면
+         브라우저가 게이지를 0% 로 그린다 — (value-min)/(max-min) 의 분모가 0 이라
+         맨 왼쪽으로 떨어진다. 전 재산을 거는 순간에 막대가 텅 비는 셈이라 화면이
+         사실과 정반대를 말한다. 채우는 것보다 치우는 것이 맞다.
+         아래 세 단추(폴드·체크/콜·레이즈)는 건드리지 않는다 — 그 줄은 언제나 그대로다. */
+      var canPick = la.minRaiseTo != null && lo < la.maxRaiseTo;
+      ctopEl.hidden = !canPick;
       /* 차례가 새로 열리면 금액을 최소값으로 되돌린다.
          예전에는 "범위를 벗어났을 때만" 되돌렸다. 그런데 판이 넘어가도 최소·최대는
          비슷하게 유지되므로 대개 범위 안에 들어가고, 그러면 지난 판에 맞춰 둔 금액이
@@ -149,6 +175,7 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       raise.hidden = la.minRaiseTo == null;
       raise.textContent = (currentTarget() >= la.maxRaiseTo ? '올인 '
         : la.raiseIsBet ? '베팅 ' : '레이즈 ') + stackText(currentTarget());
+      paintRange(la);
       unitTag.textContent = unit === 'chip' ? '칩' : 'BB';
       /* 태그를 바꿨으면 숫자도 그 단위로 다시 쓴다. 값 쓰기가 초기화(setAmount) 때만
          일어나서, 칩 3,000 을 BB 로 토글하면 태그만 'BB'로 바뀌고 숫자는 3,000 으로

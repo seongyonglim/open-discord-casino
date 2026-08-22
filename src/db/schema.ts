@@ -629,6 +629,13 @@ function initSchema(): void {
      요청이 들어올 때 알아채는데, 그 판정은 요청마다 참이라 표시가 없으면 매번 보낸다. */
   try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN reg_notified_at INTEGER`); } catch { /* 이미 있다 */ }
 
+  /* 리바이 허용 횟수. 0 이면 프리즈아웃(재입장 없음) — 지금까지의 동작이 그것이고,
+     기본값이 0 이라 이미 만들어진 대회는 하나도 안 변한다.
+     대회 «행» 에 박아 두는 것이 이 저장소의 규칙이다: 코드 상수를 실시간으로 읽으면
+     운영자가 값을 바꾸는 순간 진행 중인 대회의 규칙이 바뀐다(스타팅 칩·블라인드
+     주기가 그래서 행으로 내려왔다). */
+  try { d.exec(`ALTER TABLE holdem_tournaments ADD COLUMN max_rebuys INTEGER NOT NULL DEFAULT 0`); } catch { /* 이미 있다 */ }
+
   /* 대회를 만들 때의 설정을 그 대회 행에 박아 둔다.
      일정과 상금 배수는 원래부터 행에 있었지만 스타팅 칩·블라인드 주기·레이트 레지는
      코드 상수를 실시간으로 읽고 있었다 — 운영자가 값을 바꾸는 순간 진행 중인 대회의
@@ -699,6 +706,26 @@ function initSchema(): void {
     /* 이 사람 머리에 걸렸던 금액. bounty 는 열리면 0 이 되어 금액이 사라지는데, 화면은
        "누구 봉투가 얼마였나"를 보여줘야 한다 — 그래서 액면가를 따로 남긴다. */
     `bounty_face INTEGER NOT NULL DEFAULT 0`,
+    /* 이 사람이 이 대회에서 리바이한 횟수.
+       행을 새로 만들지 않고 이 칸을 올리는 이유: (tournament_id, user_id) 유니크
+       인덱스가 «마지막 자리를 두고 두 요청이 겹치는 것» 을 막고 있다. 재입장마다
+       행을 만들면 그 보호가 사라지고, 등수 계산(elim_seq → finish_place)도 한 사람이
+       여러 줄로 나와 무너진다. 행 하나가 «그 사람» 이고, 이 숫자가 «몇 번 다시
+       들어왔나» 다.
+       0 이 기본값이라 이미 있는 행은 전부 «리바이 없음» 으로 읽힌다. */
+    `rebuy_count INTEGER NOT NULL DEFAULT 0`,
+    /* 리바이로 낸 돈의 합. paid_in 과 따로 두는 이유는 환불 때문이다 — 대회가 인원
+       미달로 취소되면 paid_in 을 돌려주는데, 리바이는 «이미 시작한 판» 에서만
+       일어나므로 그 경로를 탈 일이 없다. 그래도 얼마가 들어왔는지는 남겨야
+       상금 풀의 근거를 나중에 되짚을 수 있다. */
+    `rebuy_paid INTEGER NOT NULL DEFAULT 0`,
+    /* 돈은 냈는데 아직 자리에 앉지 않은 리바이.
+       판이 도는 중에 리바이하면 그 자리에서 앉힐 수가 없다 — 앉히는 순간 스택이
+       0 에서 시작 스택으로 튀고, 그 숫자는 «쇼다운이 아직 안 끝났는데 저 사람이
+       살아 돌아왔다» 로 읽힌다. 리버가 열리기도 전에 결과가 새는 셈이다.
+       그래서 이 판이 끝나고 다음 판을 돌리기 직전에 앉힌다. 그 사이를 이 칸이 잇는다.
+       0 이 기본값이라 이미 있는 행은 전부 «대기 없음» 으로 읽힌다. */
+    `rebuy_pending INTEGER NOT NULL DEFAULT 0`,
   ]) {
     try { d.exec(`ALTER TABLE holdem_entries ADD COLUMN ${col}`); } catch { /* 이미 있다 */ }
   }

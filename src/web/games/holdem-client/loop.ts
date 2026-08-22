@@ -19,10 +19,32 @@ export const LOOP = `    function render(){
          이야기 — 남은 사람들의 승부와 대회를 결정짓는 마지막 판 — 을 하나도 못 봤다.
          참가했던 사람만 대상이다. 구경만 하러 온 사람은 로비에서 [관전하기]로 들어온다. */
       if (st.table != null && st.table.mySeat == null && st.tournament && st.tournament.iRegistered) spectate = true;
+      /* ── 테이블은 카드를 거쳐 들어간다 ────────────────────────────
+         예전에는 진행 중인 대회에 닿으면 그 자리에서 관전 화면으로 넘어갔다. 로비 배너를
+         누른 사람은 «무슨 판인지 보려고» 누른 것인데 남의 판 한가운데로 떨어졌고,
+         상금이 얼마인지 · 몇 명 남았는지 · 내가 리바이할 수 있는지를 보려면 도로 나와야
+         했다. 대기 중인 대회는 카드를 먼저 보여주면서 진행 중인 대회만 건너뛰는 것도
+         앞뒤가 안 맞는다 — 정작 판단할 것이 많은 쪽은 진행 중인 판이다.
+         이제 언제나 카드가 먼저고, 들어가는 일은 카드의 단추가 한다.
+
+         한 번 들어갔으면 기억한다(sessionStorage, 대회 id 로). 기억하지 않으면 폴링마다
+         카드로 되튕기고 새로고침 한 번에 판에서 쫓겨난다.
+
+         예외가 하나 있다: 로비에서 기다리다가 판이 열린 사람. 그 사람은 이미 참가
+         신청을 눌렀고 시작하는 순간 블라인드가 돈다 — 여기서 한 번 더 누르게 하면
+         첫 판을 카드 화면에서 흘려보낸다. «방금 열렸다» 의 근거는 직전 렌더에
+         테이블이 없었다는 것이다. */
+      /* «없다가 생겼다» 를 최초 렌더와 구분해야 한다. hadTable 만 보면 페이지를 막 열었을
+         때도 거짓이라 언제나 참이 되어, 게이트가 통째로 무력해진다(실측: 새로 연 탭이
+         카드를 거치지 않고 테이블로 바로 들어갔다). 한 번이라도 그린 뒤부터 센다. */
+      if (sawState && !hadTable && st.table != null && st.table.mySeat != null) enterTable(st.tournament);
+      hadTable = st.table != null;
+      sawState = true;
       /* 우승 팝업을 닫았으면 그 대회의 테이블은 더 보여주지 않는다. 안 그러면 서버가
          30초 동안 테이블을 계속 주는 탓에 팝업만 사라지고 화면은 그대로 멈춰 있다. */
       var left = st.tournament != null && (leftTableTid === st.tournament.id || leftStored(st.tournament));
-      var showTable = !left && st.table != null && (st.table.mySeat != null || spectate);
+      var showTable = !left && st.table != null && st.tournament != null
+        && enteredFor(st.tournament) && (st.table.mySeat != null || spectate);
       /* 이 한 페이지가 대기실과 판을 겸한다 — 방향도 그때그때 다르다.
          대기실(등록·정보·기록)은 세로가 낫고, 판이 열리면 좌석 아홉과 보드가
          가로로 늘어서므로 가로가 낫다. 관전도 판이므로 같이 가로다.
@@ -35,7 +57,19 @@ export const LOOP = `    function render(){
       else { renderLobby(); loadRecords(false); }
       // 테이블에 있든 로비에 있든 축하는 뜬다 — 예전엔 로비 분기에만 있었다
       celebrate();
+      /* 탈락한 순간에 «다시 도전하겠는가» 를 묻는다. 축하 팝업과 같은 자리에서
+         부르는 이유: 둘 다 «판이 끝난 사람» 에게 뜨는 창이라 로비든 테이블이든
+         화면 상태와 무관하게 판단해야 한다. */
+      rebuyPrompt();
     }
+    /* 표시는 «이 페이지가 열려 있는 동안» 만 산다. sessionStorage 에 남겨 두었더니
+       한 번 들어간 뒤로는 상단 탭이나 로비 배너를 눌러도 카드를 건너뛰고 테이블로
+       직행했다 — 탭을 누른 사람은 «대회를 보러» 누른 것이라 그게 곧 원래 문제였다.
+       대신 새로고침 한 번에 카드로 되돌아온다. 그 값은 치른다: 되돌아와도 [테이블로
+       복귀하기] 한 번이면 제자리이고, 판이 도는 중에 열린 판이면 아래 자동 입장이
+       받아 준다. */
+    function enteredFor(t){ return enteredTid === t.id; }
+    function enterTable(t){ if (t) enteredTid = t.id; }
     function post(url, body){
       return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body || {}) })

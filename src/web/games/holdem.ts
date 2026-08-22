@@ -14,6 +14,7 @@ import {
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords, type ShowWhich,
   ACTION_SEC, actOpenAt, tuning, type HoldemStatus, isPko, isMystery, bountyPctOf, prizePoolOf,
+  totalEntriesOf, rebuyStateOf, rebuyCostOf, rebuyHoldem,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -122,6 +123,10 @@ function statePayload(st: HoldemStatus, userId: string) {
           buy_in: cfg.buyIn,
         }),
         startingStack: cfg.startingStack,
+        /* 리바이 허용 횟수. 예고 카드도 뱃지로 «프리즈아웃인가» 를 적으므로 필요하다.
+           행이 아직 없어 설정에서 읽는데, 그래도 어긋나지 않는다 — 설정을 저장할 때
+           아직 시작 안 한 대회 행에도 같이 반영하기 때문이다(db/settings.ts 의 put). */
+        maxRebuys: cfg.maxRebuys,
         minPlayers: T.MIN_PLAYERS,
         maxPlayers: T.MAX_PLAYERS,
         /* 이월은 다음 판에 걸린다 — 지금 화면이 바로 그 다음 판이다 */
@@ -132,8 +137,12 @@ function statePayload(st: HoldemStatus, userId: string) {
   const table = getTable(t.id);
   const entries = getEntries(t.id);
   const tune = tuning(t);
+  /* 상금의 근거는 «들어온 횟수» 다(db/holdem.ts 의 totalEntriesOf). 지급 함수가
+     그것을 쓰므로 화면도 같은 값을 써야 한다 — 다르면 화면이 약속한 금액과 실제
+     지급액이 달라지고, 그건 운영자가 아니라 유저가 먼저 발견한다. */
+  const totalEntries = totalEntriesOf(entries);
   // PKO 는 참가비의 절반이 바운티로 빠진다 — 상금 팟은 그 나머지로만 센다
-  const pool = prizePoolOf(t, entries.length, tune.prizeFixed);
+  const pool = prizePoolOf(t, totalEntries, tune.prizeFixed);
 
   const base = {
     ok: true,
@@ -155,6 +164,9 @@ function statePayload(st: HoldemStatus, userId: string) {
       finishedAt: t.finished_at,
       multiplier: t.prize_multiplier,
       registered: entries.length,
+      /* 사람 수와 엔트리 수는 다르다 — 리바이가 있으면 엔트리가 더 많다.
+         화면은 «N명 참가 · 총 M엔트리» 로 둘을 함께 보여 준다. */
+      totalEntries,
       minPlayers: T.MIN_PLAYERS,
       maxPlayers: T.MAX_PLAYERS,
       startingStack: tune.startingStack,
@@ -202,8 +214,32 @@ function statePayload(st: HoldemStatus, userId: string) {
           .map(x => ({ name: x.name, won: x.won }))
         : undefined,
       prizePool: pool,
-      prizes: T.prizeAmounts(pool, entries.length),
-      itm: T.itmCount(entries.length),
+      prizes: T.prizeAmounts(pool, totalEntries),
+      /* 지급 인원도 «엔트리 수» 로 센다 — 상금표가 그 숫자로 만들어지기 때문이다.
+         사람 수로 세면 표는 여섯 줄인데 안내는 다섯 명이라고 적힌다. */
+      /* 지급 인원은 «풀이 감당하는 만큼» 이다(T.paidCount). itmCount 의 상위 30% 로
+         적으면 표는 여덟 줄인데 안내는 열다섯 명이라고 적힌다 — 화면이 약속한 것과
+         실제 지급이 갈리는 자리다. */
+      itm: T.paidCount(pool, totalEntries),
+      /* ── 리바이 ──────────────────────────────────────────────────
+         화면이 «모달을 띄울지» 를 스스로 판단하지 않게 한다. 조건이 여섯이고
+         (허용 여부 · 남은 횟수 · 시작했나 · 늦참 창 · 탈락했나 · 자리)
+         그중 셋은 서버만 아는 값이다. 서버가 판단해서 결과만 내려 준다 —
+         화면이 같은 판단을 두 번 하면 언젠가 두 판단이 갈린다. */
+      rebuy: (() => {
+        const meE = entries.find(e => e.user_id === userId);
+        const seated = table
+          ? getSeats(table.id).filter(s => s.presence !== 'OUT').length : 0;
+        const r = rebuyStateOf(t, meE, now, seated);
+        return {
+          max: Math.max(0, Math.floor(t.max_rebuys ?? 0)),
+          used: Math.max(0, Math.floor(meE?.rebuy_count ?? 0)),
+          left: r.left,
+          cost: rebuyCostOf(t),
+          can: r.can,
+          reason: r.can ? undefined : r.reason,
+        };
+      })(),
       lateRegLeft: T.lateRegLeft(now, {
         startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at,
       }, tune.lateRegSec),
@@ -217,6 +253,9 @@ function statePayload(st: HoldemStatus, userId: string) {
         const av = getEntryAvatars(t.id);
         return entries.map(e => ({
           userId: e.user_id, username: e.username, avatar: av.get(e.user_id) ?? null,
+          /* 칩 순위가 이름 뒤에 «(2)» 로 적는다. 좌석 행에는 이 값이 없어서
+             (좌석은 판의 것이고 리바이는 대회의 것이다) 여기서 같이 내려보낸다. */
+          rebuys: Math.max(0, Math.floor(e.rebuy_count ?? 0)),
         }));
       })(),
     },
@@ -496,6 +535,28 @@ export async function handleState(
   if (table) touchHoldemPresence(userId, table.id);
   return sendJson(res, 200, statePayload(st, userId));
 }
+
+/* 리바이 — 탈락한 사람이 참가비를 한 번 더 내고 다시 앉는다.
+   등록과 같은 자리에 두는 이유: 하는 일이 «돈을 걷고 자리에 앉힌다» 로 같고,
+   실패 문구도 같은 표를 쓴다. */
+export async function handleRebuy(
+  _req: IncomingMessage, res: ServerResponse, userId: string, username: string
+): Promise<void> {
+  const r = rebuyHoldem(userId, username);
+  if (!r.ok) return sendJson(res, 400, { error: REBUY_TEXT[r.error] ?? '리바이할 수 없습니다.' });
+  return sendJson(res, 200, { ok: true, left: r.left, cost: r.cost });
+}
+const REBUY_TEXT: Record<string, string> = {
+  closed: '이미 끝난 대회입니다.',
+  not_running: '아직 시작하지 않은 대회입니다.',
+  not_allowed: '이 대회는 리바이가 없습니다.',
+  not_registered: '이 대회에 참가하지 않았습니다.',
+  not_eliminated: '아직 탈락하지 않았습니다.',
+  exhausted: '리바이 횟수를 모두 사용했습니다.',
+  late_reg_closed: '늦은 등록이 마감되어 리바이할 수 없습니다.',
+  table_full: '자리가 가득 찼습니다.',
+  no_funds: '포인트가 부족합니다.',
+};
 
 export async function handleRegister(
   _req: IncomingMessage, res: ServerResponse, userId: string, username: string
@@ -875,6 +936,47 @@ export function holdemPage(user: WebUser): string {
         <div class="ht-win-prize" id="htWinPrize"></div>
         <div class="ht-win-rest" id="htWinRest"></div>
         <button type="button" class="btn btn-gold ht-win-close" id="htWinClose">확인</button>
+      </div>
+    </div>
+
+    <!-- ── 리바이 ────────────────────────────────────────────────────────
+         탈락한 순간에 뜬다. 우승 팝업과 같은 «화면 전체를 덮는 div» 형태다 —
+         Esc 로 닫히면 안 되는 창이기 때문이다. 늦은 등록 창은 계속 줄고 있고,
+         실수로 닫으면 다시 열 방법이 마땅치 않다. 나가는 길은 아래 [관전하기]
+         하나뿐이고, 그 선택은 이 판에서 한 번만 묻는다.
+
+         한 화면에 답해야 하는 것은 넷이다 — 얼마가 드는가 · 몇 번 남았나 ·
+         언제까지 가능한가 · 내가 낼 수 있는가. 그 넷을 카드 하나에 모은다. -->
+    <div class="ht-rb" id="htRb" hidden>
+      <div class="ht-rb-box">
+        <div class="ht-rb-kicker">TOURNAMENT BUSTOUT</div>
+        <div class="ht-rb-title">다시 도전하시겠습니까?</div>
+        <div class="ht-rb-grid">
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">늦은 등록 마감까지</span>
+            <span class="ht-rb-v ht-rb-clock" id="htRbLeft">–</span>
+          </div>
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">남은 리바이</span>
+            <span class="ht-rb-v" id="htRbLeftN">–</span>
+          </div>
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">지급 스택</span>
+            <span class="ht-rb-v ht-rb-stack" id="htRbStack">–</span>
+          </div>
+          <div class="ht-rb-cell">
+            <span class="ht-rb-k">필요 비용</span>
+            <span class="ht-rb-v ht-rb-cost" id="htRbCost">–</span>
+            <span class="ht-rb-sub" id="htRbBal"></span>
+          </div>
+        </div>
+        <button type="button" class="ht-rb-go" id="htRbGo">리바이하고 복귀하기</button>
+        <div class="ht-rb-warn" id="htRbWarn" hidden>포인트가 부족합니다</div>
+        <div class="ht-rb-outs">
+          <button type="button" class="ht-rb-skip" id="htRbSkip">관전하기</button>
+          <span class="ht-rb-sep">·</span>
+          <button type="button" class="ht-rb-skip" id="htRbLobby">로비로 나가기</button>
+        </div>
       </div>
     </div>
 

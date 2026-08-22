@@ -48,6 +48,7 @@ import {
 } from './games/blackjack';
 import {
   holdemPage, handleState as htState, handleRegister as htRegister,
+  handleRebuy as htRebuy,
   handleAction as htAction, handleSitIn as htSitIn, handleShow as htShow,
   handleUnregister as htUnregister, handleRecords as htRecords,
 } from './games/holdem';
@@ -594,6 +595,12 @@ export function startWebServer(): void {
       if (path === '/api/games/holdem/register' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
         return await htRegister(req, res, me.id, me.username);
+      }
+      /* 리바이 — 탈락한 사람이 참가비를 한 번 더 내고 다시 앉는다.
+         등록 바로 옆에 둔다: 하는 일이 «돈을 걷고 자리에 앉힌다» 로 같다. */
+      if (path === '/api/games/holdem/rebuy' && req.method === 'POST') {
+        if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });
+        return await htRebuy(req, res, me.id, me.username);
       }
       if (path === '/api/games/holdem/unregister' && req.method === 'POST') {
         if (!me) return sendJson(res, 401, { error: '로그인이 필요합니다' });

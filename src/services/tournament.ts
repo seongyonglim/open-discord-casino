@@ -288,8 +288,54 @@ export function prizeShares(k: number): number[] {
  * 순위가 뒤집힐 걱정은 없다: 정수부가 같다면 값이 큰 쪽이 소수부도 반드시 크다.
  * 소수부가 같을 때만 상위 등수를 먼저 준다.
  */
+/**
+ * **상금권에 들면 최소 이만큼은 받는다.**
+ *
+ * 배분은 등비수열이라 지급 인원이 늘수록 뒤쪽이 기하급수적으로 작아진다. 아홉 명
+ * 판에서는 꼴찌도 풀의 19%를 받지만, 쉰 엔트리면 15등이 0.03%다 — 1인당 5,000P
+ * 기준으로 79P, 백 엔트리면 뒤쪽 몇 명은 아예 0P 를 받고 «상금권» 에 이름만 오른다.
+ * 합은 정확히 맞으므로(최대잉여법) 포인트가 새거나 사라지진 않지만, 받는 사람에게
+ * 그것은 상금이 아니다.
+ *
+ * 지금까지 이 값이 문제가 안 된 이유는 판이 아홉 자리 하나였기 때문이다 — 엔트리가
+ * 좌석 수를 넘을 수 없어서 지급 인원이 세 명을 넘은 적이 없다. 리바이가 들어오면
+ * 엔트리가 그 제약을 벗어나므로, 공식이 한 번도 가 본 적 없는 구간이 열린다.
+ *
+ * 그래서 «몇 명에게 주는가» 를 풀이 감당할 수 있는 만큼으로 자른다. 1위 비중을
+ * 낮춰 뒤로 흘려 보내는 방법도 있지만 거의 효과가 없다(50엔트리 꼴찌 79 → 213P) —
+ * 뒤쪽이 죽는 원인은 1위 몫이 아니라 «항의 개수» 이기 때문이다.
+ *
+ * 하한은 «1인당 금액» 에 비례한다. 절대값(2,500P)으로 잡았다가 작은 판을 부쉈다 —
+ * 이 서비스의 프리롤은 1인당 1,000P 라서, 9명 9,000P 판의 3등(1,719P)이 하한에
+ * 걸려 지급 인원이 셋에서 둘로 줄었다(실측: 감사 5항목 실패).
+ * 상금이 «의미 있다» 는 것은 판의 크기에 상대적이다 — 1인당 1,000P 판의 500P 와
+ * 1인당 5,000P 판의 2,500P 는 같은 뜻이다. 그래서 비율로 잡는다. */
+export const MIN_PRIZE_RATIO = 0.5;
+
+/**
+ * 실제 지급 인원 — itmCount 로 시작해, 꼴찌가 MIN_PRIZE 에 못 미치면 한 명씩 줄인다.
+ *
+ * itmCount 를 고치지 않고 함수를 하나 더 두는 이유: itmCount 는 «상위 30%» 라는
+ * 규칙 자체이고 그 규칙을 검사하는 항목이 열다섯 개다. 규칙은 그대로 두고,
+ * 그 위에 «풀이 감당하는가» 를 한 겹 얹는 편이 무엇이 왜 그렇게 되는지 읽힌다.
+ *
+ * 최소 한 명은 받는다 — 풀이 아무리 작아도 우승자는 있다.
+ */
+export function paidCount(pool: number, players: number): number {
+  let k = itmCount(players);
+  if (k <= 0 || pool <= 0) return 0;
+  const n = Math.max(1, Math.floor(players));
+  const floor = (pool / n) * MIN_PRIZE_RATIO;   // 1인당 금액의 절반
+  while (k > 1) {
+    const s = prizeShares(k);
+    if (pool * s[k - 1] >= floor) break;
+    k--;
+  }
+  return k;
+}
+
 export function prizeAmounts(pool: number, players: number): number[] {
-  const k = itmCount(players);
+  const k = paidCount(pool, players);
   if (k <= 0 || pool <= 0) return [];
   const exact = prizeShares(k).map(s => pool * s);
   const out = exact.map(v => Math.floor(v));

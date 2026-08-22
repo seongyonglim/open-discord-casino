@@ -308,6 +308,7 @@ export function adminPage(user: WebUser): string {
         <label>블라인드 주기<span class="ad-inx"><input type="number" id="ncLevel" min="1" value="${cfg.levelMin}" ${canMake ? '' : 'disabled'}><b>분</b></span><i>마지막 레벨(16)까지 <span id="ncLevelTotal">${cfg.levelMin * 15}</span>분</i></label>
         <label>레이트 레지<span class="ad-inx"><input type="number" id="ncLateReg" min="1" value="${cfg.lateRegMin}" ${canMake ? '' : 'disabled'}><b>분</b></span><i>실제 시작 이후</i></label>
         <label>최소 인원 대기<span class="ad-inx"><input type="number" id="ncGrace" min="1" value="${cfg.graceMin}" ${canMake ? '' : 'disabled'}><b>분</b></span><i>시작 시각 이후 · 3명 미달이면 취소</i></label>
+        <label>최대 리바이 횟수<span class="ad-inx"><input type="number" id="ncRebuys" min="0" max="10" value="${cfg.maxRebuys}" ${canMake ? '' : 'disabled'}><b>회</b></span><i>0이면 프리즈아웃 · 레이트 레지 안에서만 가능</i></label>
       </div>
       <div class="ad-row">
         <button type="button" id="ncLoadTpl" ${canMake ? '' : 'disabled'}>자동 개최 템플릿 값 불러오기</button>
@@ -804,6 +805,9 @@ export function adminPage(user: WebUser): string {
         levelMin: Math.floor(Number(document.getElementById('ncLevel').value)),
         lateRegMin: Math.floor(Number(document.getElementById('ncLateReg').value)),
         graceMin: Math.floor(Number(document.getElementById('ncGrace').value)),
+        /* 리바이 횟수는 0 이 정상값이라 아래 «1 이상» 규칙 목록에 넣지 않는다.
+           0 = 프리즈아웃이고, 그것이 지금까지의 대회다. */
+        maxRebuys: Math.floor(Number(document.getElementById('ncRebuys').value)),
       };
       if (!isFinite(body.regOpenAt) || !isFinite(body.startAt)) { alert('시각을 넣어 주세요.'); return; }
       if (body.regOpenAt > body.startAt) {
@@ -814,6 +818,9 @@ export function adminPage(user: WebUser): string {
       if (!isFinite(body.prizeFixed) || body.prizeFixed < 0) { alert('보장 상금을 확인해 주세요.'); return; }
       if (buyin && body.buyIn === 0) {
         alert('바이인을 골랐으면 참가비를 1P 이상 넣어 주세요. 참가비가 없으면 프리롤입니다.'); return;
+      }
+      if (!isFinite(body.maxRebuys) || body.maxRebuys < 0 || body.maxRebuys > 10) {
+        alert('리바이 횟수는 0에서 10 사이로 넣어 주세요. 0이면 리바이 없는 프리즈아웃입니다.'); return;
       }
       var rules = [['startingStack', '시작 칩'], ['levelMin', '블라인드 주기'],
         ['lateRegMin', '레이트 레지 시간'], ['graceMin', '최소 인원 대기 시간']];
@@ -1353,6 +1360,8 @@ export async function handleAdminConfig(req: IncomingMessage, res: ServerRespons
     regOpenMin: n('regOpenMin'), startMin: n('startMin'),
     graceMin: n('graceMin'), lateRegMin: n('lateRegMin'),
     startingStack: n('startingStack'), levelMin: n('levelMin'),
+    /* 0 이 정상값이다(프리즈아웃). n() 이 NaN 을 주면 saveConfig 의 검증이 막는다. */
+    maxRebuys: n('maxRebuys'),
     weekdayMultiplier: n('weekdayMultiplier'), weekendMultiplier: n('weekendMultiplier'),
     prizeFixed: n('prizeFixed'),
     buyIn: n('buyIn'),
@@ -1540,6 +1549,9 @@ export async function handleAdminTournamentCreate(
       : b?.mode === 'MYSTERY_BOUNTY' ? 'MYSTERY_BOUNTY' : 'CLASSIC',
     /* 바운티 몫(%). 범위 밖 값은 db 쪽이 다시 다듬는다 — 화면을 거치지 않는 경로가 있다 */
     bountyPct: b?.bountyPct != null ? Math.floor(Number(b.bountyPct)) : undefined,
+    /* 리바이 횟수. 0 이 정상값이므로 «안 보냈다» 와 «0 을 보냈다» 를 갈라야 한다 —
+       안 보냈으면 db 쪽 기본값(0)이 그대로 쓰인다. */
+    maxRebuys: b?.maxRebuys != null ? Math.floor(Number(b.maxRebuys)) : undefined,
     /* 판의 모양은 안 보내면 템플릿을 쓴다(반복 개최가 그 길이다). 화면은 늘 채워 보내므로
        손으로 여는 판은 화면에 적힌 그대로 열린다 — 템플릿을 나중에 고쳐도 안 흔들린다. */
     ...ruleFields(b),
