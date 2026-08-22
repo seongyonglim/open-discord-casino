@@ -50,13 +50,22 @@ export function bcHead(p0: string | number, p1: string | number, p2: string | nu
       function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
       function coinLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }
 
-      // 뒤 세 단위(1000·5000·1만)는 골드바, 앞은 동전 — 포커 플립과 같은 규칙
-      var BAR_COUNT = 3;
-      function chipKind(v){
-        var c = (st && st.coins) || [], i = c.indexOf(v);
-        return (i >= 0 && i < c.length - BAR_COUNT) ? 'c-coin' : 'c-bar';
-      }
-      function buttonKind(v){ return chipKind(v) === 'c-coin' ? 'kind-coin' : 'kind-bar'; }
+      /* ── 칩은 여섯 액면이 «색» 으로 갈린다 ──────────────────────────
+         한동안 앞 세 단은 동전, 뒤 세 단은 골드바였다(포커 플립과 같은 규칙).
+         크기 차이가 곧 액면 차이라 읽기는 쉬웠지만, 판에 올라간 것이 «금색 동전과
+         금색 막대» 두 가지뿐이라 실제 카지노 판처럼 보이지 않았다.
+         이제 전부 같은 크기의 클레이 칩이고, 액면은 색이 말한다 — 실제 테이블의 규칙이다.
+         c-coin 은 그대로 붙인다: 날아가는 칩을 정원으로 되돌리는 보정(cloneAt)과
+         scripts/check-chips.ts 의 «정사각인가» 검사가 이 클래스로 갈린다. */
+      function chipKind(v){ return 'c-coin'; }
+      function buttonKind(v){ return 'kind-coin'; }
+      var BC_DCLASS = { 10:'d10', 100:'d100', 500:'d500', 1000:'d1k', 5000:'d5k', 10000:'d10k' };
+      function denomClass(v){ return BC_DCLASS[v] || 'd10k'; }
+      /* 칩 «면» 에 새기는 글자. 옆의 chipLabel(더미 밖에서 쓰는 이름표)과 따로 두는
+         이유는 새길 자리가 지름 20px 남짓이기 때문이다 — 그 안에 «5000» 네 글자를
+         넣으면 링에 닿는다. 천 단위는 K 로 줄인다(요청). */
+      var BC_FACE = { 10:'10', 100:'100', 500:'500', 1000:'1K', 5000:'5K', 10000:'10K' };
+      function chipFace(v){ return BC_FACE[v] || String(v); }
 
 `;
 }

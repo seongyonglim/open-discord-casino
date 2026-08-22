@@ -9,9 +9,15 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
       function renderCoins(){
         if (coinsEl.dataset.done) return;
         coinsEl.dataset.done = '1';
+        ensureChipDefs();
+        /* 선택 바의 칩과 판 위의 칩은 «같은 그림» 이다. 두 벌을 그리면 반드시
+           어긋난다 — 고를 때 본 것과 올라간 것이 다르면 무엇을 골랐는지가 흐려진다.
+           .coin 과 .face 는 이름을 지킨다: scripts/check-states.ts 가 .coin 을 눌러
+           «베팅함» 상태를 만든다. */
         coinsEl.innerHTML = (st.coins||[]).map(function(v){
-          return '<button type="button" class="coin '+buttonKind(v)+'" data-coin="'+v+'">' +
-            '<span class="face">'+coinLabel(v)+'</span></button>';
+          return '<button type="button" class="coin bcoin bc3d '+buttonKind(v)+' '+denomClass(v)+
+            '" data-coin="'+v+'">' +
+            '<span class="face">'+chipArt(v)+'</span></button>';
         }).join('');
         coin = (st.coins||[])[0];
         coinsEl.querySelectorAll('.coin').forEach(function(b){

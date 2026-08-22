@@ -10,9 +10,92 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
          쌓이는 느낌이 사라진다. (포커 플립과 같은 방식)                            */
       var piles={};
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
+
+      /* ══ 클레이 칩 한 장의 그림 ═══════════════════════════════════════
+         칩처럼 보이게 하는 것은 여섯 겹이다 — 바닥 그림자 · 옆면(두께) · 면 ·
+         테두리 인레이 톱니 · 메탈릭 인셋 링 · 곡면 반사광. 하나라도 빠지면
+         «동그란 색 딱지» 가 된다.
+
+         그림은 문서에 «한 장만» 둔다(<symbol>). 칩마다 그리면 여섯 액면 × 최대
+         스무 장이면 같은 도형이 백 벌 넘게 문서에 쌓인다. <use> 로 불러 쓰고,
+         색은 CSS 사용자 지정 속성으로 갈아 끼운다 — 그 속성은 <use> 가 만드는
+         그림자 트리에도 상속되므로, 액면 클래스(.d1k 등) 하나로 같은 그림이
+         다른 색이 된다.
+
+         흐림 효과(filter)는 한 겹도 쓰지 않는다. 정산 때 칩 열댓 장이 동시에
+         transform 으로 날아가는데, 흐림이 걸려 있으면 매 프레임 다시 래스터해서
+         폰에서 프레임이 떨어진다. 그림자도 «그린» 그림자다(맨 아래 타원).
+
+         면의 명암·링·반사광은 흰색과 검정의 투명도만 쓴다 — 액면과 무관하므로
+         여섯 벌이 아니라 한 벌이면 된다. */
+      var chipDefsDone = false;
+      function ensureChipDefs(){
+        if (chipDefsDone || document.getElementById('bcChipDefs')) { chipDefsDone = true; return; }
+        chipDefsDone = true;
+        var d = document.createElement('div');
+        d.innerHTML =
+          '<svg id="bcChipDefs" width="0" height="0" aria-hidden="true" focusable="false"' +
+          ' style="position:absolute;width:0;height:0;overflow:hidden"><defs>' +
+            '<radialGradient id="bcFaceG" cx="50%" cy="24%" r="78%">' +
+              '<stop offset="0" stop-color="#fff" stop-opacity=".26"/>' +
+              '<stop offset=".46" stop-color="#fff" stop-opacity=".04"/>' +
+              '<stop offset="1" stop-color="#000" stop-opacity=".30"/></radialGradient>' +
+            '<linearGradient id="bcRingG" x1="0" y1="0" x2="0" y2="1">' +
+              '<stop offset="0" stop-color="#fff" stop-opacity=".55"/>' +
+              '<stop offset=".5" stop-color="#fff" stop-opacity=".10"/>' +
+              '<stop offset="1" stop-color="#fff" stop-opacity=".40"/></linearGradient>' +
+            '<radialGradient id="bcGlossG" cx="50%" cy="6%" r="60%">' +
+              '<stop offset="0" stop-color="#fff" stop-opacity=".46"/>' +
+              '<stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
+            '<radialGradient id="bcShadG" cx="50%" cy="50%" r="50%">' +
+              '<stop offset="0" stop-color="#000" stop-opacity=".5"/>' +
+              '<stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>' +
+            '<symbol id="bcChip" viewBox="0 0 48 48">' +
+              /* 바닥 그림자 — 칩이 «놓여» 있다는 것은 이 한 겹이 만든다 */
+              '<ellipse cx="24" cy="42.5" rx="16" ry="3.8" fill="url(#bcShadG)"/>' +
+              /* 옆면(두께) — 면보다 2.6px 아래에 더 어두운 원 */
+              '<circle cx="24" cy="24.6" r="19.4" fill="var(--bc-deep,#4b5563)"/>' +
+              /* 면 */
+              '<circle cx="24" cy="22" r="19.4" fill="var(--bc-face,#9ca3af)"/>' +
+              /* 테두리 인레이 — 60도마다 여섯. 실제 칩의 인상은 거의 여기서 나온다 */
+              '<g fill="var(--bc-edge,#e5e7eb)">' + bcNotches() + '</g>' +
+              /* 면의 명암 (위가 밝고 아래로 어두워진다) */
+              '<circle cx="24" cy="22" r="19.4" fill="url(#bcFaceG)"/>' +
+              /* 메탈릭 인셋 링 — 밝은 실선 하나와 그 안쪽 어두운 홈 하나 */
+              '<circle cx="24" cy="22" r="15.4" fill="none" stroke="url(#bcRingG)" stroke-width="1"/>' +
+              '<circle cx="24" cy="22" r="13.9" fill="none" stroke="#000" stroke-opacity=".22" stroke-width=".8"/>' +
+              /* 중앙 코어 — 각인이 얹히는 자리 */
+              '<circle cx="24" cy="22" r="13.3" fill="var(--bc-face,#9ca3af)"/>' +
+              '<circle cx="24" cy="22" r="13.3" fill="url(#bcFaceG)" opacity=".5"/>' +
+              /* 테두리 마감 */
+              '<circle cx="24" cy="22" r="19" fill="none" stroke="var(--bc-rim,#d1d5db)" stroke-width=".9" opacity=".85"/>' +
+              /* 상단 곡면 반사광 */
+              '<ellipse cx="24" cy="11" rx="13.5" ry="8" fill="url(#bcGlossG)"/>' +
+              /* 최고 액면의 골드 네온 림 — 평소엔 CSS 에서 stroke 가 없어 안 그려진다 */
+              '<circle class="bc-neon" cx="24" cy="22" r="20.4" fill="none"/>' +
+            '</symbol>' +
+          '</defs></svg>';
+        document.body.appendChild(d.firstChild);
+      }
+      function bcNotches(){
+        var out = '';
+        for (var i = 0; i < 6; i++) {
+          out += '<rect x="20" y="3.4" width="8" height="8.4" rx="2"' +
+            (i ? ' transform="rotate(' + (i * 60) + ' 24 22)"' : '') + '/>';
+        }
+        return out;
+      }
+      /* 루트 <svg> 에 fill/stroke 를 none 으로 못 박는다. 색은 전부 자식이 갖고 있어
+         그림에는 영향이 없고, scripts/check-states.ts 의 «아이콘이 배경에 묻혔나»
+         검사가 색을 못 읽는 SVG 를 건너뛰므로 헛경고가 나지 않는다. */
+      var CHIP_ART = '<svg class="bc-ck" viewBox="0 0 48 48" fill="none" stroke="none"' +
+        ' aria-hidden="true" focusable="false"><use href="#bcChip"/></svg>';
+      function chipArt(denom){ return CHIP_ART + '<i class="bc-t">' + chipFace(denom) + '</i>'; }
+
       // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
       // owner를 심어두면 정산 때 그 칩을 주인 아이콘으로 돌려보낼 수 있다.
       function chipSprite(denom, owner, idx, anim){
+        ensureChipDefs();
         /* 다섯 열 · 14px 간격이면 더미 폭이 ±42px 이다. 판을 다섯 구역으로 나눈 뒤로
            플레이어·뱅커의 더미 칸은 상자의 «바깥 절반»(75px 남짓)이라 그 폭이 안 들어가
            맨 왼쪽 칩이 상자 밖으로 잘렸다(제보). 간격과 흔들림을 줄여 ±34px 로 맞춘다.
@@ -20,9 +103,10 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         var col = idx % 5, row = Math.floor(idx / 5);
         var x = (col - 2) * 11 + jit(idx, 5) - 3;
         var y = 3 + row * 5 + jit(idx + 7, 3);
-        return '<span class="pchip '+chipKind(denom)+(owner===st.me?' mine':'')+(anim?' '+anim:'')+
+        return '<span class="pchip bc3d '+chipKind(denom)+' '+denomClass(denom)+
+          (owner===st.me?' mine':'')+(anim?' '+anim:'')+
           '" data-owner="'+esc(owner)+'"'+
-          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
+          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipArt(denom)+'</span>';
       }
       // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
       function decompose(amount){

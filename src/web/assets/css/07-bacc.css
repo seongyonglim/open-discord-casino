@@ -24,6 +24,56 @@
   .rw-zone{font-size:9.5px;font-weight:700;letter-spacing:.02em;color:#8fa3b8;
     background:rgba(255,255,255,.06);border-radius:5px;padding:1px 5px;
     white-space:nowrap}
+  /* ══ 클레이 칩 ═══════════════════════════════════════════════════
+     그림은 chips.ts 의 <symbol> 이 갖고 있다. 여기서 정하는 것은 «색» 과 «크기» 뿐이다.
+
+     .pchip / .coin 은 바카라 혼자 쓰는 이름이 아니다 — 포커 플립과 블랙잭이 같은
+     규칙(05-poker.css)을 쓴다. 그래서 그쪽을 고치지 않고 표식 클래스를 하나 더
+     붙여(.bc3d · .bcoin) 복합 선택자로 «덧붙인다». 07-bacc.css 는 ORDER 상
+     05-poker.css 뒤라 순서로도 이기고, 클래스가 하나 더 많아 명시도로도 이긴다. */
+  .bc3d.d10 {--bc-face:#f1f5f9;--bc-deep:#94a3b8;--bc-edge:#334155;--bc-ink:#0f172a;--bc-rim:#cbd5e1}
+  .bc3d.d100{--bc-face:#1d4ed8;--bc-deep:#152f7a;--bc-edge:#93c5fd;--bc-ink:#ffffff;--bc-rim:#3b6fe0}
+  .bc3d.d500{--bc-face:#be123c;--bc-deep:#6f0c24;--bc-edge:#fecdd3;--bc-ink:#ffffff;--bc-rim:#d43757}
+  .bc3d.d1k {--bc-face:#047857;--bc-deep:#03442f;--bc-edge:#a7f3d0;--bc-ink:#ffffff;--bc-rim:#0a9a70}
+  .bc3d.d5k {--bc-face:#6d28d9;--bc-deep:#3f1780;--bc-edge:#ddd6fe;--bc-ink:#ffffff;--bc-rim:#8a4ae8}
+  .bc3d.d10k{--bc-face:#b45309;--bc-deep:#6b3105;--bc-edge:#fde68a;--bc-ink:#ffffff;--bc-rim:#f0b429}
+  /* 최고 액면만 골드 림을 한 겹 더 두른다 — 그림자(filter)가 아니라 그린 원이라
+     정산 때 스무 장이 동시에 날아도 다시 래스터하지 않는다 */
+  .bc3d.d10k .bc-neon{stroke:#fde68a;stroke-width:1.4;opacity:.5}
+
+  /* 05-poker.css 의 금색 동전 그림을 중화한다 — 그대로 두면 SVG 뒤로 비친다 */
+  .pchip.bc3d{background:none;border:0;box-shadow:none;text-shadow:none;
+    width:26px;height:26px;min-width:26px;margin-left:-13px;overflow:visible}
+  .pchip.bc3d .bc-ck{width:100%;height:100%;display:block}
+  /* 각인은 칩 «면» 의 한가운데다. 면은 옆면(두께)만큼 상자 중심보다 위에 있다
+     (48 안에서 y=22, 곧 45.8%) — 아래쪽에 여백을 주어 그만큼 끌어올린다. */
+  .pchip.bc3d .bc-t,
+  .coin.bcoin .bc-t{position:absolute;left:0;right:0;top:0;bottom:0;
+    display:flex;align-items:center;justify-content:center;padding-bottom:8.4%;
+    font-family:var(--mono);font-weight:800;font-size:9.5px;letter-spacing:-.02em;
+    color:var(--bc-ink);text-shadow:0 1px 0 rgba(0,0,0,.3)}
+
+  /* ── 하단 선택 바 ────────────────────────────────────────────────
+     전 액면이 같은 원형 규격이다. 고른 칩은 «집어 올린» 것처럼 솟고 커지며,
+     그 밑에 금색 바닥광이 깔린다 — 어느 것을 들고 있는지가 한눈에 보인다. */
+  .coin.bcoin{height:56px;min-width:52px}
+  .coin.bcoin .face{width:46px;height:46px;border-radius:50%;position:relative;
+    background:none;border:0;box-shadow:none;filter:none;overflow:visible;
+    transition:transform .2s cubic-bezier(.2,1.4,.4,1)}
+  .coin.bcoin .bc-ck{width:100%;height:100%;display:block}
+  /* 안 고른 칩은 «내려놓은» 상태다 — 색을 죽이는 대신 살짝 가라앉힌다 */
+  .coin.bcoin:not(.active) .face{opacity:.6;transform:translateY(2px) scale(.94)}
+  .coin.bcoin.active .face{opacity:1;transform:translateY(-7px) scale(1.1)}
+  .coin.bcoin.active .face::after{content:'';position:absolute;left:50%;bottom:-7px;
+    width:36px;height:9px;margin-left:-18px;border-radius:50%;pointer-events:none;
+    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.72),rgba(240,180,41,0) 70%)}
+  /* 05-poker.css:238 의 .coin.active .face 금색 테두리는 원형 칩에는 맞지 않는다 —
+     칩 자체가 이미 색으로 자기를 말하고, 링을 두르면 액면 색이 가려진다 */
+  .coin.bcoin:hover{transform:none}
+  .coin.bcoin:hover .face{transform:translateY(-3px) scale(1.04)}
+  .coin.bcoin.active:hover .face{transform:translateY(-9px) scale(1.12)}
+  .coin.bcoin:active .face{transform:translateY(-2px) scale(.98)}
+
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
      그래서 베팅 상자(.m-player/.m-banker)와 같은 언어로 맞춘다:
