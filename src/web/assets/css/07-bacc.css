@@ -1,12 +1,21 @@
   /* ── 바카라 ──────────────────────────────────────────────────
      색은 실제 바카라 테이블 관례를 그대로 따른다: 플레이어=파랑, 뱅커=빨강, 타이=초록.
      이 배색은 바카라를 아는 사람에게는 설명 없이 읽히고, 모르는 사람에게도 세 갈래가 구분된다. */
-  .bacc-bead-head{display:flex;justify-content:space-between;align-items:center;
-    font-size:11px;color:var(--muted);margin-bottom:7px}
-  .bacc-bead-legend{display:flex;align-items:center;gap:4px;font-size:10.5px}
-  .bacc-bead-legend .bacc-bead{width:14px;height:14px;font-size:0;margin-left:4px}
-  .bacc-bead-row{display:flex;gap:4px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px;
-    scrollbar-width:none}
+  /* ── 최근 결과는 «한 줄» 이다 ─────────────────────────────────────
+     제목 줄과 구슬 줄이 따로 서 있었다. 둘이 쓰는 세로는 49px 인데, 담긴 것은
+     «최근 결과» 넉 자와 19px 짜리 구슬 한 줄이다. 게다가 제목 줄 오른쪽에는
+     범례(파랑=플레이어 · 빨강=뱅커 · 초록=타이)가 자리를 지키고 있었는데,
+     구슬 안에는 이미 P·B·T 가 찍혀 있다 — 같은 말을 두 번 한 것이다.
+     제목을 구슬 옆에 세우고 범례를 걷는다. 한 줄 30px 로 줄고, 남는 가로를
+     구슬이 받아 한 화면에 더 많이 보인다. 상자도 두르지 않는다 — 판 위에
+     얹힌 작은 띠지, 또 하나의 패널이 아니다. */
+  .bacc-bead-head{display:flex;align-items:center;gap:10px;height:30px;margin:0 0 10px;
+    font-size:11px;color:var(--muted)}
+  .bacc-bead-cap{flex:none;letter-spacing:.02em}
+  /* min-width:0 이 있어야 구슬 줄이 제 안에서 가로로 밀린다 — 없으면 내용 폭만큼
+     늘어나 제목을 왼쪽으로 밀어낸다(flex 자식의 기본은 min-width:auto 다). */
+  .bacc-bead-row{display:flex;gap:4px;overflow-x:auto;flex:1 1 auto;min-width:0;
+    align-items:center;scrollbar-width:none}
   .bacc-bead-row::-webkit-scrollbar{display:none}
   .bacc-bead-empty{font-size:12px;color:var(--muted)}
   /* 참가자 줄의 «어디에 걸었나» 표. 금액 위에 작은 글씨로 붙는다 —
@@ -172,9 +181,16 @@
      "…ER" 로 잘렸다). 돔이 아래에 얹혀 있어야 두 이름이 양끝에 온전히 선다. */
   /* 높이를 «비율» 이 아니라 «픽셀» 로 준다. 42% 로 두면 판이 조금만 낮아져도 돔이
      같이 낮아지는데, 돔 안에 들어갈 것은 판 높이와 무관하게 정해져 있다. */
-  .bacc-core .market.m-tie{position:absolute;left:50%;bottom:0;top:auto;height:138px;
+  /* 돔을 키운다(요청: 타이가 너무 작다). 190x138 → 240x160 — 넓이로는 46% 늘었다.
+     판 높이(216px)는 그대로 둔다. 돔은 아래에 붙어 있으므로 키운 만큼 위로 자라고,
+     그 위 45px 에 PLAYER·BANKER 이름 줄이 있다 — 160px 이면 15px 이 남는다.
+     더 키우면 이름을 먹는다.
+     칩이 침범하지 않는 것은 아래 .m-pile 이 맡는다. 더미는 각자 «바깥 절반» 에
+     못 박혀 있어서(left:5%;right:51%) 돔이 넓어져도 닿을 자리가 구조적으로 없다 —
+     실측으로 확인한다. */
+  .bacc-core .market.m-tie{position:absolute;left:50%;bottom:0;top:auto;height:160px;
     transform:translateX(-50%);
-    width:min(38%,190px);z-index:2;border-radius:26px 26px 11px 11px;
+    width:min(46%,240px);z-index:2;border-radius:30px 30px 11px 11px;
     box-shadow:0 -6px 18px rgba(0,0,0,.45)}
   /* ── 돔은 «불투명» 해야 한다 ──────────────────────────────────────
      빗나간 상자는 .miss 로 흐려진다(opacity:.42). 그런데 돔은 다른 두 상자 «위» 에
@@ -193,14 +209,17 @@
   .bacc-core .market.m-banker .m-foot{text-align:right;justify-items:end}
   .bacc-core .market.m-banker .m-foot .m-total{text-align:right}
   /* 돔 안은 좁으므로 가운데로 모으고 한 단 줄인다 */
-  .bacc-core .market.m-tie .m-head{align-items:center;text-align:center;padding:11px 8px 0}
-  .bacc-core .market.m-tie .m-foot{justify-items:center;text-align:center;padding:0 8px 10px}
+  .bacc-core .market.m-tie .m-head{align-items:center;text-align:center;padding:16px 10px 0}
+  .bacc-core .market.m-tie .m-foot{justify-items:center;text-align:center;padding:0 10px 14px}
   .bacc-core .market.m-tie .m-foot .m-total{text-align:center}
-  .bacc-core .market.m-tie .m-mid{min-height:22px}
-  #bMarkets .market.m-tie .m-pile{height:24px}
-  /* 돔이 아래에 얹히므로 그만큼 두 상자의 바닥 정보를 안쪽으로 밀어 겹치지 않게 한다 */
-  .bacc-core .market.m-player .m-foot{padding-right:22%}
-  .bacc-core .market.m-banker .m-foot{padding-left:22%}
+  .bacc-core .market.m-tie .m-mid{min-height:32px}
+  #bMarkets .market.m-tie .m-pile{height:34px}
+  /* 돔이 아래에 얹히므로 그만큼 두 상자의 바닥 정보를 안쪽으로 밀어 겹치지 않게 한다.
+     돔이 240px 로 넓어지면서 각 상자의 «안쪽 45%» 를 덮는다(이전 35%). 총액이
+     백만 단위로 길어지면 그 밑으로 들어가므로 막는 폭도 같이 넓힌다. 남는 55%(148px)
+     는 «1,234,567P» 를 담고도 남는다(15px 모노 기준 95px). */
+  .bacc-core .market.m-player .m-foot{padding-right:46%}
+  .bacc-core .market.m-banker .m-foot{padding-left:46%}
 
   /* 상자 안 — 위(무엇에 얼마) · 가운데(내 베팅·칩) · 아래(지금 판이 어떻게 기울었나) */
   #bMarkets .market{padding:0}

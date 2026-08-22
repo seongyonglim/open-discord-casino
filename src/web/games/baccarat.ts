@@ -263,13 +263,11 @@ export function baccaratPage(user: WebUser): string {
     <div class="game-shell">
       <div class="game-main">
         <div class="card">
+          <!-- 제목과 구슬은 한 줄이다 — 범례는 걷었다(구슬에 P·B·T 가 이미 찍혀 있다) -->
           <div class="bacc-bead-head">
-            <span>최근 결과</span>
-            <span class="bacc-bead-legend">
-              <i class="bacc-bead p"></i>플레이어 <i class="bacc-bead b"></i>뱅커 <i class="bacc-bead t"></i>타이
-            </span>
+            <span class="bacc-bead-cap">최근 결과</span>
+            <div id="bHistory" class="bacc-bead-row"></div>
           </div>
-          <div id="bHistory" class="bacc-bead-row"></div>
 
           <div class="bacc-table">
             <div id="bStatus" class="bacc-status">베팅을 기다리는 중…</div>
