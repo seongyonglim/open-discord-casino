@@ -248,23 +248,40 @@ a.toast:hover { border-color: rgba(212,175,55,.8); }
    누름을 막는 것은 이미 되어 있다 — .toast-stack 이 pointer-events:none 이고,
    누를 데가 있는 것(a.toast)만 auto 로 되살린다. 띠가 떠 있어도 그 아래의 판과
    단추는 그대로 눌린다. */
+/* ── 폰에서는 «한 줄 띠» 다 ────────────────────────────────────────
+   두 줄짜리 상자로 두었더니 60px 이 넘어서, 위 가운데에 세우면 카운트다운 숫자를
+   덮었다(실측: 띠 50~172 · 숫자 97~164). 우하단으로 옮기는 안도 나왔지만 그 자리는
+   캐시아웃 단추다(우 12 · 하 12 에 130x48) — 가장 급한 단추를 덮는 것이 가장 나쁘다.
+
+   그래서 자리를 옮기는 대신 «두께» 를 줄인다. 제목과 본문을 위아래가 아니라 옆으로
+   세우면 한 줄이 되고, 높이가 절반 아래로 떨어져 숫자 위 여백 안에 들어간다.
+   본문이 길면 말줄임한다 — 자세한 것은 종을 눌러 보는 것이지, 이 띠는 «무언가
+   왔다» 를 알리는 자리다.
+
+   색과 테두리와 아이콘은 PC 것 그대로다. 바뀌는 것은 자리·두께·들어오는 방향뿐이다. */
 @media (max-width: 560px) {
   .ac-grid { grid-template-columns: 1fr; }
   .toast-stack { left: 50%; right: auto; transform: translateX(-50%);
-    align-items: center; width: max-content; max-width: 90vw; }
-  .toast { max-width: 90vw; min-width: 0;
-    transform: translateY(-14px); }
+    align-items: center; width: max-content; max-width: 92vw; }
+  .toast { max-width: 92vw; min-width: 0; padding: 7px 13px 7px 10px;
+    border-radius: 10px; gap: 0 9px; transform: translateY(-12px); }
   .toast.in { transform: translateY(0); }
+  .toast-ic { font-size: 16px; }
+  .toast-mid { flex-direction: row; align-items: baseline; gap: 7px; min-width: 0; }
+  .toast-t { font-size: 10.5px; flex: none; }
+  .toast-m { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; overflow-wrap: normal; min-width: 0; }
 }
-/* 가로 인게임 — 세로와 같은 이유이고, 여기가 더 급하다. 우하단이 캐시아웃 자리다. */
+/* 가로 인게임 — 같은 이유이고 여기가 더 급하다. 세로 높이가 375px 뿐이다. */
 @media (max-width: 1024px) and (max-height: 560px) and (orientation: landscape) {
   .toast-stack { left: 50%; right: auto; transform: translateX(-50%);
-    align-items: center; width: max-content; max-width: 90vw; }
-  .toast { max-width: 90vw; min-width: 0; padding: 8px 14px 8px 11px;
-    transform: translateY(-12px); }
+    align-items: center; width: max-content; max-width: 92vw; }
+  .toast { max-width: 92vw; min-width: 0; padding: 6px 12px 6px 9px;
+    border-radius: 9px; gap: 0 8px; transform: translateY(-10px); }
   .toast.in { transform: translateY(0); }
-  /* 가로는 세로 높이가 375px 뿐이다 — 띠가 두 줄이면 판의 3분의 1을 덮는다 */
-  .toast-ic { font-size: 18px; }
-  .toast-t { font-size: 10.5px; }
-  .toast-m { font-size: 12.5px; }
+  .toast-ic { font-size: 15px; }
+  .toast-mid { flex-direction: row; align-items: baseline; gap: 6px; min-width: 0; }
+  .toast-t { font-size: 10px; flex: none; }
+  .toast-m { font-size: 12px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; overflow-wrap: normal; min-width: 0; }
 }

@@ -1502,14 +1502,20 @@ window.__foldOut = function(el, done){
     stack.style.setProperty('--toast-top', top + 'px');
     return stack;
   }
-  /* 폰인가 — 자리(위 가운데)와 수명과 쌓는 개수가 여기서 갈린다.
-     CSS 의 두 미디어 쿼리와 같은 조건을 쓴다. 한쪽만 고치면 «가운데에 뜨는데 다섯 개가
-     쌓이는» 식으로 어긋난다. */
-  function toastPhone(){
+  /* 몇 개까지 세워 둘 것인가. 0 은 «제한 없음»(PC)이다.
+     CSS 의 두 미디어 쿼리와 같은 조건을 쓴다 — 한쪽만 고치면 «가운데에 뜨는데 다섯 개가
+     쌓이는» 식으로 어긋난다.
+
+     둘이다. 가로에서는 둘째 줄이 베팅 구간의 카운트다운 숫자와 27px 겹치는데
+     (띠 33px 씩 50~124 · 숫자 97~), 그건 그냥 둔다 — 3초 뒤 사라지고 자주 뜨지도
+     않는 것을 피하려고 하나로 줄이면, 둘이 겹쳐 왔을 때 첫 번째를 아예 못 보게 된다.
+     못 보는 쪽이 잠깐 가리는 쪽보다 나쁘다. */
+  function toastCap(){
     try {
-      return window.matchMedia('(max-width:560px)').matches
-        || window.matchMedia('(max-width:1024px) and (max-height:560px) and (orientation:landscape)').matches;
-    } catch (e) { return false; }
+      if (window.matchMedia('(max-width:1024px) and (max-height:560px) and (orientation:landscape)').matches
+        || window.matchMedia('(max-width:560px)').matches) return 2;
+    } catch (e) { /* 못 재면 PC 로 본다 */ }
+    return 0;
   }
   /* 종류마다 모양이 다르다. 달성은 금색 트로피에 소리가 나고, 공지는 조용히 뜬다 —
      같은 소리를 내면 "뭔가 해냈다"와 "읽을 것이 있다"가 구분되지 않는다. */
@@ -1539,23 +1545,19 @@ window.__foldOut = function(el, done){
       + '<span class="toast-mid"><span class="toast-t">' + esc(o.title || k.head) + '</span>'
       + '<span class="toast-m">' + esc(o.message || '') + '</span></span>';
     s.appendChild(d);
-    var phone = toastPhone();
-    /* 폰에서는 두 개까지만 세워 둔다. PC 는 오른쪽 위가 비어 있어 넷이 쌓여도 아무것도
-       안 가리지만, 폰에서 위 가운데에 넷이 쌓이면 판의 절반이 사라진다.
-       넘치면 «가장 오래된 것» 부터 내보낸다 — 새로 온 것이 읽을 값이 더 크다. */
-    if (phone) {
-      /* 밀려나는 것은 즉시 뺀다. 사라지는 동작을 보여 주려고 남겨 두면 그동안 개수가
-         안 줄어서 다음 것이 또 밀어내야 하고, 그 사이 화면에는 셋이 서 있다 —
-         "둘까지" 를 지키지 못한다. 새 것이 오는 것이 이미 눈에 띄는 변화라
-         나가는 쪽까지 보여 줄 값이 없다. */
-      while (s.children.length > 2) s.removeChild(s.firstElementChild);
-    }
+    var cap = toastCap();
+    /* 넘치면 «가장 오래된 것» 부터 내보낸다 — 새로 온 것이 읽을 값이 더 크다.
+       밀려나는 것은 즉시 뺀다. 사라지는 동작을 보여 주려고 남겨 두면 그동안 개수가
+       안 줄어서 다음 것이 또 밀어내야 하고, 그 사이 화면에는 한 줄이 더 서 있다 —
+       정한 개수를 못 지킨다. 새 것이 오는 것이 이미 눈에 띄는 변화라 나가는 쪽까지
+       보여 줄 값이 없다. */
+    if (cap) while (s.children.length > cap) s.removeChild(s.firstElementChild);
     // 다음 프레임에 클래스를 붙여야 들어오는 동작이 보인다 (붙인 채로 넣으면 이미 제자리다)
     requestAnimationFrame(function(){ d.classList.add('in'); });
     if (k.sfx && window.casinoSfx && window.casinoSfx.achievement) window.casinoSfx.achievement();
     /* 폰은 3초. PC 의 5초는 «읽고 나서도 남아 있는» 시간인데, 폰에서는 그 시간이
        판을 가리는 시간이다. 누를 것이 있으면 그래도 조금 더 세워 둔다. */
-    var life = phone ? (o.link ? 4500 : 3000) : (o.link ? 8000 : 5000);
+    var life = cap ? (o.link ? 4500 : 3000) : (o.link ? 8000 : 5000);
     setTimeout(function(){
       d.classList.remove('in');
       setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 400);

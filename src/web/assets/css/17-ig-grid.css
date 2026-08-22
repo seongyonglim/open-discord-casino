@@ -437,7 +437,7 @@
        상자를 아래에서 깎으면 가운데도 그만큼 위로 올라간다. 결과는 위 5px · 아래 29px
        으로, 띄우려던 쪽이 아니라 반대쪽이 좁아졌다(제보: 위가 프레임선에 바짝 붙었다).
        띄우는 일은 여백이 스스로 하게 두고, 여기서는 «어디의 가운데인가» 만 정한다. */
-    .ig-body.ig-graph:not(:has(.crash-multi.running)) .crash-center{
+    .ig-body.ig-graph:has(.crash-multi.betting) .crash-center{
       bottom:calc(var(--igPanelH) + var(--igPanelGap) - var(--igPad))}
     .ig-body.ig-graph .crash-label,
     .ig-body.ig-graph .crash-betlabel{font-size:11px;letter-spacing:2px}
@@ -585,13 +585,24 @@
       color:#ff8f92;font-weight:700}
     .ig-body.ig-graph .ig-bet #cCancel:hover{background:rgba(229,72,77,.26)}
 
-    /* ── 다시 나타날 때는 스며 나온다 ────────────────────────────
-       터진 뒤 카운트다운과 함께 돌아오는 자리다. 튀어나오면 곡선을 보고 있던 눈이
-       그쪽으로 끌려간다 — 0.22초에 걸쳐 옅게 올라오는 정도가 맞다.
-       (반대로 상승이 시작될 때는 바로 걷는다. 그 순간은 «지금 빼는가» 하나만
-        남아야 하는 순간이라, 사라지는 것을 지켜볼 값이 없다.) */
-    .ig-body.ig-graph:not(:has(.crash-multi.running)) .ig-cell.ig-bet{
+    /* ── 패널은 «걸 수 있을 때» 만 있다 ──────────────────────────
+       한동안 상승 구간만 빼고 늘 띄웠다(:not(running)). 그러면 CRASHED 가 뜨는 순간
+       패널이 같이 올라오는데, 그 구간에는 서버가 베팅을 거절한다
+       (crash.ts 의 handleBet — phase !== 'betting' 이면 "베팅이 마감되었습니다").
+       누를 수 있게 생긴 단추가 눌러도 안 되는 상태로 몇 초 서 있는 셈이라,
+       그건 안내가 아니라 헛걸음이다(제보).
+
+       그래서 조건을 «베팅 구간» 하나로 좁힌다. 터진 뒤에는 판과 결과만 남고,
+       카운트다운이 시작되는 그 순간에 패널이 스며 나온다 — 나타나는 것 자체가
+       "이제 걸 수 있다" 는 신호가 된다.
+
+       나타날 때만 0.22초에 걸쳐 옅게 올라온다. 튀어나오면 곡선을 보던 눈이 끌려간다.
+       걷을 때는 바로 걷는다 — 상승이 시작되는 순간은 «지금 빼는가» 하나만 남아야
+       하는 순간이라, 사라지는 것을 지켜볼 값이 없다. */
+    .ig-body.ig-graph:has(.crash-multi.betting) .ig-cell.ig-bet{
       animation:graphPanelIn .22s ease-out}
+    .ig-body.ig-graph:not(:has(.crash-multi.betting)):not(:has(.crash-multi.running))
+      .ig-cell.ig-bet{display:none}
     @keyframes graphPanelIn{
       from{opacity:0;transform:translate(-50%,10px)}
       to{opacity:1;transform:translateX(-50%)}
