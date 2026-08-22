@@ -83,12 +83,19 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         }
         return out;
       }
-      /* 구역마다 «내가 누른 칩» 을 누른 순서대로.
+      /* 구역마다 «올라온 칩» 을 올라온 순서대로. 사람 구분 없이 한 목록이다.
+         (블랙잭의 pile.list 와 같은 물건이다.)
+
          이것은 화면이 아니라 «자료» 다 — 골격(.market)이 다시 그려질 때 같이 버리면
          안 된다. 베팅이 닫히는 순간 단계가 바뀌면서 골격이 새로 그려지는데, 그때
          이 목록을 비웠더니 누른 칩들이 서버 금액으로 다시 합쳐져서 «분명 안 합쳐져
-         있었는데 갑자기 합쳐진다» 가 됐다(제보). 라운드가 바뀔 때만 버린다. */
-      var myRaw = {}, myRawRound = null;
+         있었는데 갑자기 합쳐진다» 가 됐다(제보). 라운드가 바뀔 때만 버린다.
+
+         사람별로 나눠 두지 않고 «한 줄» 로 두는 이유가 하나 더 있다. 새로 올라온 칩이
+         언제나 목록의 «끝» 에 있어야, 판을 다시 그린 뒤 그 칩들만 골라 날릴 수 있다.
+         사람별로 다시 쪼개면 남이 걸 때마다 그 사람 몫이 목록 «가운데» 에서 통째로
+         바뀌어서, 무엇이 새 것인지 알 수 없다. */
+      var raw = {}, rawRound = null;
       /* ── 꽉 차면 «맨 밑에서부터» 큰 칩으로 바꾼다 ──────────────────────
          한동안은 쉰 장을 넘는 순간 총액을 통째로 다시 쪼갰다. 그러면 열 몇 장씩
          쌓여 있던 다섯 기둥이 한 기둥으로 폭삭 주저앉는다 — 돈은 늘었는데 판이
@@ -117,17 +124,18 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         }
         return false;
       }
-      function zoneChips(market, byUser, total){
+      function compressRaw(market){
+        var list = raw[market], guard = 0;
+        while (list.length > CHIP_LIMIT && colorUpOnce(list) && ++guard < 400) {}
+        // 바꿀 것이 없으면(전부 최고 액면이면) 오래된 쪽을 자른다 — 방금 올라온 것이 남는다
+        if (list.length > CHIP_LIMIT) raw[market] = list.slice(list.length - CHIP_LIMIT);
+      }
+      // 서버 금액에서 목록을 통째로 다시 세운다 (회수했거나 판에 처음 들어왔을 때)
+      function rebuildRaw(market, byUser){
         var out = [];
-        Object.keys(byUser).forEach(function(uid){
-          if (uid === st.me) return;
-          out = out.concat(splitAmount(byUser[uid]));
-        });
-        out = out.concat(myRaw[market] || []);   // 내 칩이 맨 위 — 방금 얹은 것이 보인다
-        var guard = 0;
-        while (out.length > CHIP_LIMIT && colorUpOnce(out) && ++guard < 400) {}
-        if (out.length > CHIP_LIMIT) out = out.slice(0, CHIP_LIMIT);
-        return out;
+        Object.keys(byUser).forEach(function(uid){ out = out.concat(splitAmount(byUser[uid])); });
+        raw[market] = out;
+        compressRaw(market);
       }
       // 금액 하나를 대표하는 칩 한 장 — 유령 칩과 버스트 칩이 쓴다
       function bestDenom(amount){
@@ -147,8 +155,10 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
       /* 밑동에 깔던 타원(내 베팅 표시 · 큰 판 표시)과 칩 위 총액 뱃지는 둘 다 걷었다.
          타원은 혼자 엉뚱한 자리에 떠 있었고, 뱃지는 같은 숫자가 상자 아래 .m-total 에
          이미 크게 적혀 있었다(둘 다 제보). 칩은 이제 제 그림만으로 선다. */
-      function paintTower(el, market, ds, total, mine){
-        if (!ds.length) { el.innerHTML = ''; return; }
+      /* pendFrom 이 있으면 그 인덱스부터의 칩을 «제자리에 숨긴 채» 그리고,
+         그 요소들을 돌려준다 — 부르는 쪽이 그 자리로 칩을 날린 뒤 드러낸다. */
+      function paintTower(el, market, ds, total, pendFrom){
+        if (!ds.length) { el.innerHTML = ''; return null; }
         var html = '';
         for (var i=0;i<ds.length;i++){
           var col = i % FAN_COLS, row = Math.floor(i / FAN_COLS);
@@ -157,10 +167,13 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
           var x = col * FAN_PITCH + jit(i, 5) - 2;
           var y = 2 + row * FAN_RISE + jit(i + 7, 3);
           html += '<span class="pchip bc3d c-coin ' + denomClass(ds[i]) +
+            (pendFrom != null && i >= pendFrom ? ' pending' : '') +
             '" style="' + chipX(market, x) + ';bottom:' + y + 'px;z-index:' + (10 + i) + '">' +
             chipArt(ds[i]) + '</span>';
         }
         el.innerHTML = '<span class="bc-tower">' + html + '</span>';
+        if (pendFrom == null) return null;
+        return [].slice.call(el.querySelectorAll('.pchip.pending'));
       }
       function syncTower(market, byUser, roundId){
         var el = document.getElementById('pile-'+market);
@@ -170,15 +183,26 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         for (var i=0;i<uids.length;i++) total += byUser[uids[i]];
         var t = towers[market];
         var fresh = !t || t.round !== roundId;
-        if (myRawRound !== roundId) { myRaw = {}; myRawRound = roundId; }
+        if (rawRound !== roundId) { raw = {}; rawRound = roundId; }
         if (fresh) t = towers[market] = { round: roundId, sig: null, byUser: {} };
+        if (!raw[market]) rebuildRaw(market, byUser);
 
-        // 늘어난 사람마다 유령 칩 한 장이 날아온다 (내 것은 dropMyChip 이 이미 냈다)
-        if (!fresh) {
+        /* 누구든 금액이 «줄었으면»(회수·Clear) 목록을 서버 값으로 다시 세운다.
+           늘어난 쪽만 덧붙이면 회수한 칩이 화면에 남는다. */
+        var shrank = false;
+        Object.keys(t.byUser).forEach(function(uid){
+          if ((byUser[uid]||0) < t.byUser[uid]) shrank = true;
+        });
+        var added = [];   // 이번에 새로 올라온 칩 — [{uid, n}] 순서대로
+        if (shrank) rebuildRaw(market, byUser);
+        else if (!fresh) {
           uids.forEach(function(uid){
             var delta = byUser[uid] - (t.byUser[uid]||0);
-            if (delta <= 0 || uid === st.me) return;
-            ghostChip(rosterAvatar(uid), el, bestDenom(delta), uid);
+            if (delta <= 0 || uid === st.me) return;   // 내 것은 dropMyChip 이 이미 얹었다
+            var ds2 = splitAmount(delta);
+            if (!ds2.length) return;
+            raw[market] = raw[market].concat(ds2);
+            added.push({ uid: uid, n: ds2.length });
             /* 남이 걸 때도 같은 소리를 낸다 — 칩만 날고 조용하면 판이 커지고 있다는
                것이 눈을 그쪽에 두고 있을 때만 전해진다. 다만 한 번에 여럿이 걸면
                소리가 겹쳐 지저분하므로 150ms 안에는 한 번만 낸다. */
@@ -187,53 +211,43 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
               if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
             }
           });
+          if (added.length) compressRaw(market);
         }
         t.byUser = {};
         uids.forEach(function(uid){ t.byUser[uid] = byUser[uid]; });
 
-        /* 내가 들고 있는 순서를 서버 값에 맞춘다. 스스로 고쳐지는 두 갈래다 —
-           내 쪽이 많으면(회수했다) 서버 값으로 다시 쪼개고, 서버 쪽이 많으면
-           (다른 창에서 걸었거나 폴이 내 클릭보다 먼저 왔다) 그 차이만 덧붙인다.
-           «다르면 통째로 다시» 로 하면 클릭 직후의 폴이 내 순서를 지운다. */
-        var mineAmt = byUser[st.me] || 0, rawSum = 0;
-        (myRaw[market] || []).forEach(function(v){ rawSum += v; });
-        if (rawSum > mineAmt) myRaw[market] = splitAmount(mineAmt);
-        else if (rawSum < mineAmt) myRaw[market] = (myRaw[market]||[]).concat(splitAmount(mineAmt - rawSum));
+        /* 내 몫이 서버와 어긋나면 맞춘다 — 다른 창에서 걸었거나 폴이 내 클릭보다
+           먼저 온 경우다. 목록 전체를 다시 세우지 않고 «차이만» 덧붙인다.
+           통째로 다시 세우면 클릭 직후의 폴이 내 순서를 지운다. */
+        var mineAmt = byUser[st.me] || 0, listSum = 0;
+        raw[market].forEach(function(v){ listSum += v; });
+        if (!shrank && listSum < total) {
+          var lack = splitAmount(total - listSum);
+          if (lack.length) { raw[market] = raw[market].concat(lack); compressRaw(market); }
+        }
 
         // 쌓인 모양이 그대로면 다시 그리지 않는다 — 매초 새로 그리면 쌓인 느낌이 사라진다
-        var ds = zoneChips(market, byUser, total);
-        var sig = total + '|' + ds.join(',') + '|' + (mineAmt > 0);
-        if (t.sig === sig) return;
+        var ds = raw[market];
+        var sig = total + '|' + ds.join(',');
+        if (t.sig === sig && !added.length) return;
         t.sig = sig;
         el.style.opacity = '';
-        paintTower(el, market, ds, total, mineAmt > 0);
-      }
-      /* 유령 칩 — 그 사람 아이콘에서 타워로 날아와 도착과 함께 사라진다.
-         타워에 «남지» 않는 것이 핵심이다. 남으면 타워가 다시 사람 수만큼 자란다. */
-      function ghostChip(src, pileEl, denom, owner){
-        var a = src && src.getBoundingClientRect();
-        if (!a || !a.width) {
-          var rb = rosterEl && rosterEl.getBoundingClientRect();
-          if (rb && rb.width) a = rb;
+        /* 새로 올라온 칩은 «제자리에» 숨겨 두고(pending) 그 자리로 날린다.
+           예전에는 화면 위 한 점으로 날린 뒤 판을 다시 그렸는데, 다시 그린 자리가
+           날아간 자리와 달라서 칩이 도착하자마자 한 번 튀었다(제보).
+           블랙잭·포커 플립이 처음부터 이 방식이다 — 그쪽에서 가져왔다. */
+        var pendN = 0;
+        added.forEach(function(x){ pendN += x.n; });
+        var pend = paintTower(el, market, ds, total,
+          pendN ? Math.max(0, ds.length - pendN) : null);
+        if (pend && pend.length) {
+          var at = 0;
+          added.forEach(function(x){
+            tossFrom(rosterAvatar(x.uid), pend.slice(at, at + x.n));
+            at += x.n;
+          });
         }
-        var tw = pileEl.querySelector('.bc-tower') || pileEl;
-        var b = tw.getBoundingClientRect();
-        if (!a || !a.width || !b.width) return;
-        var host = document.createElement('span');
-        host.className = 'pchip bc3d c-coin ' + denomClass(denom) + ' toss';
-        host.setAttribute('data-owner', owner);
-        host.innerHTML = chipArt(denom);
-        var d = TOWER_CHIP;
-        var cx = b.left + b.width/2 - d/2, cy = b.bottom - d;
-        host.style.cssText = 'position:fixed;margin:0;left:' + cx + 'px;top:' + cy + 'px;' +
-          'width:' + d + 'px;height:' + d + 'px;min-width:' + d + 'px;min-height:' + d + 'px;';
-        host.style.setProperty('--fx', Math.round((a.left+a.width/2) - (cx+d/2)) + 'px');
-        host.style.setProperty('--fy', Math.round((a.top+a.height/2) - (cy+d/2)) + 'px');
-        host.style.setProperty('--fs', Math.min(2.6, a.width / d).toFixed(2));
-        getFxLayer().appendChild(host);
-        setTimeout(function(){ if (host.parentNode) host.parentNode.removeChild(host); }, 400);
       }
-
       // 칩이 상자 밖을 지나는 구간은 .market의 overflow:hidden에 잘려 보이지 않으므로,
       // 날아가는 연출은 전부 화면 전체를 덮는 이 레이어 위에서 한다.
       // (버스트도 마찬가지다 — 타워 자리에서 사방으로 튀어야 하는데 상자가 그것을 자른다)
@@ -267,20 +281,70 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
       }
       /* 내 클릭은 폴링을 기다리지 않고 즉시 반영한다 — 타워를 그 자리에서 다시
          세우고, 방금 누른 코인 버튼에서 유령 칩 한 장을 날린다. */
+      /* ── 이미 «제자리에» 놓인 칩을 그 자리로 날린다 ─────────────────
+         원본은 pending 으로 숨겨 두고, 화면 전체 레이어에 복제본을 띄워 출발점에서
+         제자리까지 당겨 온다. 도착하면 복제본을 지우고 원본을 드러낸다 — 그래서 칩이
+         «도착한 그 자리에» 남는다.
+         예전에는 화면 위 한 점으로 날린 뒤 판을 다시 그렸다. 다시 그린 자리가 날아간
+         자리와 달라서 칩이 도착하자마자 한 번 튀었다(제보: 일정 점으로 날아갔다가
+         배치가 바뀌어 어색하다). 블랙잭·포커 플립이 처음부터 이 방식이고, 그쪽에서
+         그대로 가져왔다. */
+      function cloneAt(chip, rect, cls){
+        var c = chip.cloneNode(true);
+        c.className = chip.className.replace(/\\b(drop|toss|pending|fly)\\b/g, '').trim() + ' ' + cls;
+        /* 동전은 동전이어야 한다 — 폭만 주면 .pchip.c-coin 의 min-width 가 남아
+           복제본이 한 축으로 눌려 타원으로 날아간다. 둘을 함께 박는다
+           (scripts/audit-pages.ts 가 이 두 문자열이 여기 있는지 검사한다). */
+        var w = rect.width, h = rect.height;
+        if (c.className.indexOf('c-coin') >= 0) { var d = Math.max(w, h); w = d; h = d; }
+        c.style.cssText = 'position:fixed;margin:0;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+          'width:' + w + 'px;height:' + h + 'px;min-width:' + w + 'px;min-height:' + h + 'px;';
+        getFxLayer().appendChild(c);
+        return c;
+      }
+      function tossFrom(src, chips){
+        if (!chips || !chips.length) return;
+        /* 출발점이 없으면 그냥 드러낸다. 남이 걸었을 때의 출발점은 오른쪽 목록의 그
+           사람 줄인데, 그 줄이 아직 안 그려진 순간이 흔하다(첫 베팅이면 목록 자체가
+           비어 있다). 그때는 목록 상자에서 날린다 — 정확히 그 자리는 아니지만
+           저쪽에서 왔다는 것은 맞고, 아무 일도 안 일어나는 것보다 낫다. */
+        var a = src && src.getBoundingClientRect();
+        if (!a || !a.width) {
+          var rb = rosterEl && rosterEl.getBoundingClientRect();
+          if (rb && rb.width) a = rb;
+        }
+        if (!a || !a.width) { chips.forEach(function(ch){ ch.classList.remove('pending'); }); return; }
+        chips.forEach(function(ch, i){
+          var b = ch.getBoundingClientRect();
+          if (!b.width) { ch.classList.remove('pending'); return; }
+          var c = cloneAt(ch, b, 'toss');
+          c.style.setProperty('--fx', Math.round((a.left+a.width/2) - (b.left+b.width/2)) + 'px');
+          c.style.setProperty('--fy', Math.round((a.top+a.height/2) - (b.top+b.height/2)) + 'px');
+          c.style.setProperty('--fs', (Math.min(2.6, a.width / b.width)).toFixed(2));
+          c.style.animationDelay = (i * 70) + 'ms';
+          setTimeout(function(){
+            if (c.parentNode) c.parentNode.removeChild(c);
+            ch.classList.remove('pending');
+          }, 380 + i * 70);
+        });
+      }
       function dropMyChip(market, denom){
         var el = document.getElementById('pile-'+market), t = towers[market];
         if (!el || !t) return;
         t.byUser[st.me] = (t.byUser[st.me]||0) + denom;
-        (myRaw[market] = myRaw[market] || []).push(denom);
+        if (!raw[market]) raw[market] = [];
+        raw[market].push(denom);
+        compressRaw(market);
         var total = 0;
         Object.keys(t.byUser).forEach(function(u){ total += t.byUser[u]; });
-        var ds = zoneChips(market, t.byUser, total);
-        t.sig = total + '|' + ds.join(',') + '|true';
-        paintTower(el, market, ds, total, true);
+        var ds = raw[market];
+        t.sig = total + '|' + ds.join(',');
+        // 방금 누른 한 장만 숨긴 채 그리고, 코인 버튼에서 그 자리로 날린다
+        var pend = paintTower(el, market, ds, total, Math.max(0, ds.length - 1));
+        tossFrom(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), pend);
         // 얹힌 것이 손에 느껴지게 판이 아주 살짝 부푼다
         var tw = el.querySelector('.bc-tower');
         if (tw) { tw.classList.add('bc-pop'); }
-        ghostChip(coinsEl.querySelector('.coin[data-coin="'+denom+'"] .face'), el, denom, st.me);
       }
       /* ══ 승리 윤곽선은 «한 줄» 이다 ═══════════════════════════════════
          CSS 테두리로는 끝까지 안 됐다. 이긴 상자의 테두리를 켜면 가운데 돔이 그 위에
