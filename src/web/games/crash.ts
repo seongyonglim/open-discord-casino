@@ -322,7 +322,7 @@ export function crashPage(user: WebUser): string {
             <div class="field" id="cAutoField">
               <label>자동 캐시아웃 (배율)</label>
               <div class="bet-row">
-                <input id="cAuto" class="game-input" type="number" min="1.01" step="0.01" placeholder="2.00" disabled>
+                <input id="cAuto" class="game-input" type="number" min="1.01" step="0.01" placeholder="2.00" data-mult disabled>
               </div>
               <div class="quick-row">
                 <button type="button" class="chip-btn wide auto-q" data-mult="1.5" disabled>1.50x</button>

@@ -167,7 +167,36 @@ window.casinoBet = (function(){
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
   }
-  function boot(){ guard(); wireMax(); }
+  /* ── 폰에서 올라오는 자판을 칸마다 맞춘다 ───────────────────────────
+     type="number" 만으로는 자판이 정해지지 않는다. 안드로이드는 대체로 숫자판을 주지만
+     iOS 는 풀 쿼티를 띄우는 경우가 있어서, 금액을 넣으려고 눌렀는데 한/영 자판이 뜬다.
+     inputmode 가 그것을 정하는 표준 속성이다.
+
+     둘로 나눈다 — 금액은 정수라 마침표가 필요 없고(numeric + pattern), 목표 배율은
+     2.00 처럼 소수를 적어야 한다(decimal). 배율 칸에 pattern="[0-9]*" 를 붙이면 안 된다:
+     그 조합에서 브라우저가 마침표 없는 자판을 주는 일이 있어 «2.00 을 못 적는» 칸이 된다.
+
+     채팅과 일반 글칸은 건드리지 않는다. 여기서 고르는 대상은 data-bet(금액)과
+     data-mult(배율) 둘뿐이고, 그 표시는 게임 마크업에만 붙어 있다.
+
+     자동완성·자동수정·맞춤법은 끈다. 금액칸에 지난 검색어가 뜨거나 "1000"이 다른 말로
+     고쳐지는 일이 실제로 있다 — 숫자칸에서는 도움이 아니라 방해다. */
+  function keypads(){
+    var num = document.querySelectorAll('input[data-bet]');
+    for (var i = 0; i < num.length; i++) {
+      num[i].setAttribute('inputmode', 'numeric');
+      num[i].setAttribute('pattern', '[0-9]*');
+    }
+    var dec = document.querySelectorAll('input[data-mult]');
+    for (var j = 0; j < dec.length; j++) dec[j].setAttribute('inputmode', 'decimal');
+    var all = document.querySelectorAll('input[data-bet],input[data-mult]');
+    for (var k = 0; k < all.length; k++) {
+      all[k].setAttribute('autocomplete', 'off');
+      all[k].setAttribute('autocorrect', 'off');
+      all[k].setAttribute('spellcheck', 'false');
+    }
+  }
+  function boot(){ guard(); wireMax(); keypads(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
   return { balance: balance, clamp: clamp };

@@ -343,7 +343,7 @@
     /* --igPanelH: 베팅 패널의 «고정» 높이. 자동 탭(줄이 하나 더 많다)이 들어가는
        크기로 잡고 두 탭이 같이 쓴다 — 이 값이 고정이라 그 위의 카운트다운도 고정된다.
        --igPanelGap: 판 바닥에서 패널까지. 두 값 다 카운트다운 자리 계산에 들어간다. */
-    .ig-body.ig-graph{--igSide:200px;--igGap:6px;--igPanelH:170px;--igPanelGap:12px;
+    .ig-body.ig-graph{--igSide:200px;--igGap:6px;--igPanelH:186px;--igPanelGap:12px;--igPad:6px;
       grid-template-columns:1fr var(--igSide);gap:var(--igGap);
       padding:6px;position:relative}
     /* 판 — 첫 칸. 칸의 상자(배경·테두리)는 벗는다: 배경이 곧 화면이다.
@@ -430,8 +430,15 @@
 
        running 은 패널이 없으므로 판 한가운데를 그대로 쓴다(위 inset:0). 그건 탭이
        아니라 «판이 달라진» 것이라 움직이는 것이 맞다. */
+    /* 상자의 아래끝을 «패널 윗변에 정확히» 맞춘다. 그러면 그 안에서 가운데 정렬된
+       덩어리의 위아래 여백이 저절로 같아진다 — 위는 판 테두리까지, 아래는 패널까지.
+
+       한동안 여기에 +18px 을 더해 두었다. "패널과 최소한 이만큼은 띄우자" 는 뜻이었는데,
+       상자를 아래에서 깎으면 가운데도 그만큼 위로 올라간다. 결과는 위 5px · 아래 29px
+       으로, 띄우려던 쪽이 아니라 반대쪽이 좁아졌다(제보: 위가 프레임선에 바짝 붙었다).
+       띄우는 일은 여백이 스스로 하게 두고, 여기서는 «어디의 가운데인가» 만 정한다. */
     .ig-body.ig-graph:not(:has(.crash-multi.running)) .crash-center{
-      bottom:calc(var(--igPanelH) + var(--igPanelGap) + 18px)}
+      bottom:calc(var(--igPanelH) + var(--igPanelGap) - var(--igPad))}
     .ig-body.ig-graph .crash-label,
     .ig-body.ig-graph .crash-betlabel{font-size:11px;letter-spacing:2px}
     /* 상태 줄("다음 라운드까지 N초")은 가운데 덩어리에서 빼내 판 오른쪽 위에 둔다.
@@ -463,15 +470,29 @@
       left:calc((100% - var(--igSide) - var(--igGap)) / 2);bottom:var(--igPanelGap);
       transform:translateX(-50%);height:var(--igPanelH);box-sizing:border-box;
       width:min(384px,calc(100% - var(--igSide) - var(--igGap) - 24px));
-      z-index:20;padding:8px;gap:6px;
+      z-index:20;padding:8px;gap:6px;overscroll-behavior:none;
       background:rgba(9,9,11,.85);backdrop-filter:blur(10px);
       border:1px solid #27272a;border-radius:16px;
       box-shadow:0 18px 40px rgba(0,0,0,.6);
       transition:opacity .18s ease,transform .18s ease}
-    .ig-body.ig-graph .ig-cell.ig-bet > .card{gap:6px}
+    /* justify-content 로는 안 된다. space-between 은 «마지막 자식» 을 바닥에 붙이는데
+       그것이 실행 단추가 아니라 알림 줄(#cMsg)이라, 알림이 생기고 사라질 때마다 단추가
+       따라 움직였다(실측: 바닥 348 · 354 · 364).
+       그래서 단추 자신에게 margin-top:auto 를 줘서 «남는 자리를 위로 몰고» 아래로 붙인다.
+       알림 줄은 높이를 못 박아 글이 있든 없든 같은 자리를 차지하게 한다 — 그래야 그
+       위의 단추 바닥이 한 자리에 선다. */
+    .ig-body.ig-graph .ig-cell.ig-bet > .card{gap:4px}
+    /* 남는 자리를 «칸 묶음 아래» 한 곳으로 몰아 둔다.
+       실행 단추 쪽에 margin-top:auto 를 주면 안 된다 — .game-action 은 셋이다
+       (베팅하기·베팅취소·캐시아웃). auto 여백이 여럿이면 flex 가 남는 자리를 그들끼리
+       나눠 갖고, 어느 것이 보이느냐에 따라 몫이 달라진다. 같은 탭에서도 단추 바닥이
+       348 과 354 사이를 오간 이유가 그것이다(실측).
+       auto 는 한 곳에만 둔다. 그러면 그 아래는 문서 순서대로 바닥에 붙는다. */
+    .ig-body.ig-graph .ig-bet .field-grid{margin-bottom:auto}
+    .ig-body.ig-graph .ig-bet .game-msg{flex:none;height:14px;line-height:14px}
     /* 모드 탭·자동칸은 좁은 패널에서 두 줄을 먹는다 — 세그먼트로 눌러 담는다 */
     .ig-body.ig-graph .ig-bet .mode-tabs{gap:4px}
-    .ig-body.ig-graph .ig-bet .mode-tab{height:28px;font-size:11.5px;padding:0 6px}
+    .ig-body.ig-graph .ig-bet .mode-tab{height:26px;font-size:11.5px;padding:0 6px}
     /* 수동 모드에서는 자동 캐시아웃 칸을 접는다. 비활성으로 흐려만 두면 «지금 쓸 수
        없는 것» 이 84px 을 먹는데(실측: 패널 184px 중), 그만큼 곡선이 가려진다.
        판정은 탭의 active 로 한다 — 인풋의 disabled 를 보면 베팅을 넣은 뒤에도
@@ -489,7 +510,7 @@
        세로로 쌓아도 각 칸이 내용만큼만 넓어졌다 — 금액칸 149px · 자동칸 221px 로
        패널(344px) 가운데에 오종종하게 모였고, 그 좁은 폭 안에서 퀵 단추가 3px 밀려
        나갔다(실측). 사다리도 같은 곳에서 같은 것을 밟았다(위 .ig-ladder 절). */
-    .ig-body.ig-graph .ig-bet .field-grid{display:flex;flex-direction:column;gap:6px;
+    .ig-body.ig-graph .ig-bet .field-grid{display:flex;flex-direction:column;gap:4px;flex:none;
       align-items:stretch}
     .ig-body.ig-graph .ig-bet .field{display:flex;flex-direction:column;gap:5px}
     /* 인풋이 남는 폭을 먹고 단추들은 제 크기를 지킨다 */
@@ -503,8 +524,11 @@
        min-width 는 반드시 0 이어야 한다. .chip-btn 의 38px 이 남아 있으면 flex 가
        폭을 나눠도 그 아래로는 안 줄어든다. */
     .ig-body.ig-graph .ig-bet .quick-row{display:flex;gap:3px}
+    /* 퀵 배율 단추도 36px 이다. 이 넷은 «타이핑하지 않고 고르는» 길이라, 여기가
+       작으면 자판을 띄울 수밖에 없다 — 자판을 안 띄우게 하려고 둔 단추가 자판을
+       부르는 셈이 된다. */
     .ig-body.ig-graph .ig-bet .quick-row .chip-btn{flex:1 1 0;min-width:0;padding:0;
-      height:28px;font-size:10px}
+      height:36px;font-size:11px}
 
     /* ── 자동 탭의 패널 다이어트 ─────────────────────────────────
        자동을 켜면 줄이 하나 늘어 패널이 234px 이 됐다. 판이 290px 이니 81% 다 —
@@ -517,13 +541,16 @@
        접어도 뜻은 남는다 — 위의 모드 탭이 어느 모드인지 말하고, 금액칸 옆에는
        ½·2x·MAX 가, 배율칸에는 2.00 자리표시와 1.50x·2.00x 가 붙어 있다. */
     .ig-body.ig-graph .ig-bet .field > label{display:none}
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .mode-tab{height:24px}
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .game-action{height:36px}
-    /* 마지막 4px 은 간격에서 뺀다(실측 scrollHeight-clientHeight=4). 실행 단추 높이는
-       안 건드린다 — 거기서 빼면 손가락이 겨눌 자리가 줄어든다. 간격은 줄어도
-       누르는 데 지장이 없는 유일한 값이다. */
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) > .card{gap:4px}
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .field-grid{gap:4px}
+    /* ── 탭마다 다른 값을 하나도 두지 않는다 ──────────────────────
+       한동안 자동 탭에서만 모드 탭을 24px 로, 실행 단추를 36px 로, 간격을 4px 로
+       눌러 두었다. 고정 높이 안에 한 줄을 더 넣으려던 것인데, 그 셋이 전부 «위에서
+       아래로» 쌓이는 값이라 아래에 있는 실행 단추가 탭마다 다른 자리에 섰다
+       (제보: 베팅하기가 위아래로 움직인다).
+
+       그래서 값을 하나로 합치고, 남는 자리는 아래가 아니라 «사이» 로 보낸다 —
+       .card 의 justify-content:space-between 이 그 일을 한다. 수동 탭은 줄이 하나
+       적으므로 그만큼 사이가 벌어지고, 실행 단추의 바닥은 두 탭에서 같은 자리다.
+       실행 단추 높이도 42px 로 통일한다(36px 은 엄지가 겨누기에 작다). */
     /* 목표 배율칸과 퀵 단추 넷을 «한 줄» 로 세운다. 위아래로 두면 그 둘이 34+28+5 =
        67px 을 쓰는데, 한 줄이면 34px 이다. 되찾은 33px 이 그대로 숫자 자리가 된다
        (그 위에 20px 틈을 남기려면 패널이 210px 아래여야 한다 — 229px 이었다).
@@ -535,8 +562,11 @@
     .ig-body.ig-graph .ig-bet #cAutoField .quick-row{grid-column:2}
     .ig-body.ig-graph .ig-bet .field > label{font-size:10px;margin-bottom:3px}
     .ig-body.ig-graph .ig-bet .bet-row{gap:5px}
-    .ig-body.ig-graph .ig-bet .game-input{height:34px;font-size:14px}
-    .ig-body.ig-graph .ig-bet .chip-btn{height:34px;min-width:38px;font-size:11.5px}
+    /* 16px 이 하한이다. iOS 는 그보다 작은 글자의 인풋에 포커스하면 화면을 확대해 버리고,
+       확대된 화면에서는 판도 조작부도 자리를 잃는다. 높이도 함께 올린다 — 손가락이
+       겨눌 자리는 36px 이 최소다. */
+    .ig-body.ig-graph .ig-bet .game-input{height:36px;font-size:16px}
+    .ig-body.ig-graph .ig-bet .chip-btn{height:36px;min-width:38px;font-size:12px}
     .ig-body.ig-graph .ig-bet .game-action{height:42px;font-size:15px;font-weight:800}
     /* 알림 줄은 패널을 늘리지 않는다 — 한 줄로 자른다 */
     .ig-body.ig-graph .ig-bet .game-msg{margin:0;font-size:11px;
@@ -589,38 +619,42 @@
     .ig-body.ig-graph:has(.crash-multi.running) .ig-bet .game-msg{
       display:none}
     /* ── 캐시아웃 — 오른쪽 아래, 엄지가 닿는 자리 ────────────────
-       색을 두고 두 번 오갔다. 통짜 노랑 → 어두운 HUD → 지금의 금빛 그라데이션이다.
-       어두운 쪽은 판(검정)과 같은 어둠에 있어서 «누르는 것» 으로 안 읽혔다 —
-       화면에서 가장 급한 단추가 배경에 잠기면 안 된다(제보: 칙칙하다).
-       판이 검으므로 이 하나만 밝게 둔다. 대비가 곧 «지금 눌러라» 다.
+       색을 세 번 오갔다. 통짜 노랑 → 어두운 HUD → 금빛 그라데이션 → 지금의 에메랄드다.
+       앞의 셋은 전부 «이 단추만의» 색을 찾으려 한 것이었는데, 그게 방향이 틀렸다.
+       PC 의 캐시아웃은 .btn-primary — 에메랄드 바탕에 짙은 초록 글자다. 같은 일을
+       하는 단추가 화면 크기에 따라 다른 색이면, 그건 두 개의 규칙이지 하나의 제품이
+       아니다(제보: PC 와 통일해 달라). 그래서 색을 만들지 않고 있는 것을 쓴다 —
+       var(--win) 하나로 PC 와 폰이 같이 움직인다.
 
-       글자는 두 줄이다. "캐시아웃"과 금액은 성격이 다르다 — 앞은 무엇을 하는
-       단추인가(고정), 뒤는 지금 얼마인가(매 프레임 바뀐다). 한 줄에 붙여 두면
-       숫자가 자랄 때 단추 폭이 흔들려 엄지가 겨눈 자리가 움직인다. */
+       모양만 이 화면의 것이다: PC 는 조작부 폭을 꽉 채우지만 여기서는 판 위에 뜨는
+       작은 알약이라 폭을 내용만큼만 준다.
+
+       글자는 한 줄로 되돌린다. 두 줄로 나눴던 이유는 «숫자가 자랄 때 폭이 흔들린다»
+       였는데, min-width 로 바닥을 깔아 두면 한 줄에서도 흔들리지 않는다 —
+       조각(.co-l/.co-v)은 그대로 두고 가로로 세운다. 조각이 있어야 매 프레임
+       금액만 고쳐 쓸 수 있다(글자 전체를 갈아치우지 않는다). */
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout{
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      gap:0;min-width:140px;height:56px;padding:0 24px;border-radius:16px;
-      white-space:nowrap;border:none;
-      background:linear-gradient(100deg,#fbbf24 0%,#f5a524 45%,#eab308 100%);
-      box-shadow:0 10px 26px rgba(245,165,36,.32),0 2px 0 rgba(120,80,8,.5),
-        inset 0 1px 0 rgba(255,255,255,.45);
-      transition:filter .12s ease,transform .1s ease,box-shadow .18s ease;
+      display:flex;flex-direction:row;align-items:center;justify-content:center;
+      gap:7px;min-width:130px;height:48px;padding:0 24px;border-radius:16px;
+      white-space:nowrap;border:1px solid var(--win);
+      background:var(--win);color:#06240f;
+      box-shadow:0 10px 24px rgba(46,204,113,.22),0 2px 0 rgba(6,36,15,.35);
+      transition:background .12s ease,transform .1s ease,box-shadow .18s ease;
       animation:cashGlow 1.6s ease-in-out infinite}
-    .ig-body.ig-graph:has(.crash-multi.running) #cCashout:hover{filter:brightness(1.1)}
+    .ig-body.ig-graph:has(.crash-multi.running) #cCashout:hover{
+      background:#42d886;border-color:#42d886}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout .co-l{
-      font-size:11px;font-weight:800;letter-spacing:1.6px;line-height:1.1;
-      color:rgba(24,24,27,.78)}
+      font-size:13.5px;font-weight:700;letter-spacing:.2px;line-height:1;
+      color:#06240f}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout .co-v{
-      font-family:var(--mono);font-size:16px;font-weight:900;letter-spacing:-.2px;
-      color:#18181b;line-height:1.15}
+      font-family:var(--mono);font-size:14.5px;font-weight:800;letter-spacing:-.2px;
+      color:#06240f;line-height:1}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout:active{
-      transform:scale(.95);animation:none}
+      transform:scale(.95);background:#25a35a;animation:none}
     /* 빛만 흔든다. 크기를 흔들면 누르는 자리가 움직여서, 엄지가 닿는 순간에
        단추가 그 자리에 없을 수 있다 — 0.2초를 다투는 판에서는 그게 손해다. */
     @keyframes cashGlow{
-      0%,100%{box-shadow:0 10px 26px rgba(245,165,36,.32),0 2px 0 rgba(120,80,8,.5),
-        inset 0 1px 0 rgba(255,255,255,.45)}
-      50%{box-shadow:0 10px 34px rgba(245,165,36,.55),0 2px 0 rgba(120,80,8,.5),
-        inset 0 1px 0 rgba(255,255,255,.45)}
+      0%,100%{box-shadow:0 10px 24px rgba(46,204,113,.22),0 2px 0 rgba(6,36,15,.35)}
+      50%{box-shadow:0 10px 30px rgba(46,204,113,.45),0 2px 0 rgba(6,36,15,.35)}
     }
   }
