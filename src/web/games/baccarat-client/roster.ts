@@ -31,8 +31,19 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
       /* ── 우측 참가자 패널 ──────────────────────────────────────────
          칩이 아바타에서 출발하고 아바타로 돌아가므로 더미보다 먼저 그려져 있어야 한다. */
       var rosterSig=null, lastBal={};
+      /* 사람마다 «어느 구역에 걸었나» — st.bets 를 사람 기준으로 한 번 뒤집어 둔다.
+         베팅 상자 쪽(updateTotals)은 구역 기준으로 뒤집으므로 같은 자료를 두 방향으로
+         본다. 서버에 더 물을 것은 없다. */
+      var MARKET_NAME = { player:'플레이어', banker:'뱅커', tie:'타이',
+        ppair:'P페어', bpair:'B페어' };
+      var mineByUser = {};
       function renderRoster(){
         var players = st.players || [];
+        mineByUser = {};
+        (st.bets||[]).forEach(function(b){
+          if (!mineByUser[b.user_id]) mineByUser[b.user_id] = {};
+          mineByUser[b.user_id][b.market] = (mineByUser[b.user_id][b.market]||0) + b.amount;
+        });
         var sig = players.map(function(p){ return p.user_id; }).join(',');
         if (sig !== rosterSig) {
           rosterSig = sig;
@@ -65,11 +76,25 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
             balEl.textContent = fmt(p.balance);
           }
           lastBal[p.user_id] = p.balance;
+          /* 금액 옆에 «어디에 걸었나» 를 붙인다. 숫자만 있으면 판을 보는 사람이
+             "저 사람이 얼마를 걸었다" 까지만 알고 "어느 쪽에" 는 모른다 — 이 게임은
+             남이 어디로 몰리는지가 재미의 절반이다.
+             두 곳 이상에 걸었으면 이름을 다 적지 않고 «2곳» 으로 줄인다. 좁은 줄에
+             "플레이어·타이" 를 다 적으면 금액이 밀려 나간다.
+             정산이 끝나 딴 사람은 금액만 크게 보여 준다 — 그 순간 알고 싶은 것은
+             어디에 걸었는지가 아니라 얼마를 땄는지다. */
           var betEl = document.getElementById('bet-'+p.user_id);
           if (betEl) {
-            betEl.innerHTML = (p.payout > 0)
-              ? '<span class="pos">+'+fmt(p.payout)+'</span>'
-              : fmt(p.staked);
+            if (p.payout > 0) {
+              betEl.innerHTML = '<span class="pos">+'+fmt(p.payout)+'</span>';
+            } else {
+              var ks = Object.keys(mineByUser[p.user_id] || {});
+              var zone = ks.length === 0 ? ''
+                : ks.length === 1 ? (MARKET_NAME[ks[0]] || ks[0])
+                : (ks.length + '곳');
+              betEl.innerHTML = (zone ? '<span class="rw-zone">'+esc(zone)+'</span>' : '')
+                + fmt(p.staked);
+            }
           }
           var row = rosterEl.querySelector('.rw[data-uid="'+cssEsc(p.user_id)+'"]');
           if (row) row.classList.toggle('won', p.payout > 0);

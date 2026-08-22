@@ -9,6 +9,12 @@
     scrollbar-width:none}
   .bacc-bead-row::-webkit-scrollbar{display:none}
   .bacc-bead-empty{font-size:12px;color:var(--muted)}
+  /* 참가자 줄의 «어디에 걸었나» 표. 금액 위에 작은 글씨로 붙는다 —
+     .rw-bet 이 세로 배치라 줄을 하나 더 얹으면 그대로 위에 선다.
+     색은 죽여 둔다: 이 줄에서 눈이 먼저 가야 하는 것은 금액이다. */
+  .rw-zone{font-size:9.5px;font-weight:700;letter-spacing:.02em;color:#8fa3b8;
+    background:rgba(255,255,255,.06);border-radius:5px;padding:1px 5px;
+    white-space:nowrap}
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
      그래서 베팅 상자(.m-player/.m-banker)와 같은 언어로 맞춘다:
@@ -20,10 +26,19 @@
   .bacc-bead.b{background:#33201a;border-color:#6b3d2c;color:#ffa287}
   .bacc-bead.t{background:#14291f;border-color:#2c5a41;color:#6fce9d}
 
-  /* 안내 알약이 이 상자를 기준으로 떠 있다(아래 .bacc-status) */
-  .bacc-table{position:relative;
+  /* ── 펠트는 «하나» 다 ────────────────────────────────────────────
+     펠트가 카드 존만 감싸고 있었다. 그러면 한 화면에 상자가 둘이 된다 — 초록 상자
+     안에 카드, 그 밖에 베팅판. 실제 카지노 테이블은 매트 하나 위에 카드도 베팅 구역도
+     함께 있다(제보: 초록 사각 테두리를 걷고 하나로).
+     그래서 펠트를 바깥 카드로 옮긴다. 안쪽 .bacc-table 은 상자를 벗고 «자리» 만 남는다
+     — 안내 알약이 이것을 기준으로 떠 있으므로 position:relative 는 지킨다.
+     :has() 로 고르는 이유: .card 는 모든 게임이 함께 쓰는 클래스라, 바카라 판을 품은
+     것만 골라야 다른 게임의 카드가 초록으로 물들지 않는다. */
+  .card:has(.bacc-table){
     background:radial-gradient(120% 100% at 50% 0%, #143024 0%, #0c1a14 70%);
-    border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:10px}
+    border-color:#1e4534}
+  .bacc-table{position:relative;background:none;border:none;border-radius:0;
+    padding:0;margin:0 0 10px}
   /* ── 안내 알약은 판 위 가운데에 «떠 있다» ──────────────────────────
      한때 흐름 속 한 줄이었다. 그 줄은 35px 을 쓰면서 하는 일이 "몇 초" 하나인데,
      가로 화면(높이 360~412px)에서는 그 35px 이 카드와 베팅 구역이 나눠 쓸 자리다.
@@ -84,7 +99,14 @@
   .side-banker .bacc-name{color:#ff8f6b}
   /* 세 번째 카드가 붙어도 자리가 흔들리지 않도록 최소 높이를 카드 높이로 잡는다.
      가운데 정렬은 가로·세로 둘 다 — 카드 칸 정중앙에 선다. */
-  .bacc-hand{display:flex;gap:7px;justify-content:center;align-items:center;min-height:72px}
+  /* ── 카드를 한 단 키운다 ──────────────────────────────────────────
+     기본 카드가 48x72 였다. 이 판에서 봐야 하는 것이 카드인데 베팅 상자보다 작았다.
+     25% 키워 60x90 으로 둔다(요청). 세 번째 장이 붙어도 자리가 남는지 확인했다 —
+     세 장이면 60x3 + 간격 2x8 = 196px 이고 카드 칸은 그보다 넓다.
+     min-height 도 함께 올린다: 카드가 아직 없을 때도 자리가 그만큼 잡혀 있어야
+     카드가 놓이는 순간 판이 아래로 밀리지 않는다. */
+  .bacc-hand{display:flex;gap:8px;justify-content:center;align-items:center;min-height:90px}
+  .bacc-seats .pcard{width:60px;height:90px;border-radius:7px}
 
   /* 끗수 알약. 숫자는 한 자리(0~9)라 폭을 잡아 두면 «–» 에서 «8» 로 바뀔 때 이름이
      밀리지 않는다. 색은 그 자리의 색을 옅게 깐 것이다 — 파랑은 플레이어, 붉은색은
@@ -178,8 +200,14 @@
      (제보 화면에서 1000 칩 셋이 돔 언저리에 뭉쳐 있던 것이 그것이다).
      각자 «자기 쪽» 에만 쌓이게 한다 — 플레이어는 왼쪽 절반, 뱅커는 오른쪽 절반.
      그러면 돔과 겹칠 자리가 구조적으로 없다. */
-  .bacc-core .market.m-player .m-pile{right:44%}
-  .bacc-core .market.m-banker .m-pile{left:44%}
+  /* 가운데가 아니라 «바깥쪽» 에 쌓는다. 44% 로 밀어도 더미가 넓으면 안쪽 끝이 돔에
+     닿는다 — 칩이 여러 겹 쌓이면 그렇게 된다. 아예 바깥 절반에 못 박아 두면 몇 겹이
+     쌓이든 돔 근처에 갈 수 없다. */
+  /* #bMarkets 를 앞에 붙여야 한다. 위의 #bMarkets .m-pile{left:0;right:0} 이 id 를
+     갖고 있어서, 클래스를 아무리 많이 겹쳐도(.bacc-core .market.m-player .m-pile)
+     그것을 못 이긴다 — 규칙은 썼는데 칸은 여전히 상자 전체 폭이었다(실측 142~312). */
+  #bMarkets .bacc-core .market.m-player .m-pile{left:6%;right:52%}
+  #bMarkets .bacc-core .market.m-banker .m-pile{left:52%;right:6%}
   .m-foot{display:flex;flex-direction:column;gap:1px;padding:0 12px 10px;text-align:left}
   .m-cnt{font-size:10.5px;color:#9fb0c2}
   .m-foot .m-total{font-family:var(--mono);font-size:15px;font-weight:800;
