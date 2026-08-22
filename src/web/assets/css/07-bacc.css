@@ -161,28 +161,77 @@
     .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sink{opacity:0}
   }
 
+  /* ── 판은 «언제나» 또렷하다 ──────────────────────────────────────
+     베팅이 닫히면 판 전체가 반투명해졌다(.market.disabled{opacity:.5} · 05-poker.css).
+     그 반쪽 상태가 카드가 뒤집히는 내내 이어져서, 정작 결과를 보는 구간에 판이
+     제일 탁했다 — 칩도 글자도 뒤 펠트가 비쳐 흐렸다(제보).
+     못 누른다는 것은 커서와 «베팅 마감까지 N초» 알약이 이미 말한다. 색을 죽여서
+     한 번 더 말할 이유가 없다. 진 구역도 흐리지 않는다 — 흐려서 지는 것이 아니라
+     이긴 쪽이 켜져서 이기는 것이다.
+
+     그러려면 바탕이 «완전히» 불투명해야 한다. 예전 색은 초록 펠트 위에 얹힌 것을
+     전제로 조금 밝게 잡혀 있었는데, 흐림을 걷고 나니 그 밝기가 펠트와 겹쳐
+     탁해 보였다. 네 구역 모두 한 단 깊게 내린다. */
+  #bMarkets .market.disabled{opacity:1}
+  #bMarkets .market.miss{opacity:1}
+  #bMarkets .market{transition:filter .3s,box-shadow .3s,border-color .3s}
+
   /* ── 결과가 나오면 이긴 구역만 «켜진다» ──────────────────────────
-     지금까지는 진 구역을 흐리게 하는 것이 전부였다. 흐려지기만 하면 «무엇이 졌나»
-     는 보여도 «무엇이 이겼나» 는 상대적으로만 읽힌다. 이긴 쪽을 실제로 밝히고
-     테두리에 빛을 준다 — 눈이 먼저 가야 하는 곳은 이긴 쪽이다. */
-  #bMarkets .market.hit{border-color:var(--win);
-    box-shadow:0 0 0 1px var(--win) inset, 0 0 18px rgba(46,204,113,.26);
-    filter:brightness(1.2)}
-  #bMarkets .market{transition:filter .3s,box-shadow .3s,opacity .3s,border-color .3s}
-  #bMarkets .market.miss{opacity:.4}
+     밝기를 올리고 안쪽에 등을 하나 켠다. 안쪽 글로우는 금빛이다 — 테두리 색과
+     역할이 갈린다. 테두리는 «어느 구역이 맞았나», 금빛은 «여기에 돈이 있다».
+
+     테두리 색은 구역마다 다르다. 한동안 전부 초록(--win)이었는데, 판 바닥이 초록
+     펠트이고 가운데 돔도 초록이라 이긴 선이 배경에 묻혔다(제보). 위쪽 카드 자리가
+     이미 쓰고 있는 색을 그대로 가져온다 — 플레이어는 하늘색, 뱅커는 붉은색.
+     그래야 «이긴 쪽» 을 색 하나로 알아본다. 페어는 각자 제 편의 색을 따른다. */
+  #bMarkets .market.m-player.hit,
+  #bMarkets .market.m-ppair.hit{--bc-win:#38bdf8;--bc-glow:rgba(56,189,248,.5)}
+  #bMarkets .market.m-banker.hit,
+  #bMarkets .market.m-bpair.hit{--bc-win:#f43f5e;--bc-glow:rgba(244,63,94,.5)}
+  #bMarkets .market.m-tie.hit{--bc-win:#34d399;--bc-glow:rgba(52,211,153,.5)}
+  #bMarkets .market.hit{border-color:var(--bc-win,#34d399);
+    box-shadow:0 0 0 1px var(--bc-win,#34d399) inset, inset 0 0 35px rgba(251,191,36,.3),
+      0 0 15px var(--bc-glow,rgba(52,211,153,.5));
+    filter:brightness(1.25)}
 
   /* ── 승리 테두리는 돔에서 끊기지 않는다 ──────────────────────────
      플레이어가 이기면 그 상자의 테두리가 켜지는데, 가운데 돔이 그 위에 얹혀 있어서
      테두리가 돔에 닿는 자리에서 뚝 끊겨 보였다. 돔의 «맞닿는 쪽» 테두리도 같은
      색으로 켜면 둘이 한 줄로 이어져, 이긴 구역이 돔의 곡면을 감싸 안은 하나의
      윤곽선이 된다.
-     어느 쪽이 이겼는지는 :has() 로 안다 — 돔에 상태를 따로 넘기지 않아도 된다. */
-  .bacc-core:has(.market.m-player.hit) .market.m-tie{border-left-color:var(--win)}
-  .bacc-core:has(.market.m-banker.hit) .market.m-tie{border-right-color:var(--win)}
-  /* 타이가 이기면 돔 둘레 전체가 켜진다 */
-  .bacc-core .market.m-tie.hit{border-color:var(--win);
-    box-shadow:0 -6px 18px rgba(0,0,0,.45),0 0 0 1px var(--win) inset,
-      0 0 24px rgba(46,204,113,.34)}
+     어느 쪽이 이겼는지는 :has() 로 안다 — 돔에 상태를 따로 넘기지 않아도 된다.
+
+     맞닿는 쪽 «자기» 테두리는 반대로 지운다. 플레이어가 이겼을 때 그 상자의 오른쪽
+     선이 켜지면 그 선이 돔을 가로질러 지나간다 — 폐곡선이 아니라 상자 하나가
+     돔 뒤에 깔린 그림이 된다. */
+  /* #bMarkets 를 앞에 붙여야 한다. 바로 위의 «#bMarkets .market.hit{border-color}» 가
+     id 를 갖고 있어서, 클래스를 넷을 겹쳐도 그것을 못 이긴다 — 규칙은 썼는데 뱅커의
+     왼쪽 선이 여전히 초록으로 켜져 돔을 가로질렀다(실측). */
+  #bMarkets .bacc-core .market.m-player.hit{border-right-color:transparent}
+  #bMarkets .bacc-core .market.m-banker.hit{border-left-color:transparent}
+
+  /* 돔 쪽 이음선은 «덧그린다». 돔 자신의 테두리 색을 한 면만 바꾸면 위쪽 둥근 모서리가
+     반은 켜지고 반은 어두운 채로 남는다 — 모서리에서 두 면의 색이 대각선으로 갈리기
+     때문이다. 그것이 «곡면이 끊겨 보인다» 의 정체다(제보).
+     그래서 돔 위에 테두리만 있는 겹을 하나 얹고, 이긴 쪽 절반만 남기고 마스크로
+     잘라 낸다. 그러면 세로선 → 둥근 모서리 → 윗변 절반이 한 줄로 이어진다.
+     inset:-1px 은 돔의 테두리 «위» 에 정확히 겹치기 위한 것이다. */
+  .bacc-core:has(.market.m-player.hit) .market.m-tie::after,
+  .bacc-core:has(.market.m-banker.hit) .market.m-tie::after{
+    content:'';position:absolute;inset:-1px;pointer-events:none;z-index:2;
+    border:1px solid transparent;border-radius:31px 31px 12px 12px}
+  .bacc-core:has(.market.m-player.hit) .market.m-tie::after{
+    border-top-color:#38bdf8;border-left-color:#38bdf8;
+    -webkit-mask-image:linear-gradient(to right,#000 0 50%,transparent 50%);
+    mask-image:linear-gradient(to right,#000 0 50%,transparent 50%)}
+  .bacc-core:has(.market.m-banker.hit) .market.m-tie::after{
+    border-top-color:#f43f5e;border-right-color:#f43f5e;
+    -webkit-mask-image:linear-gradient(to left,#000 0 50%,transparent 50%);
+    mask-image:linear-gradient(to left,#000 0 50%,transparent 50%)}
+  /* 타이가 이기면 돔 둘레 전체가 켜진다 — 이때는 마스크가 필요 없다 */
+  .bacc-core .market.m-tie.hit{border-color:#34d399;
+    box-shadow:0 -6px 18px rgba(0,0,0,.45),0 0 0 1px #34d399 inset,
+      inset 0 0 35px rgba(251,191,36,.3),0 0 20px rgba(52,211,153,.5)}
 
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
@@ -365,17 +414,11 @@
     transform:translateX(-50%);
     width:min(46%,240px);z-index:30;border-radius:30px 30px 11px 11px;
     box-shadow:0 -6px 18px rgba(0,0,0,.45)}
-  /* ── 돔은 «불투명» 해야 한다 ──────────────────────────────────────
-     빗나간 상자는 .miss 로 흐려진다(opacity:.42). 그런데 돔은 다른 두 상자 «위» 에
-     얹혀 있어서, 흐려지는 순간 그 아래의 테두리와 글자가 그대로 비쳐 나왔다 —
-     선이 어지럽게 겹쳐 보인 것이 그것이다(제보).
-     겹쳐 있는 것을 투명하게 만들면 안 된다. 돔은 opacity 를 되돌리고, 대신 «흐려진
-     느낌» 을 제 색을 눌러서 낸다 — 아래가 비치지 않으면서 물러나 보인다. */
-  .bacc-core .market.m-tie.miss{opacity:1;background:#0f1c16;border-color:#1b3a2a}
-  .bacc-core .market.m-tie.miss .m-name,
-  .bacc-core .market.m-tie.miss .m-odds,
-  .bacc-core .market.m-tie.miss .m-cnt,
-  .bacc-core .market.m-tie.miss .m-total{opacity:.42}
+  /* 빗나간 구역은 이제 흐려지지도 색이 죽지도 않는다 — 평상시 그대로다.
+     한동안 돔만은 opacity 대신 «제 색을 눌러» 물러나게 했는데, 그것도 걷는다.
+     겹쳐 있는 것을 투명하게 만들면 안 된다는 예전 결론은 그대로 유효하고
+     (돔이 흐려지면 아래 두 상자의 테두리와 글자가 그대로 비쳐 나왔다), 이제는
+     아무것도 흐려지지 않으므로 특별 취급 자체가 필요 없다. */
   /* 돔이 가운데를 차지하므로 두 이름은 양끝으로 민다 — 플레이어는 왼쪽, 뱅커는
      오른쪽. 목업의 배치이기도 하고, 그래야 돔과 겹칠 자리가 아예 없다. */
   .bacc-core .market.m-banker .m-head{align-items:flex-end;text-align:right}
@@ -427,10 +470,10 @@
   .m-foot .m-total{font-family:var(--mono);font-size:15px;font-weight:800;
     color:#eef2f7;background:none;border:none;padding:0;min-width:0;text-align:left}
 
-  .market.m-player{background:#12233a;border-color:#22406b}
-  .market.m-banker{background:#33201a;border-color:#5e3527}
-  .market.m-tie{background:#123024;border-color:#1f5e3c}
-  .market.m-pair{background:#1a1a22;border-color:#33333f}
+  .market.m-player{background:#0d1b2a;border-color:#22406b}
+  .market.m-banker{background:#201010;border-color:#5e3527}
+  .market.m-tie{background:#0c1f17;border-color:#1f5e3c}
+  .market.m-pair{background:#111827;border-color:#33333f}
   /* 날개는 좁다 — 이름을 두 줄로 접고 글자를 한 단 줄인다.
      word-break:keep-all 이 있어야 «플레이어 페어» 가 «플레이어 / 페어» 로 접힌다.
      기본값은 글자 단위로 끊어서 «플레이어 페 / 어» 가 됐다 — 한글은 단어 안에서
