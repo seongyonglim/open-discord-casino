@@ -160,7 +160,19 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
       /* pendFrom 이 있으면 그 인덱스부터의 칩을 «제자리에 숨긴 채» 그리고,
          그 요소들을 돌려준다 — 부르는 쪽이 그 자리로 칩을 날린 뒤 드러낸다. */
       function paintTower(el, market, ds, total, pendFrom){
-        if (!ds.length) { el.innerHTML = ''; return null; }
+        if (!ds.length) {
+          /* 빈 목록으로 다시 그려지는 순간이 곧 «다음 판이 열렸다» 이다.
+             남아 있던 칩(대개 진 구역의 것)을 즉시 지우지 않고 한 번 쓸어 낸다 —
+             딜러가 칩을 걷어 가는 그 한 박자다. */
+          var old = el.querySelector('.bc-tower');
+          if (old && old.childElementCount && !old.classList.contains('bc-sweep')) {
+            old.classList.add('bc-sweep');
+            setTimeout(function(){ if (old.parentNode === el) el.innerHTML = ''; }, 320);
+            return null;
+          }
+          if (!old || !old.childElementCount) el.innerHTML = '';
+          return null;
+        }
         var html = '';
         for (var i=0;i<ds.length;i++){
           var col = i % FAN_COLS, row = Math.floor(i / FAN_COLS);
@@ -512,9 +524,14 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
       function burstAndFly(res){
         burstCancel();
         var pay = payingMarkets(res), win = winMarkets(res);
+        /* 진 구역의 칩은 «건드리지 않는다». 한동안은 여기서 가라앉혀 지웠는데,
+           그러면 결과를 확인하기도 전에 판의 절반이 비어서 «무엇이 얼마나 걸려
+           있었나» 를 되짚을 수가 없었다. 실제 테이블에서 딜러는 진 칩을 결과가 다
+           읽힌 다음에 걷어 간다 — 다음 판이 열릴 때 한꺼번에 쓸어 낸다(요청).
+           그 «쓸어 냄» 은 paintTower 가 맡는다(빈 목록으로 다시 그려질 때). */
         ALL_KEYS.forEach(function(m){
           var tw = towerOf(m); if (!tw) return;
-          if (pay.indexOf(m) < 0) return tw.classList.add('bc-sink');
+          if (pay.indexOf(m) < 0) return;
           tw.classList.add(win.indexOf(m) >= 0 ? 'bc-flash' : 'bc-refund');
         });
         /* 내 몫만큼 잔고를 되돌린다. render() 는 첫 줄에서 이미 정산 후 잔고를

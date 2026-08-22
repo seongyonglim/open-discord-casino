@@ -138,9 +138,11 @@
   /* 2) 환불(무승부의 플레이어·뱅커) — 조용히 물러난다. 이긴 것이 아니다 */
   .bc-tower.bc-refund{animation:bcFade .3s ease-out forwards}
   @keyframes bcFade{ to{opacity:0} }
-  /* 3) 진 기둥 — 가라앉는다. 이긴 쪽만 지우면 판이 반쯤 남은 채로 멈춘다 */
-  .bc-tower.bc-sink{animation:bcSink .32s ease-in forwards}
-  @keyframes bcSink{ to{transform:translateY(7px) scale(.8);opacity:0} }
+  /* 3) 다음 판이 열릴 때 남아 있던 칩을 쓸어 낸다 — 딜러가 칩을 걷어 가는 한 박자다.
+     진 칩은 결과가 다 읽힐 때까지 판에 그대로 남아 있는다(예전에는 정산 순간에
+     가라앉혀 지웠는데, 그러면 결과를 확인하기도 전에 판의 절반이 비었다). */
+  .bc-tower.bc-sweep{animation:bcSweep .32s ease-in forwards}
+  @keyframes bcSweep{ to{transform:translateY(7px) scale(.86);opacity:0} }
 
   /* 4) 포물선 — 겉이 가로(등속), 속이 세로(가속).
      한 겹으로는 안 된다. transform 하나에 둘을 넣으면 같은 가속을 공유해 직선이 된다.
@@ -164,11 +166,11 @@
 
   /* 연출을 끄기로 한 사람에게는 결과만 준다 — 칩은 안 날고 숫자는 정확히 맞는다 */
   @media (prefers-reduced-motion:reduce){
-    .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sink,
+    .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sweep,
     .chip-fly-layer .bc-fly,.pchip.bc-burst,
     .bc-tower.bc-flash::before{animation:none}
     .chip-fly-layer .bc-fly{opacity:0}
-    .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sink{opacity:0}
+    .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sweep{opacity:0}
   }
 
   /* ── 판은 «언제나» 또렷하다 ──────────────────────────────────────
