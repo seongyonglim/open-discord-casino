@@ -421,7 +421,27 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
           'L' + m + ',' + (TY+0.5) + 'Z';
       }
       var CT_COLOR = { player:'#38bdf8', banker:'#f43f5e', tie:'#fbbf24' };
+      /* 마우스를 올린 구역도 같은 «한 줄» 로 그린다. 사각 테두리만 켜면 승리 때와
+         똑같은 문제가 그대로 난다 — 가운데 돔에서 선이 끊기고, 상자의 밑변이 돔 뒤로
+         이어져 있어 돔 밑바닥으로 빛이 샌다(제보). 길은 이미 있으니 색만 금색으로
+         바꿔 그린다.
+         마우스는 판 위 어디서든 오갈 수 있으므로 이벤트를 상자마다 달지 않고
+         판 하나에 위임한다 — 골격이 다시 그려져도 살아남는다. */
+      var hoverZone = null;
+      function bindHover(){
+        if (marketsEl.dataset.hoverBound) return;
+        marketsEl.dataset.hoverBound = '1';
+        marketsEl.addEventListener('mouseover', function(e){
+          var m = e.target.closest && e.target.closest('.market');
+          var k = m && !m.classList.contains('disabled') ? m.getAttribute('data-market') : null;
+          if (k !== hoverZone) { hoverZone = k; paintContour(st.round.result); }
+        });
+        marketsEl.addEventListener('mouseleave', function(){
+          if (hoverZone !== null) { hoverZone = null; paintContour(st.round.result); }
+        });
+      }
       function paintContour(res){
+        bindHover();
         var core = marketsEl.querySelector('.bacc-core');
         if (!core) return;
         var el = core.querySelector('.bc-contour');
@@ -439,7 +459,11 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
           el = core.querySelector('.bc-contour');
         }
         var p = el.firstChild;
+        /* 결과가 있으면 그것이 우선이다 — 그때는 마우스가 어디 있든 «누가 이겼나» 를
+           말해야 한다. 결과가 없을 때만 호버를 그린다. */
         var side = res && CT_COLOR[res.winner] ? res.winner : null;
+        var gold = false;
+        if (!side && hoverZone && CT_COLOR[hoverZone]) { side = hoverZone; gold = true; }
         if (!side) { el.removeAttribute('data-side'); p.setAttribute('d', ''); return; }
         var cr = core.getBoundingClientRect();
         var tieEl = core.querySelector('.market.m-tie');
@@ -450,8 +474,8 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
                   w: Math.round(tr.width), h: Math.round(tr.height) };
         el.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
         p.setAttribute('d', contourPath(side, W, H, T));
-        p.setAttribute('stroke', CT_COLOR[side]);
-        el.setAttribute('data-side', side);
+        p.setAttribute('stroke', gold ? '#fbbf24' : CT_COLOR[side]);
+        el.setAttribute('data-side', gold ? 'hover' : side);
       }
 
       /* ══ 정산 — 버스트 앤 플라잉 ═════════════════════════════════════

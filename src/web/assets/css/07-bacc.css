@@ -217,9 +217,12 @@
      칩을 올릴 수 있는 구간에만 켠다(못 누를 때는 .disabled 가 붙는다).
      금색은 이 사이트에서 «지금 할 수 있는 것» 의 색이고, 승리색(하늘/붉음/에메랄드)과
      겹치지 않아 결과가 나온 뒤와도 헷갈리지 않는다. */
+  /* 테두리는 여기서 켜지 않는다 — 승리 때와 같은 이유다. 사각 테두리를 켜면 가운데
+     돔에서 선이 끊기고, 상자의 밑변이 돔 뒤로 이어져 있어 돔 밑바닥으로 빛이 샌다.
+     둘레는 판 위에 얹은 SVG 한 줄(.bc-contour)이 금색으로 그린다.
+     여기서는 «안쪽 등» 과 밝기만 준다 — 그 둘은 상자 안에서 끝나므로 안 샌다. */
   #bMarkets .market:not(.disabled){cursor:pointer}
   #bMarkets .market:not(.disabled):hover{
-    border-color:rgba(251,191,36,.6);
     box-shadow:inset 0 0 20px rgba(251,191,36,.15);
     filter:brightness(1.1)}
 
@@ -252,6 +255,9 @@
   .bc-contour[data-side="player"] path{filter:drop-shadow(0 0 5px rgba(56,189,248,.85))}
   .bc-contour[data-side="banker"] path{filter:drop-shadow(0 0 5px rgba(244,63,94,.85))}
   .bc-contour[data-side="tie"] path{filter:drop-shadow(0 0 5px rgba(251,191,36,.85))}
+  /* 마우스를 올렸을 때 — 금색이다. 이 사이트에서 «지금 할 수 있는 것» 의 색이고,
+     승리색 셋(하늘·붉음·에메랄드)과 겹치지 않아 결과가 나온 뒤와 헷갈리지 않는다. */
+  .bc-contour[data-side="hover"] path{filter:drop-shadow(0 0 6px rgba(251,191,36,.55))}
 
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
