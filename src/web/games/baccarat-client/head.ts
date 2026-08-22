@@ -43,7 +43,37 @@ export function bcHead(p0: string | number, p1: string | number, p2: string | nu
 
       function fmt(n){ return new Intl.NumberFormat('ko-KR').format(Math.floor(n)) + 'P'; }
       function compact(n){ return new Intl.NumberFormat('ko-KR').format(n); }
-      function setBalance(n){ if(pbal && typeof n==='number') pbal.textContent = fmt(n); }
+      /* 잔고는 «세어 오른다». 정산 순간 숫자가 툭 바뀌면, 칩이 아직 날고 있는데
+         돈은 이미 들어와 있는 꼴이 된다 — 연출이 결과를 설명하지 못한다.
+         카운트업이 도는 동안 폴링이 같은 값을 다시 써서 스냅시키지 않도록 잠근다
+         (폴은 1초마다 render() 첫 줄에서 setBalance 를 부른다).
+         중간값은 반드시 내림이다 — fmt() 가 Math.floor 를 한다. */
+      var balAnim = null;
+      function setBalance(n){
+        if (typeof n !== 'number') return;
+        /* 카운트업이 도는 동안에는 폴이 숫자를 스냅시키지 않게 목표만 갈아 끼운다.
+           다만 «영원히» 미루면 안 된다 — 화면이 안 보이는 동안에는 rAF 가 멈추므로,
+           그 사이에 정산이 나면 잠금이 안 풀리고 잔고가 그 자리에 굳는다.
+           그래서 시한을 둔다. 지나면 폴이 이긴다 — 연출보다 숫자가 맞는 것이 먼저다. */
+        if (balAnim && Date.now() < balAnim.until) { balAnim.to = n; return; }
+        balAnim = null;
+        if (pbal) pbal.textContent = fmt(n);
+      }
+      function countBalance(from, to, ms){
+        if (!pbal || from === to) { balAnim = null; setBalance(to); return; }
+        var a = balAnim = { to: to, until: Date.now() + ms + 500 }, t0 = 0;
+        requestAnimationFrame(function step(ts){
+          if (balAnim !== a) return;          // 새 카운트업이 끼어들면 이쪽은 손을 뗀다
+          if (!t0) t0 = ts;
+          var k = Math.min(1, (ts - t0) / ms);
+          var e = 1 - Math.pow(1 - k, 3);     // 끝에서 감속 — 도착이 부드럽다
+          pbal.textContent = fmt(from + (a.to - from) * e);
+          if (k < 1) return requestAnimationFrame(step);
+          var end = a.to; balAnim = null;
+          pbal.textContent = fmt(end);
+          replay(pbal, 'bump');
+        });
+      }
       function replay(el, cls){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
       function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
       function cssEsc(s){ return String(s).replace(/["\\\\]/g, '\\\\$&'); }

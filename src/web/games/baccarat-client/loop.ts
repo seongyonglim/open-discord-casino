@@ -6,9 +6,18 @@
    순서를 바꾸면 안 된다. 나눈 목적은 읽기이고, 산출물은 한 글자도 달라지지 않아야 한다
    (scripts/golden.ts 가 바이트로 확인한다). */
 export function bcLoop(p0: string | number): string {
-  return `      function render(){
+  return `      var balHeld = null;
+      function render(){
         var r = st.round;
-        setBalance(st.balance);
+        /* 서버는 결과를 내보내기 «전에» 잔액부터 올린다. 그대로 그리면 카드가 아직
+           안 뒤집혔는데 숫자가 먼저 오르고, 곧이어 정산 연출이 그것을 되돌려 잔고가
+           한 번 튀었다 내려간다(실측: 1,317,062 로 올랐다가 1,297,062 로 돌아온 뒤
+           세어 올랐다).
+           베팅이 끝나는 순간의 잔고를 들고 있다가, 연출이 시작될 때까지 그것을
+           보여 준다. 연출이 시작되면(notedRoundId) 카운트업이 이어받는다. */
+        if (r.phase === 'betting') balHeld = st.balance;
+        setBalance(r.phase !== 'betting' && balHeld != null && notedRoundId !== r.id
+          ? balHeld : st.balance);
         renderCoins();
         renderHistory(st.history);
         /* 사다리와 같은 배지 모양으로 그린다 — 모양은 19-timer.css, 그리는 일은
@@ -58,17 +67,16 @@ export function bcLoop(p0: string | number): string {
 
         if (res && notedRoundId !== r.id) {
           notedRoundId = r.id;
-          flyChipsToPot(payingMarkets(res));
+          burstAndFly(res);
           var mine = (st.myBets||[]);
           if (mine.length) {
             var gained = mine.reduce(function(a,b){ return a + (b.payout||0); }, 0);
             var net = mine.reduce(function(a,b){ return a + ((b.payout||0) - b.amount); }, 0);
             if (gained > 0) {
               if (window.casinoSfx) window.casinoSfx.win();
-              if (net > 0) {
-                if (card) replay(card, 'gold-flash');
-                if (pbal) replay(pbal, 'bump');
-              }
+              // 잔고의 bump 는 카운트업이 끝나는 순간에 친다(countBalance) — 여기서
+              // 치면 숫자가 아직 안 오른 채로 튄다
+              if (net > 0 && card) replay(card, 'gold-flash');
             } else if (window.casinoSfx) {
               window.casinoSfx.lose();
             }
@@ -85,11 +93,14 @@ export function bcLoop(p0: string | number): string {
       }
       async function placeChip(market){
         var bet = coin;
+        /* 소리는 «누른 그 순간» 이다 — 서버 응답을 기다리면 200ms 뒤에 울려서
+           내 손가락과 어긋난다. 홀덤이 같은 이유로 같은 자리에서 낸다.
+           실패하면 헛소리가 한 번 나지만, 그것이 늦은 소리보다 낫다. */
+        if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
         var res = await post('/api/games/baccarat/bet', { market:market, amount:bet });
         if (!res.ok) return;   // 실패하면 칩이 올라가지 않는 것으로 드러난다 (문구 미표시)
         setBalance(res.d.balance);
         dropMyChip(market, bet);
-        if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
         poll();
       }
       clearBtn.addEventListener('click', async function(){

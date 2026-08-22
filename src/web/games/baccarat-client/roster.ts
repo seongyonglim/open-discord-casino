@@ -24,6 +24,12 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
           b.addEventListener('click', function(){
             coin = Number(b.dataset.coin);
             syncCoinActive();
+            /* 칩을 «집는» 소리. 여섯 개를 빠르게 훑으면 기관총이 되므로 판에 거는
+               쪽과 같은 스로틀(150ms)을 나눠 쓴다. */
+            if (Date.now() - lastBetSfx > 150) {
+              lastBetSfx = Date.now();
+              if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
+            }
           });
         });
         syncCoinActive();

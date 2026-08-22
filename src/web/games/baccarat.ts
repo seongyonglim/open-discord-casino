@@ -305,7 +305,11 @@ export function baccaratPage(user: WebUser): string {
     <script>
       window.__ME__ = ${jsonForScript(user.username)};
       window.__MEID__ = ${jsonForScript(user.id)};
-      window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];
+      /* chipbet · chipwin 을 여기 적지 않으면 첫 베팅이 «엉뚱한 소리» 를 낸다 —
+         버퍼가 없으면 playSample 이 실패하고 대체 경로로 떨어져서, 칩 소리 대신
+         합성음이나 코인 획득음이 울린다. coin 은 남긴다: 음량 슬라이더를 만질 때
+         확인음으로 쓰인다. */
+      window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal','chipbet','chipwin'];
       window.__CHAT_WHERE__ = 'baccarat';
     </script>
     <script>

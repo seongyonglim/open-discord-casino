@@ -47,11 +47,16 @@
   .pchip.bc3d .bc-ck{width:100%;height:100%;display:block}
   /* 각인은 칩 «면» 의 한가운데다. 면은 옆면(두께)만큼 상자 중심보다 위에 있다
      (48 안에서 y=22, 곧 45.8%) — 아래쪽에 여백을 주어 그만큼 끌어올린다. */
+  /* 각인은 9.5px 이다. 그 크기에서는 그림자 한 줄로는 윤곽이 안 잡혀 면 색에 묻는다
+     — 네 방향으로 얇게 둘러 글자를 «파낸» 것처럼 만든다(SVG 의 paint-order:stroke 에
+     해당하는 일을 HTML 에서 하는 방법이다). */
   .pchip.bc3d .bc-t,
   .coin.bcoin .bc-t{position:absolute;left:0;right:0;top:0;bottom:0;
     display:flex;align-items:center;justify-content:center;padding-bottom:8.4%;
-    font-family:var(--mono);font-weight:800;font-size:9.5px;letter-spacing:-.02em;
-    color:var(--bc-ink);text-shadow:0 1px 0 rgba(0,0,0,.3)}
+    font-family:var(--mono);font-weight:900;font-size:9.5px;letter-spacing:-.02em;
+    color:var(--bc-ink);font-style:normal;
+    text-shadow:0 1px 0 rgba(0,0,0,.45),0 -1px 0 rgba(0,0,0,.25),
+      1px 0 0 rgba(0,0,0,.25),-1px 0 0 rgba(0,0,0,.25)}
 
   /* ── 하단 선택 바 ────────────────────────────────────────────────
      전 액면이 같은 원형 규격이다. 고른 칩은 «집어 올린» 것처럼 솟고 커지며,
@@ -84,11 +89,87 @@
      그래서 타워는 칸 높이에 맞춰 통째로 줄인다(아래 16-ingame.css). */
   .bc-tower{position:absolute;left:0;right:0;bottom:0;top:0;pointer-events:none}
   #bMarkets .bc-tower .pchip.bc3d{width:34px;height:34px;min-width:34px;margin-left:-17px}
-  /* «내가 여기 걸었다» — 사람별 칩이 사라지면서 잃은 표시를 밑동의 금색 광으로
-     되살린다. 칩 자체에 금테를 두르면(예전 .pchip.mine) 액면 색이 가려진다. */
-  .bc-tower.mine::after{content:'';position:absolute;left:50%;bottom:-3px;
-    width:42px;height:10px;margin-left:-21px;border-radius:50%;pointer-events:none;z-index:9;
-    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.7),rgba(240,180,41,0) 70%)}
+  /* 앞뒤는 «밝기» 로 말한다. 가까운 것이 밝고 먼 것이 어둡다 — 자리만 어긋나게
+     두면 두 줄이 한 줄로 뭉쳐 보인다.
+     정지한 칩에만 걸리므로(정산 때 날아가는 복제본에는 안 붙는다) 매 프레임 다시
+     래스터하지 않는다. */
+  .bc-back{filter:brightness(.84)}
+  .bc-front{filter:brightness(1.06)}
+  /* 칩이 한 장 얹힐 때 판이 아주 살짝 부푼다 — 손끝에 «닿았다» 를 돌려준다 */
+  .bc-tower.bc-pop{animation:bcPopIn .18s ease-out}
+  @keyframes bcPopIn{ 50%{transform:scale(1.02)} }
+
+  /* 클러스터 밑동. 두 가지를 겹쳐 말한다 —
+       mine  내가 이 구역에 걸었다 (사람별 칩이 사라지면서 잃은 표시를 되살린 것)
+       hi    10만 P 이상 (판이 크다)
+     둘 다면 금색이 더 강해진다. 칩 자체에 금테를 두르면(예전 .pchip.mine)
+     방금 준 액면 색이 가려지므로 밑동으로 뺐다.
+
+     칩 위 총액 뱃지는 걷었다 — 같은 숫자가 상자 아래 .m-total 에 이미 크게
+     적혀 있어서, 기둥 꼭대기에 한 번 더 적으니 판마다 숫자가 둘씩 떠 있었다(요청). */
+  .bc-base{position:absolute;bottom:-4px;width:74px;height:13px;border-radius:50%;
+    pointer-events:none;z-index:8;display:none}
+  .bc-base.hi{display:block;border:1px solid rgba(240,180,41,.5);
+    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.28),rgba(240,180,41,0) 72%)}
+  .bc-base.mine{display:block;
+    background:radial-gradient(50% 50% at 50% 50%,rgba(240,180,41,.62),rgba(240,180,41,0) 70%)}
+
+  /* ── 정산: 버스트 앤 플라잉 ──────────────────────────────────────
+     키프레임은 이 파일 최상위에 둔다. @media 안에 넣으면 중괄호가 두 겹이 되어
+     smoke 의 중복 검사가 바깥 블록을 통째로 놓친다 — 01-base.css 와 16-ingame.css
+     주석이 그 사고를 적어 놨다. 07-bacc.css 는 통째 @media 로 감싸여 있지 않다. */
+
+  /* 1) 이긴 기둥 — 금빛으로 부풀었다 사라진다 */
+  .bc-tower.bc-flash{animation:bcPop .42s cubic-bezier(.3,.9,.4,1) forwards}
+  .bc-tower.bc-flash::before{content:'';position:absolute;left:50%;bottom:-8px;
+    width:74px;height:74px;margin-left:-37px;border-radius:50%;pointer-events:none;z-index:8;
+    background:radial-gradient(50% 50% at 50% 50%,rgba(255,214,102,.85),rgba(255,214,102,0) 66%);
+    animation:bcGlow .42s ease-out forwards}
+  @keyframes bcPop{
+    0%{transform:scale(1);opacity:1}
+    32%{transform:scale(1.16);opacity:1}
+    100%{transform:scale(.72);opacity:0}
+  }
+  @keyframes bcGlow{
+    0%{transform:scale(.3);opacity:0}
+    38%{transform:scale(1);opacity:1}
+    100%{transform:scale(1.55);opacity:0}
+  }
+  /* 2) 환불(무승부의 플레이어·뱅커) — 조용히 물러난다. 이긴 것이 아니다 */
+  .bc-tower.bc-refund{animation:bcFade .3s ease-out forwards}
+  @keyframes bcFade{ to{opacity:0} }
+  /* 3) 진 기둥 — 가라앉는다. 이긴 쪽만 지우면 판이 반쯤 남은 채로 멈춘다 */
+  .bc-tower.bc-sink{animation:bcSink .32s ease-in forwards}
+  @keyframes bcSink{ to{transform:translateY(7px) scale(.8);opacity:0} }
+
+  /* 4) 포물선 — 겉이 가로(등속), 속이 세로(가속).
+     한 겹으로는 안 된다. transform 하나에 둘을 넣으면 같은 가속을 공유해 직선이 된다.
+     .bc-fly 는 화면 좌표에 뜨는 상자다(칩은 그 안에서 제자리). */
+  .chip-fly-layer .bc-fly{display:block;pointer-events:none;
+    animation:bcArcX .82s linear forwards}
+  @keyframes bcArcX{
+    0%{transform:translateX(0)}
+    15%{transform:translateX(var(--bx,0))}
+    100%{transform:translateX(var(--tx,0))}
+  }
+  /* 튀어나오는 반동(0~15%)과 비행(15~100%)이 한 줄에 들어 있다 —
+     솟았다가 떨어지는 것이 곧 포물선의 세로 성분이다 */
+  .pchip.bc-burst{animation:bcArcY .82s cubic-bezier(.32,0,.86,.52) forwards}
+  @keyframes bcArcY{
+    0%{transform:translateY(0) scale(.55);opacity:0}
+    15%{transform:translateY(-18px) scale(1.18);opacity:1}
+    74%{opacity:1}
+    100%{transform:translateY(var(--ty,0)) scale(.4);opacity:0}
+  }
+
+  /* 연출을 끄기로 한 사람에게는 결과만 준다 — 칩은 안 날고 숫자는 정확히 맞는다 */
+  @media (prefers-reduced-motion:reduce){
+    .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sink,
+    .chip-fly-layer .bc-fly,.pchip.bc-burst,
+    .bc-tower.bc-flash::before{animation:none}
+    .chip-fly-layer .bc-fly{opacity:0}
+    .bc-tower.bc-flash,.bc-tower.bc-refund,.bc-tower.bc-sink{opacity:0}
+  }
 
   /* 구슬판 — 실제 테이블에 붙어 있는 그 판. 최신이 왼쪽.
      광택 있는 원색 구체로 그렸더니 이 사이트의 절제된 톤에서 혼자 튀었다.
@@ -279,7 +360,9 @@
   .bacc-core .market.m-tie .m-foot{justify-items:center;text-align:center;padding:0 10px 14px}
   .bacc-core .market.m-tie .m-foot .m-total{text-align:center}
   .bacc-core .market.m-tie .m-mid{min-height:32px}
-  #bMarkets .market.m-tie .m-pile{height:46px}
+  /* 돔 안은 160px 이라 그만큼 못 준다. 기둥은 그 안에서 통째로 줄인다 */
+  #bMarkets .market.m-tie .m-pile{height:72px}
+  #bMarkets .market.m-tie .bc-tower{transform:scale(.8);transform-origin:center bottom}
   /* 돔이 아래에 얹히므로 그만큼 두 상자의 바닥 정보를 안쪽으로 밀어 겹치지 않게 한다.
      돔이 240px 로 넓어지면서 각 상자의 «안쪽 45%» 를 덮는다(이전 35%). 총액이
      백만 단위로 길어지면 그 밑으로 들어가므로 막는 폭도 같이 넓힌다. 남는 55%(148px)
@@ -295,7 +378,10 @@
   /* 배율 하나만 남았으므로 이 줄이 «얼마를 받나» 를 통째로 말한다 — 크게 적는다 */
   .m-head .m-odds{font-family:var(--mono);font-size:15px;font-weight:800;color:var(--gold)}
   .m-mid{position:relative;flex:1 1 auto;min-height:52px;display:block}
-  #bMarkets .m-pile{position:absolute;left:0;right:0;bottom:0;height:52px}
+  /* 칸을 키운다. 열 장짜리 기둥(4px × 9 + 34 = 70px)과 그 위 총액 뱃지가 들어가야
+     한다. 이름줄(.m-head) 과 총액줄(.m-foot) 사이는 판 높이 216 - 45 - 41 = 130px 라
+     96px 을 줘도 남는다 — 예전 52px 은 칩 한 겹만 놓던 시절의 값이다. */
+  #bMarkets .m-pile{position:absolute;left:0;right:0;bottom:0;height:96px}
   /* ── 칩이 쌓이는 자리를 돔 밖으로 민다 ────────────────────────────
      칩 더미는 상자 폭을 다 썼다(left:0 right:0). 그런데 돔이 가운데 38% 를 덮고 있어서,
      플레이어·뱅커의 칩이 돔 뒤로 들어가 반쯤 가려지고 돔 안의 타이 칩과 겹쳐 보였다
@@ -327,7 +413,7 @@
     word-break:keep-all;overflow-wrap:normal}
   .market.m-pair .m-pay{font-size:12px}
   .market.m-pair .m-mid{min-height:34px}
-  .market.m-pair .m-pile{height:46px}
+  .market.m-pair .m-pile{height:88px}
   .market.m-pair .m-foot .m-total{font-size:12.5px}
 
   /* 좁아지면 날개를 더 줄이고 글자만 낮춘다 — 다섯 구역 배치는 끝까지 지킨다 */
