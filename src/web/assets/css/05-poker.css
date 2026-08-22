@@ -82,6 +82,17 @@
   /* 상단 띠 — 왼쪽에 이 시장에 걸린 총액, 오른쪽에 배당 */
   .m-top{display:flex;align-items:center;justify-content:space-between;gap:6px;
     padding:4px 7px;background:rgba(0,0,0,.34);border-bottom:1px solid rgba(255,255,255,.06)}
+  /* ── 좌상단 베팅 금액 뱃지 ──────────────────────────────────────
+     이 자리는 «이 상자에 지금 얼마가 걸려 있나» 다. 회색 네모로 두면 배당(오른쪽의
+     큰 금색 숫자)과 같은 무게로 읽혀 둘이 다툰다. 어두운 유리 알약으로 낮춰 두고,
+     돈이 들어온 상자에서만 금색으로 켠다 — 켜진 것만 세면 판이 어디로 몰렸는지가
+     한눈에 보인다. */
+  #pMarkets .m-total{background:rgba(0,0,0,.6);border:1px solid rgba(113,113,122,.6);
+    border-radius:5px;padding:1px 6px;color:#d4d4d8;font-size:10px;font-weight:700;
+    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+    transition:color .2s,border-color .2s,background .2s}
+  #pMarkets .m-total.on{color:#fbbf24;border-color:rgba(245,158,11,.4);
+    background:rgba(69,26,3,.4)}
   .m-total{font-family:var(--mono);font-size:11px;font-weight:700;color:#cfe3d6;
     background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1);border-radius:5px;
     padding:0 5px;min-width:34px;text-align:center}
@@ -99,7 +110,15 @@
     border:1px solid rgba(255,255,255,.1)}
   .m-dots .dot.hit{background:radial-gradient(circle at 35% 30%,#ff7b7b,#d0202a);
     border-color:#ff9a9a;box-shadow:0 0 5px rgba(229,72,77,.75)}
-  .m-drought{font-family:var(--mono);font-size:10px;color:var(--gold-dim)}
+  /* 왼쪽 세 상자의 점무늬와 같은 높이에 세운다 — 다섯 상자의 아래 줄이 한 선에
+     맞아야 판이 정돈돼 보인다. 캡슐이나 테두리는 두지 않는다: 이 줄은 «곁들이는
+     정보» 라 상자를 하나 더 만들면 그것부터 눈에 들어온다. */
+  .m-drought{font-family:var(--mono);font-size:10px;color:var(--gold-dim);
+    display:flex;align-items:center;gap:4px;height:20px}
+  .m-drought .dr-n{font-size:12px;font-weight:700;letter-spacing:-.02em;color:#fde047}
+  .m-drought .dr-n.big{text-shadow:0 0 6px rgba(253,224,71,.45)}
+  .m-drought .dr-l{font-size:11px;font-weight:400;color:#d4d4d8}
+  .m-drought.hitnow{color:#d4d4d8}
   /* ── 판은 «언제나» 또렷하다 ──────────────────────────────────────
      베팅이 닫히면 판 전체가 반투명해졌고(.market.disabled{opacity:.5}), 결과가 나오면
      빗나간 구역이 또 한 번 흐려졌다. 그 반쪽 상태가 카드가 뒤집히는 내내 이어져서,
@@ -114,6 +133,20 @@
   #pMarkets .market{transition:filter .3s,box-shadow .3s,border-color .3s}
   .market.m-master{background:#0d1b2a;border-color:#22406b}
   .market.m-shark{background:#201010;border-color:#5e3527}
+  /* ── 족보는 두 부류다 ────────────────────────────────────────────
+     앞 셋(하이카드 · 투페어 · 트리플/스트레이트/플러시)은 «자주 나오는» 자리라
+     차분한 초록 계열로 둔다. 뒤 둘(풀하우스 22배 · 포카드 이상 337배)은 드물게
+     크게 터지는 자리다 — 보라 바탕에 금색 테를 둘러 «잭팟» 으로 읽히게 한다.
+     배당 숫자도 금색으로 한 단 올린다. 그 자리에서 눈이 멈춰야 하는 것은 배수다. */
+  .market.m-bucket{background:#0d1814;border-color:rgba(16,185,129,.2)}
+  .market.m-jack{background:#1c1226;border-color:rgba(245,158,11,.3)}
+  #pMarkets .market.m-jack .m-odds{color:#fbbf24;font-weight:800;
+    text-shadow:0 0 8px rgba(251,191,36,.4)}
+
+  /* 족보 줄은 테이블 바닥에 닿아 있다(.card:has(#pMarkets){padding-bottom:0}).
+     걷은 만큼은 상자 높이가 받는다 — 이름 · 배당 · 아래 점무늬가 여유를 갖는다. */
+  #pMarkets .market-row.bucket-row{margin-bottom:0}
+  #pMarkets .market-row.bucket-row .market{min-height:104px}
   /* 이긴 구역은 «제 색» 으로 켜진다. 초록 하나로 두면 판 바닥(초록 펠트)에 묻힌다 —
      위쪽 승리 패가 이미 쓰는 색을 그대로 가져온다. 족보는 금색이다. */
   #pMarkets .market.m-master.hit{--bc-win:#38bdf8;--bc-glow:rgba(56,189,248,.5)}

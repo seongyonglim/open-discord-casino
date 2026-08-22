@@ -52,11 +52,18 @@ export const PK_MARKETS_JS = `      var MARKET_DEFS = [
            아직 정확하지 않은 동안에는 붙이지 않는다. 그때의 best 는 남아 있던 30판에서
            나온 값이라 "역대"라고 부를 수 없다 — 틀린 기록을 적느니 안 적는 것이 낫다. */
         var tip = (d.exact && d.best > 0) ? ' title="역대 최장 ' + d.best + '판"' : '';
-        if (d.since === 0) return '<span class="m-drought"'+tip+'>직전 판 적중</span>';
+        if (d.since === 0) return '<span class="m-drought hitnow"'+tip+'>직전 판 적중</span>';
         /* «N판+» 를 붙였다가 뺐다. 그 표시는 표를 처음 만든 뒤 그 등급이 한 번 나올
            때까지만 붙는 임시 딱지인데(길어야 한 시간 남짓), 그 어색함을 상시로 지불할
            이유가 없다. 그 구간의 값은 실제보다 작을 수 있지만 한 번 적중하면 정확해진다. */
-        return '<span class="m-drought"'+tip+'>'+d.since+'판째 미출현</span>';
+        /* 숫자와 라벨을 갈라 적는다. 한 덩어리로 두면 «258판째 미출현» 여덟 자가
+           같은 무게로 읽혀서, 정작 궁금한 «몇 판» 이 안 보인다. 숫자는 레몬 골드로
+           올리고 라벨은 밝은 회색으로 내린다.
+           백 판을 넘으면 숫자에 은은한 빛을 준다 — 잭팟 구역의 보라 바탕에서
+           그 숫자만 떠오른다. */
+        var big = d.since >= 100 ? ' big' : '';
+        return '<span class="m-drought"'+tip+'><b class="dr-n'+big+'">'+d.since+
+          '판</b> <span class="dr-l">미출현</span></span>';
       }
       // b0~b2는 점등 전적, b3~b4(풀하우스·포카드 이상)는 미출현 판수
       function bucketFoot(bucketIdx){
@@ -100,8 +107,12 @@ export const PK_MARKETS_JS = `      var MARKET_DEFS = [
           html += marketTile(d.key, d.label, o[d.key], d.cls, betting, {});
         });
         html += '</div><div class="market-row bucket-row">';
+        /* 뒤 두 족보(풀하우스 · 포카드 이상)는 배당이 자릿수부터 다르다 —
+           22배와 337배가 앞의 2~4배짜리들과 같은 상자에 있으면 «드물게 크게 터지는
+           자리» 라는 것이 안 읽힌다. 상자에 표시를 하나 더 붙여 색을 가른다. */
         (st.bucketNames||[]).forEach(function(name, i){
-          html += marketTile('b'+i, name, o.buckets[i], 'm-bucket', betting, { bucketIdx:i });
+          var cls = 'm-bucket' + (i >= 3 ? ' m-jack' : '');
+          html += marketTile('b'+i, name, o.buckets[i], cls, betting, { bucketIdx:i });
         });
         html += '</div>';
         marketsEl.innerHTML = html;
@@ -185,7 +196,8 @@ export const PK_MARKETS_JS = `      var MARKET_DEFS = [
           var t = 0;
           Object.keys(per).forEach(function(u){ t += per[u]; });
           var el=document.getElementById('tot-'+k);
-          if (el) el.textContent = compact(t);
+          // 걸린 돈이 있는 상자의 뱃지만 금색으로 켠다 — 없는 자리는 조용히 둔다
+          if (el) { el.textContent = compact(t); el.classList.toggle('on', t > 0); }
           syncPile(k, per, st.round.id);
         });
 
