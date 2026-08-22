@@ -401,6 +401,11 @@
     /* 원본 카운트다운은 감춘다. 지우지는 않는다 — 사다리 코드가 계속 글자를 쓰는
        노드이고, 우리는 그 글자를 읽어서 아래 .ig-timer 를 그린다. */
     html.ig-port .ig-board .stage-status{display:none}
+    /* 그래프게임의 "다음 라운드까지 N초" 도 폰에서는 걷는다 — 가로와 같은 이유다
+       (17-ig-grid.css 의 .ig-body.ig-graph .crash-status 를 보라).
+       그래프는 세로에서 격자를 안 쓰므로(ingame.js 의 MOVED) 판이 .ig-board 안에
+       없다. 그래서 이 줄은 .ig-board 로 묶지 않는다. */
+    html.ig-port .crash-status{display:none}
     /* ── 지뢰찾기 판 (세로) ──────────────────────────────────────
        격자는 데스크톱에서 290px 로 못 박혀 있다. 옆에 참가자 패널이 붙는 배치라
        그만큼이 제 몫이었는데, 폰 세로에서는 그 패널이 서랍으로 빠져 폭이 통째로

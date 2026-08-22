@@ -340,7 +340,10 @@
     /* 200px 이다. 180 에서 올렸다 — 가장 긴 손익(+4,850,083P = 84px)과 이름(55px)과
        순위(14px)와 간격·여백을 더하면 165px 이 필요하다. 180 에서는 그 셋이 서로
        밀어서 이름이 잘렸다. 곡선은 612 → 592px 이 된다(20px 이 이 표의 값이다). */
-    .ig-body.ig-graph{--igSide:200px;--igGap:6px;
+    /* --igPanelH: 베팅 패널의 «고정» 높이. 자동 탭(줄이 하나 더 많다)이 들어가는
+       크기로 잡고 두 탭이 같이 쓴다 — 이 값이 고정이라 그 위의 카운트다운도 고정된다.
+       --igPanelGap: 판 바닥에서 패널까지. 두 값 다 카운트다운 자리 계산에 들어간다. */
+    .ig-body.ig-graph{--igSide:200px;--igGap:6px;--igPanelH:170px;--igPanelGap:12px;
       grid-template-columns:1fr var(--igSide);gap:var(--igGap);
       padding:6px;position:relative}
     /* 판 — 첫 칸. 칸의 상자(배경·테두리)는 벗는다: 배경이 곧 화면이다.
@@ -415,34 +418,20 @@
       display:flex;flex-direction:column;align-items:center;justify-content:center;
       pointer-events:none;z-index:2}
     .ig-body.ig-graph .crash-multi{font-size:clamp(38px,9vw,64px);line-height:1.05}
-    /* ── 패널이 떠 있는 동안 숫자가 앉을 자리 ────────────────────
-       판 가운데에 그대로 두면 패널이 아래 절반을 덮어 숫자 밑동이 잘린다
-       (실측: 숫자 198~265 · 패널 위끝 215 — 50px 이 뒤에 있었다).
+    /* ── 카운트다운은 «패널과 무관한» 자리에 못 박는다 ────────────
+       한동안 패널 높이에서 자리를 계산했다. 수동은 bottom:153, 자동은 205 — 탭마다
+       다른 값이었으니 탭을 누르면 숫자가 위아래로 튀었다(제보: "1px 도 움직이면 안 된다").
+       계산을 더 정교하게 해도 이 문제는 안 없어진다. 자리가 패널에 «매여 있는» 것이
+       원인이지 값이 틀린 것이 아니기 때문이다.
 
-       위에 딱 붙이지도 않는다. 그러면 히스토리 띠와 붙어서 판의 «머리» 가 빽빽해진다.
-       대신 아래 경계를 그어 두고 그 안에서 가운데를 맞춘다 — 숫자는 판의 위쪽 3분의 1
-       즈음에 앉고, 패널 위끝과 20px 넘는 틈이 남는다. 틈을 먼저 정하고 자리를
-       거기서 얻는 순서다(자리를 먼저 정하면 패널 높이가 바뀔 때마다 다시 재야 한다).
+       그래서 매는 것을 끊는다. 패널 높이를 --igPanelH 로 못 박아(아래 .ig-bet) 탭이
+       바뀌어도 패널 위끝이 안 움직이게 하고, 숫자는 그 위끝에서 한 번만 잰 자리에 둔다.
+       두 탭이 같은 상자를 쓰므로 숫자가 움직일 이유가 구조적으로 없다.
 
-       자동 캐시아웃을 켜면 패널이 한 줄만큼 높아지므로 경계도 그만큼 올린다. */
-    /* 값은 계산해서 넣는다. 판이 79~369(290px)이고 «베팅 시간» 라벨(18)과 숫자(67)가
-       한 덩어리 85px 로 그 상자 가운데에 앉으므로,
-         숫자 밑동 = 79 + (상자높이 - 85)/2 + 85
-       를 패널 위끝(215)보다 25px 위로 두려면 상자를 79~216 으로 잡아야 한다 → 153. */
-    .ig-body.ig-graph:not(:has(.crash-multi.running)) .crash-center{bottom:153px}
-    /* ── 자동 탭에서도 숫자 크기는 그대로다 ─────────────────────
-       한동안 자동 탭에서 숫자를 34px 로 줄였다. 패널이 한 줄만큼 높아져 남는 자리가
-       좁아지니 «글자를 줄여 틈을 벌자» 는 계산이었는데, 그러면 탭을 누를 때마다
-       가운데 숫자가 커지고 작아진다 — 조작부를 만지는 것과 카운트다운의 크기는
-       아무 관계가 없으므로, 그 둘이 연동되는 것 자체가 틀렸다(제보).
-
-       크기는 두지 않고 «자리» 만 옮긴다. 자동 탭에서 숫자 위에 남는 공간은
-       79~175 = 96px 이고 덩어리(라벨 18 + 숫자 67)는 85px 이라, 상자를 79~164 로
-       잡으면 그 안에 꼭 들어가고 패널 위끝과 11px 이 남는다 → bottom 205.
-       수동 탭의 25px 보다 좁다. 그것이 «크기를 고정한다» 의 값이다 — 96px 안에
-       85px 짜리 덩어리를 넣는 이상 더 벌릴 자리가 없다. */
-    .ig-body.ig-graph:not(:has(.crash-multi.running)):has(#cModeAuto.active)
-      .crash-center{bottom:205px}
+       running 은 패널이 없으므로 판 한가운데를 그대로 쓴다(위 inset:0). 그건 탭이
+       아니라 «판이 달라진» 것이라 움직이는 것이 맞다. */
+    .ig-body.ig-graph:not(:has(.crash-multi.running)) .crash-center{
+      bottom:calc(var(--igPanelH) + var(--igPanelGap) + 18px)}
     .ig-body.ig-graph .crash-label,
     .ig-body.ig-graph .crash-betlabel{font-size:11px;letter-spacing:2px}
     /* 상태 줄("다음 라운드까지 N초")은 가운데 덩어리에서 빼내 판 오른쪽 위에 둔다.
@@ -452,22 +441,34 @@
        판 위끝 79). 숫자를 줄여 맞추는 길은 «탭에 따라 크기가 바뀌지 않는다» 와
        어긋나므로, 줄일 것이 아니라 옮길 것을 옮긴다.
        오른쪽 위는 어차피 비어 있는 자리다(곡선은 왼쪽 아래에서 올라온다). */
-    .ig-body.ig-graph .crash-status{position:absolute;top:2px;right:6px;
-      font-size:11px;margin:0;z-index:3;text-align:right}
+    /* ── 폰에서는 아예 걷는다 ────────────────────────────────────
+       처음에는 가운데 쌓기에서 빼내 오른쪽 위로 옮겼다(그대로 쌓으면 정산 구간의
+       덩어리가 101px 이 되어 CRASHED 가 판 밖으로 잘렸다). 옮기고 나니 그 자리에
+       남아 있을 값이 있는지가 다시 보인다 — 없다.
+
+       "다음 라운드까지 N초" 는 곧 다시 열린다는 말인데, 폰에서는 그것을 몰라서
+       곤란한 사람이 없다. 배율은 붉게 굳어 있고 패널은 이미 돌아와 있다.
+       한 줄이라도 덜어 내는 편이 좁은 화면에서 낫다(제보).
+       PC 는 그대로 둔다 — 거기서는 자리가 남고, 남는 자리에 있는 정보는 부담이 아니다. */
+    .ig-body.ig-graph .crash-status{display:none}
 
     /* ── 조작부: 격자에서 빠져 판 위에 뜬다 ─────────────────────
        position:absolute 라 격자 칸을 차지하지 않는다 — 판이 폭과 높이를 다 받는
        이유다(.ig-side 서랍과 같은 수법이다). */
+    /* 높이를 못 박는다. 자동 탭은 목표 배율 줄이 하나 더 있어 내용이 더 높은데,
+       그대로 두면 패널 위끝이 탭마다 다른 자리에 서고 그 위의 카운트다운이 따라 움직인다.
+       가장 높은 쪽(자동)에 맞춰 고정하면, 수동 탭은 같은 상자 안에서 위아래로 더 벌어질
+       뿐 «상자» 는 그대로다 — 위에 있는 것이 흔들릴 이유가 사라진다. */
     .ig-body.ig-graph .ig-cell.ig-bet{position:absolute;
-      left:calc((100% - var(--igSide) - var(--igGap)) / 2);bottom:8px;
-      transform:translateX(-50%);
+      left:calc((100% - var(--igSide) - var(--igGap)) / 2);bottom:var(--igPanelGap);
+      transform:translateX(-50%);height:var(--igPanelH);box-sizing:border-box;
       width:min(384px,calc(100% - var(--igSide) - var(--igGap) - 24px));
-      z-index:20;padding:10px;gap:8px;
+      z-index:20;padding:8px;gap:6px;
       background:rgba(9,9,11,.85);backdrop-filter:blur(10px);
       border:1px solid #27272a;border-radius:16px;
       box-shadow:0 18px 40px rgba(0,0,0,.6);
       transition:opacity .18s ease,transform .18s ease}
-    .ig-body.ig-graph .ig-cell.ig-bet > .card{gap:8px}
+    .ig-body.ig-graph .ig-cell.ig-bet > .card{gap:6px}
     /* 모드 탭·자동칸은 좁은 패널에서 두 줄을 먹는다 — 세그먼트로 눌러 담는다 */
     .ig-body.ig-graph .ig-bet .mode-tabs{gap:4px}
     .ig-body.ig-graph .ig-bet .mode-tab{height:28px;font-size:11.5px;padding:0 6px}
@@ -488,7 +489,7 @@
        세로로 쌓아도 각 칸이 내용만큼만 넓어졌다 — 금액칸 149px · 자동칸 221px 로
        패널(344px) 가운데에 오종종하게 모였고, 그 좁은 폭 안에서 퀵 단추가 3px 밀려
        나갔다(실측). 사다리도 같은 곳에서 같은 것을 밟았다(위 .ig-ladder 절). */
-    .ig-body.ig-graph .ig-bet .field-grid{display:flex;flex-direction:column;gap:8px;
+    .ig-body.ig-graph .ig-bet .field-grid{display:flex;flex-direction:column;gap:6px;
       align-items:stretch}
     .ig-body.ig-graph .ig-bet .field{display:flex;flex-direction:column;gap:5px}
     /* 인풋이 남는 폭을 먹고 단추들은 제 크기를 지킨다 */
@@ -511,9 +512,18 @@
        세 군데를 줄여 되찾는다: 라벨을 작게, 모드 탭을 낮게, 실행 단추를 조금 낮게.
        그래도 자동 탭에서는 숫자를 함께 줄인다 — 아래 폰트 규칙을 보라. 이 구간의
        숫자는 «남은 초» 라, 배율을 읽어야 하는 상승 구간만큼 클 필요가 없다. */
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .field > label{font-size:9.5px}
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .mode-tab{height:26px}
-    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .game-action{height:38px}
+    /* 칸 라벨("베팅 수량 (P)" · "자동 캐시아웃 (배율)")은 접는다. 고정 높이(170px)에
+       자동 탭을 넣으려면 28px 이 모자랐는데, 이 둘이 정확히 그만큼이다.
+       접어도 뜻은 남는다 — 위의 모드 탭이 어느 모드인지 말하고, 금액칸 옆에는
+       ½·2x·MAX 가, 배율칸에는 2.00 자리표시와 1.50x·2.00x 가 붙어 있다. */
+    .ig-body.ig-graph .ig-bet .field > label{display:none}
+    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .mode-tab{height:24px}
+    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .game-action{height:36px}
+    /* 마지막 4px 은 간격에서 뺀다(실측 scrollHeight-clientHeight=4). 실행 단추 높이는
+       안 건드린다 — 거기서 빼면 손가락이 겨눌 자리가 줄어든다. 간격은 줄어도
+       누르는 데 지장이 없는 유일한 값이다. */
+    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) > .card{gap:4px}
+    .ig-body.ig-graph .ig-bet:has(#cModeAuto.active) .field-grid{gap:4px}
     /* 목표 배율칸과 퀵 단추 넷을 «한 줄» 로 세운다. 위아래로 두면 그 둘이 34+28+5 =
        67px 을 쓰는데, 한 줄이면 34px 이다. 되찾은 33px 이 그대로 숫자 자리가 된다
        (그 위에 20px 틈을 남기려면 패널이 210px 아래여야 한다 — 229px 이었다).
@@ -579,40 +589,38 @@
     .ig-body.ig-graph:has(.crash-multi.running) .ig-bet .game-msg{
       display:none}
     /* ── 캐시아웃 — 오른쪽 아래, 엄지가 닿는 자리 ────────────────
-       처음에는 통짜 금색이었다. 밝은 노랑 한 덩어리가 어두운 판 위에서 «싼» 느낌으로
-       튀었다 — 이 화면에서 가장 중요한 단추인데 가장 촌스러웠다.
+       색을 두고 두 번 오갔다. 통짜 노랑 → 어두운 HUD → 지금의 금빛 그라데이션이다.
+       어두운 쪽은 판(검정)과 같은 어둠에 있어서 «누르는 것» 으로 안 읽혔다 —
+       화면에서 가장 급한 단추가 배경에 잠기면 안 된다(제보: 칙칙하다).
+       판이 검으므로 이 하나만 밝게 둔다. 대비가 곧 «지금 눌러라» 다.
 
-       두 가지를 바꾼다.
-       하나, 색을 눌러 어둡게 깐다. 짙은 바닥 위에 금색 테와 금색 글자를 얹으면
-       판과 같은 어둠에 있으면서도 «금» 으로 읽힌다 — HUD 의 문법이다.
-       둘, 글자를 두 줄로 나눈다. "캐시아웃"과 금액은 성격이 다르다 — 앞은 무엇을
-       하는 단추인가(고정), 뒤는 지금 얼마인가(매 프레임 바뀐다). 한 줄에 붙여
-       두었더니 숫자가 자랄 때 단추 폭이 흔들려서 엄지가 겨눈 자리가 움직였다. */
+       글자는 두 줄이다. "캐시아웃"과 금액은 성격이 다르다 — 앞은 무엇을 하는
+       단추인가(고정), 뒤는 지금 얼마인가(매 프레임 바뀐다). 한 줄에 붙여 두면
+       숫자가 자랄 때 단추 폭이 흔들려 엄지가 겨눈 자리가 움직인다. */
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout{
       display:flex;flex-direction:column;align-items:center;justify-content:center;
-      gap:1px;min-width:132px;height:56px;padding:0 24px;border-radius:16px;
-      white-space:nowrap;
-      background:linear-gradient(140deg,rgba(212,175,55,.22),rgba(120,88,20,.34)),
-        radial-gradient(120% 140% at 50% 0%,#241d0c 0%,#14100a 70%);
-      border:1px solid var(--gold);color:var(--gold);
-      box-shadow:0 10px 26px rgba(0,0,0,.5),0 0 0 1px rgba(212,175,55,.18),
-        inset 0 1px 0 rgba(255,236,170,.22);
-      transition:transform .1s ease,box-shadow .18s ease;
-      animation:cashGlow 1.5s ease-in-out infinite}
+      gap:0;min-width:140px;height:56px;padding:0 24px;border-radius:16px;
+      white-space:nowrap;border:none;
+      background:linear-gradient(100deg,#fbbf24 0%,#f5a524 45%,#eab308 100%);
+      box-shadow:0 10px 26px rgba(245,165,36,.32),0 2px 0 rgba(120,80,8,.5),
+        inset 0 1px 0 rgba(255,255,255,.45);
+      transition:filter .12s ease,transform .1s ease,box-shadow .18s ease;
+      animation:cashGlow 1.6s ease-in-out infinite}
+    .ig-body.ig-graph:has(.crash-multi.running) #cCashout:hover{filter:brightness(1.1)}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout .co-l{
-      font-size:10px;font-weight:800;letter-spacing:2.2px;
-      color:var(--gold-dim);text-transform:none}
+      font-size:11px;font-weight:800;letter-spacing:1.6px;line-height:1.1;
+      color:rgba(24,24,27,.78)}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout .co-v{
-      font-family:var(--mono);font-size:16px;font-weight:900;
-      color:#ffe9a0;line-height:1.1}
+      font-family:var(--mono);font-size:16px;font-weight:900;letter-spacing:-.2px;
+      color:#18181b;line-height:1.15}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout:active{
-      transform:scale(.96);animation:none}
+      transform:scale(.95);animation:none}
     /* 빛만 흔든다. 크기를 흔들면 누르는 자리가 움직여서, 엄지가 닿는 순간에
        단추가 그 자리에 없을 수 있다 — 0.2초를 다투는 판에서는 그게 손해다. */
     @keyframes cashGlow{
-      0%,100%{box-shadow:0 10px 26px rgba(0,0,0,.5),0 0 0 1px rgba(212,175,55,.18),
-        inset 0 1px 0 rgba(255,236,170,.22)}
-      50%{box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px rgba(212,175,55,.5),
-        0 0 18px rgba(212,175,55,.3),inset 0 1px 0 rgba(255,236,170,.22)}
+      0%,100%{box-shadow:0 10px 26px rgba(245,165,36,.32),0 2px 0 rgba(120,80,8,.5),
+        inset 0 1px 0 rgba(255,255,255,.45)}
+      50%{box-shadow:0 10px 34px rgba(245,165,36,.55),0 2px 0 rgba(120,80,8,.5),
+        inset 0 1px 0 rgba(255,255,255,.45)}
     }
   }
