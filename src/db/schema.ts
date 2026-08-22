@@ -617,6 +617,11 @@ function initSchema(): void {
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_seat INTEGER`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_action TEXT`); } catch {}
   try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN last_actor_amount INTEGER NOT NULL DEFAULT 0`); } catch {}
+  /* 쇼다운이 시작된 시각 — 밀리초다.
+     ended_at 은 초 단위인데 쇼다운 연출은 1.5초 간격으로 흐른다. 초로 재면 «지금 몇
+     번째 카드까지 보여야 하나» 가 최대 한 장 어긋나고, 그 한 장이 곧 결과다.
+     화면이 «판 도중에 들어왔을 때 지금 시점의 카드만 보여주는» 계산에 쓴다. */
+  try { d.exec(`ALTER TABLE holdem_hands ADD COLUMN ended_ms INTEGER`); } catch {}
   /* 이 판에 열린 바운티 목록(JSON). 미스터리 개봉 연출이 "누구 봉투가 얼마였고 누가
      가져갔나"를 봉투마다 보여줘야 하는데, 정산이 끝나면 그 정보가 어디에도 남지 않는다
      (탈락자의 bounty 는 0 이 되고, 잡은 사람 쪽에는 합계만 쌓인다).

@@ -52,6 +52,13 @@ export const LOOP = `    function render(){
       if (window.casinoOrient) casinoOrient.want(showTable ? 'landscape' : 'portrait');
       lobbyEl.hidden = showTable;
       lobbyRecEl.hidden = showTable || recEmpty;
+      /* 아래 두 탭은 로비 카드에 딸린 것이다. 테이블로 들어가면 오른쪽 패널이 같은
+         일을 하므로 함께 접는다 — 안 접으면 판 아래에 같은 표가 한 벌 더 깔린다.
+         세우는 것은 renderLobby(paintLobbyTabs)가 «진행 중일 때만» 한다. */
+      if (showTable) {
+        var ltw = document.getElementById('htLobbyTabs');
+        if (ltw) ltw.hidden = true;
+      }
       tableEl.hidden = !showTable;
       if (showTable) { renderTable(); updatePreLabels(); firstTablePaint = false; }
       else { renderLobby(); loadRecords(false); }
@@ -132,6 +139,8 @@ export const LOOP = `    function render(){
       return true;
     }
     function apply(d){
+      /* 서버 시계와의 차이를 매번 다시 잰다 — 쇼다운 경과를 이 값으로 보정한다. */
+      if (d && d.serverNowMs) clockSkew = d.serverNowMs - Date.now();
       st = d;
       render();
       nextHandPoke();

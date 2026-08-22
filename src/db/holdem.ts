@@ -253,7 +253,8 @@ export interface HtHandRow {
   level: number; sb: number; bb: number; ante: number; button_seat: number;
   deck_json: string; deck_pos: number; board_json: string;
   street: G.Street; to_act_seat: number | null; action_deadline: number | null;
-  last_raise_size: number; ended_at: number | null; result_json: string | null;
+  last_raise_size: number; ended_at: number | null; ended_ms: number | null;
+  result_json: string | null;
   started_at: number;
   last_actor_seat: number | null; last_actor_action: string | null; last_actor_amount: number;
   /** 이 판에 열린 바운티 목록(JSON) — [{v: 탈락자, a: 금액, k: [가져간 사람]}] */
@@ -1331,9 +1332,22 @@ function endHand(
         })),
         board, boardAtEnd, randomInt)
       : [],
+    /* 쇼다운 연출의 «출발점». 화면이 판 도중에 열렸을 때 이 둘과 ended_ms 만 있으면
+       지금 몇 장까지 열려 있어야 하는지를 되짚을 수 있다 — 다시 처음부터 돌리지도,
+       다섯 장을 한꺼번에 까지도 않는다.
+         revealFrom  베팅이 닫힌 순간 이미 깔려 있던 장수(그 뒤가 런아웃이다)
+         revealSeats 패를 여는 사람 수(한 사람당 0.5초씩 늘어난다)
+       서버의 revealSec 이 다음 판 시각을 잴 때 쓰는 것과 같은 두 값이다 —
+       한 벌로 두어야 «연출이 끝나는 시각» 에 대한 판단이 서버와 화면에서 갈리지 않는다. */
+    revealFrom: boardAtEnd,
+    revealSeats: showdown && live.length > 1 ? live.length : 0,
   };
-  run(`UPDATE holdem_hands SET ended_at = ?, result_json = ?, to_act_seat = NULL, action_deadline = NULL
-       WHERE id = ? AND ended_at IS NULL`, now, JSON.stringify(result), hand.id);
+  /* 밀리초도 함께 남긴다 — 화면이 «쇼다운이 시작된 지 몇 밀리초 지났나» 로 카드를
+     세기 때문이다(초 단위로는 한 장이 어긋나고 그 한 장이 결과다).
+     조건절에 ended_at IS NULL 이 있어 이 문장은 판마다 한 번만 지나간다. */
+  run(`UPDATE holdem_hands SET ended_at = ?, ended_ms = ?, result_json = ?,
+         to_act_seat = NULL, action_deadline = NULL
+       WHERE id = ? AND ended_at IS NULL`, now, Date.now(), JSON.stringify(result), hand.id);
 
   /* ── 도전과제: 스트레이트 플러시 ────────────────────────────────
      쇼다운에서 공개된 손만 본다. 아무도 안 보고 접힌 손은 "띄웠다"고 하기 어렵고,
@@ -1993,11 +2007,20 @@ export function rebuyCostOf(t: { buy_in: number }): number {
    그래서 서버가 막는다. 그 창은 next_hand_at 으로 정확히 정해져 있다.
    next_hand_at 이 비어 있으면 «다음 판 예약이 없는» 이상 상태이므로 막지 않는다 —
    막았다가 영영 안 풀리는 쪽이 더 나쁘다. */
-export function revealWindowOpen(t: HtRow, now: number): boolean {
+export function revealWindowOpen(
+  t: HtRow, now: number, e?: { eliminated_at: number | null }
+): boolean {
   const table = getTable(t.id);
   if (!table || table.next_hand_at == null || now >= table.next_hand_at) return false;
   const hand = getCurrentHand(table.id);
-  return hand != null && hand.ended_at != null;
+  if (hand == null || hand.ended_at == null) return false;
+  /* 사람을 주면 «그 사람이 이 판에서 죽었나» 로 좁힌다.
+     이 문이 없으면 세 판 전에 죽은 사람도 남의 쇼다운이 돌 때마다 리바이가 막힌다 —
+     그 사람에게는 가릴 결과가 없다. 자기가 죽는 장면은 이미 다 봤고, 지금 화면에
+     도는 것은 남의 승부다. 감춰야 하는 것은 «방금 이 판에서 죽었다» 하나뿐이다.
+     eliminated_at 과 hand.ended_at 은 같은 호출에서 같은 now 로 찍히므로 같은 값이다. */
+  if (e) return e.eliminated_at != null && e.eliminated_at >= hand.ended_at;
+  return true;
 }
 
 /** 자리를 기다리는 리바이 수. 자리 계산과 대회 종료 판단이 이 값을 함께 센다. */
@@ -2093,7 +2116,7 @@ export function rebuyHoldem(userId: string, username: string):
        자리인데 안 세면 마지막 한 자리를 둘에게 팔게 된다. */
     const chk = rebuyStateOf(t, mine, nowSec(),
       T.MAX_PLAYERS - (table ? freeSeatsFor(t, nowSec(), userId) : 0),
-      revealWindowOpen(t, nowSec()));
+      revealWindowOpen(t, nowSec(), mine));
     if (!chk.can) return { ok: false, error: chk.reason ?? 'closed' };
 
     /* 낼 수 있는지 먼저 본다. 걷는 것은 자리가 확정된 뒤다 —
@@ -2102,34 +2125,30 @@ export function rebuyHoldem(userId: string, username: string):
     if ((getWebUser(userId)?.balance ?? 0) < cost) return { ok: false, error: 'no_funds' };
     if (!table) return { ok: false, error: 'closed' };
 
-    /* ── 앉는 시점 ────────────────────────────────────────────────
-       미루는 창은 딱 하나다: 앞 판이 «끝났는데 다음 판은 아직» 인 구간.
-       그때가 화면이 보드를 마저 깔고 패를 열고 팟을 미는 중이다. 그 위에 좌석 스택이
-       0 에서 600 으로 채워지면, 리버가 열리기도 전에 «저 사람 죽었구나» 가 먼저 읽힌다
-       (봇 시뮬레이션에서 그대로 재현됐다). 그 몇 초만 미룬다 — 다음 판을 돌리기
-       직전에 applyPendingRebuys 가 앉힌다.
+    /* ── 앉는 시점: 언제나 «지금» 이다 ─────────────────────────────
+       한동안 «앞 판의 쇼다운이 도는 동안에는 미룬다» 를 두었다. 스택이 0 에서 600 으로
+       채워지는 것이 결과보다 먼저 «저 사람 죽었구나» 를 말하기 때문인데, 그 걱정은
+       이제 위쪽 문 하나가 대신 막는다 — 이 판에서 죽은 사람은 rebuyStateOf 가
+       'revealing' 으로 아예 거절한다(revealWindowOpen 에 사람을 넘긴다).
+       여기까지 온 사람은 «이 판과 무관하게 이미 죽어 있던 사람» 이고, 그 사람의 자리가
+       채워지는 것은 아무 결과도 누설하지 않는다.
 
-       판이 도는 중에는 «바로» 앉힌다. 미루면 이번 판이 끝날 때까지 관전으로 남아,
-       돈을 냈는데 아무 일도 안 일어난 것처럼 보인다. 이번 판의 hand_seats 에는 안
-       들어가므로 카드를 못 받고 액션 차례도 안 오지만(startHand 가 판을 열 때 명단을
-       굳힌다), 자리와 칩은 그 자리에 있고 다음 판부터 정상으로 참여한다.
-       화면은 그 자리를 «다음 판부터» 로 그린다(inHand=false). */
-    const curHand = getCurrentHand(table.id);
-    const revealing = curHand != null && curHand.ended_at != null;
-    const got = revealing ? 0 : seatRebuy(t, table, userId, username, seats);
+       그래서 미루지 않는다. 미루면 돈을 냈는데 화면에 아무 일도 안 일어난 것처럼 보이고,
+       그게 «리바이가 안 된다» 로 읽혔다.
+       이번 판의 hand_seats 에는 안 들어가므로 카드를 못 받고 차례도 안 온다
+       (startHand 가 판을 열 때 명단을 굳힌다). 자리와 칩은 그 자리에 있고 다음 판부터
+       정상으로 참여한다 — 화면은 그 자리를 «다음 판부터» 로 그린다(inHand=false). */
+    const got = seatRebuy(t, table, userId, username, seats);
     if (got < 0) return { ok: false, error: 'table_full' };
 
-    /* 탈락 표시는 «앉을 때» 지운다. 기다리는 동안에도 이 사람은 아직 나간 사람이고,
-       그래야 대회가 남은 인원을 잘못 세지 않는다(대신 pendingRebuys 가
-       «끝내면 안 된다» 를 말한다). */
-    if (!revealing) {
-      run(`UPDATE holdem_entries SET elim_seq = NULL, eliminated_at = NULL
-            WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
-    }
+    /* 앉았으니 탈락 표시를 지운다. 이 두 값이 «죽었다» 의 유일한 근거이고,
+       대회가 끝날 때 등수를 매기는 정렬 키다. */
+    run(`UPDATE holdem_entries SET elim_seq = NULL, eliminated_at = NULL
+          WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
     run(`UPDATE holdem_entries
             SET rebuy_count = rebuy_count + 1, rebuy_paid = rebuy_paid + ?,
-                rebuy_pending = ?
-          WHERE tournament_id = ? AND user_id = ?`, cost, revealing ? 1 : 0, t.id, userId);
+                rebuy_pending = 0
+          WHERE tournament_id = ? AND user_id = ?`, cost, t.id, userId);
     return finishRebuy(t, userId, cost);
   });
 }

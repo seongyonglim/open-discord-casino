@@ -94,7 +94,7 @@ function statePayload(st: HoldemStatus, userId: string) {
     const cfg = getConfig();
     return {
       ok: true, me: userId, balance: getWebUser(userId)?.balance ?? 0,
-      serverNow: now, tournament: null, results: [], table: null,
+      serverNow: now, serverNowMs: Date.now(), tournament: null, results: [], table: null,
       recap: recentRecap(),
       /* 다음 대회 카드에 "언제" 만 적었더니, 갈지 말지를 정하는 데 필요한 것들 —
          얼마짜리 판인지 · 몇 명이 모여야 열리는지 · 어떤 방식인지 — 을 알 길이 없었다.
@@ -153,6 +153,8 @@ function statePayload(st: HoldemStatus, userId: string) {
        화면은 값이 늘었을 때만 /api/chat 을 부른다. 조용하면 요청이 안 는다. */
     ...chatTick(),
     serverNow: now,
+    /* 밀리초 시각. 쇼다운 연출이 1.5초 간격이라 초로는 한 장이 어긋난다. */
+    serverNowMs: Date.now(),
     tournament: {
       id: t.id,
       title: t.title,
@@ -238,7 +240,7 @@ function statePayload(st: HoldemStatus, userId: string) {
            예전에는 여기만 «산 사람 수» 로 세어서, 대기 중인 리바이와 60초 우선권 자리를
            빼먹고 can=true 를 내려보냈다 — 눌러야만 거절당하는 단추가 떴다. */
         const taken = table ? T.MAX_PLAYERS - freeSeatsFor(t, now, userId) : 0;
-        const r = rebuyStateOf(t, meE, now, taken, revealWindowOpen(t, now));
+        const r = rebuyStateOf(t, meE, now, taken, revealWindowOpen(t, now, meE));
         return {
           max: Math.max(0, Math.floor(t.max_rebuys ?? 0)),
           used: Math.max(0, Math.floor(meE?.rebuy_count ?? 0)),
@@ -270,7 +272,26 @@ function statePayload(st: HoldemStatus, userId: string) {
         const tb = getTable(t.id);
         const stackOf = new Map(tb ? getSeats(tb.id)
           .filter(s => s.presence !== 'OUT').map(s => [s.user_id, s.stack]) : []);
+        /* 이 판이 «시작될 때» 각자 들고 있던 칩. 핸드 안 스택 + 이 판에 넣은 총액이다.
+           방금 죽은 사람을 아직 살아 있는 것으로 보여주는 동안(hushOne) 이 값을 쓴다 —
+           좌석 스택은 이미 0 이라 그대로 쓰면 «초록 카드인데 칩이 없는» 유령이 된다.
+           인게임 칩 순위가 같은 이유로 같은 값을 쓴다(side.ts 의 stackMemo). */
+        const curHand = tb ? getCurrentHand(tb.id) : null;
+        const preStack = new Map<string, number>(
+          (curHand ? getHandSeats(curHand.id) : []).map(h => [h.user_id, h.stack + h.committed]));
         const maxRb = Math.max(0, Math.floor(t.max_rebuys ?? 0));
+        /* ── 결과가 화면에 다 나오기 전에는 «아직 살아 있다» 로 답한다 ──────
+           서버는 핸드가 끝나는 순간 정산을 마치고 탈락을 DB 에 박는다. 그것이 옳다 —
+           그 자리에서 안 박으면 종료 판단 · 등수 · KO · 바운티가 전부 근거를 잃고,
+           그 사이에 서버가 죽으면 판 하나가 통째로 사라진다.
+           바꿀 것은 «언제 쓰나» 가 아니라 «언제 말하나» 다. 화면은 그때부터 몇 초 동안
+           보드를 마저 깔고 패를 열고 팟을 미는 중이고, 그 사이에 이 응답이 «저 사람
+           죽었다» 를 실어 보내면 로비 카드가 카드보다 먼저 결과를 말한다.
+           그 창(next_hand_at 이전)에는 탈락을 감춘다 — 창이 닫히면 저절로 사실이 된다. */
+        /* 감추는 것은 «이 판에서 죽은 사람» 하나뿐이다. 세 판 전에 죽은 사람까지
+           감추면 로비 순위표에서 탈락자가 통째로 사라졌다 되살아나기를 반복한다 —
+           가릴 결과가 없는 사람을 가리는 셈이다. 사람마다 따로 판단한다. */
+        const hushOne = (e: { eliminated_at: number | null }) => revealWindowOpen(t, now, e);
         return entries.map(e => ({
           userId: e.user_id, username: e.username, avatar: av.get(e.user_id) ?? null,
           /* 칩 순위가 이름 뒤에 «(2)» 로 적는다. 좌석 행에는 이 값이 없어서
@@ -278,11 +299,16 @@ function statePayload(st: HoldemStatus, userId: string) {
           rebuys: Math.max(0, Math.floor(e.rebuy_count ?? 0)),
           /* 로비 카드가 생존·탈락·빈자리로 갈라 그린다. 아홉 칸이 다 찬 것처럼 보이는데
              둘이 죽어 두 자리가 비어 있다는 사실이 안 보이던 것이 시작이었다. */
-          out: e.elim_seq != null,
-          stack: stackOf.get(e.user_id) ?? null,
+          out: hushOne(e) ? false : e.elim_seq != null,
+          stack: hushOne(e)
+            ? (preStack.get(e.user_id) ?? stackOf.get(e.user_id) ?? null)
+            : (stackOf.get(e.user_id) ?? null),
           rebuyLeft: Math.max(0, maxRb - Math.max(0, Math.floor(e.rebuy_count ?? 0))),
           /* 자리를 기다리는 중(돈은 냈고 다음 판에 앉는다) */
           waiting: e.rebuy_pending === 1,
+          /* 탈락한 시각. 로비 순위표가 탈락자를 «늦게 죽은 사람이 위» 로 세우는 데 쓴다.
+             감추는 사람의 것은 안 보낸다 — 시각 하나만으로도 방금 죽은 것이 드러난다. */
+          outAt: hushOne(e) ? null : e.eliminated_at,
         }));
       })(),
     },
@@ -405,6 +431,11 @@ function statePayload(st: HoldemStatus, userId: string) {
     ...base,
     table: {
       handNo: hand?.hand_no ?? 0,
+      /* 쇼다운이 시작된 시각(밀리초)과 지금 서버 시각. 둘을 함께 보내는 이유는
+         시계 차이 때문이다 — 화면이 제 Date.now() 에서 빼면 사람마다 몇 초씩 어긋난다.
+         (serverNowMs − showdownAt) 이 곧 «연출이 얼마나 흘렀나» 이고, 판 도중에
+         들어온 화면은 그 값으로 «지금 몇 장까지 열려 있어야 하나» 를 잰다. */
+      showdownAt: hand?.ended_ms ?? null,
       /* 이 판에 열린 봉투들 — 개봉 연출이 봉투마다 "누구 것이 얼마였고 누가 가져갔나"를
          보여준다. 미스터리에서만 내려보낸다: 프로그레시브는 금액이 머리 위에 이미 적혀
          있어서 개봉이라는 사건이 없다.
@@ -786,6 +817,24 @@ export function holdemPage(user: WebUser): string {
     ${gameSwitcher('holdem', 'htHelp')}
 
     <div id="htLobby" class="ht-lobby" hidden></div>
+
+    <!-- 진행 중인 대회의 아래쪽 두 탭. 카드(#htLobby) «밖» 에 정적으로 둔다.
+         카드는 renderLobby 가 문자열을 통째로 만들어 innerHTML 로 갈아 끼우는데,
+         탭을 그 문자열 안에 넣으면 둘 중 하나가 반드시 깨진다:
+         선택 상태를 문자열에 담으면 탭을 누를 때마다 카드 전체가 다시 만들어져
+         누르던 단추가 손가락 밑에서 죽고, 담지 않으면 인원이 바뀌어 카드가 다시
+         그려지는 순간 선택이 풀린다.
+         인게임 오른쪽 패널이 이미 같은 문제를 «껍데기는 정적으로, 속만 갈아 끼우기»
+         로 풀어 두었다(.ht-tabs). 같은 방식을 그대로 쓴다 — 모양도 같아서
+         두 화면이 같은 물건으로 읽힌다. -->
+    <div class="ht-ltabs" id="htLobbyTabs" hidden>
+      <div class="ht-tabs">
+        <button type="button" class="ht-tab active" data-ltab="rank">칩 순위</button>
+        <button type="button" class="ht-tab" data-ltab="prize">상금 구조</button>
+      </div>
+      <div class="ht-lpane" id="htLRank"></div>
+      <div class="ht-lpane" id="htLPrize" hidden></div>
+    </div>
 
     <!-- 로비(대회 전·후)에서도 역대 전적을 보여준다. 테이블 오른쪽 패널에만 두면
          자리에 앉은 사람만 볼 수 있는데, 정작 "누가 상금을 제일 많이 먹었나"가

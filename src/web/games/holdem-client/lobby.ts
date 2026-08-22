@@ -185,6 +185,86 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
         + ' stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/><\/svg>'
         + '참가 완료 <span class="ht-done-x">(등록 취소)<\/span><\/button>';
     }
+    /* ── 로비 카드 아래의 두 탭 ────────────────────────────────────────
+       [칩 순위] 와 [상금 구조]. 인게임 오른쪽 패널과 같은 모양·같은 조작이라,
+       테이블에 들어가 본 사람은 여기서도 이미 쓸 줄 안다.
+
+       껍데기는 정적으로 박혀 있고(holdem.ts 의 #htLobbyTabs) 여기서는 속만 갈아
+       끼운다. 그래야 카드가 다시 그려져도 «어느 탭을 보고 있었나» 가 안 풀린다 —
+       카드는 인원이 바뀔 때마다 통째로 새로 만들어진다.
+
+       탭 선택은 이 변수 하나가 들고 있다. sessionStorage 에 안 남긴다: 대회마다
+       처음 보는 것은 칩 순위여야 하고, 상금표는 궁금할 때 한 번 넘겨 보는 것이다. */
+    var ltab = 'rank', ltabBound = false;
+    function bindLobbyTabs(){
+      if (ltabBound) return;
+      var wrap = document.getElementById('htLobbyTabs');
+      if (!wrap) return;
+      ltabBound = true;
+      wrap.addEventListener('click', function(e){
+        var b = e.target.closest ? e.target.closest('.ht-tab') : null;
+        if (!b) return;
+        ltab = b.getAttribute('data-ltab') || 'rank';
+        syncLobbyTabs();
+      });
+    }
+    function syncLobbyTabs(){
+      var wrap = document.getElementById('htLobbyTabs');
+      if (!wrap) return;
+      var tabs = wrap.querySelectorAll('.ht-tab');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle('active', tabs[i].getAttribute('data-ltab') === ltab);
+      }
+      document.getElementById('htLRank').hidden = ltab !== 'rank';
+      document.getElementById('htLPrize').hidden = ltab !== 'prize';
+    }
+    /* 순위표 한 줄. 사람 하나에 줄 하나다 — 리바이를 세 번 해도 이름은 한 번만 선다
+       (payload 의 players 가 이미 사람당 한 줄이라 그 성질을 그대로 물려받는다). */
+    function lrankRow(p, n, meId){
+      var out = !!p.out;
+      /* 탈락자에게는 다음이 있는지를 적는다 — 남은 리바이가 있으면 아직 끝이 아니다.
+         «완전 탈락» 은 더 살 수 없거나 이미 창이 닫힌 사람이다. */
+      var tag = out
+        ? (p.waiting ? '다음 판 대기'
+          : p.rebuyLeft > 0 ? '리바이 ' + p.rebuyLeft + '회 남음' : '완전 탈락')
+        : (p.rebuys > 0 ? p.rebuys + '차' : '');
+      return '<div class="lr-row' + (out ? ' out' : '') + (p.userId === meId ? ' me' : '') + '">' +
+        '<span class="lr-n">' + n + '</span>' +
+        avatarHtml(p.userId, p.avatar, p.username, 'lr-av') +
+        '<span class="lr-nm">' + esc(p.username) + '</span>' +
+        (tag ? '<span class="lr-tag">' + esc(tag) + '</span>' : '') +
+        '<span class="lr-st">' + (out ? '0' : num(p.stack || 0)) + '</span>' +
+        '</div>';
+    }
+    function paintLobbyTabs(t, running, payTable){
+      var wrap = document.getElementById('htLobbyTabs');
+      if (!wrap) return;
+      if (!running) { wrap.hidden = true; return; }
+      bindLobbyTabs();
+      var plist = t.players || [];
+      /* 살아 있는 사람이 위, 칩 많은 순. 그 아래 탈락자는 «늦게 죽은 사람이 위» 다 —
+         오래 버틴 순서이고, 그게 곧 등수다. 탈락 시각을 모르면(감추는 중) 맨 뒤로.
+         정렬을 한 번만 하고 번호를 그 위에 붙인다: 두 무리를 따로 세면 번호가 겹친다. */
+      /* 순위표도 같은 조건으로 가른다 — 위 격자와 갈리면 «의자에는 없는데 순위에는
+         살아 있는» 사람이 생긴다. 칩이 0 인데 탈락 표시가 없는 칸은 아래로 보낸다. */
+      var alive = [], dead = [];
+      for (var i = 0; i < plist.length; i++) {
+        (!plist[i].out && (plist[i].stack || 0) > 0 ? alive : dead).push(plist[i]);
+      }
+      alive.sort(function(a, b){ return (b.stack || 0) - (a.stack || 0); });
+      dead.sort(function(a, b){ return (b.outAt || 0) - (a.outAt || 0); });
+      var all = alive.concat(dead), rows = '';
+      for (var j = 0; j < all.length; j++) rows += lrankRow(all[j], j + 1, MEID);
+      var rankHtml = rows ? '<div class="lr-list">' + rows + '<\/div>'
+        : '<div class="empty">아직 없습니다<\/div>';
+      var rankEl2 = document.getElementById('htLRank');
+      if (rankEl2.dataset.sig !== rankHtml) { rankEl2.dataset.sig = rankHtml; rankEl2.innerHTML = rankHtml; }
+      var prizeEl2 = document.getElementById('htLPrize');
+      var pz = payTable || '<div class="empty">상금 구조가 아직 없습니다<\/div>';
+      if (prizeEl2.dataset.sig !== pz) { prizeEl2.dataset.sig = pz; prizeEl2.innerHTML = pz; }
+      wrap.hidden = false;
+      syncLobbyTabs();
+    }
     function renderLobby(){
       var t = st.tournament, now = st.serverNow;
       if (!t) { renderNoTournament(); return; }
@@ -297,16 +377,25 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
            두 자리가 비어 있을 수 있고, 리바이하려는 사람에게는 그 «두 자리» 가 전부다.
            그래서 세 갈래로 나눠 그린다: 살아 있음(칩 표시) · 탈락(흐리게 · 남은 리바이) ·
            빈자리(점선). 살아 있는 사람 먼저, 죽은 사람은 아래로 민다. */
+        /* 판이 돌고 있으면 이 격자는 «테이블» 이다 — 실제로 앉아 있는 사람과 빈 의자.
+           탈락자는 의자에서 일어난 사람이라 여기 두지 않는다. 예전에는 아래로 밀어
+           함께 그렸는데, 그러면 아홉 칸이 늘 꽉 차 보여서 «자리가 몇 개 비었나» 가
+           안 읽혔다 — 리바이하려는 사람에게는 그 숫자가 전부다.
+           탈락자는 아래 [칩 순위] 탭이 순서까지 붙여 따로 맡는다. */
+        /* «살아 있다» 의 조건은 둘이다 — 탈락 표시가 없고, 칩이 있다.
+           서버가 이 둘을 함께 보내지만 한쪽만 믿으면 유령이 생긴다: 방금 죽은 사람을
+           잠깐 살아 있는 것으로 보여주는 구간(결과 스포 방지)에서 칩이 0 이면
+           «초록 카드인데 숫자가 없는» 칸이 되고, 그건 살아 있다는 말도 죽었다는 말도
+           아니다. 둘 다 맞을 때만 의자에 앉힌다. */
+        function aliveNow(p){ return !p.out && (p.stack || 0) > 0; }
         var running = t.status === 'RUNNING';
         var ordered = plist;
         if (running) {
-          var alive = [], dead = [];
-          for (var oi = 0; oi < plist.length; oi++) {
-            (plist[oi].out ? dead : alive).push(plist[oi]);
-          }
-          /* 산 사람은 칩이 많은 순 — 순위표와 같은 순서여야 두 화면이 같은 판으로 읽힌다 */
+          var alive = [];
+          for (var oi = 0; oi < plist.length; oi++) if (aliveNow(plist[oi])) alive.push(plist[oi]);
+          /* 칩이 많은 순 — 아래 순위표와 같은 순서여야 두 화면이 같은 판으로 읽힌다 */
           alive.sort(function(a, b){ return (b.stack || 0) - (a.stack || 0); });
-          ordered = alive.concat(dead);
+          ordered = alive;
         }
         var slots = '';
         for (var si = 0; si < t.maxPlayers; si++) {
@@ -351,10 +440,9 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
         /* 진행 중이면 머리글도 «신청자» 가 아니다 — 지금 보는 것은 생존 현황이다.
            빈자리 수를 같이 적는다: 리바이할 수 있는지가 그 숫자 하나로 정해진다. */
         if (running) {
-          var aliveN = 0;
-          for (var ai = 0; ai < plist.length; ai++) if (!plist[ai].out) aliveN++;
-          var freeN = t.freeSeats != null ? t.freeSeats : Math.max(0, t.maxPlayers - aliveN);
-          sub = '생존 ' + aliveN + '명 · 빈자리 ' + freeN + '개';
+          var freeN = t.freeSeats != null ? t.freeSeats
+            : Math.max(0, t.maxPlayers - ordered.length);
+          sub = '생존 ' + ordered.length + '명 · 빈자리 ' + freeN + '개';
         }
         roster = '<h3 class="ht-h3">' + (running ? '테이블' : '신청자')
             + ' <span class="ht-h3sub">' + esc(sub) + '</span></h3>' +
@@ -518,6 +606,10 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
             '<div><span class="k">최소 인원</span><span class="v">' + t.minPlayers + '명</span></div>' +
           '</div>';
 
+      /* 진행 중이면 아래 두 탭이 상금표를 맡는다 — 카드 안에 그대로 두면 같은 표가
+         두 번 나온다. 시작 전·끝난 뒤에는 탭이 안 뜨므로 예전처럼 카드 안에 둔다. */
+      var cardPay = running ? '' : payTable;
+
       var shell =
         '<div class="ht-card">' +
           /* 머리를 세 줄로 나눈다.
@@ -549,8 +641,16 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
           gridHtml +
           '<div class="ht-actions">' + action + '</div>' +
           roster +
-          payTable +
+          cardPay +
         '</div>';
+
+      /* ── 아래 두 탭 ─────────────────────────────────────────────
+         탭은 카드 «밖» 의 정적 껍데기다(holdem.ts 의 #htLobbyTabs). 그래서 카드가
+         통째로 다시 그려져도 탭 선택이 안 풀리고, 탭을 눌러도 카드가 다시 그려지지
+         않는다. 여기서는 두 칸의 «속» 만 갈아 끼운다.
+         진행 중일 때만 세운다 — 시작 전에는 순위라 할 것이 없고(전원 같은 스택),
+         끝난 뒤에는 카드 안의 결과표가 그 일을 한다. */
+      paintLobbyTabs(t, running, payTable);
 
       /* 뼈대가 그대로면 남은 시간만 바꾸고 끝낸다. 여기서 돌아가면 아래 바인딩도
          건너뛰는데, 그래도 되는 이유는 단추가 지워진 적이 없어서 예전에 붙인 리스너가

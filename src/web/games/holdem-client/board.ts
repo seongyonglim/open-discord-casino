@@ -48,6 +48,55 @@ export const BOARD = `    var BOARD_FIRST_MS = 560;     // 이번에 깔 첫 장
        1,100ms면 첫 장까지 1.44초(+BOARD_FIRST_MS)라서 라벨을 읽고 나서 카드가 열린다. */
     var ACTION_HOLD_MS = 1100;
     var shownBoard = 0, boardTimers = [], boardHandNo = null;
+    /* ── 쇼다운은 «서버가 끝낸 시각» 에서 흐른다 ──────────────────────
+       지금까지 모든 연출은 «그 상태를 처음 본 폴링의 Date.now()» 에서 시작했다.
+       화면을 계속 보고 있는 사람에게는 그게 그거지만, 판 도중에 들어온 사람에게는
+       아니다 — 그 사람의 0초는 남들의 4초일 수 있다. 그래서 지금은 들어온 순간
+       다섯 장을 한꺼번에 까 버리고 있었다(결과가 통째로 새는 자리다).
+
+       서버가 ended_ms 를 준다. 그 시각에서 흐른 밀리초를 재면 «지금 몇 장까지 열려
+       있어야 하는가» 가 한 번에 나온다. 시계는 서버 것을 쓴다(clockSkew) —
+       기기 시계가 몇 초 어긋난 사람에게 카드가 통째로 밀리면 안 된다.
+
+       기준 시각을 내 시계로 환산해 돌려준다. 아래 예약(setTimeout)들이 전부 내
+       시계로 도는 값이라 그쪽 단위에 맞춰야 한다. */
+    function showdownBase(tb){
+      if (!tb || tb.showdownAt == null) return null;
+      return tb.showdownAt - clockSkew;
+    }
+    /* 지금 시점에 «열려 있어야 하는» 보드 장수. 판 도중에 들어왔을 때만 쓴다.
+       계산은 아래 정상 경로와 같은 상수·같은 간격을 쓴다 — 두 벌이 되면 언젠가
+       한쪽만 고쳐져서, 들어온 사람과 보고 있던 사람의 화면이 갈린다. */
+    function showdownShown(tb, total){
+      var base = showdownBase(tb);
+      var r = tb.ended && tb.result;
+      if (base == null || !r) return null;
+      var from = r.revealFrom != null ? r.revealFrom : total;
+      if (from >= total) return { shown: total, sqDone: null, sqLeft: 0 };
+      var seats = r.revealSeats || 0;
+      var el = Date.now() - base;
+      /* 앞머리: 마지막 액션을 읽는 정지 + 패를 한 사람씩 여는 시간 + 플랍까지의 정지 */
+      var t = ACTION_HOLD_MS;
+      if (seats > 1) t += Math.max(0, seats - 1) * HOLE_STEP_MS + SHOWDOWN_FLOP_MS;
+      var shown = from, sqDone = null, sqLeft = 0;
+      for (var i = from; i < total; i++) {
+        t += boardGap(i, from);
+        if (el < t) break;
+        /* 리버는 앞면으로 놓인 뒤 덮개가 2.5초에 걸쳐 벗겨진다. 그 사이에는 아직
+           «열린» 것이 아니다 — 승률 말풍선이 shownBoard 를 정확히 비교하므로
+           여기서 미리 5로 올리면 최종 승률이 먼저 뜬다.
+           그 «벗겨지는 중» 에 들어왔으면 처음부터 다시 벗기지 않는다. 지금까지 벗겨진
+           만큼을 음수 지연으로 건너뛰고 남은 만큼만 이어서 벗긴다 — 다시 틀면
+           이미 본 사람에게는 카드가 되감기고, 늦게 온 사람에게는 남들보다 늦게 열린다. */
+        if (i === 4 && total === 5) {
+          if (el < t + SQUEEZE_MS) { sqDone = el - t; sqLeft = t + SQUEEZE_MS - el; break; }
+        }
+        shown = i + 1;
+      }
+      return { shown: shown, sqDone: sqDone, sqLeft: sqLeft };
+    }
+    /* 들어온 뒤 남은 장을 이어서 열 때는 앞머리 정지를 빼야 한다 — 그 시간은 이미 지났다 */
+    var boardResume = false;
     /* 보드를 다 깔았나. 올인으로 판이 즉시 끝나는 경우가 이 값의 존재 이유다 —
        서버는 액션이 끝나면 보드를 끝까지 깔고 정산까지 해버리므로, 클라이언트가
        ended만 보고 전부 그리면 플랍도 못 보고 결과가 뜬다. 결과를 아는 것과
@@ -167,13 +216,40 @@ export const BOARD = `    var BOARD_FIRST_MS = 560;     // 이번에 깔 첫 장
         clearBoardReveal();
         clearSqueeze();
         /* 진행 중인 판에 들어온 순간에는 핸드도 예약 없이 바로 보여준다 —
-           예약을 남겨 두면 이미 끝난 판의 카드가 몇 초 뒤에 다시 뒤집힌다. */
+           예약을 남겨 두면 이미 끝난 판의 카드가 몇 초 뒤에 다시 뒤집힌다.
+           (패 자체의 시점 계산은 reveal.ts 가 같은 기준 시각으로 따로 한다.) */
         clearHoleReveal();
         holeOpenAt = {}; holeDoneAt = 0;
-        shownBoard = cards.length;
-        boardRevealed = true;
+        /* 다 까지 않는다 — 지금 시점에 열려 있어야 할 만큼만 깐다.
+           서버 시각을 모르는 경우(옛 판·진행 중)는 예전대로 통째로 보여준다:
+           진행 중인 판의 보드는 어차피 모두에게 공개된 것이라 가릴 것이 없다. */
+        var sd = showdownShown(tb, cards.length);
+        shownBoard = sd == null ? cards.length : sd.shown;
+        /* 리버 덮개가 벗겨지는 중에 들어왔다 — 앞면은 다 그려 두고 덮개만 «지금 각도»
+           에서 이어 벗긴다. CSS 애니메이션에 음수 지연을 주면 그 지점부터 재생된다. */
+        if (sd && sd.sqDone != null) {
+          paintBoard(cards, cards.length);
+          squeezeEl.hidden = false;
+          squeezeEl.style.animation = 'none';
+          void squeezeEl.offsetWidth;
+          squeezeEl.style.animation = '';
+          squeezeEl.style.animationDelay = '-' + Math.round(sd.sqDone) + 'ms';
+          boardTimers.push(setTimeout(function(){
+            squeezeEl.hidden = true;
+            squeezeEl.style.animationDelay = '';
+            shownBoard = cards.length;
+            boardRevealed = true;
+            if (st && st.table) syncEquity(st.table);
+            if (st && st.table && !tableEl.hidden) { renderSeats(); paintClock(); renderControls(); }
+          }, Math.max(0, Math.round(sd.sqLeft))));
+          boardRevealed = false;
+          return;
+        }
+        boardRevealed = shownBoard >= cards.length;
         paintBoard(cards, shownBoard);
-        return;
+        if (boardRevealed) return;
+        /* 남은 장은 이어서 연다. 앞머리 정지는 이미 지났으므로 빼고, 간격만 쓴다. */
+        boardResume = true;
       }
       if (cards.length <= shownBoard) {
         paintBoard(cards, shownBoard);
@@ -187,10 +263,11 @@ export const BOARD = `    var BOARD_FIRST_MS = 560;     // 이번에 깔 첫 장
       /* 첫 장까지의 정지. 쇼다운이라면 마지막 핸드가 열린 뒤 2.5초다 —
          핸드를 다 보기도 전에 플랍이 깔리면 무엇과 무엇이 붙었는지 읽을 틈이 없다.
          정상 진행(한 스트리트씩)에서는 예전처럼 마지막 액션을 읽을 시간만 둔다. */
-      var t = ACTION_HOLD_MS, from = shownBoard;
-      if (holeDoneAt) {
+      var t = boardResume ? 0 : ACTION_HOLD_MS, from = shownBoard;
+      if (!boardResume && holeDoneAt) {
         t = Math.max(t, holeDoneAt - Date.now() + SHOWDOWN_FLOP_MS);
       }
+      boardResume = false;
       for (var i = from; i < cards.length; i++) {
         t += boardGap(i, from);
         /* 리버(다섯 번째)는 앞면으로 열지 않는다. 뒷면 덮개를 씌운 채로 놓고

@@ -185,7 +185,9 @@ function report(): void {
   console.log('통과 ' + pass + ' · 실패 ' + fail);
   process.exit(fail ? 1 : 0);
 }
-const LIMIT_MS = 5 * 60 * 1000;
+/* 리바이가 자주 성사될수록 판이 길어진다(엔트리 24 까지 갈 수 있다).
+   막힌 것과 오래 걸리는 것을 가르려면 상한을 손으로 늘릴 수 있어야 한다. */
+const LIMIT_MS = Number(process.env.RB_LIMIT_SEC ?? 300) * 1000;
 let lastLine = '';
 const watch = setInterval(() => {
   const t = db.prepare(`SELECT id, started_at, finished_at, cancelled_at

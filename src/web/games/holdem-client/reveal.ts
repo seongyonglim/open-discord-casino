@@ -35,7 +35,12 @@ export const REVEAL = `    var holeOpenAt = {}, holeRevealHand = null, holeDoneA
         for (var i = 0; i < seats.length; i++) if (seats[i] >= sb) { at = i; break; }
         seats = seats.slice(at).concat(seats.slice(0, at));
       }
-      var now = Date.now();
+      /* 기준은 «서버가 판을 끝낸 시각» 이다. 폴링이 그 상태를 언제 물어 왔는지가
+         아니라 — 폴링은 최대 1초 늦고, 판 도중에 들어온 사람에게는 몇 초씩 늦다.
+         같은 판을 보는 사람들의 화면이 같은 박자로 돌아야 «저 사람은 벌써 봤는데
+         나는 이제 본다» 가 없어진다. 서버 시각을 모르면 예전대로 지금부터 센다. */
+      var base = showdownBase(tb);
+      var now = base != null ? base : Date.now();
       seats.forEach(function(seat, i){
         holeOpenAt[seat] = now + ACTION_HOLD_MS + i * HOLE_STEP_MS;
       });

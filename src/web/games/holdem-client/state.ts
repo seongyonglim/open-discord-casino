@@ -15,6 +15,12 @@ export function stateFragment(cardV: string): string {
     /* 진행 중인 대회의 테이블에 «들어갔는가». 로비 카드의 단추를 눌러야 참이 된다.
        hadTable 은 직전 렌더에 테이블이 있었는지 — 판이 방금 열린 것을 알아내는 데 쓴다. */
     var enteredTid = null, hadTable = false, sawState = false;
+    /* 서버 시계와 내 시계의 차이(ms). 쇼다운 경과를 잴 때 쓴다 —
+       내 Date.now() 로 그냥 빼면 시계가 몇 초 어긋난 기기에서 카드가 통째로 밀린다.
+       폴링마다 다시 잰다: 응답이 오는 데 걸린 시간만큼 늘 조금 과대평가되지만,
+       그 오차는 왕복 시간(수십 ms)이고 연출 간격은 초 단위라 묻힌다. */
+    var clockSkew = 0;
+    function serverMs(){ return Date.now() + clockSkew; }
     /* 우승 팝업을 닫고 로비로 나온 대회. 서버는 끝난 뒤에도 30초 동안 테이블을 계속
        내려보내는데(마지막 쇼다운을 보여주려는 창이다), 그동안 화면이 테이블에 붙들려
        있으면 팝업을 닫아도 갈 데가 없다. 여기에 대회 id 를 적어 두고 그 대회의 테이블은
