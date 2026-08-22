@@ -89,13 +89,6 @@ export function bcHead(p0: string | number, p1: string | number, p2: string | nu
          scripts/check-chips.ts 의 «정사각인가» 검사가 이 클래스로 갈린다. */
       function chipKind(v){ return 'c-coin'; }
       function buttonKind(v){ return 'kind-coin'; }
-      var BC_DCLASS = { 10:'d10', 100:'d100', 500:'d500', 1000:'d1k', 5000:'d5k', 10000:'d10k' };
-      function denomClass(v){ return BC_DCLASS[v] || 'd10k'; }
-      /* 칩 «면» 에 새기는 글자. 옆의 chipLabel(더미 밖에서 쓰는 이름표)과 따로 두는
-         이유는 새길 자리가 지름 20px 남짓이기 때문이다 — 그 안에 «5000» 네 글자를
-         넣으면 링에 닿는다. 천 단위는 K 로 줄인다(요청). */
-      var BC_FACE = { 10:'10', 100:'100', 500:'500', 1000:'1K', 5000:'5K', 10000:'10K' };
-      function chipFace(v){ return BC_FACE[v] || String(v); }
 
 `;
 }

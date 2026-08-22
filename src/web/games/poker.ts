@@ -344,7 +344,7 @@ export function pokerPage(user: WebUser): string {
       `, rankPane('p'))}
     </div>
     <script>window.__ME__ = ${jsonForScript(user.username)}; window.__MEID__ = ${jsonForScript(user.id)};
-      window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal'];
+      window.__SFX_NEED__ = ['coin','gain','card','shuffle','deal','chipbet','chipwin'];
       window.__CHAT_WHERE__ = 'poker';</script>
     <script>
 ${pkHead(JSON.stringify(ASSET_V))}${PK_CARDS_JS}${PK_CHIPS_JS}${PK_MARKETS_JS}${pkLoop(rankJs('p', 'poker'))}

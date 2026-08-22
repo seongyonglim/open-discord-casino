@@ -40,6 +40,85 @@ window.__ICON = (function(){
   };
 })();
 
+/* ── 클레이 칩 ─────────────────────────────────────────────────────────
+   테이블 게임 셋(바카라 · 블랙잭 · 포커 플립)이 같은 칩을 쓴다. 그림을 게임마다
+   따로 두면 세 벌이 되고, 세 벌은 반드시 어긋난다 — 한 곳만 고치면 나머지 둘이
+   옛 모양으로 남는다. 그래서 여기 한 벌만 둔다.
+
+   칩처럼 보이게 하는 것은 다섯 겹이다 — 옆면(두께) · 면 · 테두리 6방향 인레이 톱니 ·
+   메탈릭 인셋 링 · 곡면 반사광. 하나만 빠져도 «동그란 색 딱지» 가 된다.
+
+   그림은 문서에 <symbol> 한 장만 심고 <use> 로 부른다. 액면마다 그리면 같은 도형이
+   수십 벌 쌓인다. 색은 CSS 사용자 지정 속성이 갈아 끼운다 — 그 속성은 <use> 가
+   만드는 그림자 트리에도 상속되므로, 액면 클래스(.d1k 등) 하나로 같은 그림이
+   다른 색이 된다.
+
+   흐림(filter)은 한 겹도 쓰지 않는다. 정산 때 칩 열댓 장이 동시에 transform 으로
+   날아가는데 흐림이 걸려 있으면 매 프레임 다시 래스터한다.
+   바닥 그림자도 두지 않는다 — 칩이 겹겹이 쌓이면 그 그림자가 아래 칩의 «면» 위에
+   앉아 판이 얼룩덜룩해진다(바카라에서 그렇게 됐다). 입체는 옆면 한 겹이면 선다. */
+window.casinoChip = (function(){
+  var done = false;
+  var DCLASS = { 10:'d10', 100:'d100', 500:'d500', 1000:'d1k', 5000:'d5k', 10000:'d10k' };
+  /* 칩 «면» 에 새기는 글자. 새길 자리가 지름 20px 남짓이라 천 단위는 K 로 줄인다 —
+     그 안에 «5000» 네 글자를 넣으면 인셋 링에 닿는다. */
+  var FACE = { 10:'10', 100:'100', 500:'500', 1000:'1K', 5000:'5K', 10000:'10K' };
+  function notches(){
+    var out = '';
+    for (var i = 0; i < 6; i++) {
+      out += '<rect x="20" y="3.4" width="8" height="8.4" rx="2"' +
+        (i ? ' transform="rotate(' + (i * 60) + ' 24 22)"' : '') + '/>';
+    }
+    return out;
+  }
+  function ensure(){
+    if (done || document.getElementById('ckDefs')) { done = true; return; }
+    done = true;
+    var d = document.createElement('div');
+    d.innerHTML =
+      '<svg id="ckDefs" width="0" height="0" aria-hidden="true" focusable="false"' +
+      ' style="position:absolute;width:0;height:0;overflow:hidden"><defs>' +
+        '<radialGradient id="ckFaceG" cx="50%" cy="24%" r="78%">' +
+          '<stop offset="0" stop-color="#fff" stop-opacity=".26"/>' +
+          '<stop offset=".46" stop-color="#fff" stop-opacity=".04"/>' +
+          '<stop offset="1" stop-color="#000" stop-opacity=".30"/></radialGradient>' +
+        '<linearGradient id="ckRingG" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0" stop-color="#fff" stop-opacity=".55"/>' +
+          '<stop offset=".5" stop-color="#fff" stop-opacity=".10"/>' +
+          '<stop offset="1" stop-color="#fff" stop-opacity=".40"/></linearGradient>' +
+        '<radialGradient id="ckGlossG" cx="50%" cy="6%" r="60%">' +
+          '<stop offset="0" stop-color="#fff" stop-opacity=".46"/>' +
+          '<stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
+        '<symbol id="ckChip" viewBox="0 0 48 48">' +
+          '<circle cx="24" cy="24.6" r="19.4" fill="var(--bc-deep,#4b5563)"/>' +
+          '<circle cx="24" cy="22" r="19.4" fill="var(--bc-face,#9ca3af)"/>' +
+          '<g fill="var(--bc-edge,#e5e7eb)">' + notches() + '</g>' +
+          '<circle cx="24" cy="22" r="19.4" fill="url(#ckFaceG)"/>' +
+          '<circle cx="24" cy="22" r="15.4" fill="none" stroke="url(#ckRingG)" stroke-width="1"/>' +
+          '<circle cx="24" cy="22" r="13.9" fill="none" stroke="#000" stroke-opacity=".22" stroke-width=".8"/>' +
+          '<circle cx="24" cy="22" r="13.3" fill="var(--bc-face,#9ca3af)"/>' +
+          '<circle cx="24" cy="22" r="13.3" fill="url(#ckFaceG)" opacity=".5"/>' +
+          '<circle cx="24" cy="22" r="19" fill="none" stroke="var(--bc-rim,#d1d5db)" stroke-width=".9" opacity=".85"/>' +
+          '<ellipse cx="24" cy="11" rx="13.5" ry="8" fill="url(#ckGlossG)"/>' +
+          '<circle class="bc-neon" cx="24" cy="22" r="20.4" fill="none"/>' +
+        '</symbol>' +
+      '</defs></svg>';
+    document.body.appendChild(d.firstChild);
+  }
+  /* 루트 <svg> 에 fill/stroke 를 none 으로 못 박는다. 색은 전부 자식이 갖고 있어
+     그림에는 영향이 없고, scripts/check-states.ts 의 «아이콘이 배경에 묻혔나» 검사가
+     색을 못 읽는 SVG 를 건너뛰므로 헛경고가 나지 않는다. */
+  var ART = '<svg class="bc-ck" viewBox="0 0 48 48" fill="none" stroke="none"' +
+    ' aria-hidden="true" focusable="false"><use href="#ckChip"/></svg>';
+  return {
+    ensure: ensure,
+    cls: function(v){ return DCLASS[v] || 'd10k'; },
+    face: function(v){ return FACE[v] || String(v); },
+    // 칩 한 장의 «속» — 부르는 쪽이 .pchip 이나 .face 안에 넣는다
+    art: function(v){ ensure(); return ART + '<i class="bc-t">' + (FACE[v] || String(v)) + '</i>'; }
+  };
+})();
+
 /* ── 상태 문구 배지 ───────────────────────────────────────────────────
    사다리게임의 남은 시간 배지(.ig-timer, 19-timer.css)가 이 앱에서 «지금 몇 초» 를
    말하는 모양이다. 테이블 게임 셋(바카라 · 블랙잭 · 포커 플립)은 같은 것을 맨 글자로

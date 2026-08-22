@@ -47,11 +47,8 @@ export function bjHead(p0: string | number, p1: string | number): string {
       function cssEsc(s){ return String(s).replace(/["\\\\]/g, '\\\\$&'); }
       function coinLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }
 
-      var BAR_COUNT = 3;
-      function buttonKind(v){
-        var c = (st && st.coins) || [], i = c.indexOf(v);
-        return (i >= 0 && i < c.length - BAR_COUNT) ? 'kind-coin' : 'kind-bar';
-      }
+      var BAR_COUNT = 3;   // 아직 남겨 둔다 — 다른 곳에서 참조한다
+      function buttonKind(v){ return 'kind-coin'; }
 
 `;
 }

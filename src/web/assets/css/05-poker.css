@@ -100,10 +100,31 @@
   .m-dots .dot.hit{background:radial-gradient(circle at 35% 30%,#ff7b7b,#d0202a);
     border-color:#ff9a9a;box-shadow:0 0 5px rgba(229,72,77,.75)}
   .m-drought{font-family:var(--mono);font-size:10px;color:var(--gold-dim)}
-  .market.m-master{background:#12233a;border-color:#22406b}
-  .market.m-shark{background:#33201a;border-color:#5e3527}
-  .market.hit{border-color:var(--win);box-shadow:0 0 0 1px var(--win) inset}
-  .market.miss{opacity:.42}
+  /* ── 판은 «언제나» 또렷하다 ──────────────────────────────────────
+     베팅이 닫히면 판 전체가 반투명해졌고(.market.disabled{opacity:.5}), 결과가 나오면
+     빗나간 구역이 또 한 번 흐려졌다. 그 반쪽 상태가 카드가 뒤집히는 내내 이어져서,
+     정작 결과를 보는 구간에 판이 제일 탁했다 — 칩도 글자도 뒤 펠트가 비쳐 흐렸다.
+     못 누른다는 것은 커서가 이미 말한다. 진 구역도 흐리지 않는다 — 흐려서 지는 것이
+     아니라 이긴 쪽이 켜져서 이기는 것이다(바카라와 같은 결론).
+
+     흐림을 걷으면 바탕이 «완전히» 불투명해야 한다. 예전 색은 초록 펠트 위에
+     반투명으로 얹히는 것을 전제로 밝게 잡혀 있었다. 한 단 깊게 내린다. */
+  #pMarkets .market.disabled{opacity:1}
+  #pMarkets .market.miss{opacity:1}
+  #pMarkets .market{transition:filter .3s,box-shadow .3s,border-color .3s}
+  .market.m-master{background:#0d1b2a;border-color:#22406b}
+  .market.m-shark{background:#201010;border-color:#5e3527}
+  /* 이긴 구역은 «제 색» 으로 켜진다. 초록 하나로 두면 판 바닥(초록 펠트)에 묻힌다 —
+     위쪽 승리 패가 이미 쓰는 색을 그대로 가져온다. 족보는 금색이다. */
+  #pMarkets .market.m-master.hit{--bc-win:#38bdf8;--bc-glow:rgba(56,189,248,.5)}
+  #pMarkets .market.m-shark.hit{--bc-win:#f43f5e;--bc-glow:rgba(244,63,94,.5)}
+  #pMarkets .market.hit{border-color:var(--bc-win,#fbbf24);
+    box-shadow:0 0 0 1px var(--bc-win,#fbbf24) inset, inset 0 0 35px rgba(251,191,36,.28),
+      0 0 15px var(--bc-glow,rgba(251,191,36,.5));
+    filter:brightness(1.25)}
+  /* 판은 카드 바닥에 닿는다 — 그 아래 여백은 아무것도 하지 않으면서 판을 «떠 있는
+     상자» 로 보이게 만든다 */
+  .card:has(#pMarkets){padding-bottom:0}
 
   /* 칩 스프라이트 — 동전은 찌그러지지 않은 정원(正圓), 골드바는 그보다 확실히 크게.
      (width/height를 같은 값으로 고정하고 min-width를 명시해, 버튼 쪽 .coin 규칙 같은 게

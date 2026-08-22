@@ -35,17 +35,18 @@ export function pkHead(p0: string | number): string {
       function compact(n){ return new Intl.NumberFormat('ko-KR').format(n); }
       function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
       function coinLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }
-      // 코인 단위 배열에서 위쪽 2단은 골드바, 나머지는 동전.
-      // 칩 스프라이트는 c-coin/c-bar, 버튼은 kind-coin/kind-bar로 클래스를 분리한다
-      // (버튼 쪽 .coin 규칙이 칩에 섞이면 min-width 때문에 칩이 늘어난다)
-      // 뒤에서 세 단위(1000·5000·1만)는 골드바, 나머지는 동전.
-      // 개수로 세는 이유는 COIN_SIZES를 바꿔도 여기를 따로 고치지 않기 위해서다.
-      var BAR_COUNT = 3;
-      function chipKind(v){
-        var c = st.coins||[], i = c.indexOf(v);
-        return (i >= 0 && i < c.length - BAR_COUNT) ? 'c-coin' : 'c-bar';
-      }
-      function buttonKind(v){ return chipKind(v) === 'c-coin' ? 'kind-coin' : 'kind-bar'; }
+      /* 액면은 «크기» 가 아니라 «색» 이 말한다. 한동안 앞 세 단은 동전, 뒤 세 단은
+         골드바였다 — 크기 차이가 곧 액면 차이였다. 읽기는 됐지만 판에 올라간 것이
+         금색 동전과 금색 막대 두 가지뿐이라 실제 카지노 판처럼 보이지 않았다.
+         이제 전부 같은 크기의 클레이 칩이고 색이 액면이다(바카라와 같은 규칙).
+         c-coin 은 그대로 붙인다: 날아가는 칩을 정원으로 되돌리는 보정(cloneAt)과
+         scripts/check-chips.ts 의 «정사각인가» 검사가 이 클래스로 갈린다 —
+         c-bar 를 남기면 1000·5000·1만 이 그 검사에서 통째로 빠진다. */
+      var BAR_COUNT = 3;   // 아직 남겨 둔다 — 다른 곳에서 참조한다
+      function chipKind(v){ return 'c-coin'; }
+      function buttonKind(v){ return 'kind-coin'; }
+      function denomClass(v){ return window.casinoChip ? casinoChip.cls(v) : 'd10k'; }
+      function chipArt(v){ return window.casinoChip ? casinoChip.art(v) : String(v); }
 
       // 카드 렌더링 — 'As' 같은 문자열을 카드 모양으로
       var SUIT_SYM={s:'\\u2660',h:'\\u2665',d:'\\u2666',c:'\\u2663'};

@@ -84,7 +84,7 @@ export function pkLoop(p0: string | number): string {
         if (!res.ok) return;   // 실패하면 칩이 올라가지 않는 것으로 드러난다 (문구 미표시)
         setBalance(res.d.balance);
         dropMyChip(market, bet);
-        if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+        if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
         poll();
       }
 

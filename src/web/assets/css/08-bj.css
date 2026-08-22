@@ -82,7 +82,10 @@
   .bj-seat.mine{border-color:var(--gold);background:rgba(212,175,55,.08)}
   /* 버스트한 자리는 흐려진다. 흐림을 자리가 아니라 자식들에게 주는 게 중요하다 —
      자리 자체에 opacity를 걸면 위에 얹은 BUST 도장까지 같이 반투명해져 흐지부지해진다. */
-  .bj-seat.bust > *:not(.bj-seat-bust){opacity:.5;transition:opacity .18s}
+  /* 버스트만은 흐린 채로 둔다 — 그것은 «졌다» 가 아니라 «판을 넘겨 죽었다» 이고,
+     위에 찍히는 BUST 도장과 함께 읽혀야 한다. 자리 전체가 아니라 그 «속» 만 흐리는
+     것도 도장이 같이 반투명해지지 않게 하기 위해서다. */
+  .bj-seat.bust > *:not(.bj-seat-bust){opacity:.55;transition:opacity .18s}
   /* 플레이어 버스트 도장 — 딜러 쪽과 같은 모양을 자리 크기에 맞춰 줄인 것 */
   .bj-seat-bust{position:absolute;left:50%;top:44%;z-index:5;
     transform:translate(-50%,-50%) rotate(-11deg);
@@ -99,8 +102,19 @@
     0%,100%{box-shadow:0 0 0 0 rgba(255,70,70,0)}
     30%{box-shadow:0 0 0 3px rgba(255,70,70,.4),0 0 16px rgba(255,70,70,.35)}
   }
-  .bj-seat.won{border-color:var(--win);box-shadow:0 0 0 1px var(--win) inset}
-  .bj-seat.lost{opacity:.45}
+  /* 이긴 자리는 «켜진다». 초록 하나로 두면 판 바닥(초록 펠트)에 묻히므로 하늘색을
+     쓴다 — 바카라·포커플립의 «내 편» 색과 같다. 블랙잭이면 금색으로 한 단 더 올린다.
+     진 자리는 흐리지 않는다 — 흐려서 지는 것이 아니라 이긴 쪽이 켜져서 이기는 것이다.
+     카드가 뒤집히는 내내 판이 반쪽으로 남아 있던 것이 그 반투명이었다. */
+  .bj-seat.won{border-color:#38bdf8;
+    box-shadow:0 0 0 1px #38bdf8 inset, inset 0 0 30px rgba(56,189,248,.22),
+      0 0 15px rgba(56,189,248,.45)}
+  .bj-seat.won.bj{border-color:#fbbf24;
+    box-shadow:0 0 0 1px #fbbf24 inset, inset 0 0 30px rgba(251,191,36,.26),
+      0 0 16px rgba(251,191,36,.5)}
+  .bj-seat.lost{opacity:1}
+  .bj-seat.won .bj-seat-tag{color:#38bdf8}
+  .bj-seat.won.bj .bj-seat-tag{color:#fbbf24}
   .bj-seat-top{display:flex;align-items:center;justify-content:space-between;gap:3px}
   .bj-seat-name{font-size:10px;font-weight:700;color:#cfe3d6;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
@@ -159,6 +173,11 @@
     /* 높이를 반드시 같이 준다. 폭만 줄이면 동전이 16×21 타원이 된다 —
        원형이 깨지는 순간 칩으로 안 보인다(실제로 그렇게 납작해졌다).
        동전은 지름 하나로 원을 유지하고, 골드바는 데스크톱 비(40:24)를 그대로 줄인다. */
+    /* 클레이 칩은 이 축소를 안 받는다. 아래 .pchip.c-coin{width:16px} 은 클래스가
+       셋이라 .pchip.bc3d(둘)를 명시도로도 순서로도 이긴다 — 그대로 두면 폰 블랙잭에서
+       칩이 26px 이 아니라 16px 로 그려져 각인이 안 읽힌다(조사에서 잡았다).
+       크기는 더미 쪽에서 통째로 줄인다(.bj-pile .bc3d 아래). */
+    .bj-pile .pchip.bc3d{width:22px;height:22px;min-width:22px;margin-left:-11px}
     .bj-pile .pchip.c-bar{width:26px;min-width:26px;height:16px;margin-left:-13px;
       font-size:8.5px;border-radius:3px}
     .bj-pile .pchip.c-coin{width:16px;min-width:16px;height:16px;margin-left:-8px;

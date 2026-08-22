@@ -102,8 +102,9 @@ export const BJ_SEATS_JS = `      /* ── 자리 ─────────�
         if (coinsEl.dataset.done) return;
         coinsEl.dataset.done = '1';
         coinsEl.innerHTML = (st.coins||[]).map(function(v){
-          return '<button type="button" class="coin '+buttonKind(v)+'" data-coin="'+v+'">' +
-            '<span class="face">'+coinLabel(v)+'</span></button>';
+          return '<button type="button" class="coin bcoin bc3d '+buttonKind(v)+' '+denomClass(v)+
+            '" data-coin="'+v+'">' +
+            '<span class="face">'+chipArt(v)+'</span></button>';
         }).join('');
         coin = (st.coins||[])[0];
         coinsEl.querySelectorAll('.coin').forEach(function(b){

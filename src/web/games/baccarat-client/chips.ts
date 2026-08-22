@@ -12,85 +12,11 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
       var TOWER_CHIP = 34;   // 07-bacc.css 의 .bc-tower .pchip 지름과 같아야 한다
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
 
-      /* ══ 클레이 칩 한 장의 그림 ═══════════════════════════════════════
-         칩처럼 보이게 하는 것은 여섯 겹이다 — 바닥 그림자 · 옆면(두께) · 면 ·
-         테두리 인레이 톱니 · 메탈릭 인셋 링 · 곡면 반사광. 하나라도 빠지면
-         «동그란 색 딱지» 가 된다.
-
-         그림은 문서에 «한 장만» 둔다(<symbol>). 칩마다 그리면 여섯 액면 × 최대
-         스무 장이면 같은 도형이 백 벌 넘게 문서에 쌓인다. <use> 로 불러 쓰고,
-         색은 CSS 사용자 지정 속성으로 갈아 끼운다 — 그 속성은 <use> 가 만드는
-         그림자 트리에도 상속되므로, 액면 클래스(.d1k 등) 하나로 같은 그림이
-         다른 색이 된다.
-
-         흐림 효과(filter)는 한 겹도 쓰지 않는다. 정산 때 칩 열댓 장이 동시에
-         transform 으로 날아가는데, 흐림이 걸려 있으면 매 프레임 다시 래스터해서
-         폰에서 프레임이 떨어진다. 그림자도 «그린» 그림자다(맨 아래 타원).
-
-         면의 명암·링·반사광은 흰색과 검정의 투명도만 쓴다 — 액면과 무관하므로
-         여섯 벌이 아니라 한 벌이면 된다. */
-      var chipDefsDone = false;
-      function ensureChipDefs(){
-        if (chipDefsDone || document.getElementById('bcChipDefs')) { chipDefsDone = true; return; }
-        chipDefsDone = true;
-        var d = document.createElement('div');
-        d.innerHTML =
-          '<svg id="bcChipDefs" width="0" height="0" aria-hidden="true" focusable="false"' +
-          ' style="position:absolute;width:0;height:0;overflow:hidden"><defs>' +
-            '<radialGradient id="bcFaceG" cx="50%" cy="24%" r="78%">' +
-              '<stop offset="0" stop-color="#fff" stop-opacity=".26"/>' +
-              '<stop offset=".46" stop-color="#fff" stop-opacity=".04"/>' +
-              '<stop offset="1" stop-color="#000" stop-opacity=".30"/></radialGradient>' +
-            '<linearGradient id="bcRingG" x1="0" y1="0" x2="0" y2="1">' +
-              '<stop offset="0" stop-color="#fff" stop-opacity=".55"/>' +
-              '<stop offset=".5" stop-color="#fff" stop-opacity=".10"/>' +
-              '<stop offset="1" stop-color="#fff" stop-opacity=".40"/></linearGradient>' +
-            '<radialGradient id="bcGlossG" cx="50%" cy="6%" r="60%">' +
-              '<stop offset="0" stop-color="#fff" stop-opacity=".46"/>' +
-              '<stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
-            '<symbol id="bcChip" viewBox="0 0 48 48">' +
-              /* 바닥 그림자는 두지 않는다. 한동안 칩 밑에 어두운 타원을 깔았는데,
-                 칩이 겹겹이 쌓이면 그 그림자가 아래 칩의 «면» 위에 앉아서 판이
-                 얼룩덜룩해졌다 — 놓여 있는 느낌보다 때가 낀 느낌이 먼저 왔다(제보).
-                 입체는 아래 옆면 한 겹이면 선다. */
-              /* 옆면(두께) — 면보다 2.6px 아래에 더 어두운 원 */
-              '<circle cx="24" cy="24.6" r="19.4" fill="var(--bc-deep,#4b5563)"/>' +
-              /* 면 */
-              '<circle cx="24" cy="22" r="19.4" fill="var(--bc-face,#9ca3af)"/>' +
-              /* 테두리 인레이 — 60도마다 여섯. 실제 칩의 인상은 거의 여기서 나온다 */
-              '<g fill="var(--bc-edge,#e5e7eb)">' + bcNotches() + '</g>' +
-              /* 면의 명암 (위가 밝고 아래로 어두워진다) */
-              '<circle cx="24" cy="22" r="19.4" fill="url(#bcFaceG)"/>' +
-              /* 메탈릭 인셋 링 — 밝은 실선 하나와 그 안쪽 어두운 홈 하나 */
-              '<circle cx="24" cy="22" r="15.4" fill="none" stroke="url(#bcRingG)" stroke-width="1"/>' +
-              '<circle cx="24" cy="22" r="13.9" fill="none" stroke="#000" stroke-opacity=".22" stroke-width=".8"/>' +
-              /* 중앙 코어 — 각인이 얹히는 자리 */
-              '<circle cx="24" cy="22" r="13.3" fill="var(--bc-face,#9ca3af)"/>' +
-              '<circle cx="24" cy="22" r="13.3" fill="url(#bcFaceG)" opacity=".5"/>' +
-              /* 테두리 마감 */
-              '<circle cx="24" cy="22" r="19" fill="none" stroke="var(--bc-rim,#d1d5db)" stroke-width=".9" opacity=".85"/>' +
-              /* 상단 곡면 반사광 */
-              '<ellipse cx="24" cy="11" rx="13.5" ry="8" fill="url(#bcGlossG)"/>' +
-              /* 최고 액면의 골드 네온 림 — 평소엔 CSS 에서 stroke 가 없어 안 그려진다 */
-              '<circle class="bc-neon" cx="24" cy="22" r="20.4" fill="none"/>' +
-            '</symbol>' +
-          '</defs></svg>';
-        document.body.appendChild(d.firstChild);
-      }
-      function bcNotches(){
-        var out = '';
-        for (var i = 0; i < 6; i++) {
-          out += '<rect x="20" y="3.4" width="8" height="8.4" rx="2"' +
-            (i ? ' transform="rotate(' + (i * 60) + ' 24 22)"' : '') + '/>';
-        }
-        return out;
-      }
-      /* 루트 <svg> 에 fill/stroke 를 none 으로 못 박는다. 색은 전부 자식이 갖고 있어
-         그림에는 영향이 없고, scripts/check-states.ts 의 «아이콘이 배경에 묻혔나»
-         검사가 색을 못 읽는 SVG 를 건너뛰므로 헛경고가 나지 않는다. */
-      var CHIP_ART = '<svg class="bc-ck" viewBox="0 0 48 48" fill="none" stroke="none"' +
-        ' aria-hidden="true" focusable="false"><use href="#bcChip"/></svg>';
-      function chipArt(denom){ return CHIP_ART + '<i class="bc-t">' + chipFace(denom) + '</i>'; }
+      /* 칩 그림은 app.js 의 casinoChip 이 갖고 있다 — 테이블 게임 셋이 같은 것을
+         쓰므로 여기 한 벌 더 두면 언젠가 세 벌이 어긋난다. 여기서는 부르기만 한다. */
+      function ensureChipDefs(){ if (window.casinoChip) casinoChip.ensure(); }
+      function denomClass(v){ return window.casinoChip ? casinoChip.cls(v) : 'd10k'; }
+      function chipArt(denom){ return window.casinoChip ? casinoChip.art(denom) : String(denom); }
 
       // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
       // owner를 심어두면 정산 때 그 칩을 주인 아이콘으로 돌려보낼 수 있다.
@@ -140,17 +66,15 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
          칩이 예순 장을 넘어가면 그때만 상위 액면으로 «승격» 시킨다(color-up).
          실제 딜러가 판이 커지면 잔칩을 큰 칩으로 바꿔 주는 것과 같고, 그 위로는
          기둥이 판을 가리고 그리는 값도 비싸진다. */
-      var MAX_COL = 10;                    // 한 기둥에 열 장
-      var MAX_COLS = 5;                    // 기둥은 다섯 (뒤 셋 · 앞 둘)
-      var CHIP_LIMIT = MAX_COL * MAX_COLS; // 쉰 장
-      /* 3 + 2 역피라미드. 뒷줄 셋이 먼저 서고, 앞줄 둘이 그 «틈새» 앞에 반 칸 걸친다.
-         앞줄은 10px 아래(=화면상 앞)에 서고 한 단 밝다 — 가까운 것이 밝다.
-         자리는 bottom 으로 잡으므로 «앞» 은 bottom 이 작은 쪽이다. 뒷줄을 10 올린다. */
-      var COL_POS = [
-        { x:0,  y:10, z:10, back:1 }, { x:18, y:10, z:10, back:1 }, { x:36, y:10, z:10, back:1 },
-        { x:9,  y:0,  z:20, back:0 }, { x:27, y:0,  z:20, back:0 }
-      ];
-      var CLUSTER_W = 70;                  // 36(마지막 뒷기둥) + 34(칩 지름)
+      /* ── 칩은 «가로로» 펼쳐진다 ────────────────────────────────────
+         한동안 기둥으로 세웠다. 그러면 맨 위 한 장만 얼굴이 보이고 나머지는 테두리만
+         남아서, 무슨 액면이 몇 장 걸렸는지가 색으로 안 읽힌다.
+         포커 플립과 블랙잭은 처음부터 가로로 펼쳐 놓고 있었고 그쪽이 훨씬 시원하다 —
+         셋을 같은 것으로 맞춘다(요청).
+         한 줄에 다섯 장, 14px 씩 겹치며 나아간다(칩 지름 26px 이므로 12px 이 겹친다 —
+         얼굴 절반이 남는다). 다섯이 차면 5px 위에 다음 줄이 얹힌다. */
+      var FAN_COLS = 5, FAN_PITCH = 14, FAN_RISE = 5;
+      var CHIP_LIMIT = 50;                 // 이보다 많아지면 바닥부터 큰 칩으로 바꾼다
       // 금액을 큰 액면부터 그리디로 쪼갠다
       function splitAmount(amount){
         var d=(st.coins||[]).slice().sort(function(a,b){return b-a;}), out=[];
@@ -211,34 +135,30 @@ export const BC_CHIPS_JS = `         상자별로 "지금까지 올라온 칩 �
         for (var i=0;i<d.length;i++) if (amount >= d[i]) return d[i];
         return d[d.length-1];
       }
-      /* 클러스터를 «판 바깥» 에 붙인다. 플레이어는 구역 왼쪽 끝, 뱅커는 오른쪽 끝 —
-         여섯 기둥이 다 차도 가운데 타이 돔 쪽으로는 자라지 않는다.
-         페어와 타이는 좌우가 좁으므로 가운데에 둔다. */
+      /* 부채는 «판 바깥» 에서 시작해 안쪽으로 편다 — 플레이어는 왼쪽 끝에서
+         오른쪽으로, 뱅커는 오른쪽 끝에서 왼쪽으로. 그래야 쉰 장이 다 깔려도 가운데
+         타이 돔 쪽으로 자랄 자리가 구조적으로 없다.
+         타이와 페어는 좌우가 좁으므로 가운데에서 펼친다. */
       function chipX(market, x){
-        if (market === 'player') return 'left:calc(0% + ' + (23 + x) + 'px)';
-        if (market === 'banker') return 'left:calc(100% - ' + (23 + (36 - x)) + 'px)';
-        return 'left:calc(50% + ' + (x - 18) + 'px)';
+        if (market === 'player') return 'left:calc(0% + ' + (20 + x) + 'px)';
+        if (market === 'banker') return 'left:calc(100% - ' + (20 + x) + 'px)';
+        return 'left:calc(50% + ' + (x - (FAN_COLS - 1) * FAN_PITCH / 2) + 'px)';
       }
+      /* 밑동에 깔던 타원(내 베팅 표시 · 큰 판 표시)과 칩 위 총액 뱃지는 둘 다 걷었다.
+         타원은 혼자 엉뚱한 자리에 떠 있었고, 뱃지는 같은 숫자가 상자 아래 .m-total 에
+         이미 크게 적혀 있었다(둘 다 제보). 칩은 이제 제 그림만으로 선다. */
       function paintTower(el, market, ds, total, mine){
         if (!ds.length) { el.innerHTML = ''; return; }
-        var cols = [];
-        for (var i=0;i<ds.length;i+=MAX_COL) cols.push(ds.slice(i, i+MAX_COL));
-        if (cols.length > MAX_COLS) cols = cols.slice(0, MAX_COLS);
-        /* 층 간격 4px. 열 장이면 기둥이 34 + 36 = 70px 이고, 뒷줄은 그보다 10px 위라
-           80px 이다 — 칸(96px) 안에 선다. 이보다 벌리면 뚫는다. */
-        /* 밑동에 타원 하나를 깔아 «내 베팅» 과 «큰 판» 을 표시했는데, 기둥이 다섯으로
-           퍼지면서 그 타원만 엉뚱한 자리에 홀로 떠 있게 됐다(제보). 걷는다 —
-           입체는 칩 자체가 갖고 있고, 어느 구역에 걸었는지는 상자 아래 «N명» 이
-           말한다. */
         var html = '';
-        for (var c=0;c<cols.length;c++){
-          var p = COL_POS[c];
-          for (var j=0;j<cols[c].length;j++){
-            html += '<span class="pchip bc3d c-coin ' + denomClass(cols[c][j]) +
-              (p.back ? ' bc-back' : ' bc-front') + '" style="' + chipX(market, p.x) +
-              ';bottom:' + (p.y + j*4) + 'px;z-index:' + (p.z + j) + '">' +
-              chipArt(cols[c][j]) + '</span>';
-          }
+        for (var i=0;i<ds.length;i++){
+          var col = i % FAN_COLS, row = Math.floor(i / FAN_COLS);
+          /* 흔들림을 조금 준다 — 자로 잰 듯 정렬하면 «놓인 칩» 이 아니라 «찍힌 무늬»
+             로 보인다. 포커 플립·블랙잭이 같은 이유로 같은 jit 를 쓴다. */
+          var x = col * FAN_PITCH + jit(i, 5) - 2;
+          var y = 2 + row * FAN_RISE + jit(i + 7, 3);
+          html += '<span class="pchip bc3d c-coin ' + denomClass(ds[i]) +
+            '" style="' + chipX(market, x) + ';bottom:' + y + 'px;z-index:' + (10 + i) + '">' +
+            chipArt(ds[i]) + '</span>';
         }
         el.innerHTML = '<span class="bc-tower">' + html + '</span>';
       }

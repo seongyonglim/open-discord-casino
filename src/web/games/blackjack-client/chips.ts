@@ -13,11 +13,16 @@ export function bjChips(p0: string | number): string {
       var drewOnce = false;   // 자리를 한 바퀴 다 그려 봤다 (seats.ts 가 세운다)
       var MAX_CHIPS = 18;
       function jit(i, m){ var x=Math.sin(i*12.9898)*43758.5453; return Math.floor((x-Math.floor(x))*m); }
-      // 뒤 세 단위(1000·5000·1만)는 골드바, 앞은 동전 — 다른 게임과 같은 규칙
-      function chipKind(v){
-        var c = (st && st.coins) || [], i = c.indexOf(v);
-        return (i >= 0 && i < c.length - BAR_COUNT) ? 'c-coin' : 'c-bar';
-      }
+      /* 액면은 «크기» 가 아니라 «색» 이 말한다. 한동안 앞 세 단은 동전, 뒤 세 단은
+         골드바였다 — 크기 차이가 곧 액면 차이였다. 읽기는 됐지만 판에 올라간 것이
+         금색 동전과 금색 막대 두 가지뿐이라 실제 카지노 판처럼 보이지 않았다.
+         이제 전부 같은 크기의 클레이 칩이고 색이 액면이다(바카라와 같은 규칙).
+         c-coin 은 그대로 붙인다: 날아가는 칩을 정원으로 되돌리는 보정(cloneAt)과
+         scripts/check-chips.ts 의 «정사각인가» 검사가 이 클래스로 갈린다 —
+         c-bar 를 남기면 1000·5000·1만 이 그 검사에서 통째로 빠진다. */
+      function chipKind(v){ return 'c-coin'; }
+      function denomClass(v){ return window.casinoChip ? casinoChip.cls(v) : 'd10k'; }
+      function chipArt(v){ return window.casinoChip ? casinoChip.art(v) : String(v); }
       function chipLabel(v){ return v>=10000 ? (v/10000)+'만' : String(v); }   // 1000은 1000 그대로 — K로 줄이지 않는다
       // anim: '' 없음 · 'pending' 자리만 잡고 숨김(곧 날아올 칩)
       /* 가로로 벌어지는 폭을 px 로 박지 않는다 — 자리 폭이 화면에 따라 달라지기 때문이다.
@@ -30,9 +35,10 @@ export function bjChips(p0: string | number): string {
         var c = col - 2, jx = jit(idx, 9) - 4;
         var x = 'calc(50% + '+c+' * var(--pcPitch, 14px) + '+jx+' * var(--pcJit, 1px))';
         var y = 3 + row * 5 + jit(idx + 7, 3);
-        return '<span class="pchip '+chipKind(denom)+(owner===MEID?' mine':'')+(anim?' '+anim:'')+
+        return '<span class="pchip bc3d '+chipKind(denom)+' '+denomClass(denom)+
+          (owner===MEID?' mine':'')+(anim?' '+anim:'')+
           '" data-owner="'+esc(owner)+'"'+
-          ' style="left:'+x+';bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
+          ' style="left:'+x+';bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipArt(denom)+'</span>';
       }
       // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
       function decompose(amount){
@@ -96,7 +102,7 @@ export function bjChips(p0: string | number): string {
       function betSfx(){
         if (Date.now() - lastBetSfx <= 150) return;
         lastBetSfx = Date.now();
-        if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+        if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
       }
       /* 지금 그려 둔 칩들의 합. pile.bet 이라는 별도 카운터가 아니라 이 값을 근거로 삼는다 —
          카운터는 "올렸다고 믿는 금액"이고 이건 "실제로 화면에 있는 금액"이다. 둘이 어긋나는
@@ -248,6 +254,12 @@ export function bjChips(p0: string | number): string {
           });
           pile.style.opacity = '0';
         });
+        /* 회수가 «시작될 때» 가 아니라 칩이 도착할 즈음에 한 번 낸다. 홀덤의 팟
+           회수음과 같은 소리다 — 세 테이블 게임이 같은 순간에 같은 소리를 낸다.
+           승자가 여럿이어도 한 번이다. 소리는 «돈이 옮겨졌다» 를 알리는 것이지
+           칩 수를 세어 주는 것이 아니다. */
+        if (n && window.casinoSfx && window.casinoSfx.chipWin)
+          setTimeout(function(){ casinoSfx.chipWin(); }, 260);
         if (!n) return;
         setTimeout(function(){ sent.forEach(function(c){ if (c.parentNode) c.parentNode.removeChild(c); }); }, 900 + n*40);
       }
@@ -271,7 +283,7 @@ export function bjChips(p0: string | number): string {
         if (res.ok) {
           setBalance(res.d.balance);
           dropMyChip(seat, coin);
-          if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+          if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
         } else {
           // 문구를 띄우면 아래 내용이 밀려서 다음 클릭이 엉뚱한 데로 간다. 자리만 짧게 튕긴다.
           replay(el, 'deny');

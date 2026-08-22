@@ -7,8 +7,9 @@
    (scripts/golden.ts 가 바이트로 확인한다). */
 export const PK_CHIPS_JS = `      function renderCoins(){
         coinsEl.innerHTML = (st.coins||[]).map(function(v){
-          return '<button type="button" class="coin '+buttonKind(v)+(v===coin?' active':'')+'" data-coin="'+v+'">'+
-            '<span class="face">'+coinLabel(v)+'</span></button>';
+          return '<button type="button" class="coin bcoin bc3d '+buttonKind(v)+' '+denomClass(v)+
+            (v===coin?' active':'')+'" data-coin="'+v+'">'+
+            '<span class="face">'+chipArt(v)+'</span></button>';
         }).join('');
         coinsEl.querySelectorAll('.coin').forEach(function(b){
           b.addEventListener('click', function(){
@@ -31,9 +32,10 @@ export const PK_CHIPS_JS = `      function renderCoins(){
         var col = idx % 5, row = Math.floor(idx / 5);
         var x = (col - 2) * 14 + jit(idx, 9) - 4;
         var y = 3 + row * 5 + jit(idx + 7, 3);
-        return '<span class="pchip '+chipKind(denom)+(owner===st.me?' mine':'')+(anim?' '+anim:'')+
+        return '<span class="pchip bc3d '+chipKind(denom)+' '+denomClass(denom)+
+          (owner===st.me?' mine':'')+(anim?' '+anim:'')+
           '" data-owner="'+esc(owner)+'"'+
-          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipLabel(denom)+'</span>';
+          ' style="left:calc(50% + '+x+'px);bottom:'+y+'px;z-index:'+(10+idx)+'">'+chipArt(denom)+'</span>';
       }
       // 금액을 큰 단위부터 칩으로 쪼갠다 (코인 단위 합으로만 베팅되므로 항상 정확히 나뉜다)
       function decompose(amount){
@@ -89,7 +91,7 @@ export const PK_CHIPS_JS = `      function renderCoins(){
              낸다. 알리는 것이 목적이지 개수를 세어 주는 것이 아니다. */
           if (Date.now() - lastBetSfx > 150) {
             lastBetSfx = Date.now();
-            if (window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+            if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
           }
         });
       }
@@ -196,6 +198,12 @@ export const PK_CHIPS_JS = `      function renderCoins(){
           });
           pile.style.opacity = '0';
         });
+        /* 회수가 «시작될 때» 가 아니라 칩이 도착할 즈음에 한 번 낸다. 홀덤의 팟
+           회수음과 같은 소리다 — 세 테이블 게임이 같은 순간에 같은 소리를 낸다.
+           승자가 여럿이어도 한 번이다. 소리는 «돈이 옮겨졌다» 를 알리는 것이지
+           칩 수를 세어 주는 것이 아니다. */
+        if (n && window.casinoSfx && window.casinoSfx.chipWin)
+          setTimeout(function(){ casinoSfx.chipWin(); }, 260);
 
         if (!n) return;
         setTimeout(function(){
