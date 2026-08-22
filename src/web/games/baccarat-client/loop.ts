@@ -37,6 +37,24 @@ export function bcLoop(p0: string | number): string {
           pSeatEl.classList.remove('win','lose'); bSeatEl.classList.remove('win','lose');
         }
 
+        /* ── 들어온 순간의 판은 «이미 지나간 판» 이다 ────────────────────
+           다른 화면에 갔다가 돌아오면 카드가 통째로 회수됐다가 다시 깔렸다.
+           베팅 창 한가운데인데 처음부터 다시 시작하는 것처럼 보인다.
+
+           까닭: 연출을 «판마다 한 번» 으로 막고 있는 열쇠(dealtRoundId · notedRoundId)가
+           페이지를 새로 열면 비어 있다. 첫 렌더는 firstState 가 막아 주지만 그것뿐이라,
+           1초 뒤 두 번째 폴링에서 같은 베팅 판에 딜링이 그대로 돌았다.
+           firstState 는 «첫 렌더» 를 뜻하지 두 번째 폴링까지 덮지 못한다.
+
+           그래서 들어온 순간 그 판의 열쇠를 미리 찍어 둔다. 이 판의 딜링도 정산도
+           이미 지나간 것으로 치고, 지금 페이즈의 정지 화면만 그린다.
+           다음 판(r.id 가 바뀐다)부터는 열쇠가 안 맞으므로 정상으로 돌아간다 —
+           즉 «화면에 머무르는 동안 실제로 넘어간 판» 에만 연출이 돈다. */
+        if (firstState) {
+          dealtRoundId = r.id;
+          if (r.result) notedRoundId = r.id;
+        }
+
         var betting = r.phase === 'betting';
         if (firstState || r.phase === 'done') {
           // 페이지에 막 들어왔거나 이미 끝난 판이면 한 장씩 까는 게 의미가 없다.
@@ -49,10 +67,10 @@ export function bcLoop(p0: string | number): string {
         }
         paintHands(r);
 
-        // 베팅 중에는 뒷면 네 장을 딜러 자리에서 한 장씩 내려놓는다.
-        // 페이지에 막 들어온 순간에는 돌리지 않는다 — 이미 진행 중인 베팅 창
-        // 한가운데일 수 있어, 그때 딜링을 시작하면 앞뒤가 안 맞는다.
-        if (betting && !firstState) dealSequence(r.id);
+        /* 베팅 중에는 뒷면 네 장을 딜러 자리에서 한 장씩 내려놓는다.
+           들어온 판은 위에서 dealtRoundId 를 찍어 두었으므로 여기서 걸러진다 —
+           firstState 검사만으로는 두 번째 폴링을 못 막는다(위 주석을 보라). */
+        if (betting) dealSequence(r.id);
 
         var res = r.result;
         pSeatEl.classList.toggle('win', !!res && res.winner === 'player');
@@ -111,6 +129,11 @@ export function bcLoop(p0: string | number): string {
         var res = await post('/api/games/baccarat/clear');
         if (!res.ok) { poll(); return; }
         setBalance(res.d.balance);
+        /* 회수 소리는 «칩이 내게 돌아온다» 다 — 이기고 받을 때와 같은 일이므로
+           같은 소리를 쓴다(casinoSfx.chipWin). 세 게임이 같은 소리를 내야 «초기화» 가
+           어느 판에서나 같은 뜻으로 들린다. 예전에는 바카라·포커 플립이 무음이었고
+           블랙잭만 옛 코인 승리음을 냈다. */
+        if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
         poll();
       });
 

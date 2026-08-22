@@ -192,9 +192,18 @@
      재갈은 붉다(이 사이트에서 붉은색은 잃은 돈과 막힌 기능의 색이다). 풀림은 초록이다:
      파랑도 후보였지만 파랑은 이미 "내 줄"의 색이라 뜻이 겹친다. 초록은 이 사이트에서
      되찾은 것·좋은 것의 색이라 "풀렸다"와 맞는다. */
-  .chat-sys{margin-bottom:8px;padding:5px 9px;border-radius:8px;
-    font-size:11.5px;line-height:1.45;font-weight:700;text-align:center;
-    word-break:break-word}
+  /* word-break:break-word 는 한글을 글자 단위로 끊는다 — «못합니 / 다.» 처럼 낱말이
+     쪼개지고, 실제로 마침표 한 글자만 다음 줄로 떨어졌다.
+     keep-all 은 낱말을 붙여 두고, 그래도 안 들어가는 아주 긴 토큰(URL 따위)만
+     anywhere 가 받아 준다. 한국어 본문에서는 이 짝이 맞다. */
+  .chat-sys{margin-bottom:8px;padding:6px 10px;border-radius:8px;
+    font-size:11.5px;line-height:1.5;font-weight:600;text-align:center;
+    word-break:keep-all;overflow-wrap:anywhere}
+  /* 두 줄로 나눈다. 첫 줄은 «무슨 일이 났나», 둘째 줄은 «얼마 동안인가» —
+     한 줄에 붙여 두면 어디서 끊길지가 상자 너비에 따라 매번 달라진다. */
+  .chat-sys-1{font-weight:700}
+  .chat-sys-2{margin-top:2px;font-size:11px;opacity:.85;font-weight:500}
+  .chat-sys-nm{font-weight:800}
   .chat-sys.mute{color:#fca5a5;background:rgba(229,72,77,.12);
     border:1px solid rgba(229,72,77,.3)}
   .chat-sys.unmute{color:#6ee7a8;background:rgba(52,211,153,.12);

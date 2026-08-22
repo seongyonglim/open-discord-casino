@@ -928,8 +928,15 @@ export function adminResetRunningTournament(): {
         WHERE table_id = ?`, tuning(t).startingStack, now, table.id);
   /* KO 도 되돌린다. 안 되돌리면 되감기 전에 떨어뜨린 사람이 그대로 남아, 다시 돌린
      대회에서 실제로 떨어뜨린 수보다 많이 세어진다("한 대회에서"가 깨진다). */
+  /* 대기 중인 리바이 표시도 함께 푼다. 위에서 좌석을 전부 ACTIVE 로 되살렸으므로
+     그 사람은 이미 앉아 있는데, 표시가 남으면 applyPendingRebuys 가 «아직 안 앉았다» 로
+     읽고 좌석을 하나 더 INSERT 한다 → UNIQUE(table_id, user_id) 위반으로 advanceHoldem 이
+     통째로 죽고, 폴링·액션·등록이 전부 그 함수를 거치므로 판이 완전히 멈춘다.
+     되감기는 엉킨 판을 살리는 장치인데 그 반대가 된다.
+     rebuy_count·rebuy_paid 는 남긴다 — 총 엔트리와 상금 풀의 근거다. */
   run(`UPDATE holdem_entries SET finish_place = NULL, elim_seq = NULL,
-         eliminated_at = NULL, prize = 0, ko_count = 0 WHERE tournament_id = ?`, t.id);
+         eliminated_at = NULL, prize = 0, ko_count = 0, rebuy_pending = 0
+        WHERE tournament_id = ?`, t.id);
 
   // 블라인드 1레벨 = 시작 시각을 지금으로
   run(`UPDATE holdem_tournaments SET started_at = ?, finished_at = NULL, cancelled_at = NULL
@@ -1655,13 +1662,17 @@ function payPrizes(t: HtRow, now: number): void {
      지급 인원(ITM)도 이 숫자로 정해진다 — 여섯 엔트리 판은 여섯 명분의 표를 쓴다. */
   const total = totalEntriesOf(entries);
   const pool = prizePoolOf(t, total, tuning(t).prizeFixed);
-  const amounts = T.prizeAmounts(pool, total);
-  /* 바운티 정산은 상금표와 별개로 돌아야 한다 — 프리롤 PKO 처럼 상금표가 빈 판에서도
-     머리에 남은 값과 펀드 잔액은 우승자에게 나가야 하기 때문이다. */
-  if (!amounts.length) { payBounties(t, entries); return; }
   const ranked = entries
     .filter(e => e.finish_place != null)
     .sort((a, b) => (a.finish_place ?? 0) - (b.finish_place ?? 0));
+  /* 상금 «규모» 는 엔트리 수로, 상금 «줄 수» 는 받을 사람 수로 정한다.
+     둘을 같은 수로 두면 받을 사람보다 줄이 많아지는 판이 생기고(리바이는 행을 안
+     늘린다), 남는 줄의 금액은 아무에게도 안 간다 — services/tournament.ts 의 cap 을
+     보라. 등수가 매겨진 행 수를 넘긴다: «사람 수» 가 아니라 실제로 받을 수 있는 줄이다. */
+  const amounts = T.prizeAmounts(pool, total, ranked.length);
+  /* 바운티 정산은 상금표와 별개로 돌아야 한다 — 프리롤 PKO 처럼 상금표가 빈 판에서도
+     머리에 남은 값과 펀드 잔액은 우승자에게 나가야 하기 때문이다. */
+  if (!amounts.length) { payBounties(t, entries); return; }
   amounts.forEach((amount, i) => {
     const e = ranked[i];
     if (!e || amount <= 0) return;
@@ -1907,8 +1918,14 @@ export function registerHoldem(userId: string, username: string):
       const table = getTable(t.id);
       if (table) {
         const taken = new Set(getSeats(table.id).filter(s => s.presence !== 'OUT').map(s => s.seat));
-        for (let seat = 0; seat < T.MAX_PLAYERS; seat++) {
-          if (taken.has(seat)) continue;
+        /* 남이 붙들고 있는 자리는 넘본다. 방금 죽은 사람의 60초 우선권 자리와,
+           이미 돈을 내고 다음 판을 기다리는 사람의 자리다 — 둘 다 «비어 보이지만
+           임자가 있는» 자리라, 늦게 온 사람이 가져가면 이미 돈을 낸 쪽이 앉을 데를 잃는다. */
+        const reserved = heldSeats(t, table, nowSec());
+        const waitingN = pendingRebuys(t.id);
+        let freeLeft = T.MAX_PLAYERS - taken.size - reserved.size - waitingN;
+        for (let seat = 0; seat < T.MAX_PLAYERS && freeLeft > 0; seat++) {
+          if (taken.has(seat) || reserved.has(seat)) continue;
           // 예전에 그 자리에 앉았다 탈락한 행이 남아 있으면 치운다
           run(`DELETE FROM holdem_seats WHERE table_id = ? AND seat = ?`, table.id, seat);
           run(`INSERT INTO holdem_seats (table_id, seat, user_id, username, stack, presence, last_seen_at)
@@ -1947,6 +1964,7 @@ export type RebuyError =
   | 'exhausted'       // 횟수를 다 썼다
   | 'late_reg_closed' // 늦은 등록 창이 닫혔다
   | 'table_full'      // 자리가 없다
+  | 'revealing'       // 앞 판의 쇼다운이 아직 화면에서 돌고 있다
   | 'rebuy_pending'   // 이미 사 두고 다음 판을 기다리는 중이다
   | 'no_funds';       // 잔고가 모자란다
 
@@ -1967,6 +1985,21 @@ export function rebuyCostOf(t: { buy_in: number }): number {
   return fee > 0 ? fee : REBUY_FREEROLL_COST;
 }
 
+/* ── 앞 판의 결과가 아직 화면에서 도는 중인가 ────────────────────────
+   서버는 핸드가 끝나는 순간 정산을 마치고 탈락 표시(elim_seq)를 쓴다. 그런데 화면은
+   그 뒤로 몇 초 동안 보드를 마저 깔고 패를 열고 팟을 민다. 그 사이에 «리바이» 단추가
+   켜지면, 카드가 열리기도 전에 «너는 졌다» 를 단추가 먼저 말한다 — 특히 로비 카드에서는
+   연출이 아예 돌지 않아 화면 쪽에서 막을 방법도 없다.
+   그래서 서버가 막는다. 그 창은 next_hand_at 으로 정확히 정해져 있다.
+   next_hand_at 이 비어 있으면 «다음 판 예약이 없는» 이상 상태이므로 막지 않는다 —
+   막았다가 영영 안 풀리는 쪽이 더 나쁘다. */
+export function revealWindowOpen(t: HtRow, now: number): boolean {
+  const table = getTable(t.id);
+  if (!table || table.next_hand_at == null || now >= table.next_hand_at) return false;
+  const hand = getCurrentHand(table.id);
+  return hand != null && hand.ended_at != null;
+}
+
 /** 자리를 기다리는 리바이 수. 자리 계산과 대회 종료 판단이 이 값을 함께 센다. */
 export function pendingRebuys(tournamentId: number): number {
   return (one<{ n: number }>(
@@ -1974,9 +2007,50 @@ export function pendingRebuys(tournamentId: number): number {
     tournamentId)!).n;
 }
 
+/* ── 탈락 직후 60초는 그 자리가 그 사람 것이다 ────────────────────────
+   테이블이 하나뿐이라 자리는 아홉이 전부다. 그런데 리바이가 생기면서 «죽자마자 남이
+   그 자리에 앉는» 경쟁이 만들어졌다 — 방금 죽은 사람은 결과 화면을 보고 있고, 그 몇
+   초 사이에 늦은 등록자나 다른 탈락자가 마지막 자리를 가져가면 리바이를 사고 싶어도
+   살 수가 없다. 자기 자리를 잃는 것이 «판을 늦게 봤다» 는 이유여서는 안 된다.
+
+   그래서 죽은 자리를 60초 동안 붙들어 둔다. 그 안에 리바이하면 원래 자리로 돌아오고,
+   지나면 아무 자리나가 되어 남에게 열린다. 횟수를 다 쓴 사람의 자리는 붙들지 않는다 —
+   그 사람은 어차피 못 산다. */
+export const SEAT_HOLD_SEC = 60;
+
+/** 지금 «누군가 붙들고 있는» 좌석 번호들. exceptUserId 의 것은 빼고 센다(그 사람 몫이다). */
+function heldSeats(t: HtRow, table: HtTableRow, now: number, exceptUserId?: string): Set<number> {
+  const max = Math.max(0, Math.floor(t.max_rebuys ?? 0));
+  const held = new Set<number>();
+  if (max <= 0) return held;
+  const byUser = new Map(getSeats(table.id).map(s => [s.user_id, s.seat]));
+  for (const e of getEntries(t.id)) {
+    if (e.user_id === exceptUserId) continue;
+    if (e.elim_seq == null || e.eliminated_at == null) continue;
+    /* 이미 돈을 내고 자리를 기다리는 사람은 여기서 세지 않는다 — pendingRebuys 가
+       따로 세고 있어서, 둘 다 세면 한 사람이 자리 둘을 차지한 것으로 계산된다.
+       그러면 빈자리가 실제보다 적게 보이고 정당한 리바이가 table_full 로 거절된다. */
+    if (e.rebuy_pending === 1) continue;
+    if (e.rebuy_count >= max) continue;                    // 더 살 수 없는 사람
+    if (now - e.eliminated_at >= SEAT_HOLD_SEC) continue;  // 우선권이 지났다
+    const seat = byUser.get(e.user_id);
+    if (seat != null) held.add(seat);
+  }
+  return held;
+}
+
+/** 이 사람이 앉을 수 있는 빈자리가 몇 개인가 — 산 사람 · 대기 중 · 남이 붙든 자리를 뺀다. */
+export function freeSeatsFor(t: HtRow, now: number, userId?: string): number {
+  const table = getTable(t.id);
+  if (!table) return 0;
+  const living = getSeats(table.id).filter(s => s.presence !== 'OUT').length;
+  return Math.max(0,
+    T.MAX_PLAYERS - living - pendingRebuys(t.id) - heldSeats(t, table, now, userId).size);
+}
+
 /** 이 사람이 지금 리바이할 수 있나 — 화면이 모달을 띄울지 정할 때도 쓴다. */
 export function rebuyStateOf(
-  t: HtRow, e: HtEntryRow | undefined, now: number, seatedCount: number
+  t: HtRow, e: HtEntryRow | undefined, now: number, seatedCount: number, revealing = false
 ): { can: boolean; reason?: RebuyError; left: number; cost: number } {
   const max = Math.max(0, Math.floor(t.max_rebuys ?? 0));
   const used = Math.max(0, Math.floor(e?.rebuy_count ?? 0));
@@ -1992,8 +2066,14 @@ export function rebuyStateOf(
      그대로 두면 한 판에 세 번을 연달아 사고도 자리는 하나만 받는다. */
   if (e.rebuy_pending === 1) return no('rebuy_pending');
   if (e.elim_seq == null) return no('not_eliminated');
+  /* 죽은 것은 맞지만 화면은 아직 그 판을 보여주는 중이다 — 몇 초 뒤에 다시 묻는다.
+     탈락 여부보다 뒤에 두는 이유: «아직 안 죽었다» 와 «죽었지만 잠깐» 은 다른 말이고,
+     화면이 그 둘을 다르게 그려야 한다. */
+  if (revealing) return no('revealing');
   if (left <= 0) return no('exhausted');
   if (now >= t.started_at + tuning(t).lateRegSec) return no('late_reg_closed');
+  /* seatedCount 는 «내가 못 쓰는 자리» 의 수다 — 산 사람 + 자리를 기다리는 사람 +
+     남이 60초 우선권으로 붙들고 있는 자리. 부르는 쪽이 세어서 넘긴다. */
   if (seatedCount >= T.MAX_PLAYERS) return no('table_full');
   return { can: true, left, cost };
 }
@@ -2008,9 +2088,12 @@ export function rebuyHoldem(userId: string, username: string):
     const seats = table ? getSeats(table.id).filter(s => s.presence !== 'OUT') : [];
     const mine = one<HtEntryRow>(
       `SELECT * FROM holdem_entries WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
-    /* 자리를 셀 때 «기다리는 사람» 도 센다. 안 그러면 마지막 한 자리를 둘에게 팔고,
-       뒤에 온 사람은 돈만 내고 앉을 데가 없다. */
-    const chk = rebuyStateOf(t, mine, nowSec(), seats.length + pendingRebuys(t.id));
+    /* 자리를 셀 때 «기다리는 사람» 과 «남이 붙들고 있는 자리» 도 센다. 앞은 이미 돈을
+       낸 사람이고, 뒤는 방금 죽어 60초 우선권을 가진 사람이다. 둘 다 내가 앉을 수 없는
+       자리인데 안 세면 마지막 한 자리를 둘에게 팔게 된다. */
+    const chk = rebuyStateOf(t, mine, nowSec(),
+      T.MAX_PLAYERS - (table ? freeSeatsFor(t, nowSec(), userId) : 0),
+      revealWindowOpen(t, nowSec()));
     if (!chk.can) return { ok: false, error: chk.reason ?? 'closed' };
 
     /* 낼 수 있는지 먼저 본다. 걷는 것은 자리가 확정된 뒤다 —
@@ -2020,28 +2103,33 @@ export function rebuyHoldem(userId: string, username: string):
     if (!table) return { ok: false, error: 'closed' };
 
     /* ── 앉는 시점 ────────────────────────────────────────────────
-       판이 도는 중이면 지금 앉히지 않는다. 앉히는 순간 좌석 스택이 0 에서 시작
-       스택으로 튀는데, 쇼다운이 아직 카드를 열고 있는 중이라면 그 숫자가 결과보다
-       먼저 «저 사람은 죽었다» 를 알린다 — 리버가 열리기 전에 승패가 새는 것이다.
-       (봇 시뮬레이션에서 그대로 재현됐다: 올인 쇼다운 중에 스택이 600 으로 채워졌다.)
-       돈은 지금 걷고 표시만 남긴다. 앉는 것은 이 판이 끝나고 다음 판을 돌리기 직전이다
-       (advanceTable 의 applyPendingRebuys). */
+       미루는 창은 딱 하나다: 앞 판이 «끝났는데 다음 판은 아직» 인 구간.
+       그때가 화면이 보드를 마저 깔고 패를 열고 팟을 미는 중이다. 그 위에 좌석 스택이
+       0 에서 600 으로 채워지면, 리버가 열리기도 전에 «저 사람 죽었구나» 가 먼저 읽힌다
+       (봇 시뮬레이션에서 그대로 재현됐다). 그 몇 초만 미룬다 — 다음 판을 돌리기
+       직전에 applyPendingRebuys 가 앉힌다.
+
+       판이 도는 중에는 «바로» 앉힌다. 미루면 이번 판이 끝날 때까지 관전으로 남아,
+       돈을 냈는데 아무 일도 안 일어난 것처럼 보인다. 이번 판의 hand_seats 에는 안
+       들어가므로 카드를 못 받고 액션 차례도 안 오지만(startHand 가 판을 열 때 명단을
+       굳힌다), 자리와 칩은 그 자리에 있고 다음 판부터 정상으로 참여한다.
+       화면은 그 자리를 «다음 판부터» 로 그린다(inHand=false). */
     const curHand = getCurrentHand(table.id);
-    const midHand = curHand != null && curHand.ended_at == null;
-    const got = midHand ? 0 : seatRebuy(t, table, userId, username, seats);
+    const revealing = curHand != null && curHand.ended_at != null;
+    const got = revealing ? 0 : seatRebuy(t, table, userId, username, seats);
     if (got < 0) return { ok: false, error: 'table_full' };
 
     /* 탈락 표시는 «앉을 때» 지운다. 기다리는 동안에도 이 사람은 아직 나간 사람이고,
-       그래야 대회가 남은 인원을 잘못 세지 않는다(대신 아래 pendingRebuys 가
+       그래야 대회가 남은 인원을 잘못 세지 않는다(대신 pendingRebuys 가
        «끝내면 안 된다» 를 말한다). */
-    if (!midHand) {
+    if (!revealing) {
       run(`UPDATE holdem_entries SET elim_seq = NULL, eliminated_at = NULL
             WHERE tournament_id = ? AND user_id = ?`, t.id, userId);
     }
     run(`UPDATE holdem_entries
             SET rebuy_count = rebuy_count + 1, rebuy_paid = rebuy_paid + ?,
                 rebuy_pending = ?
-          WHERE tournament_id = ? AND user_id = ?`, cost, midHand ? 1 : 0, t.id, userId);
+          WHERE tournament_id = ? AND user_id = ?`, cost, revealing ? 1 : 0, t.id, userId);
     return finishRebuy(t, userId, cost);
   });
 }
@@ -2054,9 +2142,17 @@ function seatRebuy(
 ): number {
   {
     const taken = new Set(seats.map(s => s.seat));
+    /* 남이 붙들고 있는 자리는 건너뛴다. 그리고 내 옛 자리가 비어 있으면 거기부터 —
+       60초 우선권의 요점이 «원래 자리로 돌아온다» 이다. 자리 번호가 바뀌면 화면에서
+       내가 어디 있었는지가 끊긴다. */
+    const blocked = heldSeats(t, table, nowSec(), userId);
+    const mySeatRow = getSeats(table.id).find(s => s.user_id === userId);
+    const order: number[] = [];
+    if (mySeatRow != null && !taken.has(mySeatRow.seat)) order.push(mySeatRow.seat);
+    for (let i = 0; i < T.MAX_PLAYERS; i++) if (!order.includes(i)) order.push(i);
     let got = -1;
-    for (let seat = 0; seat < T.MAX_PLAYERS; seat++) {
-      if (taken.has(seat)) continue;
+    for (const seat of order) {
+      if (taken.has(seat) || blocked.has(seat)) continue;
       /* 죽은 좌석 행을 둘 다 치우고 앉는다.
            · 이 자리(seat)에 남아 있는 남의 시체 — 안 치우면 자리가 겹친다
            · 내 시체가 앉아 있던 «다른» 자리 — 안 치우면 한 사람이 두 자리를 갖는다
@@ -2123,7 +2219,12 @@ function applyPendingRebuys(t: HtRow, table: HtTableRow): void {
   if (!waiting.length) return;
   for (const e of waiting) {
     const seats = getSeats(table.id).filter(s => s.presence !== 'OUT');
-    if (seatRebuy(t, table, e.user_id, e.username, seats) < 0) continue;
+    /* 이미 앉아 있으면 좌석을 또 만들지 않는다 — 표시만 정리하고 넘어간다.
+       어긋난 표시는 어떤 경로로든 생길 수 있고(되감기·수동 복구), 그때 좌석을 한 번 더
+       INSERT 하면 UNIQUE 위반으로 advanceHoldem 이 통째로 죽는다. 조용히 수렴하는 편이
+       판이 멈추는 것보다 낫다. */
+    const already = seats.some(s => s.user_id === e.user_id);
+    if (!already && seatRebuy(t, table, e.user_id, e.username, seats) < 0) continue;
     run(`UPDATE holdem_entries
             SET elim_seq = NULL, eliminated_at = NULL, rebuy_pending = 0
           WHERE tournament_id = ? AND user_id = ?`, t.id, e.user_id);
@@ -2253,16 +2354,31 @@ export function cancelRunningHoldemOnBoot(): number {
  * 계산을 맞추는 것보다 안전하다는 쪽의 근거로 남겨 둔다.
  */
 export function refundEntries(tournamentId: number, reasonPrefix: string): number {
+  /* 리바이로 낸 돈도 함께 돌려준다.
+     예전 주석은 «리바이는 이미 시작한 판에서만 일어나므로 환불 경로를 탈 일이 없다»
+     고 적어 두었는데, 그 뒤에 붙은 세 경로가 정확히 «이미 시작한 판» 을 대상으로 한다:
+     부팅 시 자동 취소(cancelRunningHoldemOnBoot — 배포할 때마다 돈다) · 운영자 중단 ·
+     끝난 판 삭제. 그중 하나라도 지나가면 리바이로 낸 돈이 통째로 사라졌다.
+     정상 종료에서는 그 돈이 상금 풀로 다시 나가므로(totalEntriesOf), 손실이 나는
+     자리는 오직 여기였다. 잔액=원장 불변식은 멀쩡해서 감사가 못 잡는 종류다.
+     실측: 10,000P 판에서 2회 리바이한 사람이 부팅 취소를 만나면 20,000P 를 잃었다. */
   const rows = all<{ user_id: string; paid_in: number }>(
-    `SELECT user_id, SUM(paid_in) AS paid_in FROM holdem_entries
-      WHERE tournament_id = ? AND paid_in > 0 GROUP BY user_id`, tournamentId);
+    `SELECT user_id, SUM(paid_in + rebuy_paid) AS paid_in FROM holdem_entries
+      WHERE tournament_id = ? AND (paid_in > 0 OR rebuy_paid > 0) GROUP BY user_id`,
+    tournamentId);
   let total = 0;
   for (const r of rows) {
     adjustBalance(r.user_id, r.paid_in, reasonPrefix + tournamentId);
     total += r.paid_in;
   }
   if (rows.length) {
-    run(`UPDATE holdem_entries SET paid_in = 0 WHERE tournament_id = ?`, tournamentId);
+    /* 두 칸을 함께 0 으로 내린다 — 취소 뒤에 삭제가 잇달아 지나가도 두 번 나가지
+       않게 하는 기존 규율 그대로다. rebuy_count 는 «몇 번 들어왔나» 라는 기록이라
+       남긴다: 돈은 돌려줬지만 그런 일이 있었다는 사실까지 지울 이유는 없다.
+       기다리던 리바이(rebuy_pending)도 함께 푼다. 돌려준 판에 대기가 남아 있으면
+       화면이 «다음 판부터 참여» 라고 적은 채로 굳는다. */
+    run(`UPDATE holdem_entries SET paid_in = 0, rebuy_paid = 0, rebuy_pending = 0
+          WHERE tournament_id = ?`, tournamentId);
   }
   /* 예정액을 지운다. 참가비를 돌려준 판은 없던 일이 되었으므로 벌어 둔 바운티도 없어야
      한다 — 남겨 두면 화면에 "내가 획득 N P"가 계속 떠 있고, 삭제 경로가 그것을 지급된

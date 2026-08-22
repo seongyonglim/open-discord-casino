@@ -170,11 +170,26 @@ export const CONTROLS = `    function toChips(v){ return unit === 'chip' ? Math.
       document.getElementById('htCheck').hidden = !la.canCheck;
       var call = document.getElementById('htCall');
       call.hidden = !la.canCall;
-      call.textContent = '콜 ' + stackText(la.callAmount);
+      /* 콜이 곧 올인인 경우가 있다 — 앞사람이 내 스택보다 크게 질렀을 때다.
+         그때 [콜 8,600] 이라고 적으면 «맞춰 내고 판은 계속된다» 로 읽힌다. 사실은
+         전 재산이 나가고 이 판이 내 마지막이 될 수도 있는 선택이다. 그 둘은 같은
+         단추로 부르면 안 된다.
+         근거는 서버가 준 수로만 잰다: maxRaiseTo 는 «올인했을 때 이 스트리트 총액»
+         이므로(services/holdem.ts), 지금까지 낸 것에 콜 금액을 더해 거기 닿으면
+         더 낼 것이 없다는 뜻이다. 색도 레이즈/올인 쪽 금색으로 옮긴다 —
+         돈이 전부 나가는 단추는 초록이 아니다. */
+      var callAllIn = la.canCall && (la.myBet + la.callAmount) >= la.maxRaiseTo;
+      call.textContent = (callAllIn ? '올인 ' : '콜 ') + stackText(la.callAmount);
+      call.classList.toggle('allin', callAllIn);
       var raise = document.getElementById('htRaise');
       raise.hidden = la.minRaiseTo == null;
-      raise.textContent = (currentTarget() >= la.maxRaiseTo ? '올인 '
+      /* 전 재산이 나가는 버튼은 색이 달라야 한다. 금색은 «올린다», 붉은색은
+         «전부 건다» 다 — 같은 자리에 있는 같은 크기의 버튼이라 글자만으로는
+         손이 구분하지 못한다. 콜 자리에도 같은 규칙을 쓴다(위 callAllIn). */
+      var raiseAllIn = currentTarget() >= la.maxRaiseTo;
+      raise.textContent = (raiseAllIn ? '올인 '
         : la.raiseIsBet ? '베팅 ' : '레이즈 ') + stackText(currentTarget());
+      raise.classList.toggle('allin', raiseAllIn);
       paintRange(la);
       unitTag.textContent = unit === 'chip' ? '칩' : 'BB';
       /* 태그를 바꿨으면 숫자도 그 단위로 다시 쓴다. 값 쓰기가 초기화(setAmount) 때만

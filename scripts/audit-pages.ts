@@ -1243,6 +1243,46 @@ async function main(): Promise<void> {
       ck(g + ' 회수 단추가 한국말이다',
         src.includes('>초기화<') && !src.includes('>Clear Screen<'));
     }
+
+    /* ── 회수는 세 게임에서 같은 일이어야 한다 ────────────────────
+       [초기화] 는 «올린 칩이 내게 돌아온다» 이고, 그건 이겨서 받을 때와 같은 사건이다.
+       그런데 소리가 셋 다 달랐다 — 바카라는 무음, 포커 플립도 무음, 블랙잭만 옛
+       코인 승리음. 같은 단추가 판마다 다른 뜻으로 들렸다.
+       연출도 마찬가지였다: 바카라만 한 박자 쓸어 내고 나머지 둘은 즉시 사라져서,
+       «걷어 갔다» 가 아니라 «지워졌다» 로 보였다.
+       셋을 한 소리(chipWin)와 한 연출(.pile-sweep / .bc-sweep)로 묶는다. */
+    const CLEARS: Array<[string, string]> = [
+      ['바카라', 'src/web/games/baccarat-client/loop.ts'],
+      ['블랙잭', 'src/web/games/blackjack-client/chips.ts'],
+      ['포커 플립', 'src/web/games/poker-client/loop.ts'],
+    ];
+    for (const [name, path] of CLEARS) {
+      const src = readFileSync(path, 'utf8') as string;
+      ck(name + ' 회수에 승리 칩 소리가 난다', src.includes('casinoSfx.chipWin()'));
+      ck(name + ' 회수에 옛 코인 승리음을 안 쓴다', !src.includes("win('gain')"));
+    }
+    for (const [name, path] of [
+      ['블랙잭', 'src/web/games/blackjack-client/chips.ts'],
+      ['포커 플립', 'src/web/games/poker-client/chips.ts'],
+    ] as Array<[string, string]>) {
+      const src = readFileSync(path, 'utf8') as string;
+      ck(name + ' 칩이 한 박자 쓸려 사라진다', src.includes('function sweepPile(el)')
+        && src.includes("el.classList.add('pile-sweep')"));
+    }
+    {
+      const pk = readFileSync('src/web/assets/css/05-poker.css', 'utf8') as string;
+      ck('쓸어 내는 연출이 CSS 에 있다', pk.includes('@keyframes pileSweep'));
+      /* 칩으로 전면 전환한 뒤 어디서도 안 나던 소리다. 파일과 참조를 함께 지웠으므로,
+         한쪽만 되살아나면(파일은 없는데 목록에 남는 식) 404 가 조용히 난다. */
+      const app2 = readFileSync('src/web/assets/app.js', 'utf8') as string;
+      const srv = readFileSync('src/web/server.ts', 'utf8') as string;
+      ck('옛 코인 삽입음 참조가 남지 않았다',
+        !app2.includes('coin-insert') && !srv.includes('coin-insert'));
+      for (const g of ['baccarat', 'blackjack', 'poker']) {
+        const src = readFileSync('src/web/games/' + g + '.ts', 'utf8') as string;
+        ck(g + ' 가 안 쓰는 소리를 미리 받지 않는다', !src.includes("'coin'"));
+      }
+    }
   }
 
   console.log('[16] 로비와 화면 방향');

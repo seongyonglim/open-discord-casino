@@ -165,6 +165,8 @@
   /* 못 누르는 이유. 단추 줄 아래 한 줄로 흘려 두고 줄 전체를 차지하게 한다 —
      두 단추 사이에 끼면 셋째 단추처럼 보인다. */
   .ht-act-warn{flex-basis:100%;margin:2px 0 0;font-size:12px;color:#fb7185}
+  /* 붉지 않은 한 줄 — 잘못된 것이 아니라 «이렇게 되어 있다» 는 알림이다 */
+  .ht-act-note{flex-basis:100%;margin:2px 0 0;font-size:12px;color:#6ee7b7}
   .ht-actions .btn-gold:hover{box-shadow:0 0 0 1px var(--gold)}
   .ht-actions .btn-gold:disabled{box-shadow:none}
   /* ── 참가 완료 = 취소 (한 칸) ────────────────────────────────────
@@ -1158,6 +1160,9 @@
      자리 비움은 무채색이라 행동 셋 어디에도 안 걸린다. 상태이지 행동이 아니라는
      것이 색으로 먼저 읽힌다. */
   .ht-abadge.away{z-index:6;color:#9e9e9e;letter-spacing:-.2px}
+  /* 다음 판 대기 — 자리 비움보다 한 칸 아래에 둔다. 둘 다 상태 태그지만 자리 비움은
+     «돌아와야 한다» 는 할 일이고 이쪽은 그냥 기다리면 되는 것이라, 겹치면 저쪽이 위다. */
+  .ht-abadge.wait{z-index:5;color:#a1a1aa;letter-spacing:-.2px}
   .ht-abadge.a-fold{color:#e53935}
   .ht-abadge.a-check,.ht-abadge.a-call{color:#ffc107}
   .ht-abadge.a-bet,.ht-abadge.a-raise{color:#00e5ff}
@@ -1443,6 +1448,23 @@
   .hta.check{background:linear-gradient(180deg,#1c2630,#131a21);border-color:rgba(150,195,255,.32);color:#bcd9ff}
   .hta.call{background:linear-gradient(180deg,#182a20,#101c15);border-color:rgba(130,220,165,.34);color:#b6efce}
   .hta.raise{background:linear-gradient(180deg,#33290e,#231c08);border-color:rgba(240,205,110,.5);color:#ffdd8a}
+  /* ── 올인 ────────────────────────────────────────────────────────
+     콜 자리든 레이즈 자리든, 그 버튼이 «전 재산» 을 뜻하게 되는 순간 붉어진다.
+     자리는 그대로 둔다 — 줄이 흔들리면 손이 헛나간다. 색만 바뀐다.
+
+     초록(콜)도 금색(레이즈)도 «계속 간다» 의 색이다. 올인은 그 다음이 없을 수도 있는
+     선택이라 둘 중 어느 쪽에도 속하지 않는다. 그래서 붉은색인데, 그냥 빨강은 폴드
+     버튼과 겹치고 경고처럼 읽힌다 — 이건 실수가 아니라 가장 센 수다.
+     그래서 어두운 크림슨에서 루비로 흐르는 그라데이션에 옅은 글로우를 얹었다.
+     빛은 «이 버튼이 판을 끝낼 수 있다» 는 표시이고, 폴드의 납작한 적갈색과는
+     명도·채도가 확실히 갈린다. */
+  .hta.allin{background:linear-gradient(90deg,#9f1239,#e11d48 55%,#dc2626);
+    border-color:rgba(251,113,133,.45);color:#fff;font-weight:900;letter-spacing:.3px;
+    box-shadow:0 0 20px rgba(225,29,72,.45);
+    transition:transform .12s,filter .12s,box-shadow .12s}
+  .hta.allin:hover{background:linear-gradient(90deg,#be123c,#f43f5e 55%,#ef4444);
+    box-shadow:0 0 26px rgba(225,29,72,.6);transform:scale(1.02)}
+  .hta.allin:active{transform:scale(.98)}
   /* 판이 끝난 뒤 나오는 두 버튼. 액션 버튼과 같은 줄을 쓰되(끝나면 그쪽이 비니까)
      행동이 아니라 선택이라는 걸 알 수 있게 조금 낮은 톤으로 둔다.
      둘 중 하나만 뜰 때도 줄의 절반만 차지하도록 flex-basis를 잡는다. */
@@ -1916,6 +1938,18 @@
   .ht-reg.empty .ht-reg-nm{color:#5f5f68}
   /* 최소 인원까지 남은 자리 — 그만큼은 반드시 차야 열린다 */
   .ht-reg.empty.need{border-color:rgba(212,175,55,.32)}
+  /* ── 진행 중 테이블 현황 ────────────────────────────────────────
+     시작 전에는 이 아홉 칸이 «신청했나» 만 말했다. 판이 열리면 같은 칸이 다른 것을
+     말해야 한다 — 살아 있나 · 죽었나 · 비었나. 셋을 색과 채도로 가른다:
+     산 사람만 또렷하고, 죽은 사람은 물이 빠지고, 빈자리는 점선이다(위 .empty 가 맡는다).
+     이렇게 두면 «아홉 칸이 다 찼는데 실은 두 자리가 비어 있다» 가 한눈에 보인다. */
+  .ht-reg.alive{background:rgba(24,24,27,.9);border-color:rgba(16,185,129,.4)}
+  .ht-reg.dead{background:rgba(9,9,11,.6);opacity:.5;filter:grayscale(1)}
+  .ht-reg.dead .ht-reg-nm{text-decoration:line-through}
+  /* 칩 수(산 사람) 또는 남은 리바이(죽은 사람). 이름 아래 작은 한 줄 */
+  .ht-reg-tag{max-width:100%;font-size:10px;line-height:1.3;color:#a1a1aa;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ht-reg.alive .ht-reg-tag{color:#6ee7b7;font-family:var(--mono);font-weight:700}
   .ht-reg.empty.need .ht-reg-nm{color:rgba(212,175,55,.75)}
 
   /* ── PKO 바운티 ────────────────────────────────────────────────────

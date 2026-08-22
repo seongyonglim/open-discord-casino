@@ -166,6 +166,13 @@
   /* 칩 스프라이트 — 동전은 찌그러지지 않은 정원(正圓), 골드바는 그보다 확실히 크게.
      (width/height를 같은 값으로 고정하고 min-width를 명시해, 버튼 쪽 .coin 규칙 같은 게
       섞여 들어와도 타원으로 눌리지 않게 한다) */
+  /* 칩이 회수될 때는 즉시 지우지 않고 한 박자 쓸어 낸다 — 바카라(.bc-sweep)와 같은
+     연출이고, 같은 길이·같은 이징을 쓴다. 즉시 지우면 «있었다가 없다» 뿐이라
+     «걷어 갔다» 가 안 읽힌다. 더미 요소에 붙는다(칩 하나가 아니라 통째로 움직인다). */
+  .pile-sweep{animation:pileSweep .3s ease-in forwards}
+  @keyframes pileSweep{ to{transform:translateY(7px) scale(.86);opacity:0} }
+  @media (prefers-reduced-motion:reduce){ .pile-sweep{animation:none;opacity:0} }
+
   .pchip{position:absolute;display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-weight:700;color:#4a3608;
     text-shadow:0 1px 0 rgba(255,255,255,.4);pointer-events:none;flex:none}

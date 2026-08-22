@@ -63,7 +63,6 @@ import { touchPresence, activeCounts } from '../services/presence';
 // 정적 자산 서빙 — 효과음(Kenney Casino Audio, CC0)과 카드 SVG(scripts/gen-cards.ts로 생성).
 // 경로 조작을 막기 위해 파일명을 화이트리스트로만 받고, 읽은 내용은 메모리에 캐시한다.
 const SFX_FILES = new Set([
-  'coin-insert.wav',              // 칩 올리기 (포커 플립)
   'coin-gain.mp3',                // 적중 회수 (포커 플립 · 지뢰찾기)
   'card-shuffle.wav',             // 새 라운드 셔플 (포커 플립)
   'card-deal.mp3',                // 카드 한 장씩 배분 (포커 플립)

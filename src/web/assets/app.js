@@ -485,7 +485,7 @@ window.casinoOrient = (function(){
   // 실제 녹음 샘플 (Kenney Casino Audio, CC0). 합성음보다 훨씬 자연스러워서 이쪽을 우선 쓰고,
   // 로딩 실패하거나 아직 안 받아졌으면 아래 합성음으로 대체한다.
   var sfxBuf = {};
-  var SFX_EXT = { 'coin-insert':'wav', 'card-shuffle':'wav', 'win-fanfare':'wav',
+  var SFX_EXT = { 'card-shuffle':'wav', 'win-fanfare':'wav',
                   'card-flip':'mp3', 'card-deal':'mp3',
                   'coin-gain':'mp3', 'mine-coin':'mp3', 'explode':'mp3', 'mine-perfect':'mp3',
                   'chip-bet':'mp3', 'chip-bet2':'mp3', 'chips-to-winner':'mp3',
@@ -509,7 +509,7 @@ window.casinoOrient = (function(){
   //       (앞의 둘은 피크 0dB로 아주 뜨겁게 녹음돼 있어 보정 없이 쓰면 다른 소리를 다 눌러버린다)
   // 그 평균에 맞춘 값이 아래 세 항목이다. 실효 RMS는 셋 다 -29.8 ~ -29.9dB.
   var SFX_NORM = {
-    'coin-insert': 0.78, 'coin-gain': 0.71, 'card-flip': 0.71, 'card-shuffle': 0.94,
+    'coin-gain': 0.71, 'card-flip': 0.71, 'card-shuffle': 0.94,
     'card-deal': 1.04, 'win-fanfare': 0.28, 'mine-coin': 2.6, 'explode': 0.16,
     /* chip-bet2 는 0.23 이었다. 둘은 같은 동작(칩을 올린다)의 변형이라 무작위로 번갈아
        나가는데, 보정 후 실효가 -31.6 대 -34.4dB 로 2.8dB 벌어져 있었다 — 같은 행동이
@@ -640,7 +640,6 @@ window.casinoOrient = (function(){
   // 칩을 올리는 동작은 단위와 상관없이 같은 "동전 넣는" 소리로 통일한다.
   // (소리가 두 종류로 갈리면 같은 동작인데 다른 효과음처럼 들린다)
   var SFX_SETS = {
-    coin: ['coin-insert'],      // 칩 올리기
     gain: ['coin-gain'],        // 포커 회수 · 지뢰찾기 캐시아웃
     fanfare: ['win-fanfare'],   // 그래프·사다리 승리 (게임마다 승리음이 다르다)
     minecoin: ['mine-coin'],
@@ -1017,16 +1016,6 @@ window.casinoOrient = (function(){
          음성보다 4dB 아래로 맞춰 뒀으므로 목소리를 덮지 않는다. */
       if (kind === 'fold') playSample('foldslide', 1);
     },
-    // 칩 올리기 — 동전 넣는 소리 (동전·골드바 공통)
-    chip: function(){
-      if (playSample('coin', 1)) return;
-      var c = ac(); if (!c) return;   // 샘플이 아직 안 받아졌을 때만 쓰는 대체음
-      var t = c.currentTime;
-      clinkAt(c, t, 0.05);
-      tone(c, 3136.0, t + 0.005, 0.10, 0.030, 'triangle'); // G7
-      tone(c, 4186.0, t + 0.020, 0.08, 0.019, 'triangle'); // C8
-      tone(c, 2349.0, t + 0.034, 0.13, 0.015, 'sine');     // D7 — 살짝 남는 여운
-    },
     // 카드 공개 — 뒤집는 소리
     card: function(){
       if (playSample('card', 1)) return;
@@ -1092,7 +1081,11 @@ window.casinoOrient = (function(){
     if (masterLevel() <= 0) return;
     preloadSfx();
     // 바뀐 크기를 귀로 확인할 수 있어야 한다. 슬라이더를 끄는 동안에는 소리를 겹쳐 내지 않는다.
-    if (!quiet && window.casinoSfx && window.casinoSfx.chip) window.casinoSfx.chip();
+    /* 음량을 바꿨으면 귀로 확인할 수 있어야 한다. 예전에는 동전 넣는 소리를
+       냈는데, 카지노가 코인에서 칩으로 전면 전환된 뒤로는 그 소리가 이 사이트 어디에도
+       없는 소리가 됐다 — 미리듣기가 실제 게임 소리와 다르면 «이 음량이면 어떻게 들리나» 를
+       가늠하는 데 도움이 안 된다. 지금 가장 많이 나는 소리인 칩 놓는 소리로 바꾼다. */
+    if (!quiet && window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
   }
 
   window.casinoSfxToggle = function(){
@@ -2130,6 +2123,29 @@ window.__foldOut = function(el, done){
      푼 직후에 불러도 제대로 된 높이가 나온다. */
   function toBottom(){ if (listEl) listEl.scrollTop = listEl.scrollHeight; }
 
+  /* 시스템 줄을 두 줄로 짓는다.
+     «누구를 어떻게 했다» 와 «얼마 동안인가» 는 다른 사실이라 줄을 나눈다. 한 줄로 두면
+     끊기는 자리를 상자 너비가 정하고, 실제로 «못합니다.» 의 마침표 한 글자만 다음 줄로
+     떨어졌다(제보). 첫 마침표에서 자른다 — 이 줄들은 서버가 짓는 두 문장짜리 문구다.
+     대상 이름은 서버가 따로 준다(m.name). 문자열에서 찾지 않는다: 이름에 마침표나
+     공백이 들어가면 엉뚱한 자리가 굵어진다. */
+  function sysLines(m){
+    var b = String(m.body || '');
+    var nm = m.name || '';
+    /* 이름 뒤에서부터 문장 경계를 찾는다. 이름 안에 «. » 가 들어간 사람이 있으면
+       («김. 철수» 같은) 앞에서부터 찾은 첫 마침표가 이름 한가운데라, 줄이 엉뚱한
+       자리에서 갈렸다. 이름은 언제나 문장 맨 앞이므로 그 길이만큼 건너뛰고 찾는다. */
+    var from = (nm && b.indexOf(nm) === 0) ? nm.length : 0;
+    var i = b.indexOf('. ', from);
+    var head = i < 0 ? b : b.slice(0, i + 1);
+    var tail = i < 0 ? '' : b.slice(i + 2);
+    var h = (nm && head.indexOf(nm) === 0)
+      ? '<b class="chat-sys-nm">' + esc(nm) + '</b>' + esc(head.slice(nm.length))
+      : esc(head);
+    return '<div class="chat-sys-1">' + h + '</div>'
+      + (tail ? '<div class="chat-sys-2">' + esc(tail) + '</div>' : '');
+  }
+
   /* 접힌 바에 마지막 한 줄을 그린다. 펼쳐 있으면 바가 숨어 있으므로 그려도 보이지
      않지만, 그때도 갱신해 둔다 — 접는 순간 옛 줄이 보이면 안 된다. */
   function paintLast(m, fresh){
@@ -2191,7 +2207,7 @@ window.__foldOut = function(el, done){
       var sys = document.createElement('div');
       sys.className = 'chat-sys ' + m.kind;
       sys.dataset.id = m.id;
-      sys.textContent = m.body;
+      sys.innerHTML = sysLines(m);
       listEl.appendChild(sys);
       while (listEl.childElementCount > MAX_ROWS) {
         var old = listEl.firstChild;

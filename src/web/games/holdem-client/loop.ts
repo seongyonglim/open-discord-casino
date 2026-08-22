@@ -60,7 +60,7 @@ export const LOOP = `    function render(){
       /* 탈락한 순간에 «다시 도전하겠는가» 를 묻는다. 축하 팝업과 같은 자리에서
          부르는 이유: 둘 다 «판이 끝난 사람» 에게 뜨는 창이라 로비든 테이블이든
          화면 상태와 무관하게 판단해야 한다. */
-      rebuyPrompt();
+      rebuyPrompt(showTable);
     }
     /* 표시는 «이 페이지가 열려 있는 동안» 만 산다. sessionStorage 에 남겨 두었더니
        한 번 들어간 뒤로는 상단 탭이나 로비 배너를 눌러도 카드를 건너뛰고 테이블로
@@ -69,7 +69,16 @@ export const LOOP = `    function render(){
        복귀하기] 한 번이면 제자리이고, 판이 도는 중에 열린 판이면 아래 자동 입장이
        받아 준다. */
     function enteredFor(t){ return enteredTid === t.id; }
-    function enterTable(t){ if (t) enteredTid = t.id; }
+    function enterTable(t){
+      if (!t) return;
+      enteredTid = t.id;
+      /* «나갔다» 는 표식을 함께 푼다. 그러지 않으면 [로비로 나가기] 를 한 번 누른
+         사람은 그 대회 테이블로 영영 못 돌아온다 — 리바이를 사도 render 의 left 가
+         참으로 남아 카드 화면에 갇힌다. 들어가겠다는 뜻을 방금 눌렀으므로,
+         그것이 지난번의 나가겠다는 뜻보다 나중이고 더 강하다. */
+      if (leftTableTid === t.id) leftTableTid = null;
+      try { sessionStorage.removeItem(leftKey(t)); } catch (e) { /* 없어도 이번 세션은 돈다 */ }
+    }
     function post(url, body){
       return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body || {}) })

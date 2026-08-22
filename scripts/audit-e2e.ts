@@ -286,6 +286,23 @@ async function main(): Promise<void> {
       ck(`정산 지급 규칙 일치 (승자 ${r.winner} → ${want})`, m.payout === want, `${m.payout} vs ${want}`);
       ck('잔액 반영 정확', bal('e_bacc') === before - 1000 + m.payout, String(bal('e_bacc')));
     }
+
+    /* ── 들어온 순간에는 연출을 재생하지 않는다 ────────────────────
+       다른 화면에 갔다 돌아오면 카드가 통째로 회수됐다 다시 깔렸다. 베팅 창 한가운데인데
+       처음부터 다시 시작하는 것처럼 보인다 — 연출을 «판마다 한 번» 으로 막는 열쇠가
+       페이지를 새로 열면 비어 있어서, 첫 렌더는 firstState 가 막아도 1초 뒤 두 번째
+       폴링에서 딜링이 그대로 돌았다.
+       고친 방식은 «들어온 순간 그 판의 열쇠를 미리 찍는 것» 이다. 그 두 줄이 사라지면
+       버그가 그대로 돌아오므로 소스에 못 박는다(브라우저 없이 확인할 수 있는 유일한
+       방법이기도 하다 — 이 연출은 화면이 보일 때만 재생된다). */
+    const bcPage = (await req('GET', '/games/baccarat', c)).text;
+    ck('바카라 — 들어온 판의 딜링 열쇠를 미리 찍는다',
+      bcPage.includes('if (firstState) {') && bcPage.includes('dealtRoundId = r.id;'));
+    ck('바카라 — 들어온 판의 정산 열쇠도 미리 찍는다',
+      bcPage.includes('if (r.result) notedRoundId = r.id;'));
+    ck('바카라 — 딜링은 판 열쇠로만 막는다 (firstState 로 막지 않는다)',
+      bcPage.includes('if (betting) dealSequence(r.id);')
+      && !bcPage.includes('if (betting && !firstState) dealSequence'));
   }
 
   /* ── 홀덤 프리롤 ─────────────────────────────────────────────────
@@ -472,7 +489,11 @@ async function main(): Promise<void> {
       /* 순위 기준은 판이 시작될 때의 스택이다 — 올인해서 좌석이 0 이 되어도
          꼴찌로 떨어지지 않는다. handNo 가 바뀔 때 한 번만 찍는 것이 그 장치다. */
       ck('순위 기준을 판 시작에 한 번만 찍는다',
-        htPage.includes('if (stackMemo && stackMemo.handNo === tb.handNo) return;'));
+        htPage.includes('if (stackMemo && stackMemo.key === key) return;'));
+      /* 열쇠에 대회 id 가 들어가야 한다. 판 번호는 대회마다 1 부터 다시 세므로,
+         번호만 보면 지난 대회의 1판 값이 새 대회 1판에 그대로 그려진다. */
+      ck('기억의 열쇠가 대회 단위로 갈린다',
+        htPage.includes("(st.tournament ? st.tournament.id : 0) + ':' + tb.handNo"));
       ck('탈락자 줄을 그릴 줄 안다', htPage.includes("'<div class=\"ht-rw out'"));
       ck('탈락자 스타일이 살아 있다',
         (await req('GET', '/app.css', sessions[0].c)).text.includes('.ht-rw.out'));

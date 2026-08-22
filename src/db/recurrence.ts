@@ -195,6 +195,9 @@ export function ensureRecurring(now: number = Math.floor(Date.now() / 1000)): vo
     title: autoTitle(next.startAt * 1000, cfg),
     mode: cfg.mode,
     bountyPct: cfg.bountyPct,
+    /* 안 넘겨도 createTournament 가 템플릿에서 읽지만, 여기 적어 두는 편이 낫다 —
+       «자동 개최는 템플릿 그대로» 라는 약속이 부르는 쪽에서도 보인다. */
+    maxRebuys: cfg.maxRebuys,
   });
   if (made.ok) put('recurLastAt', String(next.startAt));
 }

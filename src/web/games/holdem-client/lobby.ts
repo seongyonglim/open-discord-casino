@@ -240,6 +240,23 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
               ? '<p class="ht-act-warn">보유 포인트가 부족합니다 (보유: '
                   + num(st.balance || 0) + ' P)</p>'
               : '');
+        } else if (rbS && rbS.reason === 'revealing') {
+          /* 죽긴 했는데 화면은 아직 그 판을 보여주는 중이다. 여기서 [리바이] 를 켜면
+             그 단추 하나가 «너는 졌다» 를 카드보다 먼저 말한다 — 로비 카드에는 가릴
+             연출이 없으니 아예 «아직 판이 도는 중» 으로 둔다. 몇 초 뒤 저절로 바뀐다. */
+          action = '<button type="button" class="btn btn-back" id="htSpectate">테이블로 복귀하기</button>';
+        } else if (rbS && rbS.reason === 'table_full') {
+          /* 살 수는 있는데 앉을 데가 없다. 단추를 지우면 «리바이가 없는 판» 으로 읽히고,
+             그냥 두면 눌렀다가 거절당한다 — 잠근 채로 이유를 이름에 적는다.
+             자리는 곧 난다(누군가 죽거나 60초 우선권이 풀린다). */
+          action = '<button type="button" class="btn btn-gold" disabled>빈자리 없음 (대기)</button>' +
+            ' <button type="button" class="btn btn-sub" id="htSpectate">테이블 관전하기</button>' +
+            '<p class="ht-act-warn">자리가 나면 리바이할 수 있습니다 (남은 리바이 '
+              + rbS.left + '회)</p>';
+        } else if (rbS && rbS.reason === 'rebuy_pending') {
+          /* 이미 냈고 다음 판을 기다리는 중이다. 그 사실을 말하지 않으면 «돈만 나갔다» 가 된다. */
+          action = '<button type="button" class="btn btn-sub" id="htSpectate">테이블 보기</button>' +
+            '<p class="ht-act-note">리바이 완료 — 다음 판부터 참여합니다</p>';
         } else if (seatedNow) {
           action = '<button type="button" class="btn btn-back" id="htSpectate">테이블로 복귀하기</button>';
         } else if (lateOpen && !t.iRegistered) {
@@ -274,11 +291,43 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
       var plist = t.players || [];
       var roster = '';
       if (!t.finishedAt) {
+        /* ── 진행 중에는 «신청자» 가 아니라 «누가 살아 있나» 다 ──────────
+           시작 전에는 아홉 칸이 곧 신청 현황이라 이름과 빈칸만 있으면 됐다. 판이 열린
+           뒤에는 같은 아홉 칸이 다른 것을 뜻한다 — 아홉이 다 차 보이는데 둘이 죽어
+           두 자리가 비어 있을 수 있고, 리바이하려는 사람에게는 그 «두 자리» 가 전부다.
+           그래서 세 갈래로 나눠 그린다: 살아 있음(칩 표시) · 탈락(흐리게 · 남은 리바이) ·
+           빈자리(점선). 살아 있는 사람 먼저, 죽은 사람은 아래로 민다. */
+        var running = t.status === 'RUNNING';
+        var ordered = plist;
+        if (running) {
+          var alive = [], dead = [];
+          for (var oi = 0; oi < plist.length; oi++) {
+            (plist[oi].out ? dead : alive).push(plist[oi]);
+          }
+          /* 산 사람은 칩이 많은 순 — 순위표와 같은 순서여야 두 화면이 같은 판으로 읽힌다 */
+          alive.sort(function(a, b){ return (b.stack || 0) - (a.stack || 0); });
+          ordered = alive.concat(dead);
+        }
         var slots = '';
         for (var si = 0; si < t.maxPlayers; si++) {
-          var p = plist[si];
+          var p = ordered[si];
           if (p) {
             var isMe = p.userId === MEID;
+            if (running) {
+              /* 탈락자에게는 «몇 번 더 살 수 있나» 를 적는다. 남의 것도 적는 이유:
+                 마지막 자리를 두고 누가 돌아올 수 있는지가 내 판단에 들어간다. */
+              var tag = p.out
+                ? (p.waiting ? '대기 중'
+                  : p.rebuyLeft > 0 ? '리바이 ' + p.rebuyLeft + '회 남음' : '탈락')
+                : (p.stack != null ? num(p.stack) : '');
+              slots += '<div class="ht-reg' + (isMe ? ' me' : '') + (p.out ? ' dead' : ' alive')
+                  + '" title="' + esc(p.username) + '">' +
+                avatarHtml(p.userId, p.avatar, p.username, 'ht-reg-av') +
+                '<span class="ht-reg-nm">' + esc(p.username) + '</span>' +
+                (tag ? '<span class="ht-reg-tag">' + esc(tag) + '</span>' : '') +
+                '</div>';
+              continue;
+            }
             slots += '<div class="ht-reg' + (isMe ? ' me' : '') + '" title="' + esc(p.username) + '">' +
               avatarHtml(p.userId, p.avatar, p.username, 'ht-reg-av') +
               '<span class="ht-reg-nm">' + esc(p.username) + '</span></div>';
@@ -299,7 +348,16 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
           : t.startedAt ? '진행 중'
           : plist.length >= t.maxPlayers ? '자리가 모두 찼습니다'
           : '인원이 모여 예정대로 시작합니다';
-        roster = '<h3 class="ht-h3">신청자 <span class="ht-h3sub">' + sub + '</span></h3>' +
+        /* 진행 중이면 머리글도 «신청자» 가 아니다 — 지금 보는 것은 생존 현황이다.
+           빈자리 수를 같이 적는다: 리바이할 수 있는지가 그 숫자 하나로 정해진다. */
+        if (running) {
+          var aliveN = 0;
+          for (var ai = 0; ai < plist.length; ai++) if (!plist[ai].out) aliveN++;
+          var freeN = t.freeSeats != null ? t.freeSeats : Math.max(0, t.maxPlayers - aliveN);
+          sub = '생존 ' + aliveN + '명 · 빈자리 ' + freeN + '개';
+        }
+        roster = '<h3 class="ht-h3">' + (running ? '테이블' : '신청자')
+            + ' <span class="ht-h3sub">' + esc(sub) + '</span></h3>' +
           '<div class="ht-regs">' + slots + '</div>';
       }
 
@@ -525,21 +583,16 @@ export const LOBBY = `    /* 매 초 바뀌는 유일한 조각이 들어갈 자
       /* 카드에서 바로 리바이한다. 팝업(.ht-rb)과 같은 일을 하지만 여기서는 확인 창이
          한 겹 더 필요하다 — 팝업은 «방금 죽었다» 는 맥락 위에 떠서 금액이 이미 눈앞에
          있지만, 카드는 아무 때나 들어와서 누를 수 있는 자리다. */
+      /* 카드의 [리바이] 는 «결제» 가 아니라 «창 열기» 다.
+         결제는 리바이 창(.ht-rb)이 맡는다 — 비용 · 지급 스택 · 남은 횟수 · 마감 시계를
+         이미 그 창이 다 적고 있고, 잔고가 모자라면 단추를 잠그는 것도 그쪽이다.
+         여기서 confirm() 으로 한 번 더 묻던 것을 걷어냈다: 환경에 따라 confirm 이
+         대화상자 없이 그냥 false 를 돌려준다(내장 브라우저 · 앱 웹뷰). 그러면 단추를
+         눌러도 «아무 일도 안 일어남» 이 된다 — 실제로 그렇게 보고됐다.
+         묻는 자리를 하나로 모으면 그런 일이 생길 자리도 하나가 된다. */
       var rbGo2 = document.getElementById('htRbGo2');
-      if (rbGo2) rbGo2.addEventListener('click', function(){
-        var cost = t.rebuy ? t.rebuy.cost : 0;
-        if (!confirm('리바이 비용 ' + num(cost) + 'P를 내고 다시 참가합니다.\\n'
-          + '시작 스택 ' + num(t.startingStack) + ' 칩을 받고 테이블로 돌아갑니다.')) return;
-        rbGo2.disabled = true;
-        post('/api/games/holdem/rebuy', {}).then(function(r){
-          if (!r.ok) { alert(r.d && r.d.error ? r.d.error : '리바이할 수 없습니다'); rbGo2.disabled = false; return; }
-          /* 돈을 냈으면 판으로 들어간다 — 여기서 카드에 남겨 두면 방금 산 자리를
-             보러 한 번 더 눌러야 한다. */
-          enterTable(t);
-          if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
-          pollNow();
-        });
-      });
+      if (rbGo2) rbGo2.addEventListener('click', function(){ rbShow(); });
+
       var spec = document.getElementById('htSpectate');
       var leave = document.getElementById('htLeave');
       if (leave) leave.addEventListener('click', function(){

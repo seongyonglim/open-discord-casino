@@ -32,7 +32,10 @@ type El = {
   closest(): null;
   getAttribute(): null;
   classList: { add(): void; remove(): void; toggle(): void; contains(): boolean };
-  style: Record<string, string>;
+  /* setProperty 까지 흉내 낸다. 조절대의 채움 비율을 CSS 변수로 넘기는 코드가
+     이걸 부르는데, 없으면 렌더가 통째로 죽어 이 감사가 «예약» 을 보기도 전에 끝난다.
+     빈 객체로 두면 «있는 척» 만 하고 실제로는 없는 것과 같다. */
+  style: Record<string, string> & { setProperty(k: string, v: string): void };
   offsetWidth: number;
 };
 const els = new Map<string, El>();
@@ -49,7 +52,9 @@ function el(id: string): El {
     closest: () => null,
     getAttribute: () => null,
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
-    style: {},
+    style: Object.assign(Object.create(null) as Record<string, string>, {
+      setProperty(this: Record<string, string>, k: string, v: string) { this[k] = v; },
+    }),
     offsetWidth: 1,
   };
   els.set(id, e);

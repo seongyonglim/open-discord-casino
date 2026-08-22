@@ -45,6 +45,10 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
     }
     function celebrate(){
       var t = st.tournament;
+      /* 대회가 없는 화면(예정 없음 · 지난 판 요약만 있는 로비)에서는 st.tournament 가
+         null 이다. 그대로 t.status 를 읽으면 TypeError 가 나고, render() 는 그 자리에서
+         죽어 아래 코드가 통째로 안 돈다 — 리바이 창도 함께 사라진다. */
+      if (!t) return;
       if (t.status !== 'FINISHED') return;
       var results = st.results || [];
       if (!results.length) return;
@@ -133,16 +137,40 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
        sessionStorage 에 둔다: 새로고침 한 번에 풀리면 안 되고(같은 판이다),
        다음 판에는 다시 물어야 한다(열쇠에 대회 id 가 들어간다). */
     var rbEl = document.getElementById('htRb');
-    var rbSkipped = false;
-    function rbKey(t){ return 'od_ht_rbskip_' + t.id; }
+    var rbSkipped = false, rbWarnUntil = 0, rbHoldUntil = 0, rbSkipTid = null;
+    /* 대회 id 에 끝난 시각을 붙인다. id 만 쓰면 (지우고 다시 만들어) 같은 id 가
+       재사용될 때 지난번의 «관전하겠다» 가 그대로 살아 있어, 새 대회에서 리바이 창이
+       한 번도 안 뜬다. 우승 팝업의 열쇠(leftKey)와 같은 방식이다. */
+    function rbKey(t){ return 'od_ht_rbskip_' + t.id + ':' + (t.finishedAt || 0); }
+    /* 로비 카드의 [리바이] 가 부른다 — «관전하겠다» 표시를 지우고 창을 다시 연다.
+       예전에는 카드 쪽에서 confirm() 으로 묻고 바로 결제했다. 그런데 confirm 은
+       환경에 따라 대화상자를 띄우지 않고 그냥 false 를 돌려준다(내장 브라우저·앱
+       웹뷰가 그렇다) — 그러면 단추를 눌러도 «아무 일도 안 일어남» 이 된다. 실제로
+       그렇게 보고됐다. 게다가 물어볼 내용(비용·지급 스택·남은 횟수·마감 시계)을
+       이미 이 창이 다 적고 있어서, 대화상자는 같은 말을 한 겹 더 하는 것이기도 했다.
+       확인은 창의 금색 단추가 맡는다. 나가는 길도 그 안에 있다. */
+    function rbShow(){
+      var t = st && st.tournament;
+      rbSkipped = false;
+      if (t) { try { sessionStorage.removeItem(rbKey(t)); } catch (e) { /* 없어도 된다 */ } }
+      rebuyPrompt(false);
+    }
     function rbSkippedFor(t){
+      /* 표시는 «이 대회» 의 것이다. 대회가 바뀌면 푼다 — 메모리 변수 하나로 두었더니
+         한 판에서 [관전하기] 를 누른 사람은 그 뒤의 모든 대회에서 창이 안 떴다
+         (새로고침 전까지). sessionStorage 쪽은 열쇠에 id 가 들어 있어 원래 갈렸다. */
+      if (rbSkipTid !== t.id) { rbSkipTid = t.id; rbSkipped = false; }
       if (rbSkipped) return true;
       try { return sessionStorage.getItem(rbKey(t)) === '1'; } catch (e) { return false; }
     }
-    function rebuyPrompt(){
+    function rebuyPrompt(tableShown){
       var t = st && st.tournament;
       var r = t && t.rebuy;
-      if (!r || !r.can || rbSkippedFor(t)) { rbEl.hidden = true; return; }
+      /* 방금 실패 문구를 띄웠으면 잠깐은 닫지 않는다 — 왜 안 됐는지를 읽을 시간이다 */
+      if (!r || !r.can || rbSkippedFor(t)) {
+        if (Date.now() < rbHoldUntil) return;
+        rbEl.hidden = true; return;
+      }
 
       /* ── 결과가 다 나온 다음에 묻는다 ────────────────────────────
          서버는 «칩이 0 이 됐다» 를 endHand 에서 곧바로 쓴다. 그런데 화면은 그때부터
@@ -160,7 +188,13 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
 
          hidden 은 손대지 않고 그냥 돌아간다. 여기서 감추면 연출 도중에 창이 깜빡였다
          사라진 것처럼 보인다 — 아직 한 번도 안 떴으므로 그대로 두면 된다. */
-      var tb = st.table;
+      /* 테이블을 그리고 있을 때만 연출을 기다린다.
+         로비 카드에 있을 때는 정산 사슬(pushPotToWinners → potDoneAt)이 아예 돌지
+         않는다 — 그리는 코드가 안 불리기 때문이다. 그러면 settleDone 이 «아직» 에서
+         영영 멈추고, 죽은 사람이 카드 화면에 있는 동안 리바이 창이 한 번도 안 뜬다.
+         스포일러를 막으려던 장치가 기능 자체를 막는 셈이다.
+         카드 화면에는 가릴 연출이 없으므로 그냥 묻는다. */
+      var tb = tableShown ? st.table : null;
       if (tb && !settleDone(tb)) return;
       if (typeof koBurstEndsAt === 'number' && koBurstEndsAt > 0
         && Date.now() < koBurstEndsAt + KO_GAIN_HOLD_MS) return;
@@ -191,7 +225,11 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       var go = document.getElementById('htRbGo');
       go.disabled = poor;
       go.classList.toggle('off', poor);
-      document.getElementById('htRbWarn').hidden = !poor;
+      /* 방금 뜬 실패 문구가 살아 있는 동안에는 건드리지 않는다 */
+      if (Date.now() >= rbWarnUntil) {
+        document.getElementById('htRbWarn').textContent = '포인트가 부족합니다';
+        document.getElementById('htRbWarn').hidden = !poor;
+      }
       rbEl.hidden = false;
     }
     /* 짧은 글자 하나만 바꾼다. 같은 글이면 DOM 을 안 건드린다 —
@@ -235,12 +273,28 @@ export const CELEBRATE = `       서버를 다시 띄우면 그날 대회가 같
       if (!r.ok) {
         /* 실패는 대개 «그 사이에 창이 닫혔다» 이다. 문구를 그대로 보여 주고 창을
            닫는다 — 다시 누를 수 있게 열어 두면 같은 실패를 반복한다. */
-        document.getElementById('htRbWarn').textContent = (r.d && r.d.error) || '리바이할 수 없습니다.';
-        document.getElementById('htRbWarn').hidden = false;
+        /* 실패 문구는 폴링이 지우지 못하게 붙들어 둔다. rebuyPrompt 가 1초마다
+           htRbWarn 을 «잔고 부족인가» 로 다시 칠하는데, 그러면 방금 읽으려던 이유가
+           1초 만에 사라진다. 4초 동안은 이 문구가 이긴다. */
+        var warn = document.getElementById('htRbWarn');
+        warn.textContent = (r.d && r.d.error) || '리바이할 수 없습니다.';
+        warn.hidden = false;
+        rbWarnUntil = Date.now() + 4000;
+        /* 창이 닫히지 않게 붙든다. 문구만 붙들어 봐야 다음 폴링이 rebuyPrompt 를 돌려
+           r.can 이 false 가 된 순간 창 자체를 감춘다 — 읽을 새도 없이 사라진다. */
+        rbHoldUntil = rbWarnUntil;
         go.disabled = false;
         return;
       }
       rbEl.hidden = true;
+      /* 돈을 냈으면 판으로 들여보낸다. 이 창은 로비 카드 위에서도 뜨는데, 그때
+         표식을 안 남기면 «리바이하고 복귀하기» 를 눌러 놓고 카드에 그대로 남는다.
+         대회는 여기서 다시 읽는다 — 이 핸들러는 rebuyPrompt 의 지역 변수 t 를 볼 수 없다.
+         예전에 그냥 t 를 썼다가 ReferenceError 가 나서, 돈은 빠져나가고 화면은
+         아무 일도 안 한 것처럼 멈췄다(«리바이가 안 된다» 의 정체였다). */
+      var tNow = st && st.tournament;
+      if (tNow) enterTable(tNow);
+      spectate = true;
       if (window.casinoSfx && window.casinoSfx.chipBet) window.casinoSfx.chipBet();
       poll();   // 자리에 앉은 새 상태를 곧바로 당겨온다
     });

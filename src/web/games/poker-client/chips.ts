@@ -78,8 +78,21 @@ export const PK_CHIPS_JS = `      function renderCoins(){
       }
       /* 목록 그대로 다시 그린다. pendFrom 이 있으면 그 뒤의 칩을 제자리에 숨긴 채
          그리고, 그 요소들을 돌려준다 — 부르는 쪽이 그 자리로 날린 뒤 드러낸다. */
+      /* 비어 가는 더미를 한 박자 쓸어 낸다. 참이면 «지우는 중» 이므로 부르는 쪽은
+         그대로 돌아가면 된다 — 300ms 뒤에 스스로 비운다. */
+      function sweepPile(el){
+        if (!el.childElementCount || el.classList.contains('pile-sweep')) return false;
+        el.classList.add('pile-sweep');
+        setTimeout(function(){
+          if (!el.classList.contains('pile-sweep')) return;   // 그새 새 칩이 올라왔다
+          el.classList.remove('pile-sweep');
+          el.innerHTML = '';
+        }, 300);
+        return true;
+      }
       function paintPile(el, pile, pendFrom){
         el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
+        el.classList.remove('pile-sweep');
         el.innerHTML = '';
         for (var i=0;i<pile.list.length;i++){
           var c = pile.list[i];
@@ -99,7 +112,12 @@ export const PK_CHIPS_JS = `      function renderCoins(){
       // 더미 상태는 "누가 얼마" 단위로 들고 있어야 새로 들어온 칩의 주인을 알 수 있다
       function rebuildPile(el, market, byUser, roundId){
         var pile = piles[market] = { round: roundId, byUser: {}, list: [], n: 0 };
+        /* 걸린 것이 하나도 없으면 «비우는 중» 이다 — 초기화를 눌렀거나 판이 넘어갔다.
+           그때만 쓸어 내는 연출로 간다(칩이 있는데 다시 그리는 경우와 구분된다). */
+        var empty = Object.keys(byUser).every(function(u){ return !byUser[u]; });
+        if (empty && sweepPile(el)) return;
         el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
+        el.classList.remove('pile-sweep');
         el.innerHTML = '';
         Object.keys(byUser).forEach(function(uid){
           pile.byUser[uid] = byUser[uid];

@@ -97,8 +97,20 @@ export function bjChips(p0: string | number): string {
       /* 기록해 둔 칩 목록 그대로 다시 그린다.
          총액을 다시 쪼개면(decompose) 500 두 개가 1K 한 개로 합쳐져 버린다 —
          올린 그대로 보여야 하므로 복원은 반드시 목록 기준이다. */
+      /* 비어 가는 더미를 한 박자 쓸어 낸다 — 바카라·포커 플립과 같은 연출이다. */
+      function sweepPile(el){
+        if (!el.childElementCount || el.classList.contains('pile-sweep')) return false;
+        el.classList.add('pile-sweep');
+        setTimeout(function(){
+          if (!el.classList.contains('pile-sweep')) return;   // 그새 새 칩이 올라왔다
+          el.classList.remove('pile-sweep');
+          el.innerHTML = '';
+        }, 300);
+        return true;
+      }
       function paintPile(el, pile, pendFrom){
         el.style.opacity = '';   // 회수 연출로 숨겨뒀던 더미를 되살린다
+        el.classList.remove('pile-sweep');
         el.innerHTML = '';
         for (var i=0;i<pile.list.length;i++){
           var c = pile.list[i];
@@ -124,7 +136,10 @@ export function bjChips(p0: string | number): string {
         var arrived = drewOnce && owner !== MEID && bet > 0
           && (!prev || prev.round !== roundId || prev.bet < bet);
         var pile = piles[seat] = { round: roundId, bet: 0, list: [], n: 0 };
+        /* 걸린 것이 없으면 «비우는 중» 이다 — 초기화를 눌렀거나 판이 넘어갔다. */
+        if (bet <= 0 && sweepPile(el)) return;
         el.style.opacity = '';
+        el.classList.remove('pile-sweep');
         el.innerHTML = '';
         // 판 도중에 들어왔거나 남의 자리를 처음 볼 땐 총액밖에 모르니 그때만 쪼갠다
         if (bet > 0) {
@@ -356,7 +371,14 @@ export function bjChips(p0: string | number): string {
       });
       clearBtn.addEventListener('click', async function(){
         var res = await post('/api/games/blackjack/clear');
-        if (res.ok) { setBalance(res.d.balance); if (window.casinoSfx) window.casinoSfx.win('gain'); }
+        if (res.ok) {
+          setBalance(res.d.balance);
+        /* 회수 소리는 «칩이 내게 돌아온다» 다 — 이기고 받을 때와 같은 일이므로
+           같은 소리를 쓴다(casinoSfx.chipWin). 세 게임이 같은 소리를 내야 «초기화» 가
+           어느 판에서나 같은 뜻으로 들린다. 예전에는 바카라·포커 플립이 무음이었고
+           블랙잭만 옛 코인 승리음을 냈다. */
+          if (window.casinoSfx && window.casinoSfx.chipWin) window.casinoSfx.chipWin();
+        }
         poll();
       });
 

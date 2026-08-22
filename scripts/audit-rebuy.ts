@@ -51,7 +51,12 @@ function ck(name: string, cond: boolean, extra = ''): void {
 
 /* 여섯이다. 아홉 자리 판이므로 셋이 리바이해도 자리가 남는다 — 자리 부족으로
    거절되는 것과 횟수 소진으로 거절되는 것을 갈라 보려면 자리가 넉넉해야 한다. */
-const BOTS = ['rb1', 'rb2', 'rb3', 'rb4', 'rb5', 'rb6'];
+/* 인원을 바꿀 수 있게 둔다. 여섯이 기본이지만, 상금이 새던 자리는 «사람 수보다 상금
+   줄이 많아지는» 판이었고 그건 사람이 적을수록 잘 생긴다 — 셋이 세 번씩 사면 엔트리
+   열둘에 지급 넷이 나와서, 예전 코드라면 12,495P 가 아무에게도 안 갔다.
+     RB_BOTS=3 npx tsx scripts/audit-rebuy.ts */
+const ALL_BOTS = ['rb1', 'rb2', 'rb3', 'rb4', 'rb5', 'rb6'];
+const BOTS = ALL_BOTS.slice(0, Math.max(3, Math.min(6, Number(process.env.RB_BOTS ?? 6))));
 const BUY_IN = 10_000;
 const MAX_REBUYS = 3;
 const SEED = 1_000_000;   // 리바이를 여러 번 할 수 있을 만큼
@@ -127,6 +132,59 @@ const rebuy = setInterval(() => {
   }
 }, 60);
 
+/* ── 취소하면 리바이로 낸 돈도 돌아오는가 ──────────────────────────
+   정상 종료에서는 리바이 값이 상금 풀로 다시 나간다. 안 돌아오는 자리는 취소뿐이고,
+   그 경로가 셋이다(부팅 자동 취소 · 운영자 중단 · 끝난 판 삭제). 그중 부팅 취소는
+   배포할 때마다 도는 길이라 가장 자주 지나간다.
+   새 대회를 하나 더 열어 리바이를 시킨 뒤 부팅 취소를 불러 본다.
+   기준은 하나다: 모두의 잔액이 시작값으로 정확히 돌아오는가. */
+function refundCheck(): void {
+  const before = new Map(BOTS.map(p => [p, Q.getWebUser(p)?.balance ?? 0]));
+  const made2 = A.createTournament({
+    title: '취소 환불 검사', regOpenAt: now() - 60, startAt: now() + 3600,
+    buyIn: BUY_IN, levelMin: 1, startingStack: 300, lateRegMin: 60, maxRebuys: MAX_REBUYS,
+  });
+  if (!made2.ok) { console.log('  FAIL 두 번째 대회를 못 열었다: ' + made2.error); process.exit(1); }
+  for (const p of BOTS) HD.registerHoldem(p, p);
+  db.prepare(`UPDATE holdem_tournaments SET scheduled_start_at = ? WHERE id = ?`)
+    .run(now() - 1, made2.id);
+  HD.advanceHoldem();
+  /* 한 명을 손으로 탈락시켜 리바이를 시킨다 — 판을 끝까지 돌릴 필요가 없다 */
+  db.prepare(`UPDATE holdem_entries SET elim_seq = 1, eliminated_at = ?
+               WHERE tournament_id = ? AND user_id = ?`).run(now(), made2.id, BOTS[0]);
+  db.prepare(`UPDATE holdem_seats SET presence = 'OUT', stack = 0
+               WHERE user_id = ? AND table_id IN
+                 (SELECT id FROM holdem_tables WHERE tournament_id = ?)`).run(BOTS[0], made2.id);
+  const rb = HD.rebuyHoldem(BOTS[0], BOTS[0]);
+  ck('두 번째 대회에서 리바이가 됐다', rb.ok, JSON.stringify(rb));
+  const paidNow = (db.prepare(`SELECT rebuy_paid AS n FROM holdem_entries
+                                WHERE tournament_id = ? AND user_id = ?`)
+    .get(made2.id, BOTS[0]) as { n: number }).n;
+  ck('리바이로 낸 돈이 기록됐다 (환불 검사용)', paidNow === BUY_IN, String(paidNow));
+
+  HD.cancelRunningHoldemOnBoot();
+  for (const p of BOTS) {
+    const after = Q.getWebUser(p)?.balance ?? 0;
+    ck('취소 후 ' + p + ' 의 잔액이 시작값으로 돌아왔다', after === before.get(p),
+      after + ' vs ' + before.get(p));
+  }
+  /* 두 번 불러도 두 번 나가지 않는다 — 취소 뒤에 삭제가 잇달아 지나가는 경로가 있다 */
+  const mid = new Map(BOTS.map(p => [p, Q.getWebUser(p)?.balance ?? 0]));
+  HD.refundEntries(made2.id, 'holdem:cancel:');
+  let twice = 0;
+  for (const p of BOTS) if ((Q.getWebUser(p)?.balance ?? 0) !== mid.get(p)) twice++;
+  ck('환불은 두 번 불러도 한 번만 나간다', twice === 0, twice + '명이 두 번 받았다');
+  ck('잔액 합 = 원장 누계 (환불 뒤에도)', balSum() === ledgerSum(),
+    balSum() + ' vs ' + ledgerSum());
+
+  report();
+}
+
+function report(): void {
+  console.log('');
+  console.log('통과 ' + pass + ' · 실패 ' + fail);
+  process.exit(fail ? 1 : 0);
+}
 const LIMIT_MS = 5 * 60 * 1000;
 let lastLine = '';
 const watch = setInterval(() => {
@@ -202,7 +260,26 @@ const watch = setInterval(() => {
     ck('끝난 대회에서는 리바이가 거절된다', !late.ok, JSON.stringify(late));
 
     console.log(`\n통과 ${pass} · 실패 ${fail}`);
-    process.exit(fail ? 1 : 0);
+    /* ── 상금표가 «받을 사람 수» 를 넘지 않는가 ────────────────────
+       리바이는 행을 안 늘리므로(사람당 한 줄) 엔트리 수로 지급 인원을 정하면
+       받을 사람보다 줄이 많아질 수 있다. 그때 남는 줄의 금액은 아무에게도 안 간다 —
+       잔액=원장 불변식은 멀쩡해서 여기서 따로 세지 않으면 못 잡는다.
+       실제 대회 하나로는 그 경계에 안 닿을 수 있으므로(봇 여섯이면 여섯 줄까지는
+       늘 받을 사람이 있다) 함수를 직접 눌러 본다. */
+    let capBad = 0;
+    for (let people = 3; people <= 9; people++) {
+      for (let rb = 0; rb <= 10; rb++) {
+        const tot = people * (1 + rb);
+        const pl = tot * BUY_IN;
+        const amt = TS.prizeAmounts(pl, tot, people);
+        const sum2 = amt.reduce((a, b) => a + b, 0);
+        if (amt.length > people || sum2 !== pl) capBad++;
+      }
+    }
+    ck('상금표가 받을 사람 수를 넘지 않고 합도 정확하다 (3~9명 × 0~10리바이)', capBad === 0,
+      capBad + '가지 조합이 어긋난다');
+    if (fail) process.exit(1);
+    refundCheck();
   }
 
   if (Date.now() - startedAt > LIMIT_MS) {

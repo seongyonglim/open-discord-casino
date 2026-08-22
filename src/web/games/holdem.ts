@@ -14,7 +14,8 @@ import {
   getTable, getSeats, getEntries, getCurrentHand, getHandSeats, getSeatAvatars, getEntryAvatars, rabbitBoard,
   showHoldemCards, holdemRecords, type ShowWhich,
   ACTION_SEC, actOpenAt, tuning, type HoldemStatus, isPko, isMystery, bountyPctOf, prizePoolOf,
-  totalEntriesOf, rebuyStateOf, rebuyCostOf, rebuyHoldem,
+  totalEntriesOf, rebuyStateOf, rebuyCostOf, rebuyHoldem, freeSeatsFor, SEAT_HOLD_SEC,
+  revealWindowOpen,
 } from '../../db/holdem';
 import * as G from '../../services/holdem';
 import * as T from '../../services/tournament';
@@ -214,13 +215,18 @@ function statePayload(st: HoldemStatus, userId: string) {
           .map(x => ({ name: x.name, won: x.won }))
         : undefined,
       prizePool: pool,
-      prizes: T.prizeAmounts(pool, totalEntries),
+      /* 지급 경로(payPrizes)와 «똑같은» cap 을 넘긴다. 안 넘기면 풀은 같은데 줄 수와
+         금액이 갈려서, 화면이 약속한 상금과 실제로 들어오는 상금이 달라진다 —
+         3명이 세 번씩 산 판에서 1등에게 6,000P 를 적게 광고했다.
+         holdem_entries 는 사람당 한 줄이므로 entries.length 가 «실제로 받을 수 있는 줄» 이고,
+         대회가 끝나면 전원에게 등수가 붙으므로 payPrizes 의 ranked.length 와 같아진다. */
+      prizes: T.prizeAmounts(pool, totalEntries, entries.length),
       /* 지급 인원도 «엔트리 수» 로 센다 — 상금표가 그 숫자로 만들어지기 때문이다.
          사람 수로 세면 표는 여섯 줄인데 안내는 다섯 명이라고 적힌다. */
       /* 지급 인원은 «풀이 감당하는 만큼» 이다(T.paidCount). itmCount 의 상위 30% 로
          적으면 표는 여덟 줄인데 안내는 열다섯 명이라고 적힌다 — 화면이 약속한 것과
          실제 지급이 갈리는 자리다. */
-      itm: T.paidCount(pool, totalEntries),
+      itm: T.paidCount(pool, totalEntries, entries.length),
       /* ── 리바이 ──────────────────────────────────────────────────
          화면이 «모달을 띄울지» 를 스스로 판단하지 않게 한다. 조건이 여섯이고
          (허용 여부 · 남은 횟수 · 시작했나 · 늦참 창 · 탈락했나 · 자리)
@@ -228,9 +234,11 @@ function statePayload(st: HoldemStatus, userId: string) {
          화면이 같은 판단을 두 번 하면 언젠가 두 판단이 갈린다. */
       rebuy: (() => {
         const meE = entries.find(e => e.user_id === userId);
-        const seated = table
-          ? getSeats(table.id).filter(s => s.presence !== 'OUT').length : 0;
-        const r = rebuyStateOf(t, meE, now, seated);
+        /* 서버가 실제로 쓰는 것과 «같은» 계산이어야 한다(freeSeatsFor).
+           예전에는 여기만 «산 사람 수» 로 세어서, 대기 중인 리바이와 60초 우선권 자리를
+           빼먹고 can=true 를 내려보냈다 — 눌러야만 거절당하는 단추가 떴다. */
+        const taken = table ? T.MAX_PLAYERS - freeSeatsFor(t, now, userId) : 0;
+        const r = rebuyStateOf(t, meE, now, taken, revealWindowOpen(t, now));
         return {
           max: Math.max(0, Math.floor(t.max_rebuys ?? 0)),
           used: Math.max(0, Math.floor(meE?.rebuy_count ?? 0)),
@@ -240,6 +248,10 @@ function statePayload(st: HoldemStatus, userId: string) {
           reason: r.can ? undefined : r.reason,
         };
       })(),
+      /* 지금 내가 앉을 수 있는 자리 수. 로비 카드가 «빈자리 없음 (대기)» 를 그릴 때
+         쓴다 — 산 사람 · 자리를 기다리는 사람 · 남이 60초 우선권으로 붙든 자리를 뺀 값이다. */
+      freeSeats: freeSeatsFor(t, now, userId),
+      seatHoldSec: SEAT_HOLD_SEC,
       lateRegLeft: T.lateRegLeft(now, {
         startedAt: t.started_at, finishedAt: t.finished_at, cancelledAt: t.cancelled_at,
       }, tune.lateRegSec),
@@ -251,11 +263,26 @@ function statePayload(st: HoldemStatus, userId: string) {
          뒤바뀌지 않으려면 순서가 고정돼야 한다. */
       players: (() => {
         const av = getEntryAvatars(t.id);
+        /* 좌석 스택을 쓴다(핸드 안 스택이 아니라). 좌석 행은 판이 끝날 때만 갱신되므로
+           이 값은 언제나 «마지막으로 끝난 판까지» 다 — 로비 카드는 판이 도는 중에도
+           열려 있을 수 있어서, 여기서 진행 중인 스택을 적으면 그 숫자가 승패를 먼저
+           말한다. 지나간 값이 그래서 옳다. */
+        const tb = getTable(t.id);
+        const stackOf = new Map(tb ? getSeats(tb.id)
+          .filter(s => s.presence !== 'OUT').map(s => [s.user_id, s.stack]) : []);
+        const maxRb = Math.max(0, Math.floor(t.max_rebuys ?? 0));
         return entries.map(e => ({
           userId: e.user_id, username: e.username, avatar: av.get(e.user_id) ?? null,
           /* 칩 순위가 이름 뒤에 «(2)» 로 적는다. 좌석 행에는 이 값이 없어서
              (좌석은 판의 것이고 리바이는 대회의 것이다) 여기서 같이 내려보낸다. */
           rebuys: Math.max(0, Math.floor(e.rebuy_count ?? 0)),
+          /* 로비 카드가 생존·탈락·빈자리로 갈라 그린다. 아홉 칸이 다 찬 것처럼 보이는데
+             둘이 죽어 두 자리가 비어 있다는 사실이 안 보이던 것이 시작이었다. */
+          out: e.elim_seq != null,
+          stack: stackOf.get(e.user_id) ?? null,
+          rebuyLeft: Math.max(0, maxRb - Math.max(0, Math.floor(e.rebuy_count ?? 0))),
+          /* 자리를 기다리는 중(돈은 냈고 다음 판에 앉는다) */
+          waiting: e.rebuy_pending === 1,
         }));
       })(),
     },
@@ -314,6 +341,15 @@ function statePayload(st: HoldemStatus, userId: string) {
   const boardCards = hand ? JSON.parse(hand.board_json) as number[] : [];
   const handSeats = hand ? getHandSeats(hand.id) : [];
   const bySeat = new Map(handSeats.map(h => [h.seat, h]));
+  /* 자리 번호만으로 «이 판에서의 그 사람» 을 찾으면 안 된다.
+     리바이가 생기면서 한 판이 끝난 뒤에도 자리 주인이 바뀔 수 있게 됐다 — 3번에서
+     죽은 사람 대신 다른 사람이 3번에 앉으면, 그 판의 3번 핸드 행(홀 카드까지)이
+     새 주인의 것으로 내려간다. 남의 패가 «내 카드» 로 보이는 것이다.
+     사람까지 맞아야 그 사람의 핸드다. */
+  const handOf = (s: { seat: number; user_id: string }): typeof handSeats[number] | undefined => {
+    const h = bySeat.get(s.seat);
+    return h && h.user_id === s.user_id ? h : undefined;
+  };
   /* 탈락한 사람도 "자기가 죽은 그 판"의 쇼다운은 봐야 한다.
      endHand는 결과를 쓴 뒤 같은 트랜잭션에서 presence를 OUT으로 바꾸므로,
      living만 보면 ended=true와 mySeat=null이 같은 응답에 실려 온다 —
@@ -324,7 +360,7 @@ function statePayload(st: HoldemStatus, userId: string) {
     endedNow && bySeat.get(s.seat)?.user_id === s.user_id;
   const shownSeats = seats.filter(s => s.presence !== 'OUT' || inEndedHand(s));
   const mySeat = shownSeats.find(s => s.user_id === userId);
-  const myHand = mySeat ? bySeat.get(mySeat.seat) : undefined;
+  const myHand = mySeat ? handOf(mySeat) : undefined;
   const ended = hand?.ended_at != null;
   const result = ended && hand?.result_json ? JSON.parse(hand.result_json) : null;
   // 쇼다운에 공개된 홀 카드만 남의 것으로 내려보낸다
@@ -443,7 +479,7 @@ function statePayload(st: HoldemStatus, userId: string) {
           }));
       })(),
       seats: shownSeats.map(s => {
-        const h = bySeat.get(s.seat);
+        const h = handOf(s);
         return {
           seat: s.seat,
           userId: s.user_id,
@@ -484,7 +520,11 @@ function statePayload(st: HoldemStatus, userId: string) {
             ? G.cardsToStrings(JSON.parse(h.hole_json) as number[])
             : ended && h?.shown === 1
               ? maskCards(G.cardsToStrings(JSON.parse(h.hole_json) as number[]), h.shown_mask)
-              : revealed.get(s.seat) ?? [],
+              /* 자리 번호로만 찾으면 안 된다. 리바이로 그 자리의 주인이 바뀌었으면
+                 앞 주인이 쇼다운에서 깐 카드가 새 주인의 패로 내려간다.
+                 h 는 handOf 가 «자리 + 사람» 을 둘 다 맞춰 준 값이므로, h 가 있을 때만
+                 그 판의 공개 카드가 이 사람의 것이다. */
+              : h ? revealed.get(s.seat) ?? [] : [],
           // 자발적으로 깐 패는 쇼다운 공개와 구분해서 표시한다
           shown: ended && h?.shown === 1 && !revealed.has(s.seat),
           /* 어느 장을 깠는지 장별로 준다. 좌석 하나에 참·거짓 하나만 주면 한 장만 깠어도
@@ -555,6 +595,8 @@ const REBUY_TEXT: Record<string, string> = {
   exhausted: '리바이 횟수를 모두 사용했습니다.',
   late_reg_closed: '늦은 등록이 마감되어 리바이할 수 없습니다.',
   table_full: '자리가 가득 찼습니다.',
+  revealing: '이번 판 결과가 나온 뒤에 다시 시도해 주세요.',
+  rebuy_pending: '이미 리바이했습니다 — 다음 판부터 참여합니다.',
   no_funds: '포인트가 부족합니다.',
 };
 

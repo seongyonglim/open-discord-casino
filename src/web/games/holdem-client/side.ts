@@ -63,14 +63,22 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
     var stackMemo = null;      // { handNo, map, remaining, avg, bustedIds }
     function noteStacks(tb){
       if (!tb || tb.handNo == null) return;
-      if (stackMemo && stackMemo.handNo === tb.handNo) return;   // 이 판은 이미 찍었다
+      /* 열쇠에 테이블 id 를 함께 넣는다. 판 번호는 대회마다 1 부터 다시 세므로,
+         번호만 보면 지난 대회의 «1판» 값이 새 대회의 «1판» 에 그대로 그려진다. */
+      var key = (st.tournament ? st.tournament.id : 0) + ':' + tb.handNo;
+      if (stackMemo && stackMemo.key === key) return;            // 이 판은 이미 찍었다
       if (tb.ended) return;                    // 끝난 판에 들어왔다 — 찍을 «시작» 이 없다
       var map = {};
       (tb.seats || []).forEach(function(s){ map[s.seat] = totalChips(s); });
       var ids = {};
       (tb.busted || []).forEach(function(b){ ids[b.userId] = 1; });
-      stackMemo = { handNo: tb.handNo, map: map, remaining: tb.remaining,
+      stackMemo = { key: key, handNo: tb.handNo, map: map, remaining: tb.remaining,
         avg: tb.avgStack, bustedIds: ids };
+    }
+    /* 기억이 «지금 이 판» 의 것인가. 테이블과 판이 둘 다 맞아야 한다. */
+    function memoFits(tb){
+      return stackMemo != null
+        && stackMemo.key === (st.tournament ? st.tournament.id : 0) + ':' + tb.handNo;
     }
     /* 정산 연출이 끝났나 — 끝났으면 서버 값이 곧 사실이다.
        celebrate.ts 의 settleDone 을 그대로 쓴다(조각들은 한 클로저를 공유한다):
@@ -81,9 +89,7 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
     }
     function shownStack(tb, s){
       if (settledNow(tb)) return s.stack;
-      if (stackMemo && stackMemo.handNo === tb.handNo && stackMemo.map[s.seat] != null) {
-        return stackMemo.map[s.seat];
-      }
+      if (memoFits(tb) && stackMemo.map[s.seat] != null) return stackMemo.map[s.seat];
       return totalChips(s);
     }
     /* 이 판에 죽은 사람인가 — 판이 시작될 때는 없던 이름인가로 가른다.
@@ -91,7 +97,7 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
        살아 있는 줄로 돌아온다. 새로 는 이름만 늦춘다. */
     function bustedYet(tb, userId){
       if (settledNow(tb)) return true;
-      if (!stackMemo || stackMemo.handNo !== tb.handNo) return true;
+      if (!memoFits(tb)) return true;
       return stackMemo.bustedIds[userId] === 1;
     }
 
@@ -315,10 +321,8 @@ export const SIDE = `    var paidSeat = {}, paidSeatHand = null;
       /* 남은 인원과 평균 스택도 정산 전에는 판 시작 값이다 — 팟이 아직 안 갔는데
          «6 / 7명» 으로 줄면 그 숫자 하나가 «누가 죽었다» 를 먼저 말한다. */
       var stSet = settledNow(tb);
-      var remN = (!stSet && stackMemo && stackMemo.handNo === tb.handNo)
-        ? stackMemo.remaining : tb.remaining;
-      var avgN = (!stSet && stackMemo && stackMemo.handNo === tb.handNo)
-        ? stackMemo.avg : tb.avgStack;
+      var remN = (!stSet && memoFits(tb)) ? stackMemo.remaining : tb.remaining;
+      var avgN = (!stSet && memoFits(tb)) ? stackMemo.avg : tb.avgStack;
       put('htRemain', remN + ' / ' + t.registered + '명');
       put('htAvg', stackText(avgN));
       put('htPool', num(t.prizePool) + 'P');

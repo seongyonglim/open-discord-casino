@@ -321,8 +321,25 @@ export const MIN_PRIZE_RATIO = 0.5;
  *
  * 최소 한 명은 받는다 — 풀이 아무리 작아도 우승자는 있다.
  */
-export function paidCount(pool: number, players: number): number {
+/*
+ * cap — «실제로 받을 수 있는 사람이 몇인가».
+ *
+ * 리바이가 생기면서 players 가 «사람 수» 가 아니라 «엔트리 수» 가 됐다. 상금 규모는
+ * 그게 맞다(낸 돈이 늘었으면 나갈 돈도 늘어야 한다). 그런데 지급 «인원» 까지 그 수로
+ * 정하면, 받을 사람보다 상금 줄이 많아지는 판이 생긴다 — holdem_entries 는 사람당
+ * 한 줄이라 리바이해도 줄이 안 늘기 때문이다.
+ * 그러면 남는 줄의 금액이 아무에게도 안 간다. 실측: 참가비 10,000P 판에 3명이 각자
+ * 3회 리바이하면 엔트리 12, 지급 4명분 표가 나오는데 받을 사람은 3명이라
+ * 120,000P 중 12,495P 가 증발한다. 잔액=원장 불변식은 멀쩡하다 — 유령 포인트가
+ * 생기는 게 아니라 걷은 돈이 안 나가는 것이라서, 감사가 못 잡는 종류의 구멍이다.
+ *
+ * cap 을 주면 거기서 잘리고, 잘린 만큼의 비율은 prizeShares 가 남은 등수에
+ * 다시 나눠 담는다(k 가 줄면 표 전체가 다시 계산된다). 합은 여전히 정확히 pool 이다.
+ * 안 주면 지금까지와 똑같이 동작한다 — 부르는 곳이 열 군데가 넘는다.
+ */
+export function paidCount(pool: number, players: number, cap?: number): number {
   let k = itmCount(players);
+  if (cap != null) k = Math.min(k, Math.max(0, Math.floor(cap)));
   if (k <= 0 || pool <= 0) return 0;
   const n = Math.max(1, Math.floor(players));
   const floor = (pool / n) * MIN_PRIZE_RATIO;   // 1인당 금액의 절반
@@ -334,8 +351,8 @@ export function paidCount(pool: number, players: number): number {
   return k;
 }
 
-export function prizeAmounts(pool: number, players: number): number[] {
-  const k = paidCount(pool, players);
+export function prizeAmounts(pool: number, players: number, cap?: number): number[] {
+  const k = paidCount(pool, players, cap);
   if (k <= 0 || pool <= 0) return [];
   const exact = prizeShares(k).map(s => pool * s);
   const out = exact.map(v => Math.floor(v));

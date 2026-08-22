@@ -423,6 +423,10 @@ export function adminPage(user: WebUser): string {
       <div class="ad-grid">
         <label>시작 칩<span class="ad-inx"><input type="number" id="cfStack" min="1" step="500" value="${cfg.startingStack}"><b>칩</b></span><i></i></label>
         <label>블라인드 주기<span class="ad-inx"><input type="number" id="cfLevel" min="1" value="${cfg.levelMin}"><b>분</b></span><i>마지막 레벨(16)까지 ${cfg.levelMin * 15}분</i></label>
+        <!-- 이 칸이 없어서 저장이 늘 400 이었다. 저장 핸들러는 maxRebuys 를 읽는데
+             폼이 안 보내니 NaN 이 되고, 검증이 그것을 막았다 — 화면에 보이는 다른 값을
+             아무리 고쳐도 저장이 안 됐다. -->
+        <label>최대 리바이 횟수<span class="ad-inx"><input type="number" id="cfRebuys" min="0" max="10" value="${cfg.maxRebuys}"><b>회</b></span><i>0이면 프리즈아웃 · 레이트 레지 안에서만 가능</i></label>
       </div>
       ${behind
         ? `<p class="ad-warn"><b>시즌이 바뀌어 기본 상금이 올랐습니다.</b>
@@ -749,6 +753,7 @@ export function adminPage(user: WebUser): string {
     var NC_TPL = ${JSON.stringify({
       startingStack: cfg.startingStack, levelMin: cfg.levelMin,
       lateRegMin: cfg.lateRegMin, graceMin: cfg.graceMin,
+      maxRebuys: cfg.maxRebuys,
       kind: cfg.buyIn > 0 ? 'buyin' : 'free',
       mult: cfg.weekdayMultiplier, buyIn: cfg.buyIn, gtd: cfg.prizeFixed,
     })};
@@ -765,6 +770,9 @@ export function adminPage(user: WebUser): string {
       set('ncLevel', NC_TPL.levelMin);
       set('ncLateReg', NC_TPL.lateRegMin);
       set('ncGrace', NC_TPL.graceMin);
+      /* 리바이 칸만 안 채우면 «템플릿 값을 불러왔다» 고 읽은 운영자가 프리즈아웃
+         템플릿으로 리바이 판을 열게 된다 — 다른 룰과 같이 채운다. */
+      set('ncRebuys', NC_TPL.maxRebuys);
       /* 상금 쪽도 같이 채운다. 룰만 채우고 참가 방식은 그대로 두면 "템플릿을 불러왔다"고
          읽은 운영자가 프리롤 템플릿으로 바이인 판을 여는 일이 생긴다. */
       ncKind.value = NC_TPL.kind;
@@ -1061,6 +1069,7 @@ export function adminPage(user: WebUser): string {
         regOpenMin: cfClock('cfRegAt'), startMin: cfClock('cfStartAt'),
         graceMin: cfNum('cfGrace'), lateRegMin: cfNum('cfLateReg'),
         startingStack: cfNum('cfStack'), levelMin: cfNum('cfLevel'),
+        maxRebuys: cfNum('cfRebuys'),
         /* 프리롤이면 참가비 0, 바이인이면 배수 0. 저장되는 값 하나로 방식이 정해지므로
            둘이 어긋난 상태(바이인인데 0원)가 아예 생기지 않는다. */
         buyIn: buyin ? cfNum('cfBuyIn') : 0,
