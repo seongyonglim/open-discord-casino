@@ -644,9 +644,17 @@
        였는데, min-width 로 바닥을 깔아 두면 한 줄에서도 흔들리지 않는다 —
        조각(.co-l/.co-v)은 그대로 두고 가로로 세운다. 조각이 있어야 매 프레임
        금액만 고쳐 쓸 수 있다(글자 전체를 갈아치우지 않는다). */
+    /* width:max-content 가 이 규칙의 핵심이다.
+       .game-action 의 기본은 width:100% 인데, 이 단추를 담는 칸은 상승 구간에 0px 로
+       접혀 있다(캐시아웃만 남기려고 그렇게 만들었다). 100% 가 0 이 되니 단추는
+       min-width(130px)로만 버티고, 그 안에 안 들어가는 글자는 잘렸다 —
+       "캐시아웃+ 2,546" 에서 P 가 사라지고 숫자가 끊긴 것이 그것이다(제보).
+       금액은 자릿수가 늘어난다. 폭을 «글자가 필요한 만큼» 으로 두어야 몇 자리든 다 보인다.
+       min-width 는 바닥일 뿐이다 — 작은 금액에서 단추가 초라해지지 않게만 한다. */
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout{
       display:flex;flex-direction:row;align-items:center;justify-content:center;
-      gap:7px;min-width:130px;height:48px;padding:0 24px;border-radius:16px;
+      gap:8px;width:max-content;min-width:150px;max-width:calc(100vw - var(--igSide) - 40px);
+      height:48px;padding:0 22px;border-radius:16px;
       white-space:nowrap;border:1px solid var(--win);
       background:var(--win);color:#06240f;
       box-shadow:0 10px 24px rgba(46,204,113,.22),0 2px 0 rgba(6,36,15,.35);
@@ -654,11 +662,19 @@
       animation:cashGlow 1.6s ease-in-out infinite}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout:hover{
       background:#42d886;border-color:#42d886}
+    /* 두 조각 다 flex:none 이다. 기본값(shrink:1)이면 자리가 모자랄 때 글자가 눌려
+       잘린다 — 잘리느니 단추가 넓어지는 편이 낫다. */
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout .co-l{
-      font-size:13.5px;font-weight:700;letter-spacing:.2px;line-height:1;
+      flex:none;font-size:13.5px;font-weight:700;letter-spacing:.2px;line-height:1;
       color:#06240f}
+    /* 금액은 오른쪽 정렬로 «자리» 를 잡아 둔다. 배율이 오르는 동안 자릿수가 늘어나는데,
+       폭이 그때마다 바뀌면 엄지가 겨눈 자리가 계속 움직인다 — 100만 단위까지 들어가는
+       폭을 미리 비워 두고(min-width), 숫자는 그 안에서 오른쪽에 붙는다.
+       tabular-nums 는 숫자 폭을 고르게 해서 1 과 8 이 바뀔 때도 안 흔들리게 한다. */
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout .co-v{
+      flex:none;min-width:100px;text-align:right;
       font-family:var(--mono);font-size:14.5px;font-weight:800;letter-spacing:-.2px;
+      font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
       color:#06240f;line-height:1}
     .ig-body.ig-graph:has(.crash-multi.running) #cCashout:active{
       transform:scale(.95);background:#25a35a;animation:none}
