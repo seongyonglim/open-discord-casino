@@ -84,12 +84,18 @@ export const BC_ROSTER_JS = `      /* ── 코인 버튼 ───────
           byMarket[b.market][b.user_id] = (byMarket[b.market][b.user_id]||0) + b.amount;
           total += b.amount;
         });
+        /* 상자마다 두 값만 적는다 — 몇 명이 · 얼마를 걸었나. 나를 포함한 모두의 합이다.
+           둘 다 byMarket 에서 나온다(서버에 더 물을 것이 없다).
+           한동안 «판의 몇 %» 막대와 «내 베팅» 알약도 함께 적었는데, 앞은 총액 셋을
+           견주면 보이는 값이고 뒤는 칩 더미가 이미 보여 주는 값이라 걷어 냈다. */
         ALL_KEYS.forEach(function(k){
           var per = byMarket[k] || {};
-          var t = 0;
-          Object.keys(per).forEach(function(u){ t += per[u]; });
+          var t = 0, n = 0;
+          Object.keys(per).forEach(function(u){ t += per[u]; n++; });
           var el=document.getElementById('tot-'+k);
-          if (el) el.textContent = compact(t);
+          if (el) el.textContent = compact(t) + 'P';
+          var cn=document.getElementById('cnt-'+k);
+          if (cn) cn.textContent = n + '명';
           syncPile(k, per, st.round.id);
         });
         potEl.textContent = fmt(total);

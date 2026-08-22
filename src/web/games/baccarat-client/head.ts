@@ -26,14 +26,18 @@ export function bcHead(p0: string | number, p1: string | number, p2: string | nu
       var firstState = true;
       var MAX_CHIPS = 18;   // 상자 하나에 그리는 칩 스프라이트 상한 (넘으면 오래된 것부터 제거)
 
+      /* name 은 상자에 크게 적히는 이름이다. label/sub 와 따로 두는 이유:
+         본선 셋은 영문 대문자가 그 자리의 이름이고(PLAYER·TIE·BANKER), 페어 둘은
+         한글이 이름이며 영문 설명은 부제다. 한 칸으로 둘을 겸하게 했더니 페어 상자의
+         이름 자리에 "첫 두 장 같은 숫자" 라는 설명이 크게 찍혔다. */
       var MARKET_DEFS = [
-        { key:'player', label:'플레이어', sub:'PLAYER', cls:'m-player' },
-        { key:'tie',    label:'타이',     sub:'TIE',    cls:'m-tie' },
-        { key:'banker', label:'뱅커',     sub:'BANKER', cls:'m-banker' }
+        { key:'player', name:'PLAYER', label:'플레이어', sub:'PLAYER', cls:'m-player' },
+        { key:'tie',    name:'TIE',    label:'타이',     sub:'TIE',    cls:'m-tie' },
+        { key:'banker', name:'BANKER', label:'뱅커',     sub:'BANKER', cls:'m-banker' }
       ];
       var PAIR_DEFS = [
-        { key:'ppair', label:'플레이어 페어', sub:'첫 두 장 같은 숫자', cls:'m-pair' },
-        { key:'bpair', label:'뱅커 페어',     sub:'첫 두 장 같은 숫자', cls:'m-pair' }
+        { key:'ppair', name:'플레이어 페어', label:'플레이어 페어', sub:'첫 두 장 같은 숫자', cls:'m-pair m-ppair' },
+        { key:'bpair', name:'뱅커 페어',     label:'뱅커 페어',     sub:'첫 두 장 같은 숫자', cls:'m-pair m-bpair' }
       ];
       var ALL_KEYS = ['player','tie','banker','ppair','bpair'];
 
